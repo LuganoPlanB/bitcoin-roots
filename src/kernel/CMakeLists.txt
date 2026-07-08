@@ -21,6 +21,7 @@ add_library(bitcoinkernel
   ../arith_uint256.cpp
   ../chain.cpp
   ../coins.cpp
+  ../common/system_ram.cpp
   ../compressor.cpp
   ../consensus/merkle.cpp
   ../consensus/tx_check.cpp
@@ -34,7 +35,9 @@ add_library(bitcoinkernel
   ../logging.cpp
   ../node/blockstorage.cpp
   ../node/chainstate.cpp
+  ../node/dbcache.cpp
   ../node/utxo_snapshot.cpp
+  ../policy/coin_age_priority.cpp
   ../policy/ephemeral_policy.cpp
   ../policy/feerate.cpp
   ../policy/packages.cpp
@@ -54,6 +57,7 @@ add_library(bitcoinkernel
   ../script/sigcache.cpp
   ../script/solver.cpp
   ../signet.cpp
+  ../stats/stats.cpp
   ../streams.cpp
   ../support/lockedpool.cpp
   ../sync.cpp
@@ -66,6 +70,8 @@ add_library(bitcoinkernel
   ../util/fs.cpp
   ../util/fs_helpers.cpp
   ../util/hasher.cpp
+  ../util/ioprio.cpp
+  ../util/mempressure.cpp
   ../util/moneystr.cpp
   ../util/rbf.cpp
   ../util/serfloat.cpp
@@ -80,9 +86,14 @@ add_library(bitcoinkernel
   ../validationinterface.cpp
   ../versionbits.cpp
 )
+target_compile_definitions(bitcoinkernel
+  PRIVATE
+    BUILDING_FOR_LIBBITCOINKERNEL
+)
 target_link_libraries(bitcoinkernel
   PRIVATE
     core_interface
+    external_lib_interface
     bitcoin_clientversion
     bitcoin_crypto
     leveldb

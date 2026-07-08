@@ -15,10 +15,14 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 # These need to be included before CMAKE_*_OUTPUT_DIRECTORY variables
 # are set, so output locations of subproject tests and libraries are
 # not overridden.
+if(NOT WITH_SYSTEM_LEVELDB)
 include(../cmake/crc32c.cmake)
 include(../cmake/leveldb.cmake)
-include(../cmake/minisketch.cmake)
+endif()  # WITH_SYSTEM_LEVELDB
+
 add_subdirectory(univalue)
+
+if(NOT WITH_SYSTEM_LIBSECP256K1)
 #=============================
 # secp256k1 subtree
 #=============================
@@ -67,6 +71,7 @@ set_target_properties(secp256k1 PROPERTIES
   EXCLUDE_FROM_ALL TRUE
 )
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()  # WITH_SYSTEM_LIBSECP256K1
 
 # Set top-level target output locations.
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
@@ -133,6 +138,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   chain.cpp
   chainparams.cpp
   chainparamsbase.cpp
+  codex32.cpp
   coins.cpp
   common/args.cpp
   common/bloom.cpp
@@ -146,6 +152,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   common/settings.cpp
   common/signmessage.cpp
   common/system.cpp
+  common/system_ram.cpp
   common/url.cpp
   compressor.cpp
   core_read.cpp
@@ -162,6 +169,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   netaddress.cpp
   netbase.cpp
   outputtype.cpp
+  policy/coin_age_priority.cpp
   policy/feerate.cpp
   policy/policy.cpp
   pow.cpp
@@ -207,6 +215,7 @@ if(ENABLE_WALLET)
       bitcoin_wallet
       bitcoin_common
       bitcoin_util
+      univalue
       Boost::headers
     )
     install_binary_component(bitcoin-wallet HAS_MANPAGE)
@@ -250,6 +259,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/blockmanager_args.cpp
   node/blockstorage.cpp
   node/caches.cpp
+  node/dbcache.cpp
   node/chainstate.cpp
   node/chainstatemanager_args.cpp
   node/coin.cpp
@@ -266,7 +276,6 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/mempool_persist_args.cpp
   node/miner.cpp
   node/mini_miner.cpp
-  node/minisketchwrapper.cpp
   node/peerman_args.cpp
   node/psbt.cpp
   node/timeoffsets.cpp
@@ -299,6 +308,9 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   rpc/txoutproof.cpp
   script/sigcache.cpp
   signet.cpp
+  stats/init.cpp
+  stats/rpc_stats.cpp
+  stats/stats.cpp
   torcontrol.cpp
   txdb.cpp
   txmempool.cpp
@@ -317,12 +329,12 @@ target_link_libraries(bitcoin_node
     bitcoin_util
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     leveldb
-    minisketch
     univalue
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:libevent::core>
     $<TARGET_NAME_IF_EXISTS:libevent::extra>
     $<TARGET_NAME_IF_EXISTS:libevent::pthreads>
+    $<TARGET_NAME_IF_EXISTS:MiniUPnPc::MiniUPnPc>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
 
@@ -428,6 +440,10 @@ if(BUILD_GUI)
   add_subdirectory(qt)
 endif()
 
+
+if(BUILD_BITCOINCONSENSUS_LIB)
+  add_subdirectory(consensus)
+endif()
 
 if(BUILD_KERNEL_LIB)
   add_subdirectory(kernel)
