@@ -15,7 +15,7 @@
 #endif
 
 //! Copyright string used in Windows .rc files
-#define COPYRIGHT_STR "2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL
+#define COPYRIGHT_STR STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_FOUNDATION "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " The Bitcoin Core developers"
 
 /**
  * bitcoind-res.rc includes this file, but it cannot cope with real c++ code.
@@ -25,6 +25,7 @@
 
 #if !defined(WINDRES_PREPROC)
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -37,12 +38,27 @@ extern const std::string UA_NAME;
 
 
 std::string FormatFullVersion();
-std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments);
+std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments, bool base_name_only = false);
 
 std::string CopyrightHolders(const std::string& strPrefix);
 
+/** Returns current and inherited copyright notices. */
+std::string CopyrightInfo();
+
 /** Returns licensing information (for -version) */
 std::string LicenseInfo();
+
+static constexpr int64_t SECONDS_PER_WEEK = 604800;
+static constexpr int64_t SECONDS_PER_YEAR = 31558060;
+
+static constexpr int POSIX_EPOCH_YEAR = 1970;
+static constexpr int64_t DEFAULT_SOFTWARE_EXPIRY_OFFSET = 26784000;  // Around Nov 7
+static constexpr int64_t DEFAULT_SOFTWARE_EXPIRY = ((COPYRIGHT_YEAR - POSIX_EPOCH_YEAR) * SECONDS_PER_YEAR) + (SECONDS_PER_YEAR * 2) + DEFAULT_SOFTWARE_EXPIRY_OFFSET;
+extern int64_t g_software_expiry;
+
+static constexpr int64_t SOFTWARE_EXPIRY_WARN_PERIOD = SECONDS_PER_WEEK * 4;
+
+bool IsThisSoftwareExpired(int64_t nTime);
 
 #endif // WINDRES_PREPROC
 
