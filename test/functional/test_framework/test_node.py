@@ -76,7 +76,7 @@ class TestNode():
     To make things easier for the test writer, any unrecognised messages will
     be dispatched to the RPC connection."""
 
-    def __init__(self, i, datadir_path, *, chain, rpchost, timewait, timeout_factor, bitcoind, bitcoin_cli, coverage_dir, cwd, extra_conf=None, extra_args=None, use_cli=False, start_perf=False, use_valgrind=False, version=None, descriptors=False, v2transport=False):
+    def __init__(self, i, datadir_path, *, chain, rpchost, timewait, timeout_factor, bitcoind, bitcoin_cli, coverage_dir, cwd, extra_conf=None, extra_args=None, use_cli=False, start_perf=False, use_valgrind=False, version=None, descriptors=False, v2transport=False, expected_stderr_prefix=''):
         """
         Kwargs:
             start_perf (bool): If True, begin profiling the node with `perf` as soon as
@@ -91,7 +91,8 @@ class TestNode():
         self.stderr_dir = self.datadir_path / "stderr"
         self.chain = chain
         self.rpchost = rpchost
-        self.rpc_timeout = timewait
+        self.rpc_timeout = timewait  # Already multiplied by timeout_factor
+        self.timeout_factor = timeout_factor
         self.binary = bitcoind
         self.coverage_dir = coverage_dir
         self.cwd = cwd
@@ -131,6 +132,13 @@ class TestNode():
                          "--gen-suppressions=all", "--exit-on-first-error=yes",
                          "--error-exitcode=1", "--quiet"] + self.args
 
+        if self.version is None:
+            self.args += [
+                "-corepolicy",
+                "-softwareexpiry=0",
+                "-walletimplicitsegwit",
+            ]
+
         if self.version_is_at_least(190000):
             self.args.append("-logthreadnames")
         if self.version_is_at_least(219900):
@@ -151,7 +159,11 @@ class TestNode():
                 self.args.append("-v2transport=0")
         # if v2transport is requested via global flag but not supported for node version, ignore it
 
-        self.cli = TestNodeCLI(bitcoin_cli, self.datadir_path)
+        self.cli = TestNodeCLI(
+            bitcoin_cli,
+            self.datadir_path,
+            self.rpc_timeout // 2,  # timeout identical to the one used in self._rpc
+        )
         self.use_cli = use_cli
         self.start_perf = start_perf
 
@@ -165,9 +177,10 @@ class TestNode():
         self.perf_subprocesses = {}
 
         self.p2ps = []
-        self.timeout_factor = timeout_factor
 
         self.mocktime = None
+
+        self.expected_stderr_prefix = expected_stderr_prefix
 
     AddressKeyPair = collections.namedtuple('AddressKeyPair', ['address', 'key'])
     PRIV_KEYS = [
@@ -366,6 +379,14 @@ class TestNode():
         assert called_by_framework, "Direct call of this mining RPC is discouraged. Please use one of the self.generate* methods on the test framework, which sync the nodes to avoid intermittent test issues. You may use sync_fun=self.no_op to disable the sync explicitly."
         return self.__getattr__('generatetodescriptor')(*args, **kwargs)
 
+    def getprioritisedtransactions(self, *args, **kwargs):
+        res = self.__getattr__('getprioritisedtransactions')(*args, **kwargs)
+        assert not (args or kwargs)
+        for res_val in res.values():
+            if res_val['priority_delta'] == 0:
+                del res_val['priority_delta']
+        return res
+
     def setmocktime(self, timestamp):
         """Wrapper for setmocktime RPC, sets self.mocktime"""
         if timestamp == 0:
@@ -427,6 +448,8 @@ class TestNode():
         # Check that stderr is as expected
         self.stderr.seek(0)
         stderr = self.stderr.read().decode('utf-8').strip()
+        if len(self.expected_stderr_prefix):
+            expected_stderr = self.expected_stderr_prefix + ((os.linesep + expected_stderr) if len(expected_stderr) else '')
         if stderr != expected_stderr:
             raise AssertionError("Unexpected stderr {} != {}".format(stderr, expected_stderr))
 
@@ -501,6 +524,12 @@ class TestNode():
         assert_equal(type(expected_msgs), list)
         assert_equal(type(unexpected_msgs), list)
 
+        if not self.debug_log_path.exists():
+            # File must exist for this to work
+            os.makedirs(self.debug_log_path.parent, exist_ok=True)
+            with open(self.debug_log_path, mode='a', encoding='utf-8'):
+                pass
+
         time_end = time.time() + timeout * self.timeout_factor
         prev_size = self.debug_log_size(encoding="utf-8")  # Must use same encoding that is used to read() below
 
@@ -526,7 +555,7 @@ class TestNode():
         self._raise_assertion_error('Expected messages "{}" does not partially match log:\n\n{}\n\n'.format(str(expected_msgs), print_log))
 
     @contextlib.contextmanager
-    def busy_wait_for_debug_log(self, expected_msgs, timeout=60):
+    def busy_wait_for_debug_log(self, expected_msgs, timeout=60, *, forbid_msgs=()):
         """
         Block until we see a particular debug log message fragment or until we exceed the timeout.
         Return:
@@ -542,6 +571,13 @@ class TestNode():
             with open(self.debug_log_path, "rb") as dl:
                 dl.seek(prev_size)
                 log = dl.read()
+
+            for msg in forbid_msgs:
+                if msg in log:
+                    print_log = " - " + "\n - ".join(log.decode("utf8", errors="replace").splitlines())
+                    self._raise_assertion_error(
+                        'Forbidden message "{}" partially matched log:\n\n{}\n\n'.format(
+                            str(msg), print_log))
 
             for expected_msg in expected_msgs:
                 if expected_msg not in log:
@@ -665,6 +701,8 @@ class TestNode():
         Will throw if bitcoind starts without an error.
         Will throw if an expected_msg is provided and it does not match bitcoind's stdout."""
         assert not self.running
+        if len(self.expected_stderr_prefix):
+            expected_msg = self.expected_stderr_prefix + ((os.linesep + expected_msg) if len(expected_msg) else '')
         with tempfile.NamedTemporaryFile(dir=self.stderr_dir, delete=False) as log_stderr, \
              tempfile.NamedTemporaryFile(dir=self.stdout_dir, delete=False) as log_stdout:
             try:
@@ -872,16 +910,17 @@ def arg_to_cli(arg):
 
 class TestNodeCLI():
     """Interface to bitcoin-cli for an individual node"""
-    def __init__(self, binary, datadir):
+    def __init__(self, binary, datadir, rpc_timeout):
         self.options = []
         self.binary = binary
         self.datadir = datadir
+        self.rpc_timeout = rpc_timeout
         self.input = None
         self.log = logging.getLogger('TestFramework.bitcoincli')
 
     def __call__(self, *options, input=None):
         # TestNodeCLI is callable with bitcoin-cli command-line options
-        cli = TestNodeCLI(self.binary, self.datadir)
+        cli = TestNodeCLI(self.binary, self.datadir, self.rpc_timeout)
         cli.options = [str(o) for o in options]
         cli.input = input
         return cli
@@ -902,7 +941,11 @@ class TestNodeCLI():
         """Run bitcoin-cli command. Deserializes returned string as python object."""
         pos_args = [arg_to_cli(arg) for arg in args]
         named_args = [str(key) + "=" + arg_to_cli(value) for (key, value) in kwargs.items()]
-        p_args = [self.binary, f"-datadir={self.datadir}"] + self.options
+        p_args = [
+            self.binary,
+            f"-datadir={self.datadir}",
+            f"-rpcclienttimeout={int(self.rpc_timeout)}",
+        ] + self.options
         if named_args:
             p_args += ["-named"]
         if clicommand is not None:
@@ -961,6 +1004,12 @@ class RPCOverloadWrapper():
         wallet_info = self.getwalletinfo()
         if 'descriptors' not in wallet_info or ('descriptors' in wallet_info and not wallet_info['descriptors']):
             return self.__getattr__('addmultisigaddress')(nrequired, keys, label, address_type)
+        if isinstance(label, dict):
+            options = dict(label)  # copy, so we can pop and check for emptiness
+            assert address_type is None
+            address_type = options.pop('address_type', None)
+            label = options.pop('label', None)
+            assert not options
         cms = self.createmultisig(nrequired, keys, address_type)
         req = [{
             'desc': cms['descriptor'],
@@ -986,7 +1035,7 @@ class RPCOverloadWrapper():
         if not import_res[0]['success']:
             raise JSONRPCException(import_res[0]['error'])
 
-    def importaddress(self, address, label=None, rescan=None, p2sh=None):
+    def _deleted_importaddress(self, address, label=None, rescan=None, p2sh=None):
         wallet_info = self.getwalletinfo()
         if 'descriptors' not in wallet_info or ('descriptors' in wallet_info and not wallet_info['descriptors']):
             return self.__getattr__('importaddress')(address, label, rescan, p2sh)
