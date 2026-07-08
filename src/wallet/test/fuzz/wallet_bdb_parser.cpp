@@ -40,11 +40,13 @@ void initialize_wallet_bdb_parser()
 
 FUZZ_TARGET(wallet_bdb_parser, .init = initialize_wallet_bdb_parser)
 {
+    SeedRandomStateForTest(SeedRand::ZEROS);  // for IsDirWritable
     const auto wallet_path = g_setup->m_args.GetDataDirNet() / "fuzzed_wallet.dat";
 
     {
         AutoFile outfile{fsbridge::fopen(wallet_path, "wb")};
         outfile << Span{buffer};
+        assert(outfile.fclose() == 0);
     }
 
     const DatabaseOptions options{};
@@ -63,7 +65,7 @@ FUZZ_TARGET(wallet_bdb_parser, .init = initialize_wallet_bdb_parser)
 #endif
     auto db{MakeBerkeleyRODatabase(wallet_path, options, status, error)};
     if (db) {
-        assert(DumpWallet(g_setup->m_args, *db, error));
+        assert(DumpWallet(*db, error, fs::PathToString(bdb_ro_dumpfile)));
     } else {
 #ifdef USE_BDB_NON_MSVC
         bdb_ro_err = true;
@@ -89,6 +91,8 @@ FUZZ_TARGET(wallet_bdb_parser, .init = initialize_wallet_bdb_parser)
             error.original == "Internal record position not in page" ||
             error.original == "LSNs are not reset, this database is not completely flushed. Please reopen then close the database with a version that has BDB support" ||
             error.original == "Records page has odd number of records" ||
+            error.original == "BTree page has an unexpected level" ||
+            error.original == "BTree Leaf page is not at level 1" ||
             error.original == "Bad overflow record page type") {
             // Do nothing
         } else if (error.original == "Subdatabase last page is greater than database last page" ||
@@ -124,7 +128,7 @@ FUZZ_TARGET(wallet_bdb_parser, .init = initialize_wallet_bdb_parser)
             return;
         }
         assert(!bdb_ro_err);
-        assert(DumpWallet(g_setup->m_args, *db, error));
+        assert(DumpWallet(*db, error, fs::PathToString(bdb_dumpfile)));
     } catch (const std::runtime_error& e) {
         if (bdb_ro_err) return;
         throw e;
