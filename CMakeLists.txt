@@ -26,7 +26,7 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 # Project / Package metadata
 #=============================
-set(CLIENT_NAME "Bitcoin Knots")
+set(CLIENT_NAME "Bitcoin Roots")
 set(CLIENT_VERSION_MAJOR 29)
 set(CLIENT_VERSION_MINOR 3)
 set(CLIENT_VERSION_BUILD 0)
@@ -34,7 +34,7 @@ set(CLIENT_VERSION_RC 0)
 set(CLIENT_VERSION_IS_RELEASE "true")
 set(COPYRIGHT_YEAR "2026")
 
-set(CLIENT_VERSION_SUFFIX ".knots20250903")
+set(CLIENT_VERSION_SUFFIX ".roots20260507")
 
 # During the enabling of the CXX and CXXOBJ languages, we modify
 # CMake's compiler/linker invocation strings by appending the content
@@ -55,7 +55,7 @@ set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
 project(BitcoinCore
   VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
   DESCRIPTION "Bitcoin client software"
-  HOMEPAGE_URL "https://bitcoinknots.org/"
+  HOMEPAGE_URL "https://plan-b.foundation/bitcoin-roots/"
   LANGUAGES NONE
 )
 
@@ -66,7 +66,7 @@ endif()
 
 set(COPYRIGHT_HOLDERS "The %s developers")
 set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/bitcoinknots/bitcoin/issues")
+set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================
 # Language setup
@@ -311,17 +311,6 @@ if(BUILD_FOR_FUZZING)
 
   target_compile_definitions(core_interface INTERFACE
     FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  )
-endif()
-
-if(DEFINED CACHE{RDTS_CONSENT})
-  message(FATAL_ERROR
-    "RDTS_CONSENT is set, but this version does not support RDTS.\n"
-    "You are attempting to configure BIP110 (RDTS) consent, but this source code is too old to support the RDTS network upgrade, which fixes critical vulnerabilities in long-standing network design.\n"
-    "Important: Because this upgrade already has broad community support, continuing to run older versions (such as this version) does not reject it. Running outdated software after any network upgrade only leaves your node vulnerable to displaying fake or fraudulent transactions. To effectively reject this upgrade, you need to run alternative software designed to split away from the upgraded network.\n"
-    "If you intend to build a node that supports this upgrade, please update your source code to a newer version: https://bitcoinknots.org\n"
-    "If you intentionally wish to build this older version, you can replace -D RDTS_CONSENT=... with -U RDTS_CONSENT in your CMake options.\n"
-    "For more information, see: https://bitcoinknots.org/learn/2026-rdts"
   )
 endif()
 

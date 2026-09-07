@@ -1718,12 +1718,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return false;
     }
 
-    scheduler.scheduleEvery([]{
-        LogError("This version does not support the upcoming BIP110/RDTS network upgrade, and is therefore vulnerable to displaying fake or fraudulent transactions.\n");
-        LogError("For more information, see: %s\n", "https://bitcoinknots.org/learn/2026-rdts");
-        LogError("To adopt this upgrade and remain secure, please update %s: %s\n", CLIENT_NAME, CLIENT_URL);
-    }, std::chrono::hours{1});
-
     if (interfaces::Ipc* ipc = node.init->ipc()) {
         for (std::string address : gArgs.GetArgs("-ipcbind")) {
             try {

@@ -1,7 +1,7 @@
-Contributing to Bitcoin Knots
+Contributing to Bitcoin Roots
 =============================
 
-The Bitcoin Knots project operates an open contributor model where anyone is
+The Bitcoin Roots project operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
@@ -289,11 +289,11 @@ workload on reviewing.
 "Decision Making" Process
 -------------------------
 
-The following applies to code changes to the Bitcoin Knots project (and related
+The following applies to code changes to the Bitcoin Roots project (and related
 projects such as libsecp256k1), and is not to be confused with overall Bitcoin
 Network Protocol consensus changes.
 
-Whether a pull request is merged into Bitcoin Knots rests with the project merge
+Whether a pull request is merged into Bitcoin Roots rests with the project merge
 maintainers and ultimately the project lead.
 
 Maintainers will take into consideration if a patch is in line with the general

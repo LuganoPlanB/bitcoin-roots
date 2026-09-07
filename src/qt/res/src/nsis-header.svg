@@ -15,8 +15,8 @@
 		}
 	]]></style>
 	<g transform="scale(0.66) translate(-440, -80)">
-		<use xlink:href="bitcoinknots-logo.svg#logo" />
+		<use xlink:href="bitcoinroots-logo.svg#logo" />
 	</g>
     <text x="320" y="236" style="letter-spacing: -0.14em">Bitcoin</text>
-    <text x="308.5" y="455" style="font-size: 240px; letter-spacing: -0.13em">Knots</text>
+    <text x="308.5" y="455" style="font-size: 240px; letter-spacing: -0.13em">Roots</text>
 </svg>

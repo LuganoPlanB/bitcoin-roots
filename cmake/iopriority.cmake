@@ -1,4 +1,4 @@
-# Copyright (c) 2025-present The Bitcoin Knots developers
+# Copyright (c) 2025-present The Bitcoin Roots developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 

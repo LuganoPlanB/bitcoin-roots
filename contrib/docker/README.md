@@ -1,7 +1,7 @@
 
-# 🚀 Bitcoin Knots Docker Image (Headless Node)
+# 🚀 Bitcoin Roots Docker Image (Headless Node)
 
-This Dockerfile builds and runs a **Bitcoin Knots** full node from source.
+This Dockerfile builds and runs a **Bitcoin Roots** full node from source.
 
 ## 🧱 Features
 
@@ -18,7 +18,7 @@ This Dockerfile builds and runs a **Bitcoin Knots** full node from source.
 ```bash
 docker build \
   -f contrib/docker/Dockerfile \
-  -t bitcoinknots \
+  -t bitcoinroots \
   --build-arg USER_ID=$(id -u) \
   --build-arg GROUP_ID=$(id -g) \
   --load .
@@ -32,11 +32,11 @@ docker build \
 docker run -d \
   --init \
   --user $(id -u):$(id -g) \
-  --name bitcoinknots \
+  --name bitcoinroots \
   -p 8333:8333 -p 127.0.0.1:8332:8332 \
   -v path/to/conf:/etc/bitcoin/bitcoin.conf:ro \
   -v path/to/data:/var/lib/bitcoind:rw \
-  bitcoinknots
+  bitcoinroots
 ```
 
 In case you want to use ZeroMQ sockets, make sure to expose those ports as well by adding `-p host_port:container_port` directives to the command above.
@@ -53,7 +53,7 @@ This will:
 ## 📊 Check Node Status
 
 ```bash
-docker logs bitcoinknots
+docker logs bitcoinroots
 ```
 
 ---
@@ -61,7 +61,7 @@ docker logs bitcoinknots
 ## 🛑 Stop the Node
 
 ```bash
-docker stop bitcoinknots
+docker stop bitcoinroots
 ```
 
 ---
