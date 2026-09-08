@@ -6,44 +6,76 @@ import rootsLogo from "../../../content/src/qt/res/src/bitcoinroots-logo.svg";
 const signalStages = [
   {
     label: "Peer-to-peer network",
-    title: "Receive the signal",
-    copy: "Download blocks and transactions from the Bitcoin peer-to-peer network.",
+    title: "Receive from peers",
   },
   {
     label: "Independent validation",
-    title: "Verify for yourself",
-    copy: "Fully validate the blocks and transactions your node receives.",
+    title: "Verify every block",
   },
   {
     label: "Local node policy",
     title: "Choose what you relay",
-    copy: "Use conservative, configurable transaction relay and mempool policy.",
   },
   {
     label: "Your node",
     title: "Stay consensus-neutral",
-    copy: "Remain compatible with Bitcoin Core consensus without enforcing RDTS/BIP110 rules.",
   },
 ] as const;
 
-const activeStage = ref(0);
-let cycleTimer: ReturnType<typeof setInterval> | undefined;
+const lottieSection = ref<HTMLElement>();
+const lottieHost = ref<HTMLElement>();
+const lottieReady = ref(false);
+let lottieObserver: IntersectionObserver | undefined;
+let lottieAnimation: { destroy: () => void } | undefined;
 
-function chooseStage(index: number) {
-  activeStage.value = index;
-  if (cycleTimer) window.clearInterval(cycleTimer);
+async function playRootsMark() {
+  if (!lottieHost.value) return;
+
+  try {
+    const { default: lottie } = await import("lottie-web/build/player/lottie_light");
+    if (!lottieHost.value) return;
+
+    const animation = lottie.loadAnimation({
+      container: lottieHost.value,
+      renderer: "svg",
+      loop: false,
+      autoplay: true,
+      path: withBase("/bitcoin-roots.lottie.json"),
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid meet",
+        progressiveLoad: true,
+      },
+    });
+
+    animation.addEventListener("DOMLoaded", () => {
+      lottieReady.value = true;
+    });
+    lottieAnimation = animation;
+  } catch {
+    lottieReady.value = false;
+  }
 }
 
 onMounted(() => {
-  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    cycleTimer = window.setInterval(() => {
-      activeStage.value = (activeStage.value + 1) % signalStages.length;
-    }, 4200);
+  if (
+    !lottieSection.value
+    || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return;
   }
+
+  lottieObserver = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    lottieObserver?.disconnect();
+    void playRootsMark();
+  }, { rootMargin: "0px 0px -12%", threshold: 0.3 });
+
+  lottieObserver.observe(lottieSection.value);
 });
 
 onBeforeUnmount(() => {
-  if (cycleTimer) window.clearInterval(cycleTimer);
+  lottieObserver?.disconnect();
+  lottieAnimation?.destroy();
 });
 </script>
 
@@ -67,32 +99,24 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="roots-signal__instrument" aria-label="From Bitcoin network to your node">
-        <div class="roots-signal__mast" aria-hidden="true">
-          <span class="roots-signal__pulse"></span>
-        </div>
-        <ol class="roots-signal__stages">
-          <li v-for="(stage, index) in signalStages" :key="stage.label">
-            <button
-              type="button"
-              :class="{ 'is-active': activeStage === index }"
-              :aria-pressed="activeStage === index"
-              @click="chooseStage(index)"
-              @focus="chooseStage(index)"
-            >
-              <span class="roots-signal__marker" aria-hidden="true"></span>
-              <span>
-                <small>{{ stage.label }}</small>
-                <strong>{{ stage.title }}</strong>
-              </span>
-            </button>
-          </li>
-        </ol>
-        <div class="roots-signal__readout" aria-live="polite">
-          <span>0{{ activeStage + 1 }} / 04</span>
-          <p>{{ signalStages[activeStage].copy }}</p>
-        </div>
+      <div class="roots-signal__editorial">
+        <p>Sovereignty starts with verification.</p>
+        <p>
+          Receive openly.<br>
+          Verify independently.<br>
+          Relay deliberately.
+        </p>
       </div>
+
+      <ol class="roots-signal__sequence" aria-label="From the peer-to-peer network to your node">
+        <li v-for="(stage, index) in signalStages" :key="stage.label">
+          <span>0{{ index + 1 }}</span>
+          <div>
+            <small>{{ stage.label }}</small>
+            <strong>{{ stage.title }}</strong>
+          </div>
+        </li>
+      </ol>
     </section>
 
     <section class="roots-boundary" aria-labelledby="boundary-title">
@@ -122,6 +146,20 @@ onBeforeUnmount(() => {
         Read the transaction relay policy
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
       </a>
+    </section>
+
+    <section ref="lottieSection" class="roots-mark" aria-labelledby="roots-mark-title">
+      <div class="roots-mark__visual" :class="{ 'is-ready': lottieReady }" aria-hidden="true">
+        <img :src="rootsLogo" alt="">
+        <div ref="lottieHost" class="roots-mark__lottie"></div>
+      </div>
+      <div class="roots-mark__copy">
+        <h2 id="roots-mark-title">Bitcoin rises from its roots.</h2>
+        <p>
+          Receive from peers. Verify every block. Apply your own policy to
+          unconfirmed transactions while remaining compatible with consensus.
+        </p>
+      </div>
     </section>
 
     <section class="roots-start" aria-labelledby="start-title">
