@@ -40,9 +40,25 @@ test("the homepage keeps the operator journey and primary action", async () => {
   assert.match(home, /Your node/);
 });
 
+test("the homepage uses one observed Lottie play instead of a cycling hero", async () => {
+  const [home, packageJson] = await Promise.all([
+    readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
+    readFile(resolve(siteRoot, "package.json"), "utf8"),
+    access(resolve(siteRoot, "content/public/bitcoin-roots.lottie.json")),
+  ]);
+
+  assert.match(home, /IntersectionObserver/);
+  assert.match(home, /prefers-reduced-motion: reduce/);
+  assert.match(home, /import\("lottie-web\/build\/player\/lottie_light"\)/);
+  assert.match(home, /loop:\s*false/);
+  assert.doesNotMatch(home, /setInterval/);
+  assert.equal(JSON.parse(packageJson).dependencies["lottie-web"], "5.13.0");
+});
+
 test("website-owned navigation only targets published pages", async () => {
   const availableRoutes = new Set([
     "/",
+    "/bitcoin-roots.lottie.json",
     "/documentation",
     "/getting-started",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),

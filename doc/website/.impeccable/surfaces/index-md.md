@@ -23,8 +23,10 @@ related_targets: [".vitepress/theme/components/Home.vue"]
 
 **STORY:** See the network-to-node path, understand consensus neutrality and conservative policy, choose Get started, then reach the complete documentation atlas.
 
-**FIRST VIEWPORT:** A large asymmetric field: proposition and primary action occupy the left third; a live four-stage signal route fills the right two-thirds. Keyboard focus advances the pulse from network to validation to policy to “your node.”
+**FIRST VIEWPORT:** A calm asymmetric editorial field: proposition and primary action occupy the left; a large static verification statement occupies the right; a ruled four-step path runs from network to validation to policy to “your node.”
 
 **FORM:** “Signal to sovereignty,” position 7 in the ordered structural list; surface seed `bf5a0382`.
+
+**MOTION:** The hero does not animate. The supplied root-mark Lottie lazy-loads lower on the page, plays once when visualized, and becomes a static resolved mark; reduced motion skips playback.
 
 **FINISH:** unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

@@ -88,7 +88,7 @@ the active point of choice.
 - White-first civic clarity with a complete dark alternative.
 - Asymmetric persuasive surfaces paired with disciplined reading layouts.
 - Source paths and technical data remain visible and legible.
-- One authored signal motion; interaction state does the rest.
+- One authored root-mark reveal; the hero itself remains still.
 
 ## Colors
 
@@ -139,8 +139,9 @@ state; it never acts as a generic technical costume.
 ## Layout
 
 Persuasive surfaces use a centered 1240px field with fluid gutters and asymmetric
-columns. The homepage begins with message on the left and a larger signal
-instrument on the right. Reading pages keep the VitePress documentation frame;
+columns. The homepage begins with the operator proposition on the left and a
+large editorial verification statement on the right, followed by one static
+four-step sequence. Reading pages keep the VitePress documentation frame;
 the atlas uses paired ruled lists rather than card grids. At 960px major pairs
 stack, and at 720px signal, boundary, library, and atlas structures become a
 single readable sequence. Section spacing expands to roughly 5–8rem on wide
@@ -151,12 +152,12 @@ paths; navigation may organize the corpus but never obscure its provenance.
 
 ## Elevation & Depth
 
-Depth is ambient and sparse. The signal instrument uses the inherited Plan ₿
-panel shadow; smaller boundary panels use a soft downward lift. Ruled lists,
-sidebars, and reading content stay flat and use tonal changes or fine blue rules.
+Depth is ambient and sparse. The editorial hero stays flat and uses fine blue
+rules; smaller boundary panels use a soft downward lift. Ruled lists, sidebars,
+and reading content stay flat and use tonal changes or fine blue rules.
 
-**The Instrument Rule.** Shadow identifies a focused interactive instrument, not
-every container on the page.
+**The Instrument Rule.** Shadow identifies a focused interactive control, not
+editorial structure or every container on the page.
 
 ## Shapes
 
@@ -191,11 +192,18 @@ one-pixel routes. Borders remain thin and structural.
 The VitePress shell stays compact and bold. Active and hover states use Civic Sky;
 mobile keeps search and the menu in the familiar theme layout.
 
-### Signal Instrument
+### Editorial Signal
 
-Four keyboard-focusable stages share a vertical route. Focus or activation moves
-the highlighted row, gold node, measured position, and live explanatory readout.
-The pulse travels once through this system and is suppressed for reduced motion.
+The hero pairs the operator proposition with a static verification statement and
+a four-step path from peers to the local node. The sequence uses literal ordering,
+fine rules, and one gold numeral per step; it contains no cycling or timed state.
+
+### Root Mark
+
+The supplied Bitcoin Roots Lottie appears in the transition from policy proof to
+the operator path. It lazy-loads when the block enters view, plays once, and holds
+on the resolved mark. Reduced-motion visitors receive the resolved static logo
+without downloading or running the animation.
 
 ### Documentation Atlas
 
