@@ -8,7 +8,7 @@ export LC_ALL=C
 
 set -ex
 
-if [ -n "$CIRRUS_PR" ]; then
+if [[ ${CI_PULL_REQUEST:-} == 1 ]]; then
   export COMMIT_RANGE="HEAD~..HEAD"
   if [ "$(git rev-list -1 HEAD)" != "$(git rev-list -1 --merges HEAD)" ]; then
     echo "Error: The top commit must be a merge commit, usually the remote 'pull/${PR_NUMBER}/merge' branch."
@@ -18,7 +18,7 @@ fi
 
 RUST_BACKTRACE=1 "${LINT_RUNNER_PATH}/test_runner"
 
-if [ "$CIRRUS_REPO_FULL_NAME" = "bitcoin/bitcoin" ] && [ "$CIRRUS_PR" = "" ] ; then
+if [[ ${CI_REPOSITORY:-} == "bitcoin/bitcoin" && ${CI_PULL_REQUEST:-} != 1 ]]; then
     # Sanity check only the last few commits to get notified of missing sigs,
     # missing keys, or expired keys. Usually there is only one new merge commit
     # per push on the master branch and a few commits on release branches, so
@@ -29,5 +29,5 @@ if [ "$CIRRUS_REPO_FULL_NAME" = "bitcoin/bitcoin" ] && [ "$CIRRUS_PR" = "" ] ; t
     git config user.email "ci@ci.ci"
     git config user.name "ci"
     ${CI_RETRY_EXE} gpg --keyserver hkps://keys.openpgp.org --recv-keys "${KEYS[@]}" &&
-    ./contrib/verify-commits/verify-commits.py;
+    ./contrib/verify-commits/verify-commits.py
 fi
