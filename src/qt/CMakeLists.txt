@@ -150,8 +150,8 @@ add_custom_command(
 )
 add_custom_target(generate_ico DEPENDS "${bitcoin_ico}" "${testnet_ico}")
 
-set(logo_svg "res/src/bitcoinknots-logo.svg")
-set(png "${ICON_PATH}/bitcoinknots-logo.png")
+set(logo_svg "res/src/bitcoinroots-logo.svg")
+set(png "${ICON_PATH}/bitcoinroots-logo.png")
 set(size 960)
 add_custom_command(
   OUTPUT ${png}
