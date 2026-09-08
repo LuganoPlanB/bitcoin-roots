@@ -1,0 +1,24 @@
+{
+  "name": "bitcoin-roots-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "docs:prepare": "node scripts/generate-doc-catalog.mjs",
+    "dev": "npm run docs:prepare && vitepress dev",
+    "build": "npm run docs:prepare && vitepress build",
+    "preview": "vitepress preview",
+    "test": "npm run docs:prepare && node --test .vitepress/tests/site.test.mjs"
+  },
+  "dependencies": {
+    "lugano-planb-vite-theme": "file:../../../vite-theme"
+  },
+  "devDependencies": {
+    "vite": "8.2.2",
+    "vitepress": "1.6.4",
+    "vue": "3.5.21"
+  }
+}
