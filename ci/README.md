@@ -49,32 +49,29 @@ env -i HOME="$HOME" PATH="$PATH" USER="$USER" bash -c 'MAKEJOBS="-j1" FILE_ENV="
 The files starting with `0n` (`n` greater than 0) are the scripts that are run
 in order.
 
+## GitHub Actions groups
+
+The GitHub Actions workflows separate diagnostic testing from release artifact
+generation:
+
+- `.github/workflows/ci.yml` runs only for pull requests. It contains fuzzing,
+  sanitizer, Debug, previous-release compatibility, and static-analysis jobs.
+- `.github/workflows/release.yml` runs after pushes to `main` and on manual
+  dispatch. It builds Release configurations and retains the resulting Linux,
+  Windows, and macOS artifacts for 30 days.
+
+The artifacts produced by the release workflow are unsigned CI artifacts. They
+are not reproducible Guix builds and are not accompanied by Guix attestations.
+Do not represent them as independently reproducible binaries.
+
 ## Cache
 
 In order to avoid rebuilding all dependencies for each build, the binaries are
 cached and reused when possible. Changes in the dependency-generator will
 trigger cache-invalidation and rebuilds as necessary.
 
-## Configuring a repository for CI
+## GitHub-hosted runners
 
-### Primary repository
-
-To configure the primary repository, follow these steps:
-
-1. Register with [Cirrus Runners](https://cirrus-runners.app/) and purchase runners.
-2. Install the Cirrus Runners GitHub app against the GitHub organization.
-3. Enable organisation-level runners to be used in public repositories:
-   1. `Org settings -> Actions -> Runner Groups -> Default -> Allow public repos`
-4. Permit the following actions to run:
-   1. cirruslabs/cache/restore@\*
-   1. cirruslabs/cache/save@\*
-   1. docker/setup-buildx-action@\*
-   1. actions/github-script@\*
-
-### Forked repositories
-
-When used in a fork the CI will run on GitHub's free hosted runners by default.
-In this case, due to GitHub's 10GB-per-repo cache size limitations caches will be frequently evicted and missed, but the workflows will run (slowly).
-
-It is also possible to use your own Cirrus Runners in your own fork with an appropriate patch to the `REPO_USE_CIRRUS_RUNNERS` variable in ../.github/workflows/ci.yml
-NB that Cirrus Runners only work at an organisation level, therefore in order to use your own Cirrus Runners, *the fork must be within your own organisation*.
+All workflow jobs use GitHub-hosted runners and GitHub Actions caches. No
+external runner application is required. Cache eviction follows the repository's
+GitHub Actions cache quota and retention policy.

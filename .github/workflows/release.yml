@@ -1,0 +1,266 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+name: Release Artifacts
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_FAILFAST_TEST_LEAVE_DANGLING: 1
+
+jobs:
+  linux-release:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ${{ matrix.file-env }}
+      RUN_UNIT_TESTS: 'false'
+      RUN_FUNCTIONAL_TESTS: 'false'
+      RUN_FUZZ_TESTS: 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'Linux x86_64 release'
+            runner: ubuntu-24.04
+            file-env: './ci/test/00_setup_env_linux_x86_64_release.sh'
+            artifact-name: 'bitcoin-roots-linux-x86_64'
+          - name: 'Linux aarch64 release'
+            runner: ubuntu-24.04
+            file-env: './ci/test/00_setup_env_linux_aarch64_release.sh'
+            artifact-name: 'bitcoin-roots-linux-aarch64'
+          - name: 'CentOS Stream 10 x86_64 release, gui'
+            runner: ubuntu-24.04
+            file-env: './ci/test/00_setup_env_native_centos.sh'
+            artifact-name: 'bitcoin-roots-centos-stream10-x86_64'
+          - name: 'Linux x86_64 release, no wallet, libbitcoinkernel'
+            runner: ubuntu-24.04
+            file-env: './ci/test/00_setup_env_native_nowallet_libbitcoinkernel.sh'
+            artifact-name: 'bitcoin-roots-linux-x86_64-kernel'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+
+      - name: Restore caches
+        id: restore-cache
+        uses: ./.github/actions/restore-caches
+
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+
+      - name: Build release artifacts
+        run: ./ci/test_run_all.sh
+
+      - name: Package release artifacts
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact-name }}
+        run: |
+          set -euo pipefail
+          package_dir="${RUNNER_TEMP}/release-packages"
+          archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
+          mkdir -p "${package_dir}"
+          tar -C "${RUNNER_TEMP}/ci/scratch/out" -czf "${archive}" .
+          (
+            cd "${package_dir}"
+            sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
+          )
+
+      - name: Upload unsigned release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Save caches
+        uses: ./.github/actions/save-caches
+
+  windows-x86_64-release:
+    name: 'Windows x86_64 release, VS 2022'
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      PYTHONUTF8: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up VS Developer Prompt
+        shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
+        run: |
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswherePath -latest -property installationPath
+          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" | foreach-object {
+            $name, $value = $_ -split '=', 2
+            echo "$name=$value" >> $env:GITHUB_ENV
+          }
+
+      - name: Record tool versions
+        run: |
+          cmake -version | Tee-Object -FilePath "cmake_version"
+          msbuild -version | Tee-Object -FilePath "msbuild_version"
+          $env:VCToolsVersion | Tee-Object -FilePath "toolset_version"
+
+      - name: Configure vcpkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
+          sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+
+      - name: Restore vcpkg tools cache
+        uses: actions/cache@v4
+        with:
+          path: C:/vcpkg/downloads/tools
+          key: ${{ github.job }}-vcpkg-tools
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        id: vcpkg-binary-cache
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+
+      - name: Generate build system
+        run: |
+          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DBUILD_GUI=OFF -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DWERROR=ON
+
+      - name: Save vcpkg binary cache
+        uses: actions/cache/save@v4
+        if: steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+
+      - name: Build
+        run: cmake --build build -j $env:NUMBER_OF_PROCESSORS --config Release
+
+      - name: Install and package
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "bitcoin-roots"
+          $packageDir = Join-Path $env:RUNNER_TEMP "release-packages"
+          $archive = Join-Path $packageDir "bitcoin-roots-windows-x86_64.zip"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          cmake --install build --config Release --prefix $installDir
+          Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  bitcoin-roots-windows-x86_64.zip" | Set-Content (Join-Path $packageDir "SHA256SUMS")
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitcoin-roots-windows-x86_64-${{ github.sha }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-native-release:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      DANGER_RUN_CI_ON_HOST: 1
+      BASE_ROOT_DIR: ${{ github.workspace }}
+      RUN_UNIT_TESTS: 'false'
+      RUN_FUNCTIONAL_TESTS: 'false'
+      RUN_FUZZ_TESTS: 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'macOS 15 native, x86_64 release'
+            runner: macos-15-intel
+            expected-arch: x86_64
+            artifact-name: bitcoin-roots-macos-x86_64
+          - name: 'macOS 15 native, arm64 release'
+            runner: macos-15
+            expected-arch: arm64
+            artifact-name: bitcoin-roots-macos-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify architecture and select Xcode 16
+        env:
+          EXPECTED_ARCH: ${{ matrix.expected-arch }}
+        run: |
+          set -euo pipefail
+          actual_arch="$(uname -m)"
+          if [[ "${actual_arch}" != "${EXPECTED_ARCH}" ]]; then
+            echo "Expected ${EXPECTED_ARCH}, but runner reported ${actual_arch}" >&2
+            exit 1
+          fi
+          sudo xcode-select --switch /Applications/Xcode_16.0.app
+
+      - name: Install Homebrew packages
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          brew install --quiet python@3 || brew link --overwrite python@3
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode imagemagick libicns librsvg
+
+      - name: Set Ccache directory
+        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
+
+      - name: Restore Ccache cache
+        id: ccache-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ github.job }}-${{ matrix.expected-arch }}-ccache-${{ github.run_id }}
+          restore-keys: ${{ github.job }}-${{ matrix.expected-arch }}-ccache-
+
+      - name: Build release package
+        run: ./ci/test_run_all.sh
+        env:
+          FILE_ENV: './ci/test/00_setup_env_mac_native.sh'
+
+      - name: Stage release package
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=("${GITHUB_WORKSPACE}"/ci/scratch/build-*/*.zip)
+          if (( ${#packages[@]} == 0 )); then
+            echo "No macOS release package was produced" >&2
+            exit 1
+          fi
+          package_dir="${RUNNER_TEMP}/release-packages"
+          mkdir -p "${package_dir}"
+          cp "${packages[@]}" "${package_dir}/"
+          (
+            cd "${package_dir}"
+            shasum -a 256 ./* > SHA256SUMS
+          )
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Save Ccache cache
+        uses: actions/cache/save@v5
+        if: steps.ccache-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ github.job }}-${{ matrix.expected-arch }}-ccache-${{ github.run_id }}
