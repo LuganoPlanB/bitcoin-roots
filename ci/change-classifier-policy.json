@@ -25,7 +25,7 @@
     "wallet": ["wallet", "sanitizers", "fuzz", "compat", "platforms"],
     "build": "broad",
     "critical": "broad",
-    "cpp": "broad",
+    "cpp": ["sanitizers", "fuzz", "platforms"],
     "unknown": "broad"
   },
   "fail_open": ["unknown-path", "ambiguous-path", "empty-file-list", "truncated-file-list", "api-error", "invalid-policy"],
