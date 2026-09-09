@@ -45,12 +45,26 @@ class ChangeClassifierTest(unittest.TestCase):
             self.assertEqual(
                 output.read_text(encoding="utf-8"),
                 "baseline=true\ncompat=false\ndocs=true\nfuzz=true\ngui=false\n"
-                "platforms=false\nsanitizers=false\nwallet=false\nbroad=false\n"
+                "nightly_full=false\nnightly_fuzz=true\nnightly_platforms=false\nnightly_sanitizers=false\nplatforms=false\nsanitizers=false\nwallet=false\nbroad=false\n"
                 "complete=true\ncategories=[\"docs-only\"]\nlabels=[\"ci:fuzz\"]\n"
                 "result={\"broad\":false,\"categories\":[\"docs-only\"],\"complete\":true,"
                 "\"labels\":[\"ci:fuzz\"],\"selected\":{\"baseline\":true,\"compat\":false,"
-                "\"docs\":true,\"fuzz\":true,\"gui\":false,\"platforms\":false,"
+                "\"docs\":true,\"fuzz\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
                 "\"sanitizers\":false,\"wallet\":false},\"version\":1}\n")
+
+    def test_full_label_selects_reusable_nightly_assurance(self):
+        result = MODULE.result_for(["README.md"], ["ci:full"], False, False, self.policy)
+        self.assertTrue(result["selected"]["nightly_full"])
+        self.assertFalse(any(result["selected"][name] for name in (
+            "nightly_sanitizers", "nightly_fuzz", "nightly_platforms")))
+
+    def test_individual_extended_labels_select_their_nightly_groups(self):
+        for label, selection in (("ci:sanitizers", "nightly_sanitizers"),
+                                 ("ci:fuzz", "nightly_fuzz"),
+                                 ("ci:platforms", "nightly_platforms")):
+            with self.subTest(label=label):
+                result = MODULE.result_for(["README.md"], [label], False, False, self.policy)
+                self.assertTrue(result["selected"][selection])
 
     def test_invalid_policy_fails_open_and_restores_path(self):
         original_policy_path = MODULE.POLICY_PATH

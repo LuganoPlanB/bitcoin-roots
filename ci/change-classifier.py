@@ -16,6 +16,7 @@ POLICY_PATH = os.path.join(os.path.dirname(__file__), "change-classifier-policy.
 KNOWN_CATEGORIES = ("docs-only", "branding", "gui", "wallet", "build", "critical", "cpp", "unknown")
 KNOWN_LABELS = ("ci:full", "ci:sanitizers", "ci:fuzz", "ci:compat", "ci:platforms")
 BROAD_SELECTION = ("gui", "wallet", "sanitizers", "fuzz", "compat", "platforms")
+OPTIONAL_SELECTION = ("nightly_sanitizers", "nightly_fuzz", "nightly_platforms", "nightly_full")
 SAFE_POLICY = {"version": 1, "defaults": {"unknown": "broad"}}
 
 
@@ -66,13 +67,28 @@ def result_for(files, labels, truncated, error, policy):
     broad = any(policy["defaults"][category] == "broad" for category in categories)
     selected = {"baseline": True, "docs": categories == {"docs-only"}}
     selected.update({name: False for name in BROAD_SELECTION})
+    selected.update({name: False for name in OPTIONAL_SELECTION})
     for category in categories:
         defaults = policy["defaults"][category]
         for name in BROAD_SELECTION if defaults == "broad" else defaults:
             selected[name] = True
     for label in labels:
-        for name in BROAD_SELECTION if label == "ci:full" else (label.removeprefix("ci:"),):
-            selected[name] = True
+        if label == "ci:full":
+            selected.update({name: True for name in BROAD_SELECTION})
+            selected["nightly_full"] = True
+        elif label == "ci:sanitizers":
+            selected["sanitizers"] = True
+            selected["nightly_sanitizers"] = True
+        elif label == "ci:fuzz":
+            selected["fuzz"] = True
+            selected["nightly_fuzz"] = True
+        elif label == "ci:platforms":
+            selected["platforms"] = True
+            selected["nightly_platforms"] = True
+        else:
+            selected[label.removeprefix("ci:")] = True
+    if selected["nightly_full"]:
+        selected.update({name: False for name in OPTIONAL_SELECTION if name != "nightly_full"})
     return {
         "version": policy["version"],
         "categories": [category for category in KNOWN_CATEGORIES if category in categories],
