@@ -8,6 +8,7 @@ on:
     types: [opened, reopened, synchronize, labeled, unlabeled]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -31,6 +32,10 @@ jobs:
       fuzz: ${{ steps.classify.outputs.fuzz }}
       compat: ${{ steps.classify.outputs.compat }}
       platforms: ${{ steps.classify.outputs.platforms }}
+      nightly_sanitizers: ${{ steps.classify.outputs.nightly_sanitizers }}
+      nightly_fuzz: ${{ steps.classify.outputs.nightly_fuzz }}
+      nightly_platforms: ${{ steps.classify.outputs.nightly_platforms }}
+      nightly_full: ${{ steps.classify.outputs.nightly_full }}
     steps:
       # This read-only workflow does not expose secrets to PR code.
       - name: Checkout PR head
@@ -96,10 +101,10 @@ jobs:
     env:
       CONTAINER_NAME: bitcoin-linter
     steps:
-      - name: Checkout PR head
+      - name: Checkout synthetic PR merge
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Configure Docker
@@ -185,7 +190,7 @@ jobs:
   compat:
     name: previous releases compatibility
     needs: classify
-    if: needs.classify.outputs.compat == 'true'
+    if: needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -296,10 +301,46 @@ jobs:
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
 
+  nightly-sanitizers:
+    name: nightly sanitizers (ci:sanitizers)
+    needs: classify
+    if: needs.classify.outputs.nightly_sanitizers == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: sanitizers
+
+  nightly-fuzz:
+    name: nightly platform fuzz (ci:fuzz)
+    needs: classify
+    if: needs.classify.outputs.nightly_fuzz == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: fuzz
+
+  nightly-platforms:
+    name: nightly i686 Debug (ci:platforms)
+    needs: classify
+    if: needs.classify.outputs.nightly_platforms == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: platforms
+
+  nightly-full:
+    name: full nightly assurance (ci:full)
+    needs: classify
+    if: needs.classify.outputs.nightly_full == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: all
+
   required-result:
     name: required result
     if: always()
-    needs: [classify, lint, gui, sanitizers, fuzz, compat, arm32, windows-smoke, macos-smoke]
+    needs: [classify, lint, gui, sanitizers, fuzz, compat, arm32, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -314,11 +355,19 @@ jobs:
           ARM32: ${{ needs.arm32.result }}
           WINDOWS: ${{ needs.windows-smoke.result }}
           MACOS: ${{ needs.macos-smoke.result }}
+          NIGHTLY_SANITIZERS: ${{ needs.nightly-sanitizers.result }}
+          NIGHTLY_FUZZ: ${{ needs.nightly-fuzz.result }}
+          NIGHTLY_PLATFORMS: ${{ needs.nightly-platforms.result }}
+          NIGHTLY_FULL: ${{ needs.nightly-full.result }}
           GUI_SELECTED: ${{ needs.classify.outputs.gui }}
           SANITIZERS_SELECTED: ${{ needs.classify.outputs.sanitizers }}
           FUZZ_SELECTED: ${{ needs.classify.outputs.fuzz }}
-          COMPAT_SELECTED: ${{ needs.classify.outputs.compat }}
+          COMPAT_SELECTED: ${{ needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true' }}
           PLATFORMS_SELECTED: ${{ needs.classify.outputs.platforms }}
+          NIGHTLY_SANITIZERS_SELECTED: ${{ needs.classify.outputs.nightly_sanitizers }}
+          NIGHTLY_FUZZ_SELECTED: ${{ needs.classify.outputs.nightly_fuzz }}
+          NIGHTLY_PLATFORMS_SELECTED: ${{ needs.classify.outputs.nightly_platforms }}
+          NIGHTLY_FULL_SELECTED: ${{ needs.classify.outputs.nightly_full }}
         run: |
           set -Eeuo pipefail
           check_selected() {
@@ -337,3 +386,7 @@ jobs:
           check_selected "$PLATFORMS_SELECTED" "$ARM32" arm32
           check_selected "$PLATFORMS_SELECTED" "$WINDOWS" windows-smoke
           check_selected "$PLATFORMS_SELECTED" "$MACOS" macos-smoke
+          check_selected "$NIGHTLY_SANITIZERS_SELECTED" "$NIGHTLY_SANITIZERS" nightly-sanitizers
+          check_selected "$NIGHTLY_FUZZ_SELECTED" "$NIGHTLY_FUZZ" nightly-fuzz
+          check_selected "$NIGHTLY_PLATFORMS_SELECTED" "$NIGHTLY_PLATFORMS" nightly-platforms
+          check_selected "$NIGHTLY_FULL_SELECTED" "$NIGHTLY_FULL" nightly-full
