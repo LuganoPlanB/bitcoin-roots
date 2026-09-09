@@ -555,16 +555,21 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0;
 }
 
 .roots-mark__visual img {
   object-fit: contain;
+  opacity: 1;
   transition: opacity 180ms ease;
 }
 
 .roots-mark__lottie {
+  opacity: 0;
   transition: opacity 180ms ease;
+}
+
+.js .roots-mark__visual img {
+  opacity: 0;
 }
 
 .roots-mark__visual.is-ready .roots-mark__lottie,
