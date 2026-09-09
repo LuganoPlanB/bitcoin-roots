@@ -201,7 +201,8 @@ fine rules, and one gold numeral per step; it contains no cycling or timed state
 ### Root Mark
 
 The supplied Bitcoin Roots Lottie appears in the transition from policy proof to
-the operator path. It lazy-loads when the block enters view, plays once, and holds
+the operator path. It stays invisible until its frame is entirely inside the
+viewport, waits 500 ms, then lazy-loads, plays once, and holds
 on the resolved mark. Reduced-motion visitors receive the resolved static logo
 without downloading or running the animation.
 

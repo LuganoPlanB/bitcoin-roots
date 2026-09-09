@@ -22,11 +22,13 @@ const signalStages = [
   },
 ] as const;
 
-const lottieSection = ref<HTMLElement>();
+const lottieVisual = ref<HTMLElement>();
 const lottieHost = ref<HTMLElement>();
 const lottieReady = ref(false);
+const lottieStatic = ref(false);
 let lottieObserver: IntersectionObserver | undefined;
-let lottieAnimation: { destroy: () => void } | undefined;
+let lottieDelay: number | undefined;
+let lottieAnimation: { destroy: () => void; play: () => void } | undefined;
 
 async function playRootsMark() {
   if (!lottieHost.value) return;
@@ -39,7 +41,7 @@ async function playRootsMark() {
       container: lottieHost.value,
       renderer: "svg",
       loop: false,
-      autoplay: true,
+      autoplay: false,
       path: withBase("/bitcoin-roots.lottie.json"),
       rendererSettings: {
         preserveAspectRatio: "xMidYMid meet",
@@ -49,31 +51,47 @@ async function playRootsMark() {
 
     animation.addEventListener("DOMLoaded", () => {
       lottieReady.value = true;
+      animation.play();
     });
     lottieAnimation = animation;
   } catch {
     lottieReady.value = false;
+    lottieStatic.value = true;
   }
 }
 
 onMounted(() => {
-  if (
-    !lottieSection.value
-    || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  ) {
-    return;
-  }
+  if (!lottieVisual.value) return;
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   lottieObserver = new IntersectionObserver((entries) => {
-    if (!entries.some((entry) => entry.isIntersecting)) return;
-    lottieObserver?.disconnect();
-    void playRootsMark();
-  }, { rootMargin: "0px 0px -12%", threshold: 0.3 });
+    const entry = entries.find(({ target }) => target === lottieVisual.value);
+    const fullyVisible = entry?.isIntersecting && entry.intersectionRatio >= 0.999;
 
-  lottieObserver.observe(lottieSection.value);
+    if (!fullyVisible) {
+      if (lottieDelay !== undefined) window.clearTimeout(lottieDelay);
+      lottieDelay = undefined;
+      return;
+    }
+
+    if (lottieDelay !== undefined) return;
+    lottieDelay = window.setTimeout(() => {
+      lottieDelay = undefined;
+      lottieObserver?.disconnect();
+      if (reducedMotion) {
+        lottieStatic.value = true;
+      } else {
+        void playRootsMark();
+      }
+    }, 500);
+  }, { threshold: 1 });
+
+  lottieObserver.observe(lottieVisual.value);
 });
 
 onBeforeUnmount(() => {
+  if (lottieDelay !== undefined) window.clearTimeout(lottieDelay);
   lottieObserver?.disconnect();
   lottieAnimation?.destroy();
 });
@@ -83,7 +101,6 @@ onBeforeUnmount(() => {
   <main class="roots-home" id="main-content">
     <section class="roots-signal" aria-labelledby="roots-title">
       <div class="roots-signal__message">
-        <!-- <img class="roots-signal__logo" :src="rootsLogo" alt="Bitcoin Roots"> -->
         <h1 id="roots-title">Your node.<br>No spam.<br>Just Bitcoin.</h1>
         <p>
           We are a non-rdts/bip110 fork of Knots, forever faithful to Bitcoin Core, with configurable node policy.
@@ -100,12 +117,14 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="roots-signal__editorial">
-        <p>The Plan-₿ foundation presents</p>
-        <p>
-        <img  :src="rootsLogo" alt="Bitcoin Roots">
-    Bitcoin Roots.<br/>
-          Built by OGs who keep the nodes running.
-        </p>
+        <p class="roots-signal__provenance">The Plan-₿ foundation presents</p>
+        <div class="roots-signal__identity">
+          <img :src="rootsLogo" alt="Bitcoin Roots">
+          <p>
+            <strong>Bitcoin Roots.</strong>
+            <span>Built by OGs who keep the nodes running.</span>
+          </p>
+        </div>
       </div>
 
       <ol class="roots-signal__sequence" aria-label="From the peer-to-peer network to your node">
@@ -148,8 +167,13 @@ onBeforeUnmount(() => {
       </a>
     </section>
 
-    <section ref="lottieSection" class="roots-mark" aria-labelledby="roots-mark-title">
-      <div class="roots-mark__visual" :class="{ 'is-ready': lottieReady }" aria-hidden="true">
+    <section class="roots-mark" aria-labelledby="roots-mark-title">
+      <div
+        ref="lottieVisual"
+        class="roots-mark__visual"
+        :class="{ 'is-ready': lottieReady, 'is-static': lottieStatic }"
+        aria-hidden="true"
+      >
         <img :src="rootsLogo" alt="">
         <div ref="lottieHost" class="roots-mark__lottie"></div>
       </div>
