@@ -203,6 +203,42 @@ release jobs, and, where a nightly cache is saved, scheduled or manual runs on
 the default branch. Do not broaden those save conditions or add secrets to PR
 jobs.
 
+Compiler-object caching is owned by `hendrikmuhs/ccache-action@v1.2.24`, not the
+generic dependency-cache composite actions. Linux container jobs configure it
+after the environment has exported `CCACHE_DIR` and before Docker starts; the
+directory is then bind-mounted into the build container. Native macOS jobs set
+the same directory after installing Homebrew `ccache`. Linux families use the
+runner OS/architecture, configured `CONTAINER_NAME`, and depends fingerprint;
+this lets a PR and a compatible trusted nightly use the same family. Each Linux
+job first tries that exact family, then its same OS/architecture/container
+family without the depends fingerprint. Because ccache-action adds the `ccache-`
+prefix itself, that second fallback also matches the prior generic ccache
+namespace during migration. These broader fallbacks remain compatible because
+ccache keys each compiled object by compiler invocation and included content.
+Native macOS release-like smoke uses one family in PR and release workflows, while
+native macOS fuzz uses a separate shared nightly/reusable family. The action
+appends its timestamp separator itself, so its `key` and `restore-keys` inputs
+must name the exact family without a trailing dash. PR jobs and reusable calls
+from PRs are restore-only.
+
+Linux jobs request ccache-action's checksummed binary installation, avoiding a
+host package-manager install before the container starts. Native macOS jobs
+set `install: no` because the immediately preceding Homebrew step installs
+ccache.
+
+Today, trusted writers seed the previous-release Linux family through nightly,
+the macOS release-like smoke families through `main` release runs, and the
+macOS fuzz family through scheduled/manual nightly runs. PR GUI, ASan, native
+Linux fuzz, and ARM32 families are intentionally restore-only but cold until a
+matching trusted build is added; do not claim cache hits for those families.
+
+Windows deliberately retains only its vcpkg tool and binary caches. The
+ccache-action upstream documentation marks Windows support as provisional and
+recommends sccache, while this repository's Visual Studio/MSBuild generator
+does not use CMake's compiler-launcher mechanism (which applies to Makefile
+and Ninja generators). Do not add a Windows compiler cache without a dedicated
+sccache design and a separately validated generator/toolchain change.
+
 When a PR job is unexpected or fails:
 
 1. Inspect `classify changes` for file-list completeness, categories, labels,
