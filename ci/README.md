@@ -49,29 +49,170 @@ env -i HOME="$HOME" PATH="$PATH" USER="$USER" bash -c 'MAKEJOBS="-j1" FILE_ENV="
 The files starting with `0n` (`n` greater than 0) are the scripts that are run
 in order.
 
-## GitHub Actions groups
+## GitHub Actions policy
 
-The GitHub Actions workflows separate diagnostic testing from release artifact
-generation:
+GitHub Actions has three deliberately separate workflows:
 
-- `.github/workflows/ci.yml` runs only for pull requests. It contains fuzzing,
-  sanitizer, Debug, previous-release compatibility, and static-analysis jobs.
-- `.github/workflows/release.yml` runs after pushes to `main` and on manual
-  dispatch. It builds Release configurations and retains the resulting Linux,
-  Windows, and macOS artifacts for 30 days.
+| Workflow | Events | Purpose |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | pull request | Fast, stable required gate plus path-selected PR assurance. |
+| `.github/workflows/nightly.yml` | scheduled, manual dispatch, reusable call | Expensive assurance that does not need to block every ordinary PR. |
+| `.github/workflows/release.yml` | push to `main`, manual dispatch | Produce unsigned CI release artifacts and retain release-configuration coverage. |
 
-The artifacts produced by the release workflow are unsigned CI artifacts. They
-are not reproducible Guix builds and are not accompanied by Guix attestations.
-Do not represent them as independently reproducible binaries.
+The classifier and build/test jobs check out immutable PR-head SHAs. The lint
+job intentionally checks out GitHub's synthetic PR merge with full history so
+commit-range linting examines the merge result. The workflow never uses
+`pull_request_target`; it has read-only `actions`, `contents`, and
+`pull-requests` permissions and does not expose repository secrets to
+pull-request code.
+`required result` is the branch-protection check to require: it always runs and
+fails when `classify`, `lint`, or any selected job fails or is cancelled.
+Intentionally unselected jobs are not failures.
 
-## Cache
+### Pull-request path selection
 
-In order to avoid rebuilding all dependencies for each build, the binaries are
-cached and reused when possible. Changes in the dependency-generator will
-trigger cache-invalidation and rebuilds as necessary.
+The repository-owned `ci/change-classifier.py` reads the complete PR file list
+and the policy in `ci/change-classifier-policy.json`. A mixed PR receives the
+union of selected coverage. An incomplete, truncated, ambiguous, empty, or
+unknown file list fails open to broad coverage; do not replace this with
+workflow-level `paths` filters, because a filtered required check can remain
+pending forever.
 
-## GitHub-hosted runners
+| Changed path category | Examples | Automatic PR coverage in addition to lint |
+| --- | --- | --- |
+| Documentation only | `README.md`, ordinary Markdown, `doc/**` Markdown | Always-on lint only; no build or test job. |
+| Branding | `src/qt/res/**`, `share/pixmaps/**` images | GUI/resource build and Qt tests. |
+| GUI | `src/qt/**`, desktop/appdata files | GUI/resource build and Qt tests. |
+| Wallet | `src/wallet/**` | Wallet compatibility plus sanitizers, fuzz, and platform smoke coverage. |
+| General C/C++ | other C/C++ source or header files | ASan/LSan/UBSan/integer, native Linux fuzz corpus, ARM32 tests, and Windows x86_64 plus macOS x86_64/arm64 smoke builds. |
+| Critical | consensus, validation, script, primitives, serialization, networking, mempool, RPC, or shared test infrastructure | Broad coverage. |
+| Build or unknown | CMake, `depends`, `ci`, `.github`, or an unclassified path | Broad coverage. |
 
-All workflow jobs use GitHub-hosted runners and GitHub Actions caches. No
-external runner application is required. Cache eviction follows the repository's
-GitHub Actions cache quota and retention policy.
+Broad coverage selects the GUI/resource build, sanitizer job, native Linux
+fuzz corpus, previous-release compatibility, ARM32 tests, and native Windows
+and macOS smoke builds. This is intentionally conservative for CI and build
+changes as well as consensus-adjacent changes.
+
+### Maintainer opt-ins
+
+Apply these PR labels when more assurance is useful before merge. Labels are
+additive: none can disable automatic coverage, they persist across
+`synchronize` events, and adding or removing a label reruns classification.
+
+| Label | Adds PR coverage |
+| --- | --- |
+| `ci:sanitizers` | Reusable nightly TSan and MSan group, in addition to PR sanitizer coverage. |
+| `ci:fuzz` | Reusable nightly native macOS and Windows full fuzz-corpus group. |
+| `ci:compat` | Previous-release compatibility job. |
+| `ci:platforms` | Reusable nightly i686 Debug job, plus routine PR platform selection. |
+| `ci:full` | Every PR-addressable group, including the reusable nightly assurance matrix. |
+
+The labels request coverage; they are not a substitute for reviewing which
+automatic jobs were selected. The `classify changes` log records the machine
+readable decision and is the first place to inspect when the selected set is
+unexpected.
+
+### PR jobs and expected bounds
+
+| Job | Runner | Timeout | Purpose |
+| --- | --- | ---: | --- |
+| `classify changes` / `required result` | Ubuntu 24.04 | 10 min each | Fail-open selection and stable branch-protection result. |
+| `lint` | Ubuntu 24.04 | 20 min | Repository, documentation, file, and link checks for every PR. |
+| `GUI and resources` | Ubuntu 24.04 | 120 min | Qt/resource build and tests for GUI or branding changes. |
+| `ASan, LSan, UBSan, integer, wallet, GUI, and USDT` | Ubuntu 24.04 | 120 min | Native sanitizer, wallet, GUI, and tracing-probe coverage. |
+| `native Linux libFuzzer corpus` | Ubuntu 24.04 | 240 min | Linux fuzz corpus coverage. |
+| `previous releases compatibility` | Ubuntu 24.04 | 120 min | Compatibility with prior releases. |
+| `32-bit ARM unit tests` | Ubuntu 24.04 ARM | 120 min | Routine 32-bit architecture signal. |
+| Windows x86_64 / macOS x86_64 and arm64 smoke | Windows Server 2022 / macOS 15 native | 180 min | Production-like native build and smoke coverage. |
+
+`USDT` here means *User Statically-Defined Tracing*: it covers optional
+tracing probes, not the Tether currency.
+
+### Nightly and manual assurance
+
+The scheduled workflow starts at 02:23 UTC and uses `cancel-in-progress: false`
+so an already running assurance run is not discarded. Its lightweight gate
+looks up the current and immediately preceding scheduled runs of the same
+workflow. It skips expensive jobs only when the preceding scheduled run
+completed successfully at the exact same commit.
+
+| Situation | Gate decision |
+| --- | --- |
+| Successful prior scheduled run at this SHA | Skip expensive jobs (`unchanged-success`). |
+| New commit, no history, prior failure/cancellation, malformed/API-unavailable history | Run assurance (fail open). |
+| Manual dispatch or reusable PR call | Run assurance; no history-based skip. |
+
+Thus a failed nightly retries at the same SHA, while an unchanged SHA after a
+successful nightly consumes only the gate job. `workflow_dispatch` provides
+`all`, `sanitizers`, `fuzz`, `platforms`, `tsan`, `msan`, `tidy`, `i686`,
+`previous-releases`, `extended-functional`, `macos-fuzz`, and `windows-fuzz`
+groups. The reusable workflow is what the PR labels call, always checking out
+the requested immutable PR SHA.
+
+The all-nightly matrix retains TSan, MSan, clang-tidy/dependency-boundary
+checks, i686 Debug, extended previous-release compatibility, extended
+functional tests, and full native macOS and Windows fuzz corpora. Sanitizer
+runtimes remain separate.
+
+### Release artifacts are not test artifacts
+
+`release.yml` is isolated from adaptive PR selection. On `main` and on manual
+dispatch it builds and uploads unsigned 30-day CI artifacts for Linux x86_64,
+Linux aarch64, Windows x86_64, macOS x86_64, and macOS arm64. The macOS jobs
+verify the runner architecture, so x86_64 is native rather than cross-built.
+CentOS GUI and no-wallet/libbitcoinkernel jobs are configuration coverage, not
+additional promoted release artifacts.
+
+These artifacts are not reproducible Guix builds and have no Guix attestations;
+do not represent them as independently reproducible binaries.
+
+The default branch needs two operational confirmations after this change lands:
+
+1. Observe one changed-SHA scheduled or manual nightly and a later
+   unchanged-SHA scheduled run, confirming both the assurance and gate-only
+   paths.
+2. Observe one `main` release run and verify the five artifact targets across
+   three OS families: `bitcoin-roots-linux-x86_64`,
+   `bitcoin-roots-linux-aarch64`, `bitcoin-roots-windows-x86_64`,
+   `bitcoin-roots-macos-x86_64`, and `bitcoin-roots-macos-arm64`, plus the two
+   configuration-coverage jobs. PR checks cannot fully exercise default-branch
+   schedule semantics or produce authoritative release artifacts.
+
+### Evidence checklist
+
+| Evidence | Status at PR review | Where to inspect |
+| --- | --- | --- |
+| Classifier and selected PR job graph | Required before merge | The current pull request's `classify changes` and `required result`. |
+| Selected PR builds, tests, and lint | Required before merge | Checks for the current pull-request head. |
+| Changed-SHA scheduled/manual nightly | Post-merge main follow-up | `Nightly assurance` run and gate reason. |
+| Unchanged-SHA scheduled gate-only nightly | Post-merge main follow-up | Later scheduled `Nightly assurance` run with `unchanged-success`. |
+| Five release artifacts across three OS families | Post-merge main follow-up | `Release Artifacts` run on `main`; verify all five names and retention. |
+
+Do not report the post-merge rows as verified from a PR: GitHub schedules and
+default-branch artifact production cannot be fully exercised from a PR branch.
+
+### Caches, concurrency, and troubleshooting
+
+All jobs use GitHub-hosted runners; no external runner service is required.
+The PR workflow cancels superseded runs for the same PR, while nightly runs do
+not cancel one another. Cache keys are separated by job/OS, architecture,
+compiler/toolset, configuration, and dependency inputs where applicable.
+PR-originated and reusable PR calls can restore caches but cannot save them.
+Cache saves are restricted to trusted default-branch contexts: push-to-main
+release jobs, and, where a nightly cache is saved, scheduled or manual runs on
+the default branch. Do not broaden those save conditions or add secrets to PR
+jobs.
+
+When a PR job is unexpected or fails:
+
+1. Inspect `classify changes` for file-list completeness, categories, labels,
+   and selected outputs. An API/list anomaly should intentionally select broad
+   coverage.
+2. Inspect the named job, then `required result`; the latter identifies any
+   selected job that did not finish successfully.
+3. For lint failures, use the generated lint report and reproduce only the
+   narrow relevant lint locally if needed. Do not weaken the required-result
+   gate to hide a failed selected job.
+4. For platform failures, keep the runner/toolchain/cache identity from the
+   job log when filing an issue. Clear or change only the matching cache key;
+   never share Windows, macOS, sanitizer, or release caches indiscriminately.
