@@ -4,17 +4,40 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const homepage = await readFile(resolve(websiteRoot, ".vitepress/dist/index.html"), "utf8");
+const pages = {
+  "index.html": [
+    'class="roots-home"',
+    "Your node. Your policy. Bitcoin consensus.",
+    "Bitcoin Core-compatible consensus",
+    "Independently verify Bitcoin",
+    "Know exactly where policy ends",
+    "Open development for security-critical software",
+    "Get started",
+  ],
+  "principles.html": [
+    "<h1",
+    "Principles",
+    "Bitcoin consensus is shared",
+    "Policy belongs to the operator",
+    "Practical consequences",
+    "Compare implementations",
+  ],
+  "compare.html": [
+    "<h1",
+    "Compare Bitcoin node implementations",
+    "Versions reviewed",
+    "v29.4.1.knots20260508",
+    "Project-specific consensus changes",
+    "Frequently asked questions",
+  ],
+};
 
-for (const expected of [
-  'class="roots-home"',
-  "Your node.",
-  "Bitcoin Roots.",
-  "Built by OGs who keep the nodes running.",
-  "Know exactly where policy ends.",
-  "Get started",
-]) {
-  assert.ok(homepage.includes(expected), `static homepage is missing: ${expected}`);
+for (const [filename, expectedContent] of Object.entries(pages)) {
+  const html = await readFile(resolve(websiteRoot, ".vitepress/dist", filename), "utf8");
+
+  for (const expected of expectedContent) {
+    assert.ok(html.includes(expected), `${filename} is missing server-rendered content: ${expected}`);
+  }
 }
 
-console.log("Verified server-rendered homepage content in .vitepress/dist/index.html.");
+console.log("Verified server-rendered content in the homepage, Principles, and Compare HTML.");

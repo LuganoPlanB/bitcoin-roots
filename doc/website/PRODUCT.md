@@ -30,7 +30,7 @@ documentation.
 
 Bitcoin Roots stays connected to the Bitcoin development trunk while preserving
 conservative, configurable relay and mempool policy and Bitcoin Core-compatible
-consensus. It does not enforce RDTS/BIP110 consensus rules.
+consensus. It does not enforce RDTS/BIP-110 consensus rules.
 
 ## Operating Context
 

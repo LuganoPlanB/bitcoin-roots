@@ -29,7 +29,7 @@ const visibleCount = computed(() => filteredGroups.value.reduce(
       <div>
         <h1>Every guide. One clear map.</h1>
         <p>
-          Browse the Markdown documentation that ships with Bitcoin Roots—kept in
+          Browse the Markdown documentation that ships with Bitcoin Roots, kept in
           its original source location and presented here without rewritten content.
         </p>
       </div>

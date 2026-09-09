@@ -9,7 +9,7 @@ const htmlTags = new Set([
   "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i", "img", "input", "kbd",
   "label", "li", "main", "mark", "nav", "ol", "p", "picture", "pre", "s", "samp", "section", "small", "source", "span",
   "strong", "sub", "summary", "sup", "table", "tbody", "td", "template", "tfoot", "th",
-  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex",
+  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex", "comparisontable",
 ]);
 
 function makeLegacyMarkdownVueSafe(rendered: string) {
@@ -98,7 +98,6 @@ export default defineConfig({
     },
   },
   head: [
-    ["script", {}, "document.documentElement.classList.add('js')"],
     ["link", { rel: "icon", type: "image/svg+xml", href: `${docsBase}favicon.svg` }],
     ["meta", { name: "theme-color", content: "#fffefa" }],
     ["meta", { name: "color-scheme", content: "light dark" }],
@@ -115,6 +114,8 @@ export default defineConfig({
     siteTitle: "Bitcoin Roots",
     nav: [
       { text: "Get started", link: "/getting-started" },
+      { text: "Principles", link: "/principles" },
+      { text: "Compare", link: "/compare" },
       { text: "Documentation", link: "/documentation" },
       { text: "Policy", link: "/doc/policy/README" },
       { text: "Contribute", link: "/CONTRIBUTING" },
@@ -147,7 +148,7 @@ export default defineConfig({
       { icon: "github", link: "https://github.com/LuganoPlanB/bitcoin-roots" },
     ],
     footer: {
-      message: "Released under the MIT License.",
+      message: "Bitcoin Roots is released under the MIT License.",
       copyright: "Maintained by the Plan ₿ Foundation.",
     },
   },

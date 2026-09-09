@@ -4,16 +4,26 @@ description: A source-first operator experience in the Lugano Plan ₿ civic tec
 colors:
   civic-night: "#082952"
   civic-sky: "#4f97e9"
+  civic-link: "#246caf"
+  civic-link-hover: "#17578f"
   commons-gold: "#ffb604"
   civic-ink: "#030b20"
+  civic-ink-soft: "rgba(3, 11, 32, 0.72)"
   warm-canvas: "#fffefa"
   cool-canvas: "#f3f9ff"
   quiet-panel: "#fcfcfc"
+  quiet-panel-strong: "#f3f8fd"
   dark-canvas: "#171717"
+  dark-canvas-alt: "#1a1717"
+  dark-panel: "#211d1d"
+  dark-panel-strong: "#292424"
+  dark-accent: "#e15364"
+  dark-highlight: "#f7931a"
+  focus-violet: "#7468ff"
 typography:
   display:
     fontFamily: "Inter, Segoe UI, Arial, sans-serif"
-    fontSize: "clamp(3.45rem, 6.6vw, 6rem)"
+    fontSize: "clamp(3.45rem, 6.15vw, 5.75rem)"
     fontWeight: 800
     lineHeight: 1.05
     letterSpacing: "-0.035em"
@@ -39,6 +49,24 @@ typography:
     fontWeight: 800
     lineHeight: 1.3
     letterSpacing: "0.06em"
+  attribution:
+    fontFamily: "Inter, Segoe UI, Arial, sans-serif"
+    fontSize: "0.82rem"
+    fontWeight: 800
+    lineHeight: 1.3
+    letterSpacing: "0.06em"
+  identity:
+    fontFamily: "Inter, Segoe UI, Arial, sans-serif"
+    fontSize: "clamp(1.8rem, 3vw, 2.75rem)"
+    fontWeight: 800
+    lineHeight: 1.04
+    letterSpacing: "-0.035em"
+  reading-display:
+    fontFamily: "Inter, Segoe UI, Arial, sans-serif"
+    fontSize: "clamp(2.8rem, 6vw, 5rem)"
+    fontWeight: 800
+    lineHeight: 1.02
+    letterSpacing: "-0.025em"
 rounded:
   control: "12px"
   panel: "16px"
@@ -72,7 +100,7 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Independent Signal"**
+**Creative North Star: "The Plan ₿ Editorial Signal"**
 
 The website extends the Lugano Plan ₿ Civic Digital Commons into an operator-first
 documentation experience. Independence is made visible through precise signal
@@ -88,7 +116,8 @@ the active point of choice.
 - White-first civic clarity with a complete dark alternative.
 - Asymmetric persuasive surfaces paired with disciplined reading layouts.
 - Source paths and technical data remain visible and legible.
-- One authored root-mark reveal; the hero itself remains still.
+- A static first viewport that pairs the operator proposition with Plan ₿
+  attribution and the Bitcoin Roots identity.
 
 ## Colors
 
@@ -110,7 +139,11 @@ zones, and gold is reserved for the active signal.
 - **Warm Canvas:** the main reading ground.
 - **Cool Canvas:** operator paths, sidebars, and broad section changes.
 - **Quiet Panel:** focused instruments, cards, and inputs.
-- **Dark Canvas:** the explicit dark-mode ground.
+- **Quiet Panel Strong:** table labels and emphasized quiet surfaces.
+- **Dark Canvas / Canvas Alt:** the explicit dark-mode reading grounds.
+- **Dark Panel / Panel Strong:** dark-mode layered surfaces.
+- **Dark Accent / Highlight:** rose wayfinding and orange active emphasis in dark mode.
+- **Focus Violet:** the shared visible keyboard-focus outline in both themes.
 
 **The One Signal Rule.** Gold marks one live choice or route position; it does not
 decorate collections.
@@ -127,11 +160,14 @@ propositions to compact technical reference through scale and weight alone.
 
 ### Hierarchy
 
-- **Display:** extra-bold, fluid, tight, and capped at 6rem for the homepage thesis.
+- **Display:** extra-bold, fluid, tight, and capped at 5.75rem for the homepage thesis.
 - **Headline:** extra-bold and fluid for major section propositions.
 - **Title:** compact, strong labels for steps, stages, and document groups.
 - **Body:** regular-weight copy at a relaxed 1.68 line-height and readable measure.
 - **Label:** compact uppercase metadata with restrained tracking.
+- **Attribution:** compact uppercase Plan ₿ provenance above the hero identity.
+- **Identity:** tightly set logo tagline within the static hero editorial block.
+- **Reading Display:** a narrower fluid title for long-form Principles and Compare pages.
 
 **The Plain Source Rule.** Monospace identifies literal paths, code, or measured
 state; it never acts as a generic technical costume.
@@ -140,12 +176,19 @@ state; it never acts as a generic technical costume.
 
 Persuasive surfaces use a centered 1240px field with fluid gutters and asymmetric
 columns. The homepage begins with the operator proposition on the left and a
-large editorial verification statement on the right, followed by one static
-four-step sequence. Reading pages keep the VitePress documentation frame;
-the atlas uses paired ruled lists rather than card grids. At 960px major pairs
-stack, and at 720px signal, boundary, library, and atlas structures become a
-single readable sequence. Section spacing expands to roughly 5–8rem on wide
-screens and contracts without crowding on mobile.
+static editorial identity on the right: the requested Plan ₿ attribution sits
+above the Bitcoin Roots logo and tagline. At 960px major pairs stack. At 720px
+the hero reading order becomes attribution, proposition, then logo/tagline;
+signal, boundary, library, and atlas structures also become a single readable
+sequence. Actions become full-width below 420px.
+
+Long-form Principles and Compare content keeps the VitePress reading frame,
+uses a 56rem container and a 72ch prose measure. Compare alone expands its
+desktop container to the full 1240px field while keeping surrounding prose to
+52rem. Its four-column table fills that field; below 720px it retains a 58rem
+minimum width inside an explicitly labelled, keyboard-focusable horizontal
+scroll region with the row-heading column held sticky. Section spacing expands
+to roughly 5–8rem on wide screens and contracts without crowding on mobile.
 
 **The Source Map Rule.** Large collections expose both human titles and repository
 paths; navigation may organize the corpus but never obscure its provenance.
@@ -194,17 +237,25 @@ mobile keeps search and the menu in the familiar theme layout.
 
 ### Editorial Signal
 
-The hero pairs the operator proposition with a static verification statement and
-a four-step path from peers to the local node. The sequence uses literal ordering,
-fine rules, and one gold numeral per step; it contains no cycling or timed state.
+The hero pairs the operator proposition with a static Plan ₿ editorial identity.
+The attribution eyebrow reads as provenance, while the Bitcoin Roots logo and
+tagline form one identity block. The following four-step verification sequence
+uses literal ordering, fine rules, and restrained accent numerals; neither the
+hero nor the sequence cycles or advances over time.
 
 ### Root Mark
 
-The supplied Bitcoin Roots Lottie appears in the transition from policy proof to
-the operator path. It stays invisible until its frame is entirely inside the
-viewport, waits 500 ms, then lazy-loads, plays once, and holds
-on the resolved mark. Reduced-motion visitors receive the resolved static logo
-without downloading or running the animation.
+Use the supplied Bitcoin Roots SVG as a static identity asset in the hero,
+lineage, and closing surfaces. The homepage contains no Lottie section and does
+not load or run the legacy Lottie asset.
+
+### Comparison Table
+
+Use the comparison treatment for sourced, side-by-side distinctions: a dark
+header, emphasized row headings, subtle alternating rows, and links that inherit
+the header contrast. Keep the complete four-column table on narrow screens and
+make horizontal scrolling discoverable with visible instructional text rather
+than collapsing or hiding comparisons.
 
 ### Documentation Atlas
 
@@ -219,7 +270,11 @@ polite live result count plus a recoverable empty state.
 - **Do** lead operators toward a concrete next step within the first viewport.
 - **Do** distinguish consensus from local policy through both copy and structure.
 - **Do** keep source paths visible wherever documentation is aggregated.
-- **Do** preserve keyboard focus, reduced motion, and the responsive reading order.
+- **Do** preserve the shared 2px violet focus outline with 3px offset; give the
+  comparison scroll region enough extra offset to remain visible.
+- **Do** preserve the responsive reading order and reduce smooth scrolling,
+  transitions, and animation to effectively immediate behavior when reduced
+  motion is requested.
 
 ### Don't:
 
@@ -227,3 +282,4 @@ polite live result count plus a recoverable empty state.
 - **Don't** scatter gold, shadows, or motion across document collections.
 - **Don't** use speculative coin art, terminal cosplay, or security-theatre chrome.
 - **Don't** turn the atlas into a repeated icon-card grid.
+- **Don't** reintroduce Lottie or timed animation into the static homepage identity.

@@ -30,46 +30,53 @@ test("catalog routes are clean and rooted", () => {
   }
 });
 
-test("the homepage keeps the operator journey and primary action", async () => {
+test("the homepage states the project position and operator journey precisely", async () => {
   const home = await readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8");
 
+  assert.match(home, /Your node\. Your policy\. Bitcoin consensus\./);
+  assert.match(home, /Bitcoin Core-compatible consensus/);
+  assert.match(home, /does not enforce\s+RDTS\/BIP-110/);
+  assert.match(home, /source-code fork/);
+  assert.match(home, /It is not a separate cryptocurrency/);
   assert.match(home, /Get started/);
-  assert.match(home, /Peer-to-peer network/);
-  assert.match(home, /Independent validation/);
-  assert.match(home, /Local node policy/);
-  assert.match(home, /Your node/);
+  assert.match(home, /Independently verify Bitcoin/);
+  assert.match(home, /Know exactly where policy ends/);
+  assert.match(home, /Documentation stays with the source/);
+  assert.match(home, /Open development for security-critical software/);
 });
 
-test("the homepage uses one observed Lottie play instead of a cycling hero", async () => {
-  const [home, packageJson] = await Promise.all([
+test("new editorial copy avoids prohibited claims and punctuation", async () => {
+  const prose = await Promise.all([
     readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
-    readFile(resolve(siteRoot, "package.json"), "utf8"),
-    access(resolve(siteRoot, "content/public/bitcoin-roots.lottie.json")),
+    readFile(resolve(siteRoot, "content/principles.md"), "utf8"),
+    readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
+    readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8"),
+    readFile(resolve(siteRoot, ".vitepress/theme/components/DocumentationIndex.vue"), "utf8"),
   ]);
+  const source = prose.join("\n");
 
-  assert.match(home, /IntersectionObserver/);
-  assert.match(home, /prefers-reduced-motion: reduce/);
-  assert.match(home, /import\("lottie-web\/build\/player\/lottie_light"\)/);
-  assert.match(home, /loop:\s*false/);
-  assert.match(home, /autoplay:\s*false/);
-  assert.match(home, /intersectionRatio\s*>=\s*0\.999/);
-  assert.match(home, /threshold:\s*1/);
-  assert.match(home, /},\s*500\)/);
-  assert.doesNotMatch(home, /setInterval/);
-  assert.equal(JSON.parse(packageJson).dependencies["lottie-web"], "5.13.0");
+  assert.doesNotMatch(source, /forever faithful/i);
+  assert.doesNotMatch(source, /built by OGs/i);
+  assert.doesNotMatch(source, /revolutionary|next generation/i);
+  assert.doesNotMatch(source, /—/);
+  assert.doesNotMatch(source, /Plan-₿|Plan â|Bitcoin â/);
 });
 
 test("website-owned navigation only targets published pages", async () => {
   const availableRoutes = new Set([
     "/",
     "/bitcoin-roots.lottie.json",
+    "/compare",
     "/documentation",
     "/getting-started",
+    "/principles",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
   const websiteFiles = [
     ".vitepress/theme/components/Home.vue",
+    "content/compare.md",
     "content/getting-started.md",
+    "content/principles.md",
   ];
 
   for (const file of websiteFiles) {
@@ -109,14 +116,47 @@ test("explicit VitePress light mode overrides a dark system preference", async (
   assert.match(styles, /--planb-color-accent:\s*#4f97e9/);
 });
 
-test("the root mark progressively enhances its static no-JavaScript fallback", async () => {
-  const [config, styles] = await Promise.all([
-    readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8"),
-    readFile(resolve(siteRoot, ".vitepress/theme/custom.css"), "utf8"),
-  ]);
+test("primary navigation includes the two editorial routes", async () => {
+  const config = await readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8");
 
-  assert.match(config, /document\.documentElement\.classList\.add\(['"]js['"]\)/);
-  assert.match(styles, /\.roots-mark__visual img\s*{[^}]*opacity:\s*1/s);
-  assert.match(styles, /\.js \.roots-mark__visual img\s*{[^}]*opacity:\s*0/s);
-  assert.match(styles, /\.roots-mark__visual\.is-static img\s*{[^}]*opacity:\s*1/s);
+  for (const [label, route] of [
+    ["Get started", "/getting-started"],
+    ["Principles", "/principles"],
+    ["Compare", "/compare"],
+    ["Documentation", "/documentation"],
+    ["Policy", "/doc/policy/README"],
+    ["Contribute", "/CONTRIBUTING"],
+  ]) {
+    assert.match(config, new RegExp(`text: "${label}", link: "${route}"`));
+  }
+});
+
+test("the comparison is versioned and linked to primary sources", async () => {
+  const [page, table] = await Promise.all([
+    readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
+    readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8"),
+  ]);
+  const comparison = `${page}\n${table}`;
+
+  assert.match(comparison, /v31\.1/);
+  assert.match(comparison, /29\.3\.0\.roots20260507/);
+  assert.match(comparison, /v29\.4\.1\.knots20260508/);
+  assert.match(comparison, /9 September 2026/);
+  assert.match(comparison, /github\.com\/bitcoin\/bitcoin/);
+  assert.match(comparison, /github\.com\/LuganoPlanB\/bitcoin-roots/);
+  assert.match(comparison, /github\.com\/bitcoinknots\/bitcoin/);
+  assert.match(comparison, /BLAKE2b proof-of-work/);
+  assert.match(comparison, /800 kWU/);
+});
+
+test("the comparison table is semantic and keyboard-scrollable", async () => {
+  const table = await readFile(
+    resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"),
+    "utf8",
+  );
+
+  assert.match(table, /role="region"/);
+  assert.match(table, /tabindex="0"/);
+  assert.match(table, /<th scope="col">/);
+  assert.match(table, /<th scope="row">/);
 });

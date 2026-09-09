@@ -5,11 +5,11 @@
 <img src="./src/qt/res/src/bitcoinroots-logo.svg" alt="Bitcoin Roots logo" width="300">
 
 For an immediately usable, binary version of the Bitcoin Roots software, see
-the project website: [plan-b.foundation/bitcoin-roots](plan-b.foundation/bitcoin-roots).
+the project website: [plan-b.foundation/bitcoin-roots](https://plan-b.foundation/bitcoin-roots/).
 
 ## What is Bitcoin Roots?
 
-We want to stick to the plan and make it easy to run a Bitcoin core
+We want to stick to the plan and make it easy to run a Bitcoin Core
 node at home without overloading network traffic and CPU.
 
 Bitcoin Roots connects to the Bitcoin peer-to-peer network to download and fully
@@ -17,12 +17,14 @@ validate blocks and transactions. It also includes a wallet and graphical user
 interface, which can be optionally built.
 
 Bitcoin Roots is based on Bitcoin Core and maintains selected policy features
-from Bitcoin Knots, whose codebase forked since version `29.3.knots20260507`.
+from the Bitcoin Knots 29.3 code line. The repository records
+`29.3.knots20260507` as its Knots lineage reference, not as the exact Git parent
+of the initial Bitcoin Roots commit.
 
 Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
 conservative, configurable transaction relay and mempool policy.
 
-In particular, **Bitcoin Roots does not enforce RDTS/BIP110** consensus rules.
+In particular, **Bitcoin Roots does not enforce RDTS/BIP-110** consensus rules.
 
 Further information about Bitcoin Roots is available in the
 [doc folder](/doc).
