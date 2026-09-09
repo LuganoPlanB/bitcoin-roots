@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "categories": [
+    "docs-only",
+    "branding",
+    "gui",
+    "wallet",
+    "build",
+    "critical",
+    "cpp",
+    "unknown"
+  ],
+  "labels": [
+    "ci:full",
+    "ci:sanitizers",
+    "ci:fuzz",
+    "ci:compat",
+    "ci:platforms"
+  ],
+  "defaults": {
+    "baseline": "always",
+    "docs-only": ["docs"],
+    "branding": ["gui"],
+    "gui": ["gui"],
+    "wallet": ["wallet", "sanitizers", "fuzz", "compat", "platforms"],
+    "build": "broad",
+    "critical": "broad",
+    "cpp": "broad",
+    "unknown": "broad"
+  },
+  "fail_open": ["unknown-path", "ambiguous-path", "empty-file-list", "truncated-file-list", "api-error", "invalid-policy"],
+  "path_rules": [
+    {"category": "build", "prefixes": [".github/", "ci/", "cmake/", "depends/", "contrib/devtools/", "build_msvc/"], "suffixes": ["CMakeLists.txt", ".cmake", ".yml", ".yaml"]},
+    {"category": "critical", "prefixes": ["doc/man/", "share/examples/bitcoin.conf", "src/qt/locale/bitcoin_en.ts", "src/consensus/", "src/script/", "src/primitives/", "src/policy/", "src/rpc/", "src/node/", "src/net", "src/validation", "src/serialize", "src/chain", "test/functional/test_framework/", "test/"], "suffixes": []},
+    {"category": "docs-only", "prefixes": ["doc/"], "suffixes": [".md", ".markdown", ".mdown", ".mkdn", ".mdx"]},
+    {"category": "branding", "prefixes": ["src/qt/res/", "share/pixmaps/"], "suffixes": [".svg", ".png", ".ico", ".icns"]},
+    {"category": "gui", "prefixes": ["src/qt/", "share/appdata/", "share/applications/"], "suffixes": []},
+    {"category": "wallet", "prefixes": ["src/wallet/", "test/functional/wallet_", "test/functional/feature_assumeutxo.py"], "suffixes": []},
+    {"category": "cpp", "prefixes": ["src/"], "suffixes": [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"]}
+  ]
+}
