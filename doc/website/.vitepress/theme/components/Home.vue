@@ -1,164 +1,145 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
 import { withBase } from "vitepress";
 import rootsLogo from "../../../content/src/qt/res/src/bitcoinroots-logo.svg";
 
-const signalStages = [
+const validationStages = [
   {
-    label: "Peer-to-peer network",
-    title: "Receive from peers",
+    title: "Connect",
+    copy: "Join Bitcoin’s peer-to-peer network and receive blocks and transactions directly from other nodes.",
   },
   {
-    label: "Independent validation",
-    title: "Verify every block",
+    title: "Verify",
+    copy: "Independently validate every block according to Bitcoin consensus rules.",
   },
   {
-    label: "Local node policy",
-    title: "Choose what you relay",
+    title: "Configure",
+    copy: "Choose the relay, mempool, privacy, and resource policies applied by your node.",
   },
   {
-    label: "Your node",
-    title: "Stay consensus-neutral",
+    title: "Stay compatible",
+    copy: "Follow the Bitcoin chain while keeping local policy under your control.",
   },
 ] as const;
-
-const lottieVisual = ref<HTMLElement>();
-const lottieHost = ref<HTMLElement>();
-const lottieReady = ref(false);
-const lottieStatic = ref(false);
-let lottieObserver: IntersectionObserver | undefined;
-let lottieDelay: number | undefined;
-let lottieAnimation: { destroy: () => void; play: () => void } | undefined;
-
-async function playRootsMark() {
-  if (!lottieHost.value) return;
-
-  try {
-    const { default: lottie } = await import("lottie-web/build/player/lottie_light");
-    if (!lottieHost.value) return;
-
-    const animation = lottie.loadAnimation({
-      container: lottieHost.value,
-      renderer: "svg",
-      loop: false,
-      autoplay: false,
-      path: withBase("/bitcoin-roots.lottie.json"),
-      rendererSettings: {
-        preserveAspectRatio: "xMidYMid meet",
-        progressiveLoad: true,
-      },
-    });
-
-    animation.addEventListener("DOMLoaded", () => {
-      lottieReady.value = true;
-      animation.play();
-    });
-    lottieAnimation = animation;
-  } catch {
-    lottieReady.value = false;
-    lottieStatic.value = true;
-  }
-}
-
-onMounted(() => {
-  if (!lottieVisual.value) return;
-
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  lottieObserver = new IntersectionObserver((entries) => {
-    const entry = entries.find(({ target }) => target === lottieVisual.value);
-    const fullyVisible = entry?.isIntersecting && entry.intersectionRatio >= 0.999;
-
-    if (!fullyVisible) {
-      if (lottieDelay !== undefined) window.clearTimeout(lottieDelay);
-      lottieDelay = undefined;
-      return;
-    }
-
-    if (lottieDelay !== undefined) return;
-    lottieDelay = window.setTimeout(() => {
-      lottieDelay = undefined;
-      lottieObserver?.disconnect();
-      if (reducedMotion) {
-        lottieStatic.value = true;
-      } else {
-        void playRootsMark();
-      }
-    }, 500);
-  }, { threshold: 1 });
-
-  lottieObserver.observe(lottieVisual.value);
-});
-
-onBeforeUnmount(() => {
-  if (lottieDelay !== undefined) window.clearTimeout(lottieDelay);
-  lottieObserver?.disconnect();
-  lottieAnimation?.destroy();
-});
 </script>
 
 <template>
   <main class="roots-home" id="main-content">
     <section class="roots-signal" aria-labelledby="roots-title">
       <div class="roots-signal__message">
-        <h1 id="roots-title">Your node.<br>No spam.<br>Just Bitcoin.</h1>
-        <p>
-          We are a non-rdts/bip110 fork of Knots, forever faithful to Bitcoin Core, with configurable node policy.
-        </p>
+        <h1 id="roots-title">Your node. Your policy. Bitcoin consensus.</h1>
+        <div class="roots-signal__introduction">
+          <p>
+            Bitcoin Roots is a Bitcoin Core-based full node that preserves selected
+            conservative policy and operator controls from Bitcoin Knots.
+          </p>
+          <p>
+            It follows Bitcoin Core-compatible consensus and does not enforce
+            RDTS/BIP-110.
+          </p>
+        </div>
         <div class="roots-actions">
           <a class="roots-action roots-action--primary" :href="withBase('/getting-started')">
             Get started
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
           </a>
-          <a class="roots-action roots-action--quiet" :href="withBase('/documentation')">
-            Explore all docs
+          <a
+            class="roots-action roots-action--quiet"
+            href="https://github.com/LuganoPlanB/bitcoin-roots"
+          >
+            View on GitHub
           </a>
         </div>
       </div>
 
       <div class="roots-signal__editorial">
-        <p class="roots-signal__provenance">The Plan-₿ foundation presents</p>
+        <p class="roots-signal__provenance">THE PLAN ₿ FOUNDATION PRESENTS</p>
         <div class="roots-signal__identity">
-          <img :src="rootsLogo" alt="Bitcoin Roots">
-          <p>
-            <strong>Bitcoin Roots.</strong>
-            <span>Built by OGs who keep the nodes running.</span>
-          </p>
+          <img :src="rootsLogo" alt="" aria-hidden="true">
+          <p>Connected to the trunk. Conservative in policy. Neutral in consensus.</p>
         </div>
       </div>
+    </section>
 
-      <ol class="roots-signal__sequence" aria-label="From the peer-to-peer network to your node">
-        <li v-for="(stage, index) in signalStages" :key="stage.label">
+    <section class="roots-validation" aria-labelledby="validation-title">
+      <div class="roots-section-heading">
+        <h2 id="validation-title">Independently verify Bitcoin</h2>
+        <p>
+          Your node receives the network’s data, checks it independently, and
+          applies your choices before confirmation.
+        </p>
+      </div>
+      <ol class="roots-validation__steps">
+        <li v-for="(stage, index) in validationStages" :key="stage.title">
           <span>0{{ index + 1 }}</span>
           <div>
-            <small>{{ stage.label }}</small>
-            <strong>{{ stage.title }}</strong>
+            <h3>{{ stage.title }}</h3>
+            <p>{{ stage.copy }}</p>
           </div>
         </li>
       </ol>
     </section>
 
+    <section class="roots-lineage" aria-labelledby="lineage-title">
+      <img :src="rootsLogo" alt="" aria-hidden="true">
+      <div>
+        <h2 id="lineage-title">From Knots, without leaving Bitcoin</h2>
+        <p>
+          Bitcoin Roots preserves selected policy features and operator controls
+          from Bitcoin Knots while remaining compatible with Bitcoin Core consensus.
+        </p>
+        <p>
+          The repository records <code>29.3.knots20260507</code> as its Knots
+          lineage reference, not as an exact Git parent. Bitcoin Roots does not
+          adopt RDTS/BIP-110 consensus rules.
+        </p>
+        <p>
+          Bitcoin Roots is a source-code fork. It is not a separate cryptocurrency,
+          proof-of-work network, or competing Bitcoin chain.
+        </p>
+        <a class="roots-text-link roots-text-link--light" :href="withBase('/principles')">
+          Read our principles
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
+        </a>
+      </div>
+    </section>
+
     <section class="roots-boundary" aria-labelledby="boundary-title">
       <div class="roots-section-heading">
-        <h2 id="boundary-title">Know exactly where policy ends.</h2>
+        <h2 id="boundary-title">Know exactly where policy ends</h2>
         <p>
-          Bitcoin Roots distinguishes the rules that keep the network in agreement
-          from the choices your node makes about unconfirmed transactions.
+          Bitcoin Roots separates the shared rules that keep Bitcoin nodes in
+          agreement from the local choices each operator makes about unconfirmed
+          transactions.
         </p>
       </div>
       <div class="roots-boundary__map">
         <article>
           <span>Shared boundary</span>
-          <h3>Consensus</h3>
-          <p>Bitcoin Core-compatible consensus keeps valid historical and incoming blocks acceptable.</p>
+          <h3>Consensus is shared</h3>
+          <p>
+            Bitcoin Roots applies Bitcoin Core-compatible block-validity rules and
+            follows the Bitcoin chain.
+          </p>
+          <p>
+            A transaction rejected by local mempool or relay policy may still be
+            valid under Bitcoin consensus. If a valid block contains that
+            transaction, Bitcoin Roots accepts the block.
+          </p>
         </article>
         <div class="roots-boundary__connector" aria-hidden="true">
           <span></span>
         </div>
         <article>
           <span>Operator boundary</span>
-          <h3>Policy</h3>
-          <p>Conservative, configurable relay and mempool choices govern what your node accepts before confirmation.</p>
+          <h3>Policy is local</h3>
+          <p>
+            Your node decides which unconfirmed transactions it accepts into its
+            mempool and relays to peers.
+          </p>
+          <p>
+            Bitcoin Roots provides conservative, configurable policy options
+            without turning those preferences into new consensus rules.
+          </p>
         </article>
       </div>
       <a class="roots-text-link" :href="withBase('/doc/policy/README')">
@@ -167,31 +148,44 @@ onBeforeUnmount(() => {
       </a>
     </section>
 
-    <section class="roots-mark" aria-labelledby="roots-mark-title">
-      <div
-        ref="lottieVisual"
-        class="roots-mark__visual"
-        :class="{ 'is-ready': lottieReady, 'is-static': lottieStatic }"
-        aria-hidden="true"
-      >
-        <img :src="rootsLogo" alt="">
-        <div ref="lottieHost" class="roots-mark__lottie"></div>
-      </div>
-      <div class="roots-mark__copy">
-        <h2 id="roots-mark-title">Bitcoin rises from its roots.</h2>
+    <section class="roots-why" aria-labelledby="why-title">
+      <div class="roots-why__lead">
+        <h2 id="why-title">Why Bitcoin Roots?</h2>
+        <p>Bitcoin Core is the reference implementation and the upstream development trunk.</p>
         <p>
-          Receive from peers. Verify every block. Apply your own policy to
-          unconfirmed transactions while remaining compatible with consensus.
+          Bitcoin Roots builds on that foundation while preserving selected controls
+          for operators who want stricter transaction relay, explicit resource
+          limits, and greater visibility into node behaviour.
         </p>
+        <p>
+          Suitable Bitcoin Core developments are reviewed and incorporated into
+          Bitcoin Roots releases. Project-specific differences should remain
+          limited, documented, and testable.
+        </p>
+        <a class="roots-text-link" :href="withBase('/compare')">
+          Compare Bitcoin Roots
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
+        </a>
+      </div>
+      <div class="roots-why__list">
+        <p>Bitcoin Roots is intended for operators who want:</p>
+        <ul>
+          <li>Bitcoin Core-compatible consensus</li>
+          <li>Conservative, configurable mempool policy</li>
+          <li>Explicit resource and network controls</li>
+          <li>Independent validation</li>
+          <li>Transparent differences from upstream</li>
+          <li>No RDTS/BIP-110 consensus enforcement</li>
+        </ul>
       </div>
     </section>
 
     <section class="roots-start" aria-labelledby="start-title">
       <div class="roots-start__lead">
-        <h2 id="start-title">From checkout to a node you understand.</h2>
+        <h2 id="start-title">From source to a running node</h2>
         <p>
-          Follow the platform guide, make resource choices deliberately, and keep
-          the complete reference close when you need it.
+          Follow the platform guide, choose resource limits deliberately, and keep
+          the complete reference available when you need it.
         </p>
         <a class="roots-action roots-action--primary" :href="withBase('/getting-started')">
           Choose your platform
@@ -200,52 +194,129 @@ onBeforeUnmount(() => {
       </div>
       <ol class="roots-start__path">
         <li>
-          <span>Build</span>
-          <div><strong>Choose your system</strong><p>Use the repository guide for Linux, macOS, Windows, or BSD.</p></div>
+          <span>1. Build</span>
+          <div>
+            <strong>Choose your system</strong>
+            <p>Follow the repository instructions for Linux, macOS, Windows, or BSD.</p>
+          </div>
         </li>
         <li>
-          <span>Configure</span>
-          <div><strong>Set explicit limits</strong><p>Review configuration, memory, and traffic guidance before changing defaults.</p></div>
+          <span>2. Configure</span>
+          <div>
+            <strong>Set deliberate limits</strong>
+            <p>
+              Review the available memory, storage, network, privacy, relay, and
+              mempool settings before changing the defaults.
+            </p>
+          </div>
         </li>
         <li>
-          <span>Operate</span>
-          <div><strong>Keep verifying</strong><p>Run a full node that validates the chain and applies your local policy.</p></div>
+          <span>3. Verify</span>
+          <div>
+            <strong>Run your node</strong>
+            <p>
+              Connect to the Bitcoin network, independently validate the chain, and
+              apply your chosen policy to unconfirmed transactions.
+            </p>
+          </div>
         </li>
       </ol>
     </section>
 
     <section class="roots-library" aria-labelledby="library-title">
       <header>
-        <h2 id="library-title">The source is the documentation.</h2>
+        <h2 id="library-title">Documentation stays with the source</h2>
         <p>
-          Every Markdown guide remains where maintainers wrote it. The website adds
-          navigation and search—not a second, drifting copy.
+          The website renders the Markdown documentation maintained in the
+          repository. The code, documentation, and review history can therefore
+          evolve together.
         </p>
       </header>
       <nav class="roots-library__routes" aria-label="Documentation highlights">
-        <a :href="withBase('/doc/bitcoin-conf')"><strong>Configuration</strong><span>Options and file format</span></a>
-        <a :href="withBase('/doc/managing-wallets')"><strong>Wallets</strong><span>Manage loaded wallets</span></a>
-        <a :href="withBase('/doc/JSON-RPC-interface')"><strong>JSON-RPC</strong><span>Control your node</span></a>
-        <a :href="withBase('/doc/reduce-traffic')"><strong>Network use</strong><span>Reduce node traffic</span></a>
-        <a :href="withBase('/doc/design/libraries')"><strong>Architecture</strong><span>Understand boundaries</span></a>
-        <a :href="withBase('/CONTRIBUTING')"><strong>Contribute</strong><span>Join development</span></a>
+        <a :href="withBase('/doc/bitcoin-conf')">
+          <strong>Configuration</strong>
+          <span>Review available options and the configuration-file format.</span>
+        </a>
+        <a :href="withBase('/doc/managing-wallets')">
+          <strong>Wallets</strong>
+          <span>Create, load, and manage wallets.</span>
+        </a>
+        <a :href="withBase('/doc/JSON-RPC-interface')">
+          <strong>JSON-RPC</strong>
+          <span>Inspect and control your node programmatically.</span>
+        </a>
+        <a :href="withBase('/doc/reduce-traffic')">
+          <strong>Network use</strong>
+          <span>Understand and reduce bandwidth consumption.</span>
+        </a>
+        <a :href="withBase('/doc/design/libraries')">
+          <strong>Architecture</strong>
+          <span>Learn how validation, networking, policy, and other components are separated.</span>
+        </a>
+        <a :href="withBase('/CONTRIBUTING')">
+          <strong>Contribute</strong>
+          <span>Review the development process, test changes, and contribute code or documentation.</span>
+        </a>
       </nav>
       <a class="roots-library__all" :href="withBase('/documentation')">
-        Browse the complete documentation atlas
+        Browse all documentation
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
       </a>
+    </section>
+
+    <section class="roots-development" aria-labelledby="development-title">
+      <div class="roots-section-heading">
+        <h2 id="development-title">Open development for security-critical software</h2>
+        <div>
+          <p>
+            Bitcoin Roots is developed in public. Changes can be inspected, tested,
+            and discussed through the project repository.
+          </p>
+          <p>
+            Consensus compatibility is a release requirement. Differences in relay,
+            mempool, privacy, and resource policy should be explicit and documented.
+          </p>
+          <p>
+            Testing and code review are essential. Contributions from node operators,
+            reviewers, developers, and documentation writers are welcome.
+          </p>
+          <div class="roots-actions">
+            <a
+              class="roots-action roots-action--primary"
+              href="https://github.com/LuganoPlanB/bitcoin-roots"
+            >
+              View the source
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
+            </a>
+            <a class="roots-action roots-action--quiet" :href="withBase('/CONTRIBUTING')">
+              Contribute
+            </a>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="roots-close" aria-labelledby="close-title">
       <img :src="rootsLogo" alt="" aria-hidden="true">
       <div>
-        <h2 id="close-title">Run the node. Read the source. Keep the choice yours.</h2>
-        <p>Bitcoin Roots is released under the terms of the MIT license.</p>
+        <h2 id="close-title">Run the node. Read the diff. Keep the choice yours.</h2>
+        <p>
+          Bitcoin Roots gives node operators conservative policy controls without
+          asking them to leave Bitcoin consensus.
+        </p>
       </div>
-      <a class="roots-action roots-action--light" :href="withBase('/getting-started')">
-        Get started
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
-      </a>
+      <div class="roots-actions">
+        <a class="roots-action roots-action--light" :href="withBase('/getting-started')">
+          Get started
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
+        </a>
+        <a
+          class="roots-action roots-action--light-quiet"
+          href="https://github.com/LuganoPlanB/bitcoin-roots"
+        >
+          View on GitHub
+        </a>
+      </div>
     </section>
   </main>
 </template>

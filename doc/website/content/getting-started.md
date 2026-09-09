@@ -29,7 +29,7 @@ For a smaller home-node footprint, the existing guides cover
 
 Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
 conservative, configurable transaction relay and mempool policy. It does not
-enforce RDTS/BIP110 consensus rules. Read the
+enforce RDTS/BIP-110 consensus rules. Read the
 [transaction relay policy documentation](/doc/policy/README) for the boundary
 between local policy and block validity.
 
