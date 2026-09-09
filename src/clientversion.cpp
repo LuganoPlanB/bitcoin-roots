@@ -70,7 +70,9 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
     std::string ua = strprintf("/%s:%s%s/", name, FormatVersion(nClientVersion), comments_str);
     if (!base_name_only) {
         static const auto ua_knots = []() -> std::string {
-            const auto pos{CLIENT_BUILD.find(".knots")};
+            auto pos{CLIENT_BUILD.find(".knots")};
+            if (pos == std::string::npos) pos = CLIENT_BUILD.find(".roots");
+            if (pos == std::string::npos) return {};
             return "Knots:" + CLIENT_BUILD.substr(pos + 6) + "/";
         }();
         ua += ua_knots;
