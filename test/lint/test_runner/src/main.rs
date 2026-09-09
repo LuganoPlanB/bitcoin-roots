@@ -646,12 +646,28 @@ fn lint_markdown() -> LintResult {
     let mut md_ignore_paths = get_subtrees();
     md_ignore_paths.push("./doc/README_doxygen.md");
     let md_ignore_path_str = md_ignore_paths.join(",");
+    // These are VitePress clean routes, not repository-root filesystem paths.
+    // doc/website/.vitepress/tests/site.test.mjs verifies that they are backed
+    // by published pages.
+    let vitepress_routes = ["/compare", "/documentation", "/getting-started", "/principles"];
+    for route in vitepress_routes {
+        let source_path = PathBuf::from(format!("doc/website/content{route}.md"));
+        if !source_path.is_file() {
+            return Err(format!(
+                "VitePress route {route} has no source page at {}",
+                source_path.display()
+            ));
+        }
+    }
+    let vitepress_route_str = vitepress_routes.join(",");
 
     let mut cmd = Command::new(bin_name);
     cmd.args([
         "--offline",
         "--ignore-path",
         md_ignore_path_str.as_str(),
+        "--ignore-links",
+        vitepress_route_str.as_str(),
         "--gitignore",
         "--gituntracked",
         "--root-dir",
