@@ -136,6 +136,17 @@ jobs:
           persist-credentials: false
       - name: Configure environment
         uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
       - name: Restore caches
         uses: ./.github/actions/restore-caches
       - name: Configure Docker
@@ -170,6 +181,17 @@ jobs:
           set -Eeuo pipefail
           brew install --quiet python@3 || brew link --overwrite python@3
           brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode imagemagick libicns librsvg
+      - name: Set compiler cache directory
+        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: no
+          key: macos-arm64-appleclang-fuzz
+          restore-keys: macos-arm64-appleclang-fuzz
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
       - name: Run full fuzz corpus
         run: ./ci/test_run_all.sh
 

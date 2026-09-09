@@ -1,17 +1,8 @@
 name: 'Restore Caches'
-description: 'Restore ccache, depends sources, and built depends caches'
+description: 'Restore depends sources, built depends, and previous-release caches'
 runs:
   using: 'composite'
   steps:
-    - name: Restore Ccache cache
-      id: ccache-cache
-      uses: actions/cache/restore@v5
-      with:
-        path: ${{ env.CCACHE_DIR }}
-        key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ github.run_id }}
-        restore-keys: |
-          ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-
-
     - name: Restore depends sources cache
       id: depends-sources
       uses: actions/cache/restore@v5
