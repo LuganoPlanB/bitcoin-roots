@@ -83,10 +83,10 @@ onBeforeUnmount(() => {
   <main class="roots-home" id="main-content">
     <section class="roots-signal" aria-labelledby="roots-title">
       <div class="roots-signal__message">
-        <img class="roots-signal__logo" :src="rootsLogo" alt="Bitcoin Roots">
-        <h1 id="roots-title">Your signal.<br>Your rules.<br>Your node.</h1>
+        <!-- <img class="roots-signal__logo" :src="rootsLogo" alt="Bitcoin Roots"> -->
+        <h1 id="roots-title">Your node.<br>No spam.<br>Just Bitcoin.</h1>
         <p>
-          Connected to the trunk. Conservative in policy. Neutral in consensus.
+          We are a non-rdts/bip110 fork of Knots, forever faithful to Bitcoin Core, with configurable node policy.
         </p>
         <div class="roots-actions">
           <a class="roots-action roots-action--primary" :href="withBase('/getting-started')">
@@ -100,11 +100,11 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="roots-signal__editorial">
-        <p>Sovereignty starts with verification.</p>
+        <p>The Plan-₿ foundation presents</p>
         <p>
-          Receive openly.<br>
-          Verify independently.<br>
-          Relay deliberately.
+        <img  :src="rootsLogo" alt="Bitcoin Roots">
+    Bitcoin Roots.<br/>
+          Built by OGs who keep the nodes running.
         </p>
       </div>
 
