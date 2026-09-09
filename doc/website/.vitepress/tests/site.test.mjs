@@ -51,6 +51,10 @@ test("the homepage uses one observed Lottie play instead of a cycling hero", asy
   assert.match(home, /prefers-reduced-motion: reduce/);
   assert.match(home, /import\("lottie-web\/build\/player\/lottie_light"\)/);
   assert.match(home, /loop:\s*false/);
+  assert.match(home, /autoplay:\s*false/);
+  assert.match(home, /intersectionRatio\s*>=\s*0\.999/);
+  assert.match(home, /threshold:\s*1/);
+  assert.match(home, /},\s*500\)/);
   assert.doesNotMatch(home, /setInterval/);
   assert.equal(JSON.parse(packageJson).dependencies["lottie-web"], "5.13.0");
 });
