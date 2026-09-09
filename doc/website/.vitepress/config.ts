@@ -98,6 +98,7 @@ export default defineConfig({
     },
   },
   head: [
+    ["script", {}, "document.documentElement.classList.add('js')"],
     ["link", { rel: "icon", type: "image/svg+xml", href: `${docsBase}favicon.svg` }],
     ["meta", { name: "theme-color", content: "#fffefa" }],
     ["meta", { name: "color-scheme", content: "light dark" }],

@@ -9,7 +9,7 @@
   "scripts": {
     "docs:prepare": "node scripts/generate-doc-catalog.mjs",
     "dev": "npm run docs:prepare && vitepress dev",
-    "build": "npm run docs:prepare && vitepress build",
+    "build": "npm run docs:prepare && vitepress build && node scripts/check-static-html.mjs",
     "preview": "vitepress preview",
     "test": "npm run docs:prepare && node --test .vitepress/tests/site.test.mjs"
   },

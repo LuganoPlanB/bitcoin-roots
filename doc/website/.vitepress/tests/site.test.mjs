@@ -108,3 +108,15 @@ test("explicit VitePress light mode overrides a dark system preference", async (
   assert.match(styles, /--planb-color-text:\s*#030b20/);
   assert.match(styles, /--planb-color-accent:\s*#4f97e9/);
 });
+
+test("the root mark progressively enhances its static no-JavaScript fallback", async () => {
+  const [config, styles] = await Promise.all([
+    readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8"),
+    readFile(resolve(siteRoot, ".vitepress/theme/custom.css"), "utf8"),
+  ]);
+
+  assert.match(config, /document\.documentElement\.classList\.add\(['"]js['"]\)/);
+  assert.match(styles, /\.roots-mark__visual img\s*{[^}]*opacity:\s*1/s);
+  assert.match(styles, /\.js \.roots-mark__visual img\s*{[^}]*opacity:\s*0/s);
+  assert.match(styles, /\.roots-mark__visual\.is-static img\s*{[^}]*opacity:\s*1/s);
+});
