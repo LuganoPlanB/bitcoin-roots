@@ -52,7 +52,8 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const files = [];
+            const files = new Set();
+            let recordCount = 0;
             const maxFiles = 3000;
             let error = false;
             try {
@@ -64,18 +65,24 @@ jobs:
                   per_page: 100,
                   page,
                 });
-                files.push(...response.data.map(file => file.filename));
+                recordCount += response.data.length;
+                for (const file of response.data) {
+                  files.add(file.filename);
+                  if (file.status === 'renamed' && typeof file.previous_filename === 'string') {
+                    files.add(file.previous_filename);
+                  }
+                }
                 if (response.data.length < 100) break;
                 if (page === 30) error = true;
               }
               const expectedCount = context.payload.pull_request.changed_files;
               if (!Number.isInteger(expectedCount) || expectedCount >= maxFiles ||
-                  expectedCount !== files.length) error = true;
+                  expectedCount !== recordCount) error = true;
             } catch (exception) {
               core.warning(`Unable to retrieve a complete changed-file list: ${exception.message}`);
               error = true;
             }
-            fs.writeFileSync('changed-files.json', JSON.stringify(files));
+            fs.writeFileSync('changed-files.json', JSON.stringify([...files]));
             core.setOutput('error', error ? 'true' : 'false');
       - name: Select CI groups
         id: classify
