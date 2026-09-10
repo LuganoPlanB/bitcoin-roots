@@ -12,8 +12,8 @@ on:
         description: 'Release tag, for example v29.3.0-roots.1'
         required: true
         type: string
-      confirm:
-        description: 'Create this permanent tag from the current main HEAD'
+      confirm_release:
+        description: 'Confirm creation of a permanent release tag from the current main HEAD'
         required: true
         default: false
         type: boolean
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      CONFIRM_RELEASE: ${{ inputs.confirm }}
+      CONFIRM_RELEASE: ${{ inputs.confirm_release }}
       RELEASE_TAG: ${{ inputs.tag }}
       SELECTED_REF: ${{ github.ref }}
     steps:

@@ -272,11 +272,11 @@ jobs:
           - name: 'macOS 15 native, x86_64 release'
             runner: macos-15-intel
             expected-arch: x86_64
-            artifact-name: bitcoin-roots-macos-x86_64
+            artifact-name: bitcoin-roots-darwin-x86_64
           - name: 'macOS 15 native, arm64 release'
             runner: macos-15
             expected-arch: arm64
-            artifact-name: bitcoin-roots-macos-arm64
+            artifact-name: bitcoin-roots-darwin-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -319,20 +319,27 @@ jobs:
           FILE_ENV: './ci/test/00_setup_env_mac_native.sh'
 
       - name: Stage release package
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact-name }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           packages=("${GITHUB_WORKSPACE}"/ci/scratch/build-*/*.zip)
-          if (( ${#packages[@]} == 0 )); then
-            echo "No macOS release package was produced" >&2
+          if (( ${#packages[@]} != 1 )); then
+            echo "Expected one macOS release package, found ${#packages[@]}" >&2
+            exit 1
+          fi
+          platform_name="bitcoin-roots-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | tr '[:upper:]' '[:lower:]')"
+          if [[ "${platform_name}" != "${ARTIFACT_NAME}" ]]; then
+            echo "Expected platform name ${ARTIFACT_NAME}, found ${platform_name}" >&2
             exit 1
           fi
           package_dir="${RUNNER_TEMP}/release-packages"
           mkdir -p "${package_dir}"
-          cp "${packages[@]}" "${package_dir}/"
+          cp "${packages[0]}" "${package_dir}/${ARTIFACT_NAME}.zip"
           (
             cd "${package_dir}"
-            shasum -a 256 ./* > SHA256SUMS
+            shasum -a 256 "${ARTIFACT_NAME}.zip" > SHA256SUMS
           )
 
       - name: Upload unsigned release package

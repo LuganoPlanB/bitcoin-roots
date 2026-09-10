@@ -22,18 +22,20 @@ class PrepareReleaseTest(unittest.TestCase):
             downloads = work / "downloads"
             output = work / "output"
             (downloads / "linux").mkdir(parents=True)
-            (downloads / "macos").mkdir()
+            (downloads / "darwin-x86_64").mkdir()
+            (downloads / "darwin-arm64").mkdir()
             packages = {
-                downloads / "linux/zeta.tar.gz": b"linux package",
-                downloads / "macos/alpha.zip": b"macOS package",
+                downloads / "linux/bitcoin-roots-linux-x86_64.tar.gz": b"linux package",
+                downloads / "darwin-x86_64/bitcoin-roots-darwin-x86_64.zip": b"macOS x86_64 package",
+                downloads / "darwin-arm64/bitcoin-roots-darwin-arm64.zip": b"macOS arm64 package",
             }
             for path, content in packages.items():
                 path.write_bytes(content)
-            (downloads / "linux/zeta.tar.gz.sha256").write_text("ignored\n")
-            (downloads / "macos/SHA256SUMS").write_text("ignored\n")
+            (downloads / "linux/bitcoin-roots-linux-x86_64.tar.gz.sha256").write_text("ignored\n")
+            (downloads / "darwin-x86_64/SHA256SUMS").write_text("ignored\n")
 
             subprocess.run(
-                [SCRIPT, downloads, output, PUBLIC_KEY, "v29.3.0-roots.1", "2"],
+                [SCRIPT, downloads, output, PUBLIC_KEY, "v29.3.0-roots.1", "3"],
                 check=True,
             )
 
@@ -43,13 +45,19 @@ class PrepareReleaseTest(unittest.TestCase):
                 self.assertIn(f"# {line}\n", manifest)
             checksum_lines = [line for line in manifest.splitlines() if not line.startswith("#")]
             expected = [
-                f"{hashlib.sha512(b'macOS package').hexdigest()}  alpha.zip",
-                f"{hashlib.sha512(b'linux package').hexdigest()}  zeta.tar.gz",
+                f"{hashlib.sha512(b'macOS arm64 package').hexdigest()}  bitcoin-roots-darwin-arm64.zip",
+                f"{hashlib.sha512(b'macOS x86_64 package').hexdigest()}  bitcoin-roots-darwin-x86_64.zip",
+                f"{hashlib.sha512(b'linux package').hexdigest()}  bitcoin-roots-linux-x86_64.tar.gz",
             ]
             self.assertEqual(checksum_lines, expected)
             self.assertEqual(
                 sorted(path.name for path in output.iterdir()),
-                ["SHA512SUMS", "alpha.zip", "zeta.tar.gz"],
+                [
+                    "SHA512SUMS",
+                    "bitcoin-roots-darwin-arm64.zip",
+                    "bitcoin-roots-darwin-x86_64.zip",
+                    "bitcoin-roots-linux-x86_64.tar.gz",
+                ],
             )
             subprocess.run(["sha512sum", "--check", "SHA512SUMS"], cwd=output, check=True)
 

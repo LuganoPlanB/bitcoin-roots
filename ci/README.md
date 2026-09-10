@@ -205,7 +205,7 @@ The default branch needs three operational confirmations after this change lands
 2. Observe one `main` release run and verify the five artifact targets across
    three OS families: `bitcoin-roots-linux-x86_64`,
    `bitcoin-roots-linux-aarch64`, `bitcoin-roots-windows-x86_64`,
-   `bitcoin-roots-macos-x86_64`, and `bitcoin-roots-macos-arm64`, plus the two
+   `bitcoin-roots-darwin-x86_64`, and `bitcoin-roots-darwin-arm64`, plus the two
    configuration-coverage jobs. PR checks cannot fully exercise default-branch
    schedule semantics or produce authoritative release artifacts.
 3. For the first release tag, verify that the tag-only publishing job creates a
