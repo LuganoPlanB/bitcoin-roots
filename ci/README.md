@@ -51,13 +51,14 @@ in order.
 
 ## GitHub Actions policy
 
-GitHub Actions has three deliberately separate workflows:
+GitHub Actions has four deliberately separate workflows:
 
 | Workflow | Events | Purpose |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | pull request | Fast, stable required gate plus path-selected PR assurance. |
 | `.github/workflows/nightly.yml` | scheduled, manual dispatch, reusable call | Expensive assurance that does not need to block every ordinary PR. |
 | `.github/workflows/release.yml` | push to `main`, `v*` tags, manual dispatch | Produce CI artifacts; tagged runs also create signed draft GitHub Releases. |
+| `.github/workflows/create-release.yml` | manual dispatch | Create an annotated version tag from `main` and start its release build. |
 
 The classifier and build/test jobs check out immutable PR-head SHAs. The lint
 job intentionally checks out GitHub's synthetic PR merge with full history so
@@ -171,6 +172,15 @@ single `SHA512SUMS` manifest, signs it with the secret
 packages plus `SHA512SUMS` and `SHA512SUMS.asc`. Release-candidate tags whose
 names contain `-rc` are also marked as prereleases. A maintainer must inspect
 and publish the draft release.
+
+Maintainers can create the tag without a local Git checkout from the repository
+**Actions** tab. Select **Create release**, click **Run workflow**, leave the
+branch set to `main`, enter the complete `v*` tag, select the confirmation
+checkbox, and run it. The workflow validates the tag, refuses an existing tag,
+creates an annotated tag at the current `main` HEAD, and explicitly dispatches
+`release.yml` at that tag. The explicit dispatch is required because events
+created with the workflow's `GITHUB_TOKEN` do not recursively start ordinary
+push workflows.
 
 The committed release public key is
 `contrib/release/bitcoin-roots-release-key.asc`, with fingerprint

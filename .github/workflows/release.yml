@@ -30,8 +30,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Test release manifest preparation
-        run: python3 ci/test/test_prepare_release.py
+      - name: Test release metadata preparation
+        run: |
+          python3 ci/test/test_prepare_release.py
+          python3 ci/test/test_validate_release_tag.py
 
   linux-release:
     name: ${{ matrix.name }}

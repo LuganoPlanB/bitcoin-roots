@@ -1,0 +1,94 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+name: Create release
+run-name: Create release ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, for example v29.3.0-roots.1'
+        required: true
+        type: string
+      confirm:
+        description: 'Create this permanent tag from the current main HEAD'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: create-release
+  cancel-in-progress: false
+
+jobs:
+  create-release-tag:
+    name: 'Create tag and start release build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CONFIRM_RELEASE: ${{ inputs.confirm }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      SELECTED_REF: ${{ github.ref }}
+    steps:
+      - name: Require main and explicit confirmation
+        run: |
+          set -Eeuo pipefail
+          if [[ "$SELECTED_REF" != 'refs/heads/main' ]]; then
+            printf 'Create release must be run from main, not %s\n' "$SELECTED_REF" >&2
+            exit 1
+          fi
+          if [[ "$CONFIRM_RELEASE" != 'true' ]]; then
+            printf 'The release confirmation checkbox must be selected\n' >&2
+            exit 1
+          fi
+
+      - name: Checkout current main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate release tag
+        run: ci/release/validate-release-tag.sh "$RELEASE_TAG"
+
+      - name: Verify tag is new
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            printf 'Checked-out main is not the current origin/main HEAD\n' >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Release tag already exists: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              printf 'Could not determine whether release tag %s exists\n' "$RELEASE_TAG" >&2
+              exit "$status"
+            fi
+          fi
+
+      - name: Create annotated release tag
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag --annotate "$RELEASE_TAG" --message "Bitcoin Roots $RELEASE_TAG" HEAD
+          git push origin "refs/tags/$RELEASE_TAG"
+
+      - name: Start tagged release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
+          printf 'Release workflow dispatched for %s\n' "$RELEASE_TAG"
