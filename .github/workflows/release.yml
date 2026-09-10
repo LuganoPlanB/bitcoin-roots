@@ -7,6 +7,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -20,6 +22,17 @@ env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1
 
 jobs:
+  release-metadata-tests:
+    name: 'Release metadata tests'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Test release manifest preparation
+        run: python3 ci/test/test_prepare_release.py
+
   linux-release:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -327,3 +340,116 @@ jobs:
           path: ${{ runner.temp }}/release-packages/
           if-no-files-found: error
           retention-days: 30
+
+  publish-release:
+    name: 'Publish signed draft release'
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - release-metadata-tests
+      - linux-release
+      - windows-x86_64-release
+      - macos-native-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      EXPECTED_FINGERPRINT: '5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32'
+      EXPECTED_PACKAGE_COUNT: '5'
+      PUBLIC_KEY_FILE: 'contrib/release/bitcoin-roots-release-key.asc'
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            printf 'Release tag %s does not point to a commit on main\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: bitcoin-roots-*-${{ github.sha }}
+          path: downloaded-artifacts
+
+      - name: Prepare release assets and SHA-512 manifest
+        run: |
+          ci/release/prepare-release.sh \
+            downloaded-artifacts \
+            release-assets \
+            "$PUBLIC_KEY_FILE" \
+            "$GITHUB_REF_NAME" \
+            "$EXPECTED_PACKAGE_COUNT"
+
+      - name: Sign and verify SHA-512 manifest
+        env:
+          BITCOIN_ROOTS_GPG_SK: ${{ secrets.BITCOIN_ROOTS_GPG_SK }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "${BITCOIN_ROOTS_GPG_SK:-}" ]]; then
+            printf 'BITCOIN_ROOTS_GPG_SK is not configured\n' >&2
+            exit 1
+          fi
+
+          gpg_home="${RUNNER_TEMP}/bitcoin-roots-release-gpg"
+          install -d -m 0700 "$gpg_home"
+          trap 'rm -rf -- "$gpg_home"' EXIT
+          export GNUPGHOME="$gpg_home"
+
+          public_fingerprint="$(
+            gpg --batch --with-colons --import-options show-only --import "$PUBLIC_KEY_FILE" |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ "$public_fingerprint" != "$EXPECTED_FINGERPRINT" ]]; then
+            printf 'Unexpected release public-key fingerprint: %s\n' "$public_fingerprint" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$BITCOIN_ROOTS_GPG_SK" | gpg --batch --import
+          secret_fingerprint="$(
+            gpg --batch --with-colons --list-secret-keys "$EXPECTED_FINGERPRINT" |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ "$secret_fingerprint" != "$EXPECTED_FINGERPRINT" ]]; then
+            printf 'The configured secret key does not match the release public key\n' >&2
+            exit 1
+          fi
+
+          gpg --batch --yes --armor \
+            --local-user "$EXPECTED_FINGERPRINT" \
+            --output release-assets/SHA512SUMS.asc \
+            --detach-sign release-assets/SHA512SUMS
+          gpg --batch --verify release-assets/SHA512SUMS.asc release-assets/SHA512SUMS
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          release_options=(
+            --draft
+            --generate-notes
+            --title "Bitcoin Roots ${GITHUB_REF_NAME}"
+            --verify-tag
+          )
+          if [[ "$GITHUB_REF_NAME" == *-rc* ]]; then
+            release_options+=(--prerelease)
+          fi
+          release_assets=(release-assets/*)
+          if [[ "${#release_assets[@]}" -ne "$((EXPECTED_PACKAGE_COUNT + 2))" ]]; then
+            printf 'Expected %s release assets, found %s\n' \
+              "$((EXPECTED_PACKAGE_COUNT + 2))" "${#release_assets[@]}" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "${release_options[@]}" \
+            "${release_assets[@]}"

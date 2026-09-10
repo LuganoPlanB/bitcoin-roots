@@ -57,7 +57,7 @@ GitHub Actions has three deliberately separate workflows:
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | pull request | Fast, stable required gate plus path-selected PR assurance. |
 | `.github/workflows/nightly.yml` | scheduled, manual dispatch, reusable call | Expensive assurance that does not need to block every ordinary PR. |
-| `.github/workflows/release.yml` | push to `main`, manual dispatch | Produce unsigned CI release artifacts and retain release-configuration coverage. |
+| `.github/workflows/release.yml` | push to `main`, `v*` tags, manual dispatch | Produce CI artifacts; tagged runs also create signed draft GitHub Releases. |
 
 The classifier and build/test jobs check out immutable PR-head SHAs. The lint
 job intentionally checks out GitHub's synthetic PR merge with full history so
@@ -163,10 +163,31 @@ verify the runner architecture, so x86_64 is native rather than cross-built.
 CentOS GUI and no-wallet/libbitcoinkernel jobs are configuration coverage, not
 additional promoted release artifacts.
 
+A pushed `v*` tag runs the same build matrix and then creates a draft GitHub
+Release. The tag must point to a commit contained in `main`. The publishing job
+downloads exactly one package from each of the five artifact sets, generates a
+single `SHA512SUMS` manifest, signs it with the secret
+`BITCOIN_ROOTS_GPG_SK`, verifies the detached signature, and uploads the five
+packages plus `SHA512SUMS` and `SHA512SUMS.asc`. Release-candidate tags whose
+names contain `-rc` are also marked as prereleases. A maintainer must inspect
+and publish the draft release.
+
+The committed release public key is
+`contrib/release/bitcoin-roots-release-key.asc`, with fingerprint
+`5EAD D53F 2CD1 F0B7 AEEE 920D 25FC 5C29 CD52 8E32`. The public key is also
+included as comments in `SHA512SUMS`. After downloading all release assets,
+verify them with:
+
+```bash
+gpg --import contrib/release/bitcoin-roots-release-key.asc
+gpg --verify SHA512SUMS.asc SHA512SUMS
+sha512sum -c SHA512SUMS
+```
+
 These artifacts are not reproducible Guix builds and have no Guix attestations;
 do not represent them as independently reproducible binaries.
 
-The default branch needs two operational confirmations after this change lands:
+The default branch needs three operational confirmations after this change lands:
 
 1. Observe one changed-SHA scheduled or manual nightly and a later
    unchanged-SHA scheduled run, confirming both the assurance and gate-only
@@ -177,6 +198,9 @@ The default branch needs two operational confirmations after this change lands:
    `bitcoin-roots-macos-x86_64`, and `bitcoin-roots-macos-arm64`, plus the two
    configuration-coverage jobs. PR checks cannot fully exercise default-branch
    schedule semantics or produce authoritative release artifacts.
+3. For the first release tag, verify that the tag-only publishing job creates a
+   draft containing all five packages, `SHA512SUMS`, and `SHA512SUMS.asc`, then
+   verify the signature and every checksum before publishing the draft.
 
 ### Evidence checklist
 
@@ -187,6 +211,7 @@ The default branch needs two operational confirmations after this change lands:
 | Changed-SHA scheduled/manual nightly | Post-merge main follow-up | `Nightly assurance` run and gate reason. |
 | Unchanged-SHA scheduled gate-only nightly | Post-merge main follow-up | Later scheduled `Nightly assurance` run with `unchanged-success`. |
 | Five release artifacts across three OS families | Post-merge main follow-up | `Release Artifacts` run on `main`; verify all five names and retention. |
+| Signed draft release | First `v*` tag follow-up | Verify the seven draft assets, GPG signature, and all SHA-512 checksums before publishing. |
 
 Do not report the post-merge rows as verified from a PR: GitHub schedules and
 default-branch artifact production cannot be fully exercised from a PR branch.
