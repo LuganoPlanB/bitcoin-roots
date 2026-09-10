@@ -49,6 +49,9 @@ jobs:
       - name: Configure environment
         uses: ./.github/actions/configure-environment
 
+      - name: Configure persistent release output
+        run: printf 'BASE_OUTDIR=%s/out\n' "$BASE_BUILD_DIR" >> "$GITHUB_ENV"
+
       - name: Restore compiler cache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
@@ -78,8 +81,12 @@ jobs:
           set -euo pipefail
           package_dir="${RUNNER_TEMP}/release-packages"
           archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
+          if [[ ! -d "${BASE_OUTDIR}" ]]; then
+            echo "Release output directory does not exist: ${BASE_OUTDIR}" >&2
+            exit 1
+          fi
           mkdir -p "${package_dir}"
-          tar -C "${RUNNER_TEMP}/ci/scratch/out" -czf "${archive}" .
+          tar -C "${BASE_OUTDIR}" -czf "${archive}" .
           (
             cd "${package_dir}"
             sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
