@@ -161,6 +161,8 @@ runtimes remain separate.
 dispatch it builds and uploads unsigned 30-day CI artifacts for Linux x86_64,
 Linux aarch64, Windows x86_64, macOS x86_64, and macOS arm64. The macOS jobs
 verify the runner architecture, so x86_64 is native rather than cross-built.
+All five promoted packages include the Qt GUI. The Windows PR smoke job builds
+and tests the same static Qt configuration before it reaches release packaging.
 CentOS GUI and no-wallet/libbitcoinkernel jobs are configuration coverage, not
 additional promoted release artifacts.
 
