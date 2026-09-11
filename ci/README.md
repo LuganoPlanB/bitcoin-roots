@@ -175,6 +175,13 @@ packages plus `SHA512SUMS` and `SHA512SUMS.asc`. Release-candidate tags whose
 names contain `-rc` are also marked as prereleases. A maintainer must inspect
 and publish the draft release.
 
+Tagged builds pass the exact tag to CMake as `CLIENT_VERSION_TAG`. CMake derives
+the numeric compatibility version from the tag and embeds the complete tag in
+runtime version output, Qt About text, Windows string resources, package
+metadata, macOS bundle metadata, and the manpages installed into release
+packages. Historical lineage references in the source documentation are not
+release-version placeholders and remain unchanged.
+
 Maintainers can create the tag without a local Git checkout from the repository
 **Actions** tab. Select **Create release**, click **Run workflow**, leave the
 branch set to `main`, enter the complete `v*` tag, select the confirmation

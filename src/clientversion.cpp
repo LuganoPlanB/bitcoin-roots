@@ -32,7 +32,10 @@ const std::string UA_NAME("Satoshi");
 
 //! git will put "#define GIT_COMMIT_ID ..." on the next line inside archives. $Format:%n#define GIT_COMMIT_ID "%H"$
 
-#ifdef BUILD_GIT_TAG
+#ifdef CLIENT_VERSION_TAG
+    #define BUILD_DESC CLIENT_VERSION_TAG
+    #define BUILD_SUFFIX ""
+#elif defined(BUILD_GIT_TAG)
     #define BUILD_DESC BUILD_GIT_TAG
     #define BUILD_SUFFIX ""
 #else

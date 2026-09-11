@@ -47,6 +47,7 @@ jobs:
       - name: Run classifier regression tests
         run: |
           python3 ci/test/test_change_classifier.py
+          python3 ci/test/test_release_version.py
           python3 ci/test/test_windows_gui_workflows.py
       - name: Retrieve changed files
         id: files
