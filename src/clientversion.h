@@ -15,7 +15,7 @@
 #endif
 
 //! Copyright string used in Windows .rc files
-#define COPYRIGHT_STR "2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL
+#define COPYRIGHT_STR STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_FOUNDATION "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " The Bitcoin Core developers"
 
 /**
  * bitcoind-res.rc includes this file, but it cannot cope with real c++ code.
@@ -41,6 +41,9 @@ std::string FormatFullVersion();
 std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments, bool base_name_only = false);
 
 std::string CopyrightHolders(const std::string& strPrefix);
+
+/** Returns current and inherited copyright notices. */
+std::string CopyrightInfo();
 
 /** Returns licensing information (for -version) */
 std::string LicenseInfo();

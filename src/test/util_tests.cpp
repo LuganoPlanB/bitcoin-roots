@@ -1097,6 +1097,14 @@ BOOST_AUTO_TEST_CASE(test_FormatSubVersion)
     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), false), std::string("/Test:9.99.0/Knots:20260507/"));
 }
 
+BOOST_AUTO_TEST_CASE(copyright_info)
+{
+    BOOST_CHECK_EQUAL(CopyrightInfo(),
+        "Copyright (C) 2026 Plan-₿ Foundation\n"
+        "Copyright (C) 2009-2026 The Bitcoin Knots developers\n"
+        "Copyright (C) 2009-2026 The Bitcoin Core developers");
+}
+
 BOOST_AUTO_TEST_CASE(test_ParseFixedPoint)
 {
     int64_t amount = 0;

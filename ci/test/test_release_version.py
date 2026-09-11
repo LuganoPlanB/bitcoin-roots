@@ -10,13 +10,16 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+BUILD_CONFIG = ROOT / "CMakeLists.txt"
 MODULE = ROOT / "cmake/module/ClientVersion.cmake"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 CI_SCRIPT = ROOT / "ci/test/03_test_script.sh"
 CONFIG_HEADER = ROOT / "cmake/bitcoin-build-config.h.in"
 CLIENT_VERSION_SOURCE = ROOT / "src/clientversion.cpp"
 INFO_PLIST = ROOT / "share/qt/Info.plist.in"
+WINDOWS_INSTALLER = ROOT / "share/setup.nsi.in"
 QT_RESOURCES = ROOT / "src/qt/res/bitcoin-qt-res.rc"
+SPLASH_SCREEN = ROOT / "src/qt/splashscreen.cpp"
 
 
 class ReleaseVersionTest(unittest.TestCase):
@@ -86,6 +89,30 @@ configure_tagged_document("{source}" "{output}")
         self.assertIn("RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}", workflow)
         self.assertIn('-DCLIENT_VERSION_TAG="$env:RELEASE_TAG"', workflow)
         self.assertIn("-DCLIENT_VERSION_TAG=$RELEASE_TAG", ci_script)
+
+    def test_user_facing_copyright_attribution(self):
+        build_config = BUILD_CONFIG.read_text(encoding="utf-8")
+        client_version = CLIENT_VERSION_SOURCE.read_text(encoding="utf-8")
+        info_plist = INFO_PLIST.read_text(encoding="utf-8")
+        windows_installer = WINDOWS_INSTALLER.read_text(encoding="utf-8")
+        splash_screen = SPLASH_SCREEN.read_text(encoding="utf-8")
+        notices = (
+            "Copyright (C) 2026 Plan-₿ Foundation\n"
+            "Copyright (C) 2009-2026 The Bitcoin Knots developers\n"
+            "Copyright (C) 2009-2026 The Bitcoin Core developers"
+        )
+
+        self.assertIn('set(COPYRIGHT_HOLDERS_SUBSTITUTION "Bitcoin Knots")', build_config)
+        self.assertIn('set(COPYRIGHT_FOUNDATION "Plan-₿ Foundation")', build_config)
+        self.assertIn("return CopyrightInfo()", client_version)
+        self.assertIn("COPYRIGHT_FOUNDATION", splash_screen)
+        self.assertIn("@COPYRIGHT_FOUNDATION@", info_plist)
+        self.assertIn("@COPYRIGHT_FOUNDATION@", windows_installer)
+        for manpage in sorted((ROOT / "doc/man").glob("*.1")):
+            with self.subTest(manpage=manpage.name):
+                content = manpage.read_text(encoding="utf-8")
+                self.assertIn(notices, content)
+                self.assertNotIn("The Bitcoin Roots developers", content)
 
 
 if __name__ == "__main__":

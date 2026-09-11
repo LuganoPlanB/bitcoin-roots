@@ -95,11 +95,17 @@ std::string CopyrightHolders(const std::string& strPrefix)
     return strCopyrightHolders;
 }
 
+std::string CopyrightInfo()
+{
+    return strprintf("Copyright (C) %i %s\n", COPYRIGHT_YEAR, COPYRIGHT_FOUNDATION) +
+           CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ");
+}
+
 std::string LicenseInfo()
 {
     const std::string URL_SOURCE_CODE = "<https://github.com/luganoplanb/bitcoin-roots>";
 
-    return CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ") + "\n" +
+    return CopyrightInfo() + "\n" +
            "\n" +
            strprintf(_("Please contribute if you find %s useful. "
                        "Visit %s for further information about the software."),

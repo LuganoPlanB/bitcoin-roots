@@ -75,7 +75,9 @@ project(BitcoinCore
 )
 
 set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
+set(COPYRIGHT_HOLDERS_SUBSTITUTION "Bitcoin Knots")
+set(COPYRIGHT_HOLDERS_FINAL "The Bitcoin Knots developers")
+set(COPYRIGHT_FOUNDATION "Plan-₿ Foundation")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================
