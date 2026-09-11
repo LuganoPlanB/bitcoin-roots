@@ -16,6 +16,8 @@ output_dir=$2
 public_key_file=$3
 release_name=$4
 expected_package_count=$5
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+archive_tool="$script_dir/archive.py"
 
 if [[ ! -d "$download_dir" ]]; then
     printf 'Download directory does not exist: %s\n' "$download_dir" >&2
@@ -56,6 +58,12 @@ for package_path in "${package_paths[@]}"; do
         exit 1
     fi
     package_names[$package_name]=1
+done
+
+archive_root="$(RELEASE_TAG="$release_name" python3 "$archive_tool" root-name)"
+for package_path in "${package_paths[@]}"; do
+    package_name=${package_path##*/}
+    python3 "$archive_tool" validate "$package_path" "$archive_root"
     cp -- "$package_path" "$output_dir/$package_name"
 done
 

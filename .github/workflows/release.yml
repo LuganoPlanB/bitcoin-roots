@@ -103,8 +103,10 @@ jobs:
             echo "Release output directory does not exist: ${BASE_OUTDIR}" >&2
             exit 1
           fi
+          archive_root="$(python3 ci/release/archive.py root-name)"
           mkdir -p "${package_dir}"
-          tar -C "${BASE_OUTDIR}" -czf "${archive}" .
+          tar -C "${BASE_OUTDIR}" --transform "flags=r;s|^\.|${archive_root}|" -czf "${archive}" .
+          python3 ci/release/archive.py validate "${archive}" "${archive_root}"
           (
             cd "${package_dir}"
             sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
@@ -244,7 +246,12 @@ jobs:
 
       - name: Install and package
         run: |
-          $installDir = Join-Path $env:RUNNER_TEMP "bitcoin-roots"
+          $archiveRoot = (& python ci/release/archive.py root-name).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to determine the release archive root"
+          }
+          $installParent = Join-Path $env:RUNNER_TEMP "release-install"
+          $installDir = Join-Path $installParent $archiveRoot
           $packageDir = Join-Path $env:RUNNER_TEMP "release-packages"
           $archive = Join-Path $packageDir "bitcoin-roots-windows-x86_64.zip"
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
@@ -253,7 +260,11 @@ jobs:
           if (-not (Test-Path -PathType Leaf $gui)) {
             throw "Installed Windows GUI does not exist: $gui"
           }
-          Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $archive
+          Compress-Archive -Path $installDir -DestinationPath $archive
+          & python ci/release/archive.py validate $archive $archiveRoot
+          if ($LASTEXITCODE -ne 0) {
+            throw "Invalid Windows release archive layout"
+          }
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
           "$hash  bitcoin-roots-windows-x86_64.zip" | Set-Content (Join-Path $packageDir "SHA256SUMS")
 
@@ -345,8 +356,18 @@ jobs:
             exit 1
           fi
           package_dir="${RUNNER_TEMP}/release-packages"
+          archive_root="$(python3 ci/release/archive.py root-name)"
+          staging_parent="$(mktemp -d "${RUNNER_TEMP}/release-package.XXXXXX")"
+          trap 'rm -rf -- "${staging_parent}"' EXIT
+          mkdir -p "${staging_parent}/${archive_root}"
+          unzip -q "${packages[0]}" -d "${staging_parent}/${archive_root}"
           mkdir -p "${package_dir}"
-          cp "${packages[0]}" "${package_dir}/${ARTIFACT_NAME}.zip"
+          archive="${package_dir}/${ARTIFACT_NAME}.zip"
+          (
+            cd "${staging_parent}"
+            zip -qry "${archive}" "${archive_root}"
+          )
+          python3 ci/release/archive.py validate "${archive}" "${archive_root}"
           (
             cd "${package_dir}"
             shasum -a 256 "${ARTIFACT_NAME}.zip" > SHA256SUMS

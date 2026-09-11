@@ -55,6 +55,10 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         self.assertIn("-DBUILD_GUI=ON", windows_release)
         self.assertNotIn("-DBUILD_GUI=OFF", windows_release)
         self.assertIn("-DWERROR=ON", windows_release)
+        self.assertIn("python ci/release/archive.py root-name", windows_release)
+        self.assertIn("Compress-Archive -Path $installDir", windows_release)
+        self.assertNotIn('Compress-Archive -Path (Join-Path $installDir "*")', windows_release)
+        self.assertIn("python ci/release/archive.py validate", windows_release)
         self.assertIn('"bin\\bitcoin-qt.exe"', windows_release)
         self.assertIn("Test-Path -PathType Leaf $gui", windows_release)
 
