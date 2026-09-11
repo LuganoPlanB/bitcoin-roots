@@ -54,6 +54,7 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         self.assert_gui_asset_tools(windows_release)
         self.assertIn("-DBUILD_GUI=ON", windows_release)
         self.assertNotIn("-DBUILD_GUI=OFF", windows_release)
+        self.assertIn("-DWERROR=ON", windows_release)
         self.assertIn('"bin\\bitcoin-qt.exe"', windows_release)
         self.assertIn("Test-Path -PathType Leaf $gui", windows_release)
 
