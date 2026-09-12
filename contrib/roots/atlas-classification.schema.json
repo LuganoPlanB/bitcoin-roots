@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","input_inventory_digest","records","review_queues"],"properties":{"schema_version":{"const":1},"input_inventory_digest":{"type":"string"},"records":{"type":"array"},"review_queues":{"type":"object"}},"additionalProperties":false}
