@@ -14,6 +14,7 @@ const excludedDirectories = new Set([
   ".vitepress",
   "node_modules",
   "releases",
+  "upstream",
 ]);
 
 const excludedFiles = new Set([

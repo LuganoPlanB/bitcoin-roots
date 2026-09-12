@@ -33,6 +33,9 @@ enforce RDTS/BIP-110 consensus rules. Read the
 [transaction relay policy documentation](/doc/policy/README) for the boundary
 between local policy and block validity.
 
+For a user-level tour of the extra controls and graphical tools, see
+[what Bitcoin Roots adds](/features).
+
 ## Go deeper
 
 The [documentation atlas](/documentation) indexes every Markdown guide shipped

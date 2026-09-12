@@ -16,6 +16,7 @@ test("the catalog exposes every discovered source document exactly once", async 
   assert.ok(documentationCount >= 200, "expected the complete repository documentation set");
   assert.equal(documents.length, documentationCount);
   assert.equal(new Set(documents.map((document) => document.path)).size, documentationCount);
+  assert.ok(documents.every((document) => !document.path.startsWith("upstream/")));
 
   await Promise.all(documents.map((document) => access(resolve(repositoryRoot, document.path))));
 });
@@ -50,6 +51,7 @@ test("new editorial copy avoids prohibited claims and punctuation", async () => 
     readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
     readFile(resolve(siteRoot, "content/principles.md"), "utf8"),
     readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
+    readFile(resolve(siteRoot, "content/features.md"), "utf8"),
     readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8"),
     readFile(resolve(siteRoot, ".vitepress/theme/components/DocumentationIndex.vue"), "utf8"),
   ]);
@@ -68,6 +70,7 @@ test("website-owned navigation only targets published pages", async () => {
     "/bitcoin-roots.lottie.json",
     "/compare",
     "/documentation",
+    "/features",
     "/getting-started",
     "/principles",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
@@ -75,6 +78,7 @@ test("website-owned navigation only targets published pages", async () => {
   const websiteFiles = [
     ".vitepress/theme/components/Home.vue",
     "content/compare.md",
+    "content/features.md",
     "content/getting-started.md",
     "content/principles.md",
   ];
@@ -122,6 +126,7 @@ test("primary navigation includes the two editorial routes", async () => {
   for (const [label, route] of [
     ["Get started", "/getting-started"],
     ["Principles", "/principles"],
+    ["Features", "/features"],
     ["Compare", "/compare"],
     ["Documentation", "/documentation"],
     ["Policy", "/doc/policy/README"],
@@ -129,6 +134,21 @@ test("primary navigation includes the two editorial routes", async () => {
   ]) {
     assert.match(config, new RegExp(`text: "${label}", link: "${route}"`));
   }
+});
+
+test("the feature guide describes visible additions and their policy boundary", async () => {
+  const page = await readFile(resolve(siteRoot, "content/features.md"), "utf8");
+
+  assert.match(page, /Inherited from Bitcoin Knots/);
+  assert.match(page, /Spam filtering/);
+  assert.match(page, /Mempool Statistics/);
+  assert.match(page, /Network Watch/);
+  assert.match(page, /Block Visualizer/);
+  assert.match(page, /Sweep private key/);
+  assert.match(page, /Pairing/);
+  assert.match(page, /local mempool, relay, and mining-template\s+policy/);
+  assert.match(page, /does not change Bitcoin consensus/);
+  assert.match(page, /Bitcoin Core 29\.3/);
 });
 
 test("the comparison is versioned and linked to primary sources", async () => {

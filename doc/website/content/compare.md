@@ -117,6 +117,7 @@ consensus-valid blocks.
 
 ## Continue
 
+- [Explore user-facing features](/features)
 - [Read the principles](/principles)
 - [Get started](/getting-started)
 - [Read the transaction relay policy](/doc/policy/README)

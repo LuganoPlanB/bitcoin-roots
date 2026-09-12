@@ -30,6 +30,14 @@ const pages = {
     "Project-specific consensus changes",
     "Frequently asked questions",
   ],
+  "features.html": [
+    "<h1",
+    "What Bitcoin Roots adds for users",
+    "Inherited from Bitcoin Knots",
+    "Spam filtering",
+    "Network Watch",
+    "Policy is not consensus",
+  ],
 };
 
 for (const [filename, expectedContent] of Object.entries(pages)) {
@@ -40,4 +48,4 @@ for (const [filename, expectedContent] of Object.entries(pages)) {
   }
 }
 
-console.log("Verified server-rendered content in the homepage, Principles, and Compare HTML.");
+console.log("Verified server-rendered content in the homepage, Principles, Compare, and Features HTML.");

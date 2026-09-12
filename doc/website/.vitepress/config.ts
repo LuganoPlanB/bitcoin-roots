@@ -115,6 +115,7 @@ export default defineConfig({
     nav: [
       { text: "Get started", link: "/getting-started" },
       { text: "Principles", link: "/principles" },
+      { text: "Features", link: "/features" },
       { text: "Compare", link: "/compare" },
       { text: "Documentation", link: "/documentation" },
       { text: "Policy", link: "/doc/policy/README" },
