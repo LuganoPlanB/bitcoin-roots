@@ -6,12 +6,14 @@
 from pathlib import Path
 import re
 import unittest
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 GUI_TOOLS_ACTION = ROOT / ".github/actions/setup-windows-gui-tools/action.yml"
+ROOTS_LOGO = ROOT / "src/qt/res/src/bitcoinroots-logo.svg"
 
 
 def job(workflow, name):
@@ -23,6 +25,14 @@ def job(workflow, name):
 
 
 class WindowsGuiWorkflowTest(unittest.TestCase):
+    def test_roots_logo_preserves_icon_rendering_dimensions(self):
+        logo = ET.parse(ROOTS_LOGO).getroot()
+        self.assertEqual(logo.attrib["width"], "1in")
+        self.assertEqual(logo.attrib["height"], "1in")
+
+        _, _, viewbox_width, viewbox_height = logo.attrib["viewBox"].split()
+        self.assertEqual(viewbox_width, viewbox_height)
+
     def assert_gui_asset_tools(self, windows_job):
         self.assertIn("uses: ./.github/actions/setup-windows-gui-tools", windows_job)
         self.assertLess(
