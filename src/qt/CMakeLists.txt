@@ -85,11 +85,7 @@ set(EXTRA_ICON_SPECS
   290 256
 )
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  set(bitcoin_svg "res/src/bitcoin-mac.svg")
-else()
-  set(bitcoin_svg "res/src/bitcoin.svg")
-endif()
+set(bitcoin_svg "res/src/bitcoinroots-logo.svg")
 
 set(ICON_SPECS ${ICO_SPECS} ${ICNS_SPECS} ${EXTRA_ICON_SPECS})
 list(REMOVE_DUPLICATES ICON_SPECS)
@@ -165,7 +161,7 @@ set(nsis_wizard_input "${ICON_PATH}/bitcoin290.png")
 set(nsis_wizard_bmp "${ICON_PATH}/nsis-wizard.bmp")
 add_custom_command(
   OUTPUT "${nsis_wizard_bmp}"
-  COMMAND "${IMAGEMAGICK_CONVERT}" ${nsis_wizard_input} -crop 164x290+68+0 -border 0x12 -strip BMP3:${nsis_wizard_bmp}
+  COMMAND "${IMAGEMAGICK_CONVERT}" ${nsis_wizard_input} -resize 132x132 -background white -gravity center -extent 164x290 -border 0x12 -alpha remove -strip BMP3:${nsis_wizard_bmp}
   DEPENDS ${nsis_wizard_input}
   COMMENT "Generating ${nsis_wizard_bmp} from ${nsis_wizard_input}"
   VERBATIM

@@ -47,6 +47,7 @@ jobs:
       - name: Run classifier regression tests
         run: |
           python3 ci/test/test_change_classifier.py
+          python3 ci/test/test_gui_qrencode.py
           python3 ci/test/test_release_version.py
           python3 ci/test/test_windows_gui_workflows.py
       - name: Retrieve changed files
@@ -338,7 +339,7 @@ jobs:
       - name: Configure, build, and smoke test
         shell: pwsh
         run: |
-          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DRSVG_CONVERT="$env:RSVG_CONVERT" -DIMAGEMAGICK_CONVERT="$env:IMAGEMAGICK_CONVERT" -DBUILD_GUI=ON -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DWERROR=ON
+          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DRSVG_CONVERT="$env:RSVG_CONVERT" -DIMAGEMAGICK_CONVERT="$env:IMAGEMAGICK_CONVERT" -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DWERROR=ON
           cmake --build build --config Release --parallel
           ctest --test-dir build -C Release --output-on-failure
   macos-smoke:
@@ -388,7 +389,7 @@ jobs:
       - name: Configure, build, and smoke test
         run: |
           set -Eeuo pipefail
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
 

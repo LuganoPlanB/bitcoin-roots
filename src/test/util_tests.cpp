@@ -1094,7 +1094,9 @@ BOOST_AUTO_TEST_CASE(test_FormatSubVersion)
     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), true),std::string("/Test:9.99.0/"));
     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments, true),std::string("/Test:9.99.0(comment1)/"));
     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments2, true),std::string("/Test:9.99.0(comment1; Comment2; .,_?@-; )/"));
-    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), false), std::string("/Test:9.99.0/Knots:20260507/"));
+    const std::string full_version{FormatFullVersion()};
+    const std::string roots_version{full_version.starts_with('v') ? full_version.substr(1) : full_version};
+    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), false), "/Test:9.99.0/Roots:" + roots_version + "/");
 }
 
 BOOST_AUTO_TEST_CASE(copyright_info)
