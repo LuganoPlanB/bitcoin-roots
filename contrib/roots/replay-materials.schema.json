@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bitcoin Roots replay materials",
+  "type": "object",
+  "required": ["schema_version", "materials"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "materials": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["mechanism"],
+        "properties": {"mechanism": {"enum": ["commit", "patch", "module/data", "generator", "manual"]}}
+      }
+    }
+  }
+}
