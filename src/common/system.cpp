@@ -13,25 +13,28 @@
 
 #ifndef WIN32
 #include <sys/stat.h>
+#include <unistd.h>
 #else
 #include <compat/compat.h>
 #include <codecvt>
+#include <windows.h>
 #endif
 
 #ifdef HAVE_MALLOPT_ARENA_MAX
 #include <malloc.h>
 #endif
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <locale>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 using util::ReplaceAll;
-
-// Application startup time (used for uptime calculation)
-const int64_t nStartupTime = GetTime();
 
 #ifndef WIN32
 std::string ShellEscape(const std::string& arg)
@@ -51,8 +54,9 @@ void runCommand(const std::string& strCommand)
 #else
     int nErr = ::_wsystem(std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>,wchar_t>().from_bytes(strCommand).c_str());
 #endif
-    if (nErr)
-        LogPrintf("runCommand error: system(%s) returned %d\n", strCommand, nErr);
+    if (nErr) {
+        LogWarning("runCommand error: system(%s) returned %d", strCommand, nErr);
+    }
 }
 #endif
 
@@ -105,8 +109,8 @@ int GetNumCores()
     return std::thread::hardware_concurrency();
 }
 
-// Obtain the application startup time (used for uptime calculation)
-int64_t GetStartupTime()
-{
-    return nStartupTime;
-}
+namespace {
+    const auto g_startup_time{SteadyClock::now()};
+} // namespace
+
+SteadyClock::duration GetUptime() { return SteadyClock::now() - g_startup_time; }
