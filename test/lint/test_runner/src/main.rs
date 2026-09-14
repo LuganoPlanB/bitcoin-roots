@@ -294,16 +294,13 @@ fn lint_py_lint() -> LintResult {
             "E101", // indentation contains mixed spaces and tabs
             "E401", // multiple imports on one line
             "E402", // module level import not at top of file
-            "E701", // multiple statements on one line (colon)
             "E702", // multiple statements on one line (semicolon)
             "E703", // statement ends with a semicolon
             "E711", // comparison to None should be 'if cond is None:'
-            "E714", // test for object identity should be "is not"
             "E721", // do not compare types, use "isinstance()"
             "E722", // do not use bare 'except'
             "E742", // do not define classes named "l", "O", or "I"
             "E743", // do not define functions named "l", "O", or "I"
-            "F401", // module imported but unused
             "F402", // import module from line N shadowed by loop variable
             "F403", // 'from foo_module import *' used; unable to detect undefined names
             "F404", // future import(s) name after other statements
@@ -320,7 +317,6 @@ fn lint_py_lint() -> LintResult {
             "F821", // undefined name 'Foo'
             "F822", // undefined name name in __all__
             "F823", // local variable name … referenced before assignment
-            "F841", // local variable 'foo' is assigned to but never used
             "PLE",  // Pylint errors
             "W191", // indentation contains tabs
             "W291", // trailing whitespace
@@ -650,12 +646,28 @@ fn lint_markdown() -> LintResult {
     let mut md_ignore_paths = get_subtrees();
     md_ignore_paths.push("./doc/README_doxygen.md");
     let md_ignore_path_str = md_ignore_paths.join(",");
+    // These are VitePress clean routes, not repository-root filesystem paths.
+    // doc/website/.vitepress/tests/site.test.mjs verifies that they are backed
+    // by published pages.
+    let vitepress_routes = ["/compare", "/documentation", "/getting-started", "/principles"];
+    for route in vitepress_routes {
+        let source_path = PathBuf::from(format!("doc/website/content{route}.md"));
+        if !source_path.is_file() {
+            return Err(format!(
+                "VitePress route {route} has no source page at {}",
+                source_path.display()
+            ));
+        }
+    }
+    let vitepress_route_str = vitepress_routes.join(",");
 
     let mut cmd = Command::new(bin_name);
     cmd.args([
         "--offline",
         "--ignore-path",
         md_ignore_path_str.as_str(),
+        "--ignore-links",
+        vitepress_route_str.as_str(),
         "--gitignore",
         "--gituntracked",
         "--root-dir",

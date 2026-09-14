@@ -1,79 +1,88 @@
-Bitcoin Core integration/staging tree
-=====================================
+# Bitcoin Roots
 
-https://bitcoincore.org
+**Connected to the trunk. Conservative in policy. Neutral in consensus.**
 
-For an immediately usable, binary version of the Bitcoin Core software, see
-https://bitcoincore.org/en/download/.
+<img src="./src/qt/res/src/bitcoinroots-logo.svg" alt="Bitcoin Roots logo" width="300">
 
-What is Bitcoin Core?
----------------------
+For an immediately usable, binary version of the Bitcoin Roots software, see
+the project website: [plan-b.foundation/bitcoin-roots](https://plan-b.foundation/bitcoin-roots/).
 
-Bitcoin Core connects to the Bitcoin peer-to-peer network to download and fully
+## What is Bitcoin Roots?
+
+We want to stick to the plan and make it easy to run a Bitcoin Core
+node at home without overloading network traffic and CPU.
+
+Bitcoin Roots connects to the Bitcoin peer-to-peer network to download and fully
 validate blocks and transactions. It also includes a wallet and graphical user
 interface, which can be optionally built.
 
-Further information about Bitcoin Core is available in the [doc folder](/doc).
+Bitcoin Roots is based on Bitcoin Core and maintains selected policy features
+from the Bitcoin Knots 29.3 code line. The repository records
+`29.3.knots20260507` as its Knots lineage reference, not as the exact Git parent
+of the initial Bitcoin Roots commit.
 
-License
--------
+Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
+conservative, configurable transaction relay and mempool policy.
 
-Bitcoin Core is released under the terms of the MIT license. See [COPYING](COPYING) for more
-information or see https://opensource.org/licenses/MIT.
+In particular, **Bitcoin Roots does not enforce RDTS/BIP-110** consensus rules.
 
-Development Process
--------------------
+Further information about Bitcoin Roots is available in the
+[doc folder](/doc).
 
-The `master` branch is regularly built (see `doc/build-*.md` for instructions) and tested, but it is not guaranteed to be
-completely stable. [Tags](https://github.com/bitcoin/bitcoin/tags) are created
-regularly from release branches to indicate new official, stable release versions of Bitcoin Core.
+## License
 
-The https://github.com/bitcoin-core/gui repository is used exclusively for the
-development of the GUI. Its master branch is identical in all monotree
-repositories. Release branches and tags do not exist, so please do not fork
-that repository unless it is for development reasons.
+Bitcoin Roots is released under the terms of the MIT license. See
+[COPYING](COPYING) for more information or see
+https://opensource.org/licenses/MIT.
 
-The contribution workflow is described in [CONTRIBUTING.md](CONTRIBUTING.md)
-and useful hints for developers can be found in [doc/developer-notes.md](doc/developer-notes.md).
+## Development Process
 
-Testing
--------
+Development generally takes place as part of
+[Bitcoin Core](https://github.com/bitcoin/bitcoin), and suitable changes are
+merged into Bitcoin Roots for each release.
 
-Testing and code review is the bottleneck for development; we get more pull
-requests than we can review and test on short notice. Please be patient and help out by testing
-other people's pull requests, and remember this is a security-critical project where any mistake might cost people
-lots of money.
+Features not suitable for Bitcoin Core may still be eligible for inclusion in
+Bitcoin Roots, particularly where they improve node policy, resource control,
+privacy, or operation without changing Bitcoin consensus.
+
+Selected Bitcoin Roots features may also be maintained where appropriate.
+
+Bitcoin Roots distinguishes between consensus and policy. Transactions rejected
+by local relay or mempool policy may still be valid under Bitcoin consensus, and
+valid blocks containing such transactions must continue to be accepted.
+
+The project aims to remain connected to the Bitcoin development trunk while
+preserving conservative node policy and consensus neutrality.
+
+## Testing
+
+Testing and code review are the bottleneck for development. Please help by
+testing other people's pull requests, and remember that this is security-critical
+software where mistakes may cost people money.
 
 ### Automated Testing
 
-Developers are strongly encouraged to write [unit tests](src/test/README.md) for new code, and to
-submit new unit tests for old code. Unit tests can be compiled and run
-(assuming they weren't disabled during the generation of the build system) with: `ctest`. Further details on running
-and extending unit tests can be found in [/src/test/README.md](/src/test/README.md).
+Developers are strongly encouraged to write
+[unit tests](src/test/README.md) for new code.
 
-There are also [regression and integration tests](/test), written
-in Python.
-These tests can be run (if the [test dependencies](/test) are installed) with: `build/test/functional/test_runner.py`
-(assuming `build` is your build directory).
+Unit tests can be compiled and run with:
 
-The CI (Continuous Integration) systems make sure that every pull request is built for Windows, Linux, and macOS,
-and that unit/sanity tests are run automatically.
+`ctest`
+
+Regression and integration tests are available in [/test](/test) and can be run
+with:
+
+`build/test/functional/test_runner.py`
+
+Continuous Integration should ensure that pull requests are built and tested on
+supported platforms.
 
 ### Manual Quality Assurance (QA) Testing
 
 Changes should be tested by somebody other than the developer who wrote the
-code. This is especially important for large or high-risk changes. It is useful
-to add a test plan to the pull request description if testing the changes is
-not straightforward.
+code, especially for large or high-risk changes.
 
-Translations
-------------
+### Maintenance
 
-Changes to translations as well as new translations can be submitted to
-[Bitcoin Core's Transifex page](https://explore.transifex.com/bitcoin/bitcoin/).
-
-Translations are periodically pulled from Transifex and merged into the git repository. See the
-[translation process](doc/translation_process.md) for details on how this works.
-
-**Important**: We do not accept translation changes as GitHub pull requests because the next
-pull from Transifex would automatically overwrite them again.
+Bitcoin Roots is maintained by the Plan ₿ Foundation under the
+supervision of [Denis "Jaromil" Roio](https://jaromil.dyne.org), [Giacomo Zucco](https://x.com/giacomozucco) and [S₿AM](https://x.com/sbaaaam21).

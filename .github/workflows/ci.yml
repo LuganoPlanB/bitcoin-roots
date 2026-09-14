@@ -2,7 +2,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-name: CI
+name: Bitcoin Roots CI
 on:
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request.
   pull_request:
@@ -12,6 +12,12 @@ on:
       - '**'
     tags-ignore:
       - '**'
+
+# This fork keeps the Core 29.4 job matrix, while limiting workflow tokens.
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
@@ -388,8 +394,6 @@ jobs:
 
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
-        with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
 
       - name: Enable bpfcc script
         if: ${{ env.CONTAINER_NAME == 'ci_native_asan' }}
@@ -425,8 +429,6 @@ jobs:
 
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
-        with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
 
       - name: CI script
         run: |
