@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-08T17:43:52Z",
+  "title": "Design System: Bitcoin Roots Documentation",
+  "extensions": {
+    "colorMeta": {
+      "civic-night": { "role": "primary", "displayName": "Civic Night", "canonical": "#082952", "tonalRamp": ["#03101f", "#082952", "#174b82", "#2d6eb0", "#5793cd", "#8ab9e3", "#c2ddf3", "#f3f9ff"] },
+      "civic-sky": { "role": "primary", "displayName": "Civic Sky", "canonical": "#4f97e9", "tonalRamp": ["#071b32", "#0d3766", "#18599b", "#2f79c4", "#4f97e9", "#82b6f1", "#b7d6f8", "#edf6ff"] },
+      "commons-gold": { "role": "secondary", "displayName": "Commons Gold", "canonical": "#ffb604", "tonalRamp": ["#2b1d00", "#5c3e00", "#916300", "#c88900", "#ffb604", "#ffca4d", "#ffdf93", "#fff6dc"] },
+      "civic-ink": { "role": "neutral", "displayName": "Civic Ink", "canonical": "#030b20", "tonalRamp": ["#030b20", "#18233b", "#39445d", "#5e687e", "#858e9f", "#aeb5c1", "#d8dce2", "#f7f8fa"] },
+      "warm-canvas": { "role": "neutral", "displayName": "Warm Canvas", "canonical": "#fffefa", "tonalRamp": ["#24231f", "#4d4b43", "#77746a", "#a29e93", "#c7c3ba", "#e2dfd7", "#f3f0e9", "#fffefa"] },
+      "cool-canvas": { "role": "neutral", "displayName": "Cool Canvas", "canonical": "#f3f9ff", "tonalRamp": ["#17212b", "#344656", "#546c80", "#7792a9", "#9db7cb", "#c2d8e8", "#dfedf7", "#f3f9ff"] },
+      "quiet-panel": { "role": "neutral", "displayName": "Quiet Panel", "canonical": "#fcfcfc", "tonalRamp": ["#202020", "#454545", "#6c6c6c", "#949494", "#bdbdbd", "#dcdcdc", "#eeeeee", "#fcfcfc"] },
+      "dark-canvas": { "role": "neutral", "displayName": "Dark Canvas", "canonical": "#171717", "tonalRamp": ["#171717", "#303030", "#4c4c4c", "#6b6b6b", "#8c8c8c", "#b0b0b0", "#d6d6d6", "#f5f5f5"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Operator Thesis", "purpose": "Homepage proposition only." },
+      "headline": { "displayName": "Section Proposition", "purpose": "Major homepage and atlas divisions." },
+      "title": { "displayName": "Technical Title", "purpose": "Stages, steps, and group titles." },
+      "body": { "displayName": "Reading Body", "purpose": "Documentation and explanatory prose." },
+      "label": { "displayName": "Measured Label", "purpose": "Real metadata, state, and category labels." }
+    },
+    "shadows": [
+      { "name": "instrument-ambient", "value": "0 18px 44px rgba(8, 41, 82, 0.08)", "purpose": "Separate the interactive signal instrument from the canvas." },
+      { "name": "boundary-low", "value": "0 14px 38px rgba(8, 41, 82, 0.08)", "purpose": "Pair the consensus and policy boundary surfaces." }
+    ],
+    "motion": [
+      { "name": "signal-flow", "value": "4.2s cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Move one gold pulse through the network-to-node route; disabled for reduced motion." },
+      { "name": "state-shift", "value": "160ms ease", "purpose": "Color-only hover and active transitions." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "960px" },
+      { "name": "single-column", "value": "720px" },
+      { "name": "compact-actions", "value": "420px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The compact operator action used for Get started and platform choice.",
+      "html": "<a class=\"ds-primary\" href=\"#\">Get started <svg viewBox=\"0 0 20 20\" aria-hidden=\"true\"><path d=\"M4 10h11m-4-4 4 4-4 4\" /></svg></a>",
+      "css": ".ds-primary{display:inline-flex;min-height:2.875rem;align-items:center;gap:.7rem;padding:.72rem 1.05rem;border-radius:999px;background:var(--planb-color-brand-night,#082952);color:var(--planb-color-canvas,#fffefa);font:800 .9rem/1 Inter,sans-serif;text-decoration:none}.ds-primary svg{width:1.1rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ds-primary:hover{background:#17578f}.ds-primary:focus-visible{outline:2px solid #7468ff;outline-offset:3px}"
+    },
+    {
+      "name": "Quiet Text Action",
+      "kind": "button",
+      "description": "A secondary path that stays visibly subordinate to the primary action.",
+      "html": "<a class=\"ds-quiet\" href=\"#\">Explore all docs</a>",
+      "css": ".ds-quiet{color:var(--planb-color-accent-strong,#082952);font:800 .9rem/1.4 Inter,sans-serif;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:.3em}.ds-quiet:hover{color:#246caf}.ds-quiet:focus-visible{outline:2px solid #7468ff;outline-offset:3px}"
+    },
+    {
+      "name": "Signal Stage",
+      "kind": "custom",
+      "description": "A focusable stage in the network-to-node instrument.",
+      "html": "<button class=\"ds-stage\" type=\"button\"><span class=\"ds-node\"></span><span><small>LOCAL NODE POLICY</small><strong>Choose what you relay</strong></span></button>",
+      "css": ".ds-stage{display:grid;grid-template-columns:1rem 1fr;gap:1rem;width:100%;min-height:5.4rem;padding:.8rem .9rem .8rem 0;border:0;border-radius:12px;background:color-mix(in srgb,#4f97e9 9%,transparent);color:#082952;font-family:Inter,sans-serif;text-align:left}.ds-node{align-self:center;width:.72rem;height:.72rem;border:2px solid #f3f9ff;border-radius:50%;background:#ffb604;box-shadow:0 0 0 4px color-mix(in srgb,#ffb604 22%,transparent)}.ds-stage small,.ds-stage strong{display:block}.ds-stage small{margin-bottom:.35rem;color:#4f97e9;font-size:.72rem;font-weight:800;letter-spacing:.06em}.ds-stage strong{font-size:1.1rem}.ds-stage:focus-visible{outline:2px solid #7468ff;outline-offset:3px}"
+    },
+    {
+      "name": "Documentation Search",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "The atlas filter with an explicit label and readable placeholder.",
+      "html": "<label class=\"ds-field\"><span>Filter the documentation atlas</span><input type=\"search\" placeholder=\"Try wallet, traffic, RPC…\"></label>",
+      "css": ".ds-field{display:block;font-family:Inter,sans-serif}.ds-field span{display:block;margin-bottom:.65rem;color:#082952;font-size:.82rem;font-weight:800}.ds-field input{width:100%;min-height:3.25rem;padding:.8rem 1rem;border:1px solid color-mix(in srgb,#4f97e9 44%,transparent);border-radius:12px;background:#fcfcfc;color:#030b20;font:inherit;caret-color:#4f97e9}.ds-field input::placeholder{color:rgba(3,11,32,.62)}.ds-field input:focus-visible{outline:2px solid #7468ff;outline-offset:3px}"
+    },
+    {
+      "name": "Documentation Row",
+      "kind": "nav",
+      "description": "A source-first atlas link showing both human title and repository path.",
+      "html": "<a class=\"ds-doc-row\" href=\"#\"><span>Reduce Memory</span><small>doc/reduce-memory.md</small></a>",
+      "css": ".ds-doc-row{display:block;padding:1rem 0;border-bottom:1px solid color-mix(in srgb,#4f97e9 22%,transparent);color:#030b20;font-family:Inter,sans-serif;text-decoration:none}.ds-doc-row span,.ds-doc-row small{display:block}.ds-doc-row span{color:#082952;font-weight:700;line-height:1.35}.ds-doc-row small{margin-top:.35rem;color:rgba(3,11,32,.72);font:400 .7rem/1.4 Consolas,monospace}.ds-doc-row:hover span{color:#246caf}.ds-doc-row:focus-visible{outline:2px solid #7468ff;outline-offset:3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Independent Signal",
+    "overview": "The website extends the Lugano Plan ₿ Civic Digital Commons into an operator-first documentation experience. Independence is made visible through precise signal paths, explicit boundaries, and source locations rather than security theatre or speculative Bitcoin imagery. The atmosphere is open, civic, and technically serious. Large navy propositions create confidence; cool fields organize dense material; a single gold signal marks the active point of choice.",
+    "keyCharacteristics": [
+      "White-first civic clarity with a complete dark alternative.",
+      "Asymmetric persuasive surfaces paired with disciplined reading layouts.",
+      "Source paths and technical data remain visible and legible.",
+      "One authored signal motion; interaction state does the rest."
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Gold marks one live choice or route position; it does not decorate collections.", "section": "colors" },
+      { "name": "The Plain Source Rule", "body": "Monospace identifies literal paths, code, or measured state; it never acts as a generic technical costume.", "section": "typography" },
+      { "name": "The Source Map Rule", "body": "Large collections expose both human titles and repository paths; navigation may organize the corpus but never obscure its provenance.", "section": "layout" },
+      { "name": "The Instrument Rule", "body": "Shadow identifies a focused interactive instrument, not every container on the page.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do lead operators toward a concrete next step within the first viewport.",
+      "Do distinguish consensus from local policy through both copy and structure.",
+      "Do keep source paths visible wherever documentation is aggregated.",
+      "Do preserve keyboard focus, reduced motion, and the responsive reading order."
+    ],
+    "donts": [
+      "Don't replace source material with a rewritten documentation copy.",
+      "Don't scatter gold, shadows, or motion across document collections.",
+      "Don't use speculative coin art, terminal cosplay, or security-theatre chrome.",
+      "Don't turn the atlas into a repeated icon-card grid."
+    ]
+  }
+}
