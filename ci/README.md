@@ -55,6 +55,10 @@ In order to avoid rebuilding all dependencies for each build, the binaries are
 cached and reused when possible. Changes in the dependency-generator will
 trigger cache-invalidation and rebuilds as necessary.
 
+Bitcoin Roots retains the Bitcoin Core 29.4 CI runner and job matrix. Its
+workflow restricts the GitHub token to read-only permissions, and the Docker
+cache action only writes caches for default-branch pushes.
+
 ## Configuring a repository for CI
 
 ### Primary repository

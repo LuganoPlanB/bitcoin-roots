@@ -32,7 +32,10 @@ const std::string UA_NAME("Satoshi");
 
 //! git will put "#define GIT_COMMIT_ID ..." on the next line inside archives. $Format:%n#define GIT_COMMIT_ID "%H"$
 
-#ifdef BUILD_GIT_TAG
+#ifdef CLIENT_VERSION_TAG
+    #define BUILD_DESC CLIENT_VERSION_TAG
+    #define BUILD_SUFFIX ""
+#elif defined(BUILD_GIT_TAG)
     #define BUILD_DESC BUILD_GIT_TAG
     #define BUILD_SUFFIX ""
 #else
@@ -48,6 +51,8 @@ const std::string UA_NAME("Satoshi");
     #endif
 #endif
 
+static const std::string CLIENT_BUILD(BUILD_DESC BUILD_SUFFIX);
+
 static std::string FormatVersion(int nVersion)
 {
     return strprintf("%d.%d.%d", nVersion / 10000, (nVersion / 100) % 100, nVersion % 100);
@@ -55,18 +60,22 @@ static std::string FormatVersion(int nVersion)
 
 std::string FormatFullVersion()
 {
-    static const std::string CLIENT_BUILD(BUILD_DESC BUILD_SUFFIX);
     return CLIENT_BUILD;
 }
 
 /**
  * Format the subversion field according to BIP 14 spec (https://github.com/bitcoin/bips/blob/master/bip-0014.mediawiki)
  */
-std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments)
+std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments, const bool base_name_only)
 {
     std::string comments_str;
     if (!comments.empty()) comments_str = strprintf("(%s)", Join(comments, "; "));
-    return strprintf("/%s:%s%s/", name, FormatVersion(nClientVersion), comments_str);
+    std::string ua = strprintf("/%s:%s%s/", name, FormatVersion(nClientVersion), comments_str);
+    if (!base_name_only) {
+        const std::string roots_version{CLIENT_BUILD.starts_with('v') ? CLIENT_BUILD.substr(1) : CLIENT_BUILD};
+        ua += "Roots:" + roots_version + "/";
+    }
+    return ua;
 }
 
 std::string CopyrightHolders(const std::string& strPrefix)
@@ -81,11 +90,17 @@ std::string CopyrightHolders(const std::string& strPrefix)
     return strCopyrightHolders;
 }
 
+std::string CopyrightInfo()
+{
+    return strprintf("Copyright (C) %i %s\n", COPYRIGHT_YEAR, COPYRIGHT_FOUNDATION) +
+           CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ");
+}
+
 std::string LicenseInfo()
 {
-    const std::string URL_SOURCE_CODE = "<https://github.com/bitcoin/bitcoin>";
+    const std::string URL_SOURCE_CODE = "<https://github.com/luganoplanb/bitcoin-roots>";
 
-    return CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ") + "\n" +
+    return CopyrightInfo() + "\n" +
            "\n" +
            strprintf(_("Please contribute if you find %s useful. "
                        "Visit %s for further information about the software."),
@@ -98,4 +113,14 @@ std::string LicenseInfo()
            _("This is experimental software.") + "\n" +
            strprintf(_("Distributed under the MIT software license, see the accompanying file %s or %s"), "COPYING", "<https://opensource.org/licenses/MIT>").translated +
            "\n";
+}
+
+int64_t g_software_expiry{DEFAULT_SOFTWARE_EXPIRY};
+
+bool IsThisSoftwareExpired(int64_t nTime)
+{
+    if (g_software_expiry <= 0) {
+        return false;
+    }
+    return (nTime > g_software_expiry);
 }

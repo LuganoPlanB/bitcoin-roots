@@ -1398,7 +1398,7 @@ class SegWitTest(BitcoinTestFramework):
         # First we test this transaction against std_node
         # making sure the txid is added to the reject filter
         self.std_node.announce_tx_and_wait_for_getdata(tx3)
-        test_transaction_acceptance(self.nodes[1], self.std_node, tx3, with_witness=True, accepted=False, reason="bad-txns-nonstandard-inputs")
+        test_transaction_acceptance(self.nodes[1], self.std_node, tx3, with_witness=True, accepted=False, reason="bad-txns-input-witness-unknown")
         # Now the node will no longer ask for getdata of this transaction when advertised by same txid
         self.std_node.announce_tx_and_wait_for_getdata(tx3, success=False)
 
@@ -1761,7 +1761,7 @@ class SegWitTest(BitcoinTestFramework):
         tx2.rehash()
         # This will be rejected due to a policy check:
         # No witness is allowed, since it is not a witness program but a p2sh program
-        test_transaction_acceptance(self.nodes[1], self.std_node, tx2, True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, tx2, True, False, 'bad-witness-nonwitness-input')
 
         # If we send without witness, it should be accepted.
         test_transaction_acceptance(self.nodes[1], self.std_node, tx2, False, True)
@@ -1830,13 +1830,13 @@ class SegWitTest(BitcoinTestFramework):
         # Testing native P2WSH
         # Witness stack size, excluding witnessScript, over 100 is non-standard
         p2wsh_txs[0].wit.vtxinwit[0].scriptWitness.stack = [pad] * 101 + [scripts[0]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[0], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[0], True, False, 'bad-witness-stackitem-count')
         # Non-standard nodes should accept
         test_transaction_acceptance(self.nodes[0], self.test_node, p2wsh_txs[0], True, True)
 
         # Stack element size over 80 bytes is non-standard
         p2wsh_txs[1].wit.vtxinwit[0].scriptWitness.stack = [pad * 81] * 100 + [scripts[1]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[1], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[1], True, False, 'bad-witness-stackitem-size')
         # Non-standard nodes should accept
         test_transaction_acceptance(self.nodes[0], self.test_node, p2wsh_txs[1], True, True)
         # Standard nodes should accept if element size is not over 80 bytes
@@ -1850,16 +1850,16 @@ class SegWitTest(BitcoinTestFramework):
 
         # witnessScript size at 3601 bytes is non-standard
         p2wsh_txs[3].wit.vtxinwit[0].scriptWitness.stack = [pad, pad, pad, scripts[3]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[3], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2wsh_txs[3], True, False, 'bad-witness-script-size')
         # Non-standard nodes should accept
         test_transaction_acceptance(self.nodes[0], self.test_node, p2wsh_txs[3], True, True)
 
         # Repeating the same tests with P2SH-P2WSH
         p2sh_txs[0].wit.vtxinwit[0].scriptWitness.stack = [pad] * 101 + [scripts[0]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[0], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[0], True, False, 'bad-witness-stackitem-count')
         test_transaction_acceptance(self.nodes[0], self.test_node, p2sh_txs[0], True, True)
         p2sh_txs[1].wit.vtxinwit[0].scriptWitness.stack = [pad * 81] * 100 + [scripts[1]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[1], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[1], True, False, 'bad-witness-stackitem-size')
         test_transaction_acceptance(self.nodes[0], self.test_node, p2sh_txs[1], True, True)
         p2sh_txs[1].wit.vtxinwit[0].scriptWitness.stack = [pad * 80] * 100 + [scripts[1]]
         test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[1], True, True)
@@ -1867,7 +1867,7 @@ class SegWitTest(BitcoinTestFramework):
         test_transaction_acceptance(self.nodes[0], self.test_node, p2sh_txs[2], True, True)
         test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[2], True, True)
         p2sh_txs[3].wit.vtxinwit[0].scriptWitness.stack = [pad, pad, pad, scripts[3]]
-        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[3], True, False, 'bad-witness-nonstandard')
+        test_transaction_acceptance(self.nodes[1], self.std_node, p2sh_txs[3], True, False, 'bad-witness-script-size')
         test_transaction_acceptance(self.nodes[0], self.test_node, p2sh_txs[3], True, True)
 
         self.generate(self.nodes[0], 1)  # Mine and clean up the mempool of non-standard node
@@ -1974,11 +1974,98 @@ class SegWitTest(BitcoinTestFramework):
         self.update_witness_block_with_transactions(block_5, [tx2])
         test_witness_block(self.nodes[0], self.test_node, block_5, accepted=True)
 
-        # TODO: test p2sh sigop counting
+        # In P2SH, sigops are counted as *legacy sigops* (no witness discount),
+        # meaning each sigop costs 4x more than in witness.
+        p2sh_sigops_per_script = sigops_per_script * 4
+
+        # Compute how many outputs we can create before exceeding MAX_SIGOP_COST
+        # (same idea as P2WSH, but adjusted for 4x cost)
+        p2sh_outputs = (MAX_SIGOP_COST // p2sh_sigops_per_script) + 2
+
+        # Remaining sigops we can still use after filling full scripts,
+        # adjusted back (divide by 4) because we construct scripts in raw sigops
+        p2sh_extra_sigops_available = (MAX_SIGOP_COST % p2sh_sigops_per_script) // 4
+
+        # Ensure we don't accidentally exceed MAX_OPS_PER_SCRIPT
+        assert p2sh_extra_sigops_available < 100
+
+        # Base redeem script (same as witness_script, but now used in P2SH)
+        redeem_script = witness_script
+
+        # Script that will push us over the sigop limit when used
+        redeem_script_toomany = CScript([OP_TRUE, OP_IF, OP_TRUE, OP_ELSE] + [OP_CHECKSIG] * (p2sh_extra_sigops_available + 1) + [OP_ENDIF])
+
+        # Script that will bring us exactly to the sigop limit
+        redeem_script_justright = CScript([OP_TRUE, OP_IF, OP_TRUE, OP_ELSE] + [OP_CHECKSIG] * p2sh_extra_sigops_available + [OP_ENDIF])
+
+        # Create a transaction that splits one UTXO into many P2SH outputs
+        tx3 = CTransaction()
+        tx3.vin.append(CTxIn(COutPoint(tx2.sha256, 0), b""))
+
+        # Split value evenly across outputs
+        split_value = tx2.vout[0].nValue // p2sh_outputs
+
+        # Create outputs using the base redeem script
+        for _ in range(p2sh_outputs):
+            tx3.vout.append(CTxOut(split_value, script_to_p2sh_script(redeem_script)))
+
+        # Replace last two outputs:
+        # - second-to-last: will exceed sigop limit when spent
+        # - last: will exactly match sigop limit when spent
+        tx3.vout[-2].scriptPubKey = script_to_p2sh_script(redeem_script_toomany)
+        tx3.vout[-1].scriptPubKey = script_to_p2sh_script(redeem_script_justright)
+
+        # Mine block containing tx3 should be valid
+        block_6 = self.build_next_block()
+        self.update_witness_block_with_transactions(block_6, [tx3])
+        test_witness_block(self.nodes[0], self.test_node, block_6, accepted=True)
+
+        # Now try to spend too many P2SH outputs should exceed sigop limit
+        tx4 = CTransaction()
+        total_value = 0
+
+        for i in range(p2sh_outputs - 1):
+            # Use normal scripts for most inputs,
+            # but last one uses the "too many sigops" script
+            script = redeem_script if i < p2sh_outputs - 2 else redeem_script_toomany
+
+            # In P2SH, redeem script is provided in scriptSig
+            tx4.vin.append(CTxIn(COutPoint(tx3.sha256, i), CScript([script])))
+            total_value += tx3.vout[i].nValue
+
+        tx4.vout.append(CTxOut(total_value, CScript([OP_TRUE])))
+
+        # This block should be rejected due to too many sigops
+        block_7 = self.build_next_block()
+        self.update_witness_block_with_transactions(block_7, [tx4])
+        test_witness_block(self.nodes[0], self.test_node, block_7,
+                        accepted=False, reason='bad-blk-sigops')
+
+        # Now construct a valid transaction that stays within sigop limits
+        tx5 = CTransaction()
+        total_value = 0
+
+        # Spend all but the last two outputs with normal redeem script
+        for i in range(p2sh_outputs - 2):
+            tx5.vin.append(CTxIn(COutPoint(tx3.sha256, i),
+                                CScript([redeem_script])))
+            total_value += tx3.vout[i].nValue
+
+        # Use the "just right" script for final input (exact limit)
+        tx5.vin.append(CTxIn(COutPoint(tx3.sha256, p2sh_outputs - 1),
+                            CScript([redeem_script_justright])))
+        total_value += tx3.vout[-1].nValue
+
+        tx5.vout.append(CTxOut(total_value, CScript([OP_TRUE])))
+
+        # This block should be accepted (sigops exactly at limit)
+        block_8 = self.build_next_block()
+        self.update_witness_block_with_transactions(block_8, [tx5])
+        test_witness_block(self.nodes[0], self.test_node, block_8, accepted=True)
 
         # Cleanup and prep for next test
         self.utxo.pop(0)
-        self.utxo.append(UTXO(tx2.sha256, 0, tx2.vout[0].nValue))
+        self.utxo.append(UTXO(tx5.sha256, 0, tx5.vout[0].nValue))
 
     @subtest
     def test_superfluous_witness(self):

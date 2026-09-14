@@ -14,6 +14,7 @@ from test_framework.util import (
     assert_equal,
     assert_fee_amount,
     assert_greater_than,
+    assert_greater_than_or_equal,
     assert_raises_rpc_error,
     count_bytes,
 )
@@ -142,7 +143,14 @@ class WalletSendTest(BitcoinTestFramework):
             return
 
         if locktime:
+            assert_equal(from_wallet.gettransaction(txid=res["txid"], verbose=True)["decoded"]["locktime"], locktime)
             return res
+        else:
+            if add_to_wallet:
+                decoded_tx = from_wallet.gettransaction(txid=res["txid"], verbose=True)["decoded"]
+                # the locktime should be within 100 blocks of the
+                # block height
+                assert_greater_than_or_equal(decoded_tx["locktime"], from_wallet.getblockcount() - 100)
 
         if from_wallet.getwalletinfo()["private_keys_enabled"] and not include_watching:
             assert_equal(res["complete"], True)
@@ -304,6 +312,40 @@ class WalletSendTest(BitcoinTestFramework):
         res = self.test_send(from_wallet=w3, to_wallet=w1, amount=1)
         res = w2.walletprocesspsbt(res["psbt"])
         assert res["complete"]
+
+        # verify that fee estimation modes parse case insensitively
+        self.log.info("Testing case insensitive fee estimation mode parse")
+        for mode in ["ecoNOMICAL", "economical", "ECONOMICAL"]:
+            res = self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                estimate_mode=mode, conf_target=1, add_to_wallet=False
+            )
+            assert_equal(res["complete"], True)
+
+            res = self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                arg_estimate_mode=mode, arg_conf_target=1, add_to_wallet=False
+            )
+            assert_equal(res["complete"], True)
+
+        # Verify that different variations of 'unset' still counts as
+        # not setting the estimation mode
+        for mode in ["unSET", "unset", "UNSET"]:
+            self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                arg_estimate_mode=mode, arg_conf_target=1, add_to_wallet=False,  expect_error = (-8, 'Specify estimate_mode')
+            )
+
+            self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                estimate_mode=mode, conf_target=1, add_to_wallet=False,  expect_error = (-8, 'Specify estimate_mode')
+            )
+
+        # Verify that 'estimate_mode' requires a confirmation target
+        for mode in ["ecoNOMICAL", "economical", "ECONOMICAL"]:
+            self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                estimate_mode=mode, conf_target=None, add_to_wallet=False,  expect_error = (-8, 'estimate_mode should be passed with conf_target')
+            )
+
+            self.test_send(from_wallet=w0, to_wallet=w1, amount=1,
+                arg_estimate_mode=mode, arg_conf_target=None, add_to_wallet=False,  expect_error = (-8, 'estimate_mode should be passed with conf_target')
+            )
 
         if not self.options.descriptors:
             # Descriptor wallets do not allow mixed watch-only and non-watch-only things in the same wallet.

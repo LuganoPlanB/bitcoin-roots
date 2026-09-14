@@ -13,6 +13,7 @@
 #include <node/blockstorage.h>
 #include <undo.h>
 #include <util/fs_helpers.h>
+#include <util/syserror.h>
 #include <validation.h>
 
 /* The index database stores three items for each block: the disk location of the encoded filter,
@@ -112,6 +113,11 @@ BlockFilterIndex::BlockFilterIndex(std::unique_ptr<interfaces::Chain> chain, Blo
     m_filter_fileseq = std::make_unique<FlatFileSeq>(std::move(path), "fltr", FLTR_FILE_CHUNK_SIZE);
 }
 
+bilingual_str BlockFilterIndex::GetDisableAction() const
+{
+    return strprintf(_("remove \"%s\" from -blockfilterindex"), BlockFilterTypeName(m_filter_type));
+}
+
 bool BlockFilterIndex::CustomInit(const std::optional<interfaces::BlockRef>& block)
 {
     if (!m_db->Read(DB_FILTER_POS, m_next_filter_pos)) {
@@ -153,6 +159,11 @@ bool BlockFilterIndex::CustomCommit(CDBBatch& batch)
     }
     if (!file.Commit()) {
         LogError("%s: Failed to commit filter file %d\n", __func__, pos.nFile);
+        (void)file.fclose();
+        return false;
+    }
+    if (file.fclose() != 0) {
+        LogError("Failed to close filter file %d after commit: %s", pos.nFile, SysErrorString(errno));
         return false;
     }
 
@@ -207,6 +218,11 @@ size_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& 
         }
         if (!last_file.Commit()) {
             LogPrintf("%s: Failed to commit filter file %d\n", __func__, pos.nFile);
+            (void)last_file.fclose();
+            return 0;
+        }
+        if (last_file.fclose() != 0) {
+            LogError("Failed to close filter file %d after commit: %s", pos.nFile, SysErrorString(errno));
             return 0;
         }
 
@@ -229,6 +245,12 @@ size_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& 
     }
 
     fileout << filter.GetBlockHash() << filter.GetEncodedFilter();
+
+    if (fileout.fclose() != 0) {
+        LogError("Failed to close filter file %d: %s", pos.nFile, SysErrorString(errno));
+        return 0;
+    }
+
     return data_size;
 }
 
