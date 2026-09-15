@@ -23,6 +23,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "contrib/devtools/roots-replay.py"
 MANIFEST_SCRIPT = ROOT / "contrib/devtools/roots-adaptation-manifest.py"
+RETROSPECTIVE_SCRIPT = ROOT / "contrib/devtools/roots-retrospective.py"
+METHODOLOGY_SCRIPT = ROOT / "contrib/devtools/roots-methodology.py"
 
 
 def load_module():
@@ -49,8 +51,45 @@ def load_manifest_module():
 MANIFEST = load_manifest_module()
 
 
+def load_retrospective_module():
+    spec = importlib.util.spec_from_file_location("roots_retrospective", RETROSPECTIVE_SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+RETROSPECTIVE = load_retrospective_module()
+
+
+def load_methodology_module():
+    spec = importlib.util.spec_from_file_location("roots_methodology", METHODOLOGY_SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+METHODOLOGY = load_methodology_module()
+
+
 def git(repository: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repository), *args], check=True, text=True, capture_output=True).stdout.strip()
+
+
+def reconstruction_digests(final_state: Path, review: Path, export: Path, tree: str) -> dict[str, str]:
+    """Return only deterministic replay artifacts for frozen methodology evidence."""
+    state = json.loads(final_state.read_text())
+    return {
+        "state": "sha256:" + hashlib.sha256(final_state.read_bytes()).hexdigest(),
+        "report_json": "sha256:" + hashlib.sha256((review / "replay-review.json").read_bytes()).hexdigest(),
+        "report_text": "sha256:" + hashlib.sha256((review / "replay-review.txt").read_bytes()).hexdigest(),
+        "generated_export": "sha256:" + hashlib.sha256(export.read_bytes()).hexdigest(),
+        "tree": "sha1:" + tree,
+        "outcome_set": "sha256:" + hashlib.sha256(json.dumps(state["completed_units"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+    }
 
 
 def caller_evidence(repository: Path) -> dict[str, object]:
@@ -77,6 +116,300 @@ class RootsReplayTest(unittest.TestCase):
     L7_INCREMENTAL_COMMIT = "3e29908f7a0131a71309e80a78fe865ec8a50f76"
     L7_INCREMENTAL_TREE = "c676e8944470cc74fcc213e7368aed359ad8ae55"
     L7_CANONICAL_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+
+    def test_l8_retrospective_derives_complete_metrics_from_locked_evidence(self):
+        """The methodology record is entirely reproducible from L4/L7 evidence."""
+        fixture = ROOT / "contrib/roots/core-29.4-migration-fixture.json"
+        proposal = ROOT / "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json"
+        acceptance = ROOT / "contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+        validation = ROOT / "contrib/roots/replay-29.4-proposal/validation-evidence.json"
+        incremental = ROOT / "contrib/roots/replay-29.4-proposal/incremental-comparison.json"
+        checked_in = json.loads((ROOT / "contrib/roots/method-retrospective-29.4.json").read_text())
+        RETROSPECTIVE.validate_record(checked_in, fixture, proposal, acceptance, validation, incremental)
+        self.assertEqual(checked_in["outcomes"], RETROSPECTIVE.outcome_rows(
+            RETROSPECTIVE.read_json(fixture), RETROSPECTIVE.read_json(proposal)
+        ))
+        self.assertEqual(
+            {(item["forecast"], item["actual"]): len(item["paths"])
+             for item in checked_in["transitions"]},
+            {("exact", "automatic"): 14, ("clean-textual", "automatic"): 12,
+             ("generated", "rewritten"): 6, ("manual", "manual"): 5,
+             ("manual", "absorbed"): 1, ("absorbed", "absorbed"): 1,
+             ("snapshot-only", "manual"): 1},
+        )
+        self.assertEqual(set(checked_in["metrics"]), {
+            "automation", "classification", "manual_effort", "provenance", "invariants",
+            "generated_files", "replay_restarts", "report_usability", "fresh_vs_incremental",
+        })
+        self.assertEqual(
+            {item["category"] for item in checked_in["observations"]},
+            {"automation", "classification", "manual-effort", "provenance", "invariants",
+             "generated-files", "replay-restarts", "report-usability", "fresh-vs-incremental",
+             "platform-result"},
+        )
+        self.assertEqual(checked_in["metrics"]["classification"]["false_clean_paths"], [])
+        self.assertEqual(checked_in["metrics"]["classification"]["false_conflict_paths"], ["src/txrequest.cpp"])
+        self.assertEqual(checked_in["metrics"]["replay_restarts"]["restart_events_status"], "not-recorded")
+        self.assertEqual(checked_in["metrics"]["report_usability"]["independent_reproduction_status"], "not-recorded")
+
+    def test_l8_retrospective_rejects_boolean_count_fields(self):
+        record = json.loads(
+            (ROOT / "contrib/roots/method-retrospective-29.4.json").read_text()
+        )
+        mutations = (
+            ("schema_version", None),
+            ("metrics.automation.total_outcomes", None),
+            ("metrics.replay_restarts.clean_runs", None),
+            ("metrics.fresh_vs_incremental.fresh_runs", None),
+            ("metrics.fresh_vs_incremental.incremental_differences", None),
+        )
+        for dotted_path, _ in mutations:
+            invalid = copy.deepcopy(record)
+            target = invalid
+            components = dotted_path.split(".")
+            for component in components[:-1]:
+                target = target[component]
+            target[components[-1]] = True
+            with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+                RETROSPECTIVE.validate_schema(invalid)
+
+    def test_l8_methodology_v1_lock_rejects_one_byte_input_mutation(self):
+        bundle = ROOT / "contrib/roots/methodology-v1.json"
+        METHODOLOGY.validate(bundle)
+        with tempfile.TemporaryDirectory() as directory:
+            copy_root = Path(directory) / "contrib"
+            shutil.copytree(ROOT / "contrib", copy_root)
+            target = copy_root / "roots/methodology-v1.json"
+            value = json.loads(target.read_text())
+            value["frozen_inputs"][0]["sha256"] = "sha256:" + "0" * 64
+            value["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: item for key, item in value.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            target.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                METHODOLOGY.validate(target)
+            target.write_bytes((ROOT / "contrib/roots/methodology-v1.json").read_bytes())
+            patch = copy_root / "roots/replay-core-to-knots-29.3/roots-knots-build-ci-build-or-release.patch"
+            with patch.open("ab") as output:
+                output.write(b"x")
+            with self.assertRaises(ValueError):
+                METHODOLOGY.validate(target)
+
+    def test_l8_methodology_contract_rejects_unknown_role_or_result(self):
+        value = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        for field, invalid in (("role", "unknown-role"), ("result", "unknown-result"), ("input_roots", ["../escape"])):
+            mutated = copy.deepcopy(value["reconstructions"])
+            next(iter(mutated.values()))[field] = invalid
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                METHODOLOGY.validate_reconstructions(mutated)
+        duplicated = copy.deepcopy(value["reconstructions"])
+        items = list(duplicated.values())
+        items[1]["role"] = items[0]["role"]
+        with self.assertRaises(ValueError):
+            METHODOLOGY.validate_reconstructions(duplicated)
+
+    def test_l8_methodology_rejects_malformed_runtime_contract_and_paths(self):
+        bundle = ROOT / "contrib/roots/methodology-v1.json"
+        value = json.loads(bundle.read_text())
+        for mutate in (
+            lambda item: item["runtime"].__setitem__("bash", 5),
+            lambda item: item["contracts"].__setitem__("replay_tool", []),
+            lambda item: item["governing_inputs"].append("../escape"),
+            lambda item: item["frozen_inputs"][0].__setitem__("sha256", "sha256:" + "g" * 64),
+            lambda item: next(iter(item["reconstructions"].values())).__setitem__("target_tree", "sha1:" + "z" * 40),
+        ):
+            candidate = copy.deepcopy(value)
+            mutate(candidate)
+            candidate["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: entry for key, entry in candidate.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "contrib/roots/methodology-v1.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(candidate))
+                with self.assertRaises(ValueError):
+                    METHODOLOGY.validate(path)
+
+    def test_l8_methodology_runtime_contract_and_cli_fail_closed(self):
+        value = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        METHODOLOGY.validate_runtime(value["runtime"])
+        METHODOLOGY.validate_contracts(value["contracts"])
+        for invalid in ({}, {"python": 3}, []):
+            with self.assertRaises(ValueError):
+                METHODOLOGY.validate_runtime(invalid)
+        for invalid in ({}, {"replay_tool": "x"}, []):
+            with self.assertRaises(ValueError):
+                METHODOLOGY.validate_contracts(invalid)
+        result = subprocess.run([sys.executable, str(METHODOLOGY_SCRIPT), str(ROOT / "contrib/roots/methodology-v1.json"), "extra"], capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_l8_methodology_full_copy_rejects_governing_path_and_nested_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contrib = Path(directory) / "contrib"
+            shutil.copytree(ROOT / "contrib", contrib)
+            bundle = contrib / "roots/methodology-v1.json"
+            METHODOLOGY.validate(bundle)
+            value = json.loads(bundle.read_text())
+            value["governing_inputs"].append("../escape")
+            value["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: item for key, item in value.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            bundle.write_text(json.dumps(value))
+            with self.assertRaises(ValueError): METHODOLOGY.validate(bundle)
+            bundle.write_bytes((ROOT / "contrib/roots/methodology-v1.json").read_bytes())
+            (contrib / "roots/replay-29.4-proposal/nested-link").symlink_to("materials")
+            with self.assertRaises(ValueError): METHODOLOGY.validate(bundle)
+
+    def test_l8_methodology_record_and_type_mutations_fail_closed(self):
+        value = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        contracts = copy.deepcopy(value["contracts"])
+        contracts["replay_material_schemas"] = [True, 2]
+        with self.assertRaises(ValueError): METHODOLOGY.validate_contracts(contracts)
+        roots = copy.deepcopy(value["reconstructions"])
+        next(iter(roots.values()))["role"] = {}
+        with self.assertRaises(ValueError): METHODOLOGY.validate_reconstructions(roots)
+
+    def test_l8_methodology_accepts_data_declared_renamed_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            copy_root = Path(directory) / "contrib"
+            shutil.copytree(ROOT / "contrib", copy_root)
+            old = copy_root / "roots/replay-29.4-proposal"
+            new = copy_root / "roots/replay-major-next"
+            old.rename(new)
+            target = copy_root / "roots/methodology-v1.json"
+            value = json.loads(target.read_text())
+            record = value["reconstructions"].pop("core-29.4")
+            record["input_roots"] = ["contrib/roots/replay-major-next"]
+            record["record"] = record["record"].replace("replay-29.4-proposal", "replay-major-next")
+            value["reconstructions"]["upstream-major-next"] = record
+            for item in value["frozen_inputs"]:
+                item["path"] = item["path"].replace("replay-29.4-proposal", "replay-major-next")
+            value["frozen_inputs"].sort(key=lambda item: item["path"])
+            value["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: item for key, item in value.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            target.write_text(json.dumps(value), encoding="utf-8")
+            METHODOLOGY.validate(target)
+
+    def test_l8_retrospective_rejects_reclassified_or_incomplete_locked_evidence(self):
+        fixture = ROOT / "contrib/roots/core-29.4-migration-fixture.json"
+        proposal = ROOT / "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json"
+        acceptance = ROOT / "contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+        validation = ROOT / "contrib/roots/replay-29.4-proposal/validation-evidence.json"
+        incremental = ROOT / "contrib/roots/replay-29.4-proposal/incremental-comparison.json"
+        record = RETROSPECTIVE.build_record(fixture, proposal, acceptance, validation, incremental)
+        with tempfile.TemporaryDirectory() as directory:
+            mutated = Path(directory) / "proposal.json"
+            value = json.loads(proposal.read_text())
+            value["outcomes"][0]["l4_expected_outcome"] = "manual"
+            mutated.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+                RETROSPECTIVE.build_record(fixture, mutated, acceptance, validation, incremental)
+            missing = Path(directory) / "missing-outcome.json"
+            value = json.loads(proposal.read_text())
+            value["outcomes"] = value["outcomes"][1:]
+            missing.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+                RETROSPECTIVE.build_record(fixture, missing, acceptance, validation, incremental)
+            stale = Path(directory) / "stale-acceptance.json"
+            value = json.loads(acceptance.read_text())
+            value["l4_accounting"]["unaccounted"] = ["omitted"]
+            stale.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+                RETROSPECTIVE.build_record(fixture, proposal, stale, validation, incremental)
+        incomplete = copy.deepcopy(record)
+        incomplete["observations"] = incomplete["observations"][:-1]
+        incomplete["digest"] = RETROSPECTIVE.digest({key: value for key, value in incomplete.items() if key != "digest"})
+        with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+            RETROSPECTIVE.validate_record(incomplete, fixture, proposal, acceptance, validation, incremental)
+        changed_input = copy.deepcopy(record)
+        changed_input["inputs"][0]["digest"] = "sha256:" + "0" * 64
+        changed_input["digest"] = RETROSPECTIVE.digest({key: value for key, value in changed_input.items() if key != "digest"})
+        with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+            RETROSPECTIVE.validate_record(changed_input, fixture, proposal, acceptance, validation, incremental)
+        schema_invalid = copy.deepcopy(record)
+        schema_invalid["metrics"]["automation"]["basis_points"] = "invalid"
+        with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+            RETROSPECTIVE.validate_schema(schema_invalid)
+        missing_metric = copy.deepcopy(record)
+        del missing_metric["metrics"]["report_usability"]
+        with self.assertRaises(RETROSPECTIVE.RetrospectiveError):
+            RETROSPECTIVE.validate_schema(missing_metric)
+
+    def test_l8_replay_material_contract_versions_and_unknown_features_fail_closed(self):
+        """v1 fixtures remain readable; negotiated v2 records reject unknowns."""
+        units = [{"id": "fixture", "mechanism": "manual", "reference": "fixture:manual", "dependencies": []}]
+        with tempfile.TemporaryDirectory() as directory:
+            materials = Path(directory) / "replay-materials.json"
+            legacy = {"schema_version": 1, "materials": {"fixture:manual": {"mechanism": "manual"}}}
+            materials.write_text(json.dumps(legacy), encoding="utf-8")
+            self.assertEqual(REPLAY.read_replay_materials(materials, units)["schema_version"], 1)
+            negotiated = {"schema_version": 2, "contract": {"tool": "roots-replay", "minimum_tool_version": "1", "features": ["typed-materials"]}, "materials": legacy["materials"]}
+            materials.write_text(json.dumps(negotiated), encoding="utf-8")
+            self.assertEqual(REPLAY.read_replay_materials(materials, units)["schema_version"], 2)
+            REPLAY.validate_contract({"tool": "roots-replay", "minimum_tool_version": "1", "features": []}, current_tool_version="2")
+            for contract in (
+                {"tool": "roots-replay", "minimum_tool_version": "2", "features": []},
+                {"tool": "roots-replay", "minimum_tool_version": "x", "features": []},
+                {"tool": "roots-replay", "minimum_tool_version": "0", "features": []},
+                {"tool": "roots-replay", "minimum_tool_version": "00", "features": []},
+                {"tool": "roots-replay", "minimum_tool_version": "01", "features": []},
+                {"tool": "wrong", "minimum_tool_version": "1", "features": []},
+                {"tool": "roots-replay", "minimum_tool_version": "1", "features": ["typed-materials", "typed-materials"]},
+                {"tool": "roots-replay", "minimum_tool_version": "1", "features": ["unknown"]},
+                {"tool": "roots-replay", "minimum_tool_version": "1", "features": [""]},
+                {"tool": "roots-replay", "minimum_tool_version": "1", "features": [{}]},
+                {"tool": "roots-replay", "minimum_tool_version": "1", "features": [[]]},
+            ):
+                invalid = copy.deepcopy(negotiated)
+                invalid["contract"] = contract
+                materials.write_text(json.dumps(invalid), encoding="utf-8")
+                with self.assertRaises(REPLAY.ReplayError):
+                    REPLAY.read_replay_materials(materials, units)
+            newer = copy.deepcopy(negotiated)
+            newer["schema_version"] = 3
+            materials.write_text(json.dumps(newer), encoding="utf-8")
+            with self.assertRaises(REPLAY.ReplayError):
+                REPLAY.read_replay_materials(materials, units)
+            newer["schema_version"] = True
+            materials.write_text(json.dumps(newer), encoding="utf-8")
+            with self.assertRaises(REPLAY.ReplayError):
+                REPLAY.read_replay_materials(materials, units)
+            for current_version in ("0", "00", "01", "x"):
+                with self.assertRaises(REPLAY.ReplayError):
+                    REPLAY.validate_contract(
+                        {"tool": "roots-replay", "minimum_tool_version": "1", "features": []},
+                        current_tool_version=current_version,
+                    )
+
+    def test_l8_manifest_reader_accepts_relocated_contract_and_rejects_invalid_name(self):
+        """A migration record names its own release; the reader does not pin one."""
+        original = ROOT / "contrib/roots/adaptation-manifest-29.3.json"
+        with tempfile.TemporaryDirectory() as directory:
+            relocated = Path(directory) / "adaptation-manifest-major-reorganization.json"
+            relocated.write_bytes(original.read_bytes())
+            self.assertEqual(
+                [unit["id"] for unit in REPLAY.read_manifest_units(relocated)],
+                [unit["id"] for unit in REPLAY.read_manifest_units(original)],
+            )
+            invalid = Path(directory) / "manifest.json"
+            invalid.write_bytes(original.read_bytes())
+            with self.assertRaises(REPLAY.ReplayError):
+                REPLAY.read_manifest_units(invalid)
+
+    def test_l8_contract_compatibility_audit_is_complete_and_digest_locked(self):
+        audit = json.loads((ROOT / "contrib/roots/method-contract-compatibility.json").read_text())
+        stored = audit.pop("digest")
+        self.assertEqual(stored, "sha256:" + hashlib.sha256(json.dumps(audit, sort_keys=True, separators=(",", ":")).encode()).hexdigest())
+        surfaces = {item["surface"] for item in audit["audit"]}
+        self.assertTrue({"schemas", "cli", "classifiers", "generators", "fixtures", "reports"} <= surfaces)
+        self.assertTrue(all(surface.startswith("literal:") for surface in surfaces if "29." in surface or "roots-delta-atlas" in surface))
+        self.assertEqual(set(audit["synthetic_gates"]), {"renamed_moved_paths", "added_deleted_files", "changed_conflict_counts", "missing_knots_counterpart", "newer_older_schemas", "unknown_mechanisms", "alternate_repository_locations", "major_reorganization"})
+        self.assertEqual(audit["compatibility"]["older_reader_newer_record"], "reject")
+
+    def test_l8_retrospective_derives_changed_conflict_counts_without_constants(self):
+        fixture = {"expected_outcomes": {"exact": ["added.txt"], "manual": ["deleted.txt", "conflict.txt"]}, "snapshot_only": {"path": "moved.txt"}}
+        proposal = {"outcomes": [
+            {"path": "added.txt", "l4_expected_outcome": "exact", "proposed_status": "automatic"},
+            {"path": "deleted.txt", "l4_expected_outcome": "manual", "proposed_status": "absorbed"},
+            {"path": "conflict.txt", "l4_expected_outcome": "manual", "proposed_status": "manual"},
+            {"path": "moved.txt", "l4_expected_outcome": "snapshot-only", "proposed_status": "manual"},
+        ]}
+        rows = RETROSPECTIVE.outcome_rows(fixture, proposal)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({(item["forecast"], item["actual"]): len(item["paths"]) for item in RETROSPECTIVE.grouped_transitions(rows)}, {("exact", "automatic"): 1, ("manual", "absorbed"): 1, ("manual", "manual"): 1, ("snapshot-only", "manual"): 1})
 
     def test_l7_29_4_proposal_accounts_for_git_and_snapshot_outcomes(self):
         """The fresh-port proposal cannot omit a Git path or archive-only identity."""
@@ -854,6 +1187,7 @@ class RootsReplayTest(unittest.TestCase):
     def test_l7_29_4_replays_twice_to_exact_tree(self):
         """Two clean engine runs must produce identical state and candidate trees."""
         artifacts = []
+        digests = []
         materials = ROOT / "contrib/roots/replay-29.4-proposal"
         for _ in range(2):
             with tempfile.TemporaryDirectory() as directory:
@@ -871,12 +1205,25 @@ class RootsReplayTest(unittest.TestCase):
                     check=True,
                     capture_output=True,
                 )
+                export = root / "replay-generated-series.patch"
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "export-patches", "--repository", str(candidate),
+                     "--state", str(final_state), "--output", str(export)],
+                    check=True,
+                    capture_output=True,
+                )
                 artifacts.append(tuple(path.read_bytes() for path in (
                     final_state,
                     review / "replay-review.json",
                     review / "replay-review.txt",
+                    export,
                 )))
+                digests.append(reconstruction_digests(final_state, review, export, self.L7_CANDIDATE_TREE))
         self.assertEqual(*artifacts)
+        self.assertEqual(*digests)
+        frozen = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        self.assertEqual({key: value for key, value in digests[0].items() if key != "tree"}, frozen["reconstructions"]["core-29.4"]["artifact_digests"])
+        print(json.dumps({"core-29.4": digests[0]}, sort_keys=True))
 
     def test_l7_29_4_each_material_omission_is_rejected(self):
         """Every material in the real 29.4 replay is mandatory."""
@@ -984,6 +1331,49 @@ class RootsReplayTest(unittest.TestCase):
                 result = self.l7_core_replay(root, materials)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("replay materials do not exactly cover manifest references", result.stderr)
+
+    def test_l8_core_knots_replays_twice_to_exact_stage_a_tree(self):
+        """The ten locked patches reproducibly reconstruct the exact stage-A tree."""
+        artifacts = []
+        digests = []
+        materials = ROOT / "contrib/roots/replay-core-to-knots-29.3"
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result = self.l7_core_replay(root, materials)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                candidate = root / "state" / "owned-candidate"
+                self.assertEqual(git(candidate, "write-tree"), "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6")
+                states = sorted((root / "state").glob("replay-state-*.json"))
+                self.assertTrue(states)
+                final_state = states[-1]
+                review = root / "review"
+                review.mkdir()
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "report", "--state", str(final_state),
+                     "--output-directory", str(review)],
+                    check=True,
+                    capture_output=True,
+                )
+                export = root / "replay-generated-series.patch"
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "export-patches", "--repository", str(candidate),
+                     "--state", str(final_state), "--output", str(export)],
+                    check=True,
+                    capture_output=True,
+                )
+                artifacts.append(tuple(path.read_bytes() for path in (
+                    final_state,
+                    review / "replay-review.json",
+                    review / "replay-review.txt",
+                    export,
+                )))
+                digests.append(reconstruction_digests(final_state, review, export, "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"))
+        self.assertEqual(*artifacts)
+        self.assertEqual(*digests)
+        frozen = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        self.assertEqual({key: value for key, value in digests[0].items() if key != "tree"}, frozen["reconstructions"]["core-to-knots-29.3"]["artifact_digests"])
+        print(json.dumps({"core-to-knots-29.3": digests[0]}, sort_keys=True))
 
     def test_l7_core_knots_out_of_order_tree_lock_is_rejected(self):
         """A tree lock from another sequence position rejects the application."""
@@ -1194,6 +1584,7 @@ class RootsReplayTest(unittest.TestCase):
         target_tree = "a5708dcbf1d2611360fab68fc6a8e504db1ba95d"
         materials_root = ROOT / "contrib/roots/replay-29.3-release"
         artifacts = []
+        digests = []
         contract = json.loads((materials_root / "calibration-evidence-contract.json").read_text())
         self.assertEqual(contract["schema_version"], 1)
         digest = contract.pop("digest")
@@ -1231,6 +1622,12 @@ class RootsReplayTest(unittest.TestCase):
                      "--output-directory", str(review)],
                     check=True, capture_output=True, text=True,
                 )
+                export = root / "replay-generated-series.patch"
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "export-patches", "--repository", str(state / "owned-candidate"),
+                     "--state", str(final_state), "--output", str(export)],
+                    check=True, capture_output=True, text=True,
+                )
                 outcomes = json.loads(final_state.read_text())["completed_units"]
                 self.assertEqual(len(outcomes), 16)
                 self.assertEqual([(item["unit"], item["outcome"] == "applied") for item in outcomes], expected)
@@ -1238,8 +1635,14 @@ class RootsReplayTest(unittest.TestCase):
                 self.assertEqual(sum(item["outcome"] == "manual" for item in outcomes), 9)
                 artifacts.append(tuple(path.read_bytes() for path in (
                     final_state, review / "replay-review.json", review / "replay-review.txt",
+                    export,
                 )))
+                digests.append(reconstruction_digests(final_state, review, export, target_tree))
         self.assertEqual(*artifacts)
+        self.assertEqual(*digests)
+        frozen = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
+        self.assertEqual({key: value for key, value in digests[0].items() if key != "tree"}, frozen["reconstructions"]["roots-29.3"]["artifact_digests"])
+        print(json.dumps({"roots-29.3": digests[0]}, sort_keys=True))
 
     def test_fixture_public_replay_apply_persists_boundary_and_source(self):
         manifest, materials = self.fixture_manifest(self.root)

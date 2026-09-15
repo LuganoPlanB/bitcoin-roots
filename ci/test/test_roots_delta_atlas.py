@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -141,6 +142,48 @@ class RootsDeltaAtlasTest(unittest.TestCase):
             stale = subprocess.run([sys.executable, SCRIPT, "verify-input-lock", "first.json", "--ledger", "ledger.json", *relative_inputs], cwd=temporary, text=True, capture_output=True)
             self.assertNotEqual(stale.returncode, 0)
             self.assertIn("stale input lock", stale.stderr)
+            renamed = subprocess.run([sys.executable, SCRIPT, "lock-inputs", "--ledger", "ledger.json", "--snapshot", "renamed=core-293", "--snapshot", "core-29.4-snapshot=core-294", "--output", "renamed.json"], cwd=temporary, text=True, capture_output=True)
+            self.assertNotEqual(renamed.returncode, 0)
+            self.assertIn("legacy lock requires", renamed.stderr)
+
+    def test_input_lock_accepts_caller_selected_releases_and_reorganized_snapshots(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            temporary = Path(temporary_dir)
+            before, after = temporary / "before-major", temporary / "after-major"
+            self.write_snapshot(before, "before\n")
+            self.write_snapshot(after, "after\n")
+            ledger = temporary / "ledger.json"
+            ledger.write_text(json.dumps({"releases": [
+                {"id": "core-major", "peeled_commit": "sha1:" + "1" * 40, "tree": "sha1:" + "2" * 40, "tag_ref": "refs/tags/core-major"},
+                {"id": "roots-next", "peeled_commit": "sha1:" + "3" * 40, "tree": "sha1:" + "4" * 40, "tag_ref": "refs/tags/roots-next"},
+            ]}), encoding="utf-8")
+            original_directory = Path.cwd()
+            os.chdir(temporary)
+            try:
+                lock = ATLAS.input_lock(
+                    ledger,
+                    ["before-reorganized=before-major", "after-reorganized=after-major"],
+                    ["core-major", "roots-next"],
+                )
+            finally:
+                os.chdir(original_directory)
+            self.assertEqual(set(lock["git_inputs"]), {"core-major", "roots-next"})
+            self.assertEqual([item["id"] for item in lock["snapshot_inputs"]], ["after-reorganized", "before-reorganized"])
+            os.chdir(temporary)
+            try:
+                with self.assertRaises(ATLAS.AtlasError):
+                    ATLAS.input_lock(ledger, ["before-reorganized=before-major"], ["missing-release"])
+                with self.assertRaises(ATLAS.AtlasError):
+                    ATLAS.input_lock(ledger, ["before-reorganized=before-major"], ["core-major", "core-major"])
+                for required_releases in ([], [""], [{"core-major": "invalid"}], [["core-major"]]):
+                    with self.assertRaises(ATLAS.AtlasError):
+                        ATLAS.input_lock(
+                            ledger,
+                            ["before-reorganized=before-major"],
+                            required_releases,
+                        )
+            finally:
+                os.chdir(original_directory)
 
     def test_unsafe_paths_and_duplicate_archive_members_fail(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -161,6 +204,14 @@ class RootsDeltaAtlasTest(unittest.TestCase):
             (root / "file.txt").write_text("two", encoding="utf-8")
             with self.assertRaises(ATLAS.AtlasError):
                 ATLAS.snapshot_manifest(root)
+
+    def test_changed_records_accounts_for_added_and_deleted_paths(self):
+        before = {"records": [{"path": "deleted.txt", "sha256": "sha256:before", "type": "file"}, {"path": "kept.txt", "sha256": "sha256:same", "type": "file"}]}
+        after = {"records": [{"path": "added.txt", "sha256": "sha256:after", "type": "file"}, {"path": "kept.txt", "sha256": "sha256:same", "type": "file"}]}
+        self.assertEqual(
+            [(item["path"], item["status"]) for item in ATLAS.changed_records(before, after)],
+            [("added.txt", "added"), ("deleted.txt", "deleted")],
+        )
 
     def test_input_assignment_cannot_escape_the_working_directory(self):
         with self.assertRaises(ATLAS.AtlasError):
@@ -190,6 +241,11 @@ class RootsDeltaAtlasTest(unittest.TestCase):
             self.assertEqual([layer["id"] for layer in result["layers"]], ["core_to_knots", "knots_to_first_roots", "first_roots_to_target"])
             self.assertIn({"layers": ["core_to_knots", "knots_to_first_roots", "first_roots_to_target"], "path": "shared.txt"}, result["overlapping_ownership"])
             self.assertIn({"layers": ["knots_to_first_roots", "first_roots_to_target"], "path": "shared.txt", "relation": "reverted"}, result["first_roots_later_relations"])
+            ledger.write_text(json.dumps({"releases": [{"id": "base-major", "peeled_commit": f"sha1:{core}"}, {"id": "target-major", "peeled_commit": f"sha1:{target}"}]}), encoding="utf-8")
+            generalized = ATLAS.layer_partition(repository, ledger, first, parent, "base-major", "target-major")
+            self.assertEqual(generalized["inputs"]["core"], core)
+            self.assertEqual(generalized["inputs"]["roots_target"], target)
+            ledger.write_text(json.dumps({"releases": [{"id": "core-29.3", "peeled_commit": f"sha1:{core}"}, {"id": "roots-29.3-roots.1", "peeled_commit": f"sha1:{target}"}]}), encoding="utf-8")
             report = Path(temporary_dir) / "partition.json"
             report.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
             verified = subprocess.run([sys.executable, SCRIPT, "verify-layer-partition", "partition.json", "--repository", "repo", "--ledger", "ledger.json", "--knots-parent", parent, "--first-roots", first], cwd=temporary_dir, text=True, capture_output=True)

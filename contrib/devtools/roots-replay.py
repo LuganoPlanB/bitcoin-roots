@@ -26,8 +26,10 @@ from typing import Any
 
 
 OID_RE = re.compile(r"^[0-9a-f]{40}$")
+TOOL_VERSION_RE = re.compile(r"^[1-9][0-9]*$")
 MAX_JSON_BYTES = 1_000_000
 TOOL_VERSION = "1"
+SUPPORTED_CONTRACT_FEATURES = frozenset({"typed-materials"})
 REPLAY_ENVIRONMENT = {"LC_ALL": "C", "LANG": "C", "TZ": "UTC", "umask": "022"}
 
 
@@ -52,9 +54,10 @@ def digest(value: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(value)).hexdigest()
 
 
-def _safe_json_file(path: Path, expected_name: str, field: str) -> Any:
-    if not path.is_absolute() or path.name != expected_name:
-        raise ReplayError(f"{field} must be an absolute {expected_name} path")
+def _safe_json_file(path: Path, expected_name: str | None, field: str) -> Any:
+    if not path.is_absolute() or (expected_name is not None and path.name != expected_name):
+        suffix = expected_name if expected_name is not None else "JSON"
+        raise ReplayError(f"{field} must be an absolute {suffix} path")
     try:
         resolved = path.resolve(strict=True)
         if not resolved.is_file() or resolved.is_symlink() or resolved.stat().st_size > MAX_JSON_BYTES:
@@ -105,7 +108,9 @@ def _git(repository: Path, *args: str) -> str:
         env=environment,
     )
     if result.returncode:
-        raise ReplayError("Git verification failed")
+        command = " ".join(args)
+        detail = result.stderr.strip() or "no stderr"
+        raise ReplayError(f"Git verification failed for {command}: {detail}")
     return result.stdout.rstrip("\n")
 
 
@@ -199,7 +204,9 @@ def validate_plan(value: Any) -> None:
 
 def read_manifest_units(path: Path) -> list[dict[str, Any]]:
     """Derive the execution view solely from the validated L3 manifest."""
-    value = _safe_json_file(path, "adaptation-manifest-29.3.json", "adaptation manifest")
+    if not path.name.startswith("adaptation-manifest-") or path.suffix != ".json":
+        raise ReplayError("adaptation manifest name is invalid")
+    value = _safe_json_file(path, None, "adaptation manifest")
     validator = Path(__file__).with_name("roots-adaptation-manifest.py")
     result = subprocess.run([sys.executable, str(validator), str(path)], check=False, capture_output=True)
     if result.returncode or not isinstance(value, dict) or not isinstance(value.get("units"), list):
@@ -215,10 +222,49 @@ def read_manifest_units(path: Path) -> list[dict[str, Any]]:
     return units
 
 
+def validate_contract(contract: Any, current_tool_version: str = TOOL_VERSION) -> None:
+    if not isinstance(contract, dict) or set(contract) != {"tool", "minimum_tool_version", "features"}:
+        raise ReplayError("replay contract fields are invalid")
+    minimum_tool_version = contract["minimum_tool_version"]
+    if (
+        contract["tool"] != "roots-replay"
+        or not isinstance(minimum_tool_version, str)
+        or not TOOL_VERSION_RE.fullmatch(minimum_tool_version)
+        or not isinstance(current_tool_version, str)
+        or not TOOL_VERSION_RE.fullmatch(current_tool_version)
+        or int(current_tool_version) < int(minimum_tool_version)
+    ):
+        raise ReplayError("replay contract version is unsupported")
+    features = contract["features"]
+    if (
+        not isinstance(features, list)
+        or any(not isinstance(feature, str) or not feature for feature in features)
+        or len(features) != len(set(features))
+        or not set(features) <= SUPPORTED_CONTRACT_FEATURES
+    ):
+        raise ReplayError("replay contract feature is unsupported")
+
+
 def read_replay_materials(path: Path, manifest_units: list[dict[str, Any]]) -> dict[str, Any]:
     value = _safe_json_file(path, "replay-materials.json", "replay materials")
-    if not isinstance(value, dict) or set(value) != {"schema_version", "materials"} or value["schema_version"] != 1 or not isinstance(value["materials"], dict):
+    if not isinstance(value, dict) or not isinstance(value.get("materials"), dict):
         raise ReplayError("replay materials envelope is invalid")
+    if (
+        isinstance(value.get("schema_version"), int)
+        and not isinstance(value.get("schema_version"), bool)
+        and value["schema_version"] == 1
+        and set(value) == {"schema_version", "materials"}
+    ):
+        pass # Legacy v1 records remain valid without an implicit feature upgrade.
+    elif (
+        isinstance(value.get("schema_version"), int)
+        and not isinstance(value.get("schema_version"), bool)
+        and value["schema_version"] == 2
+        and set(value) == {"schema_version", "contract", "materials"}
+    ):
+        validate_contract(value["contract"])
+    else:
+        raise ReplayError("replay materials schema version is unsupported")
     expected = {unit["reference"] for unit in manifest_units}
     if set(value["materials"]) != expected:
         raise ReplayError("replay materials do not exactly cover manifest references")

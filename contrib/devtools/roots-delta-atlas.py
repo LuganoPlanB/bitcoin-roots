@@ -230,11 +230,11 @@ def release_commit(ledger: dict[str, Any], release_id: str) -> str:
     raise AtlasError(f"lineage ledger lacks {release_id} commit")
 
 
-def layer_partition(repository: Path, ledger_path: Path, first_roots: str, knots_parent: str) -> dict[str, Any]:
+def layer_partition(repository: Path, ledger_path: Path, first_roots: str, knots_parent: str, core_release_id: str | None = None, roots_release_id: str | None = None) -> dict[str, Any]:
     """Compose immutable raw-tree deltas without rename/copy inference."""
     ledger = read_json(ledger_path)
-    core = release_commit(ledger, "core-29.3")
-    roots_target = release_commit(ledger, "roots-29.3-roots.1")
+    core = release_commit(ledger, core_release_id or "core-29.3")
+    roots_target = release_commit(ledger, roots_release_id or "roots-29.3-roots.1")
     parent = git_commit(repository, knots_parent)
     first = git_commit(repository, first_roots)
     expected_parent = git_output(repository, "show", "-s", "--format=%P", first).decode("ascii").strip()
@@ -457,20 +457,34 @@ def parse_assignment(value: str) -> tuple[str, Path]:
     return label, path
 
 
-def input_lock(ledger_path: Path, snapshots: list[str]) -> dict[str, Any]:
+def input_lock(ledger_path: Path, snapshots: list[str], required_releases: list[str] | None = None) -> dict[str, Any]:
     ledger = read_json(ledger_path)
     releases = ledger.get("releases")
     if not isinstance(releases, list):
         raise AtlasError("lineage ledger lacks releases")
     pinned = {}
+    legacy_mode = required_releases is None
+    if not legacy_mode and (
+        not isinstance(required_releases, list)
+        or not required_releases
+        or any(not isinstance(item, str) or not item for item in required_releases)
+    ):
+        raise AtlasError("required release IDs are invalid")
+    required = (
+        set(required_releases)
+        if not legacy_mode
+        else {"knots-29.3.knots20260507", "roots-29.3-roots.1"}
+    )
+    if not legacy_mode and len(required) != len(required_releases):
+        raise AtlasError("required release IDs must be unique")
     for release in releases:
-        if not isinstance(release, dict) or release.get("id") not in {"knots-29.3.knots20260507", "roots-29.3-roots.1"}:
+        if not isinstance(release, dict) or release.get("id") not in required:
             continue
         if not all(isinstance(release.get(key), str) for key in ("id", "peeled_commit", "tree", "tag_ref")):
             raise AtlasError("lineage ledger lacks immutable release identity")
         pinned[release["id"]] = {key: release[key] for key in ("peeled_commit", "tag_ref", "tree")}
-    if set(pinned) != {"knots-29.3.knots20260507", "roots-29.3-roots.1"}:
-        raise AtlasError("lineage ledger lacks required Knots/Roots releases")
+    if set(pinned) != required:
+        raise AtlasError("lineage ledger lacks a required release")
     entries = []
     seen = set()
     for value in snapshots:
@@ -479,8 +493,10 @@ def input_lock(ledger_path: Path, snapshots: list[str]) -> dict[str, Any]:
             raise AtlasError("duplicate snapshot label")
         seen.add(label)
         entries.append({"id": label, "manifest": snapshot_manifest(path), "provenance": "workspace-supplied non-Git snapshot; modes and release identity unavailable"})
-    if {entry["id"] for entry in entries} != {"core-29.3-snapshot", "core-29.4-snapshot"}:
-        raise AtlasError("lock requires Core 29.3 and 29.4 snapshot labels")
+    if not entries:
+        raise AtlasError("lock requires at least one snapshot")
+    if legacy_mode and {entry["id"] for entry in entries} != {"core-29.3-snapshot", "core-29.4-snapshot"}:
+        raise AtlasError("legacy lock requires Core 29.3 and 29.4 snapshot labels")
     return {"schema_version": 1, "git_inputs": pinned, "normalization": {"locale": "C", "path_separator": "/", "snapshot_executable_bits": "unavailable", "snapshot_modes": "unavailable", "text": "raw bytes; no line-ending conversion"}, "snapshot_inputs": sorted(entries, key=lambda entry: entry["id"])}
 
 
@@ -499,12 +515,15 @@ def main() -> int:
     lock_parser = subparsers.add_parser("lock-inputs")
     lock_parser.add_argument("--ledger", type=Path, required=True)
     lock_parser.add_argument("--snapshot", action="append", default=[], required=True)
+    lock_parser.add_argument("--release", action="append", default=None)
     lock_parser.add_argument("--output", type=Path, required=True)
     partition_parser = subparsers.add_parser("partition-layers")
     partition_parser.add_argument("--repository", type=Path, required=True)
     partition_parser.add_argument("--ledger", type=Path, required=True)
     partition_parser.add_argument("--knots-parent", required=True)
     partition_parser.add_argument("--first-roots", required=True)
+    partition_parser.add_argument("--core-release")
+    partition_parser.add_argument("--roots-release")
     partition_parser.add_argument("--output", type=Path, required=True)
     verify_partition_parser = subparsers.add_parser("verify-layer-partition")
     verify_partition_parser.add_argument("report", type=Path)
@@ -512,6 +531,8 @@ def main() -> int:
     verify_partition_parser.add_argument("--ledger", type=Path, required=True)
     verify_partition_parser.add_argument("--knots-parent", required=True)
     verify_partition_parser.add_argument("--first-roots", required=True)
+    verify_partition_parser.add_argument("--core-release")
+    verify_partition_parser.add_argument("--roots-release")
     inventory_parser = subparsers.add_parser("inventory-granularity")
     inventory_parser.add_argument("--repository", type=Path, required=True)
     inventory_parser.add_argument("--partition", type=Path, required=True)
@@ -531,6 +552,7 @@ def main() -> int:
     verify_parser.add_argument("lock", type=Path)
     verify_parser.add_argument("--ledger", type=Path, required=True)
     verify_parser.add_argument("--snapshot", action="append", default=[], required=True)
+    verify_parser.add_argument("--release", action="append", default=None)
     args = parser.parse_args()
     try:
         if args.command == "snapshot-manifest":
@@ -542,11 +564,11 @@ def main() -> int:
         elif args.command == "compare":
             print(json.dumps(compare(read_json(args.left), read_json(args.right)), sort_keys=True))
         elif args.command == "lock-inputs":
-            write_json(args.output, input_lock(args.ledger, args.snapshot))
+            write_json(args.output, input_lock(args.ledger, args.snapshot, args.release))
         elif args.command == "partition-layers":
-            write_json(args.output, layer_partition(args.repository, args.ledger, args.first_roots, args.knots_parent))
+            write_json(args.output, layer_partition(args.repository, args.ledger, args.first_roots, args.knots_parent, args.core_release, args.roots_release))
         elif args.command == "verify-layer-partition":
-            if read_json(args.report) != layer_partition(args.repository, args.ledger, args.first_roots, args.knots_parent):
+            if read_json(args.report) != layer_partition(args.repository, args.ledger, args.first_roots, args.knots_parent, args.core_release, args.roots_release):
                 raise AtlasError("stale layer partition")
         elif args.command == "inventory-granularity":
             write_json(args.output, granular_inventory(args.repository, read_json(args.partition)))
@@ -560,7 +582,7 @@ def main() -> int:
                 raise AtlasError("stale atlas report")
         else:
             expected = read_json(args.lock)
-            actual = input_lock(args.ledger, args.snapshot)
+            actual = input_lock(args.ledger, args.snapshot, args.release)
             if expected != actual:
                 raise AtlasError("stale input lock")
     except AtlasError as error:
