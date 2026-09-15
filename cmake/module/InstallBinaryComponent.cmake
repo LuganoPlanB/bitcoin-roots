@@ -18,7 +18,13 @@ function(install_binary_component component)
     COMPONENT ${component}
   )
   if(INSTALL_MAN AND IC_HAS_MANPAGE)
-    install(FILES ${PROJECT_SOURCE_DIR}/doc/man/${target_name}.1
+    set(manpage "${PROJECT_SOURCE_DIR}/doc/man/${target_name}.1")
+    if(CLIENT_VERSION_TAG)
+      set(versioned_manpage "${PROJECT_BINARY_DIR}/doc/man/${target_name}.1")
+      configure_tagged_document("${manpage}" "${versioned_manpage}")
+      set(manpage "${versioned_manpage}")
+    endif()
+    install(FILES "${manpage}"
       DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
       COMPONENT ${component}
     )

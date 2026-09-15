@@ -9,6 +9,7 @@ This checks that all files in the repository have correct filenames and permissi
 
 import os
 import re
+import stat
 import sys
 from subprocess import check_output
 from typing import Optional, NoReturn
@@ -37,10 +38,16 @@ class FileMeta(object):
         # 100755 5a150d5f8031fcd75e80a4dd9843afa33655f579 0       ci/test/00_setup_env.sh
         meta, self.file_path = file_spec.split('\t', 2)
         meta = meta.split()
-        # The octal file permission of the file. Internally, git only
-        # keeps an 'executable' bit, so this will always be 0o644 or 0o755.
-        self.permissions = int(meta[0], 8) & 0o7777
+        self.mode = int(meta[0], 8)
+        # For regular files, Git only keeps an executable bit, so permissions
+        # will always be 0o644 or 0o755. Symlinks have mode 0o120000 and are
+        # excluded from permission and shebang checks below.
+        self.permissions = self.mode & 0o7777
         # We don't currently care about the other fields
+
+    @property
+    def is_symlink(self) -> bool:
+        return stat.S_ISLNK(self.mode)
 
     @property
     def extension(self) -> Optional[str]:
@@ -125,6 +132,8 @@ def check_all_file_permissions(files) -> int:
     """
     failed_tests = 0
     for filename, file_meta in files.items():
+        if file_meta.is_symlink:
+            continue
         if file_meta.permissions == ALLOWED_PERMISSION_EXECUTABLES:
             with open(filename, "rb") as f:
                 shebang = f.readline().rstrip(b"\n")
@@ -175,6 +184,8 @@ def check_shebang_file_permissions(files_meta) -> int:
     failed_tests = 0
     for filename in filenames:
         file_meta = files_meta[filename]
+        if file_meta.is_symlink:
+            continue
         if file_meta.permissions != ALLOWED_PERMISSION_EXECUTABLES:
             # These file types are typically expected to be sourced and not executed directly
             if file_meta.full_extension in ["bash", "init", "openrc", "sh.in"]:

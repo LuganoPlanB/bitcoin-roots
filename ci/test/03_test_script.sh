@@ -127,6 +127,13 @@ mkdir -p "${BASE_BUILD_DIR}"
 cd "${BASE_BUILD_DIR}"
 
 BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DENABLE_EXTERNAL_SIGNER=ON -DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR"
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+    printf 'Invalid release tag: %s\n' "$RELEASE_TAG" >&2
+    exit 1
+  fi
+  BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCLIENT_VERSION_TAG=$RELEASE_TAG"
+fi
 
 if [[ "${RUN_TIDY}" == "true" ]]; then
   BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
