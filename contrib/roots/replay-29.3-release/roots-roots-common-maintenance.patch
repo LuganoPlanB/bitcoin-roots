@@ -1,0 +1,558 @@
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 8d19ed9ee495d15643eb130faa920c1adeb55692..8b73eecbfd105cd209eb77ddf3381fcb61b00d6f 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -1,7 +1,7 @@
+-Contributing to Bitcoin Knots
++Contributing to Bitcoin Roots
+ =============================
+ 
+-The Bitcoin Knots project operates an open contributor model where anyone is
++The Bitcoin Roots project operates an open contributor model where anyone is
+ welcome to contribute towards development in the form of peer review, testing
+ and patches. This document explains the practical process and guidelines for
+ contributing.
+@@ -289,11 +289,11 @@ workload on reviewing.
+ "Decision Making" Process
+ -------------------------
+ 
+-The following applies to code changes to the Bitcoin Knots project (and related
++The following applies to code changes to the Bitcoin Roots project (and related
+ projects such as libsecp256k1), and is not to be confused with overall Bitcoin
+ Network Protocol consensus changes.
+ 
+-Whether a pull request is merged into Bitcoin Knots rests with the project merge
++Whether a pull request is merged into Bitcoin Roots rests with the project merge
+ maintainers and ultimately the project lead.
+ 
+ Maintainers will take into consideration if a patch is in line with the general
+diff --git a/README.md b/README.md
+index fe5e3d98ba593e0c78a789d31f10d041aaeb042a..120baa378fc64fd84a013f587fa90b89d005e4d5 100644
+--- a/README.md
++++ b/README.md
+@@ -1,80 +1,88 @@
+-Bitcoin Knots
+-=============
++# Bitcoin Roots
+ 
+-https://bitcoinknots.org
++**Connected to the trunk. Conservative in policy. Neutral in consensus.**
+ 
+-For an immediately usable, binary version of the Bitcoin Knots software, see
+-the website.
++<img src="./src/qt/res/src/bitcoinroots-logo.svg" alt="Bitcoin Roots logo" width="300">
+ 
+-What is Bitcoin Knots?
+-----------------------
++For an immediately usable, binary version of the Bitcoin Roots software, see
++the project website: [plan-b.foundation/bitcoin-roots](https://plan-b.foundation/bitcoin-roots/).
+ 
+-Bitcoin Knots connects to the Bitcoin peer-to-peer network to download and fully
++## What is Bitcoin Roots?
++
++We want to stick to the plan and make it easy to run a Bitcoin Core
++node at home without overloading network traffic and CPU.
++
++Bitcoin Roots connects to the Bitcoin peer-to-peer network to download and fully
+ validate blocks and transactions. It also includes a wallet and graphical user
+ interface, which can be optionally built.
+ 
+-Further information about Bitcoin Knots is available in the [doc folder](/doc).
++Bitcoin Roots is based on Bitcoin Core and maintains selected policy features
++from the Bitcoin Knots 29.3 code line. The repository records
++`29.3.knots20260507` as its Knots lineage reference, not as the exact Git parent
++of the initial Bitcoin Roots commit.
++
++Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
++conservative, configurable transaction relay and mempool policy.
++
++In particular, **Bitcoin Roots does not enforce RDTS/BIP-110** consensus rules.
++
++Further information about Bitcoin Roots is available in the
++[doc folder](/doc).
++
++## License
+ 
+-License
+--------
++Bitcoin Roots is released under the terms of the MIT license. See
++[COPYING](COPYING) for more information or see
++https://opensource.org/licenses/MIT.
+ 
+-Bitcoin Knots is released under the terms of the MIT license. See [COPYING](COPYING) for more
+-information or see https://opensource.org/licenses/MIT.
++## Development Process
+ 
+-Development Process
+--------------------
++Development generally takes place as part of
++[Bitcoin Core](https://github.com/bitcoin/bitcoin), and suitable changes are
++merged into Bitcoin Roots for each release.
+ 
+-Development generally takes place as part of [Bitcoin Core](https://github.com/bitcoin/bitcoin), and is merged into
+-Knots for each release.
++Features not suitable for Bitcoin Core may still be eligible for inclusion in
++Bitcoin Roots, particularly where they improve node policy, resource control,
++privacy, or operation without changing Bitcoin consensus.
+ 
+-Even if your pull request to Core is closed, or if your feature is not
+-suitable for Core (eg, because it builds on a feature not supported in Core;
+-relies on centralised services; etc), it may still be eligible for inclusion
+-in Bitcoin Knots. In this case, a pull request may be opened on the
+-[Knots GitHub](https://github.com/bitcoinknots/bitcoin) for review and consideration.
+-When accepted, you are expected to maintain the submitted branch in your own
+-repository, and it will be automatically merged into new releases of Knots.
++Selected Bitcoin Roots features may also be maintained where appropriate.
+ 
+-Developer IRC can be found on Freenode at #bitcoin-dev.
++Bitcoin Roots distinguishes between consensus and policy. Transactions rejected
++by local relay or mempool policy may still be valid under Bitcoin consensus, and
++valid blocks containing such transactions must continue to be accepted.
+ 
+-Testing
+--------
++The project aims to remain connected to the Bitcoin development trunk while
++preserving conservative node policy and consensus neutrality.
+ 
+-Testing and code review is the bottleneck for development; we get more pull
+-requests than we can review and test on short notice. Please be patient and help out by testing
+-other people's pull requests, and remember this is a security-critical project where any mistake might cost people
+-lots of money.
++## Testing
++
++Testing and code review are the bottleneck for development. Please help by
++testing other people's pull requests, and remember that this is security-critical
++software where mistakes may cost people money.
+ 
+ ### Automated Testing
+ 
+-Developers are strongly encouraged to write [unit tests](src/test/README.md) for new code, and to
+-submit new unit tests for old code. Unit tests can be compiled and run
+-(assuming they weren't disabled during the generation of the build system) with: `ctest`. Further details on running
+-and extending unit tests can be found in [/src/test/README.md](/src/test/README.md).
++Developers are strongly encouraged to write
++[unit tests](src/test/README.md) for new code.
+ 
+-There are also [regression and integration tests](/test), written
+-in Python.
+-These tests can be run (if the [test dependencies](/test) are installed) with: `build/test/functional/test_runner.py`
+-(assuming `build` is your build directory).
++Unit tests can be compiled and run with:
+ 
+-The CI (Continuous Integration) systems make sure that every pull request is built for Windows, Linux, and macOS,
+-and that unit/sanity tests are run automatically.
++`ctest`
+ 
+-### Manual Quality Assurance (QA) Testing
++Regression and integration tests are available in [/test](/test) and can be run
++with:
+ 
+-Changes should be tested by somebody other than the developer who wrote the
+-code. This is especially important for large or high-risk changes. It is useful
+-to add a test plan to the pull request description if testing the changes is
+-not straightforward.
++`build/test/functional/test_runner.py`
+ 
+-Translations
+-------------
++Continuous Integration should ensure that pull requests are built and tested on
++supported platforms.
+ 
+-Changes to translations as well as new translations can be submitted to
+-[Bitcoin Core's Transifex page](https://explore.transifex.com/bitcoin/bitcoin/).
++### Manual Quality Assurance (QA) Testing
++
++Changes should be tested by somebody other than the developer who wrote the
++code, especially for large or high-risk changes.
+ 
+-Translations are periodically pulled from Transifex and merged into the git repository. See the
+-[translation process](doc/translation_process.md) for details on how this works.
++### Maintenance
+ 
+-**Important**: We do not accept translation changes as GitHub pull requests because the next
+-pull from Transifex would automatically overwrite them again.
++Bitcoin Roots is maintained by the Plan ₿ Foundation under the
++supervision of [Denis "Jaromil" Roio](https://jaromil.dyne.org), [Giacomo Zucco](https://x.com/giacomozucco) and [S₿AM](https://x.com/sbaaaam21).
+diff --git a/SECURITY.md b/SECURITY.md
+index 769168593bc087a5f9bbd0cb42462cfd20ef7674..817fc2e2d375e3817a178a728ccb298dd6fea9ee 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -2,8 +2,8 @@
+ 
+ ## Supported Versions
+ 
+-See our website for versions of Bitcoin Knots that are currently supported with
+-security updates: https://bitcoinknots.org/
++See our website for versions of Bitcoin Roots that are currently supported with
++security updates: https://plan-b.foundation/bitcoin-roots/
+ 
+ ## Reporting a Vulnerability
+ 
+diff --git a/contrib/debian/copyright b/contrib/debian/copyright
+index d2012b3e1b6d568f4bbd23d600a1fcc629f578be..65b8467977a9efd2402ad7cd6ca9b857076e65e9 100644
+--- a/contrib/debian/copyright
++++ b/contrib/debian/copyright
+@@ -1,12 +1,12 @@
+ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+-Upstream-Name: Bitcoin Knots
++Upstream-Name: Bitcoin Roots
+ Upstream-Contact: Luke Dashjr <luke+knots+debian@dashjr.org>
+-Source: https://github.com/bitcoinknots/bitcoin
++Source: https://github.com/luganoplanb/bitcoin-roots
+ 
+ Files: *
+-Copyright: 2009-2025, Bitcoin Core & Knots Developers
++Copyright: 2009-2025, Bitcoin Core & Roots Developers
+ License: Expat
+-Comment: The Bitcoin Core & Knots Developers encompasses all contributors to the
++Comment: The Bitcoin Core & Roots Developers encompasses all contributors to the
+          project, listed in the release notes or the git log.
+ 
+ Files: debian/*
+diff --git a/contrib/docker/README.md b/contrib/docker/README.md
+index 45dee1efa8034c9f1cfbeaf1f28978df2088600a..7b5a9ff4c85f6981f8158e20b3c7db709ea8635a 100644
+--- a/contrib/docker/README.md
++++ b/contrib/docker/README.md
+@@ -1,7 +1,7 @@
+ 
+-# 🚀 Bitcoin Knots Docker Image (Headless Node)
++# 🚀 Bitcoin Roots Docker Image (Headless Node)
+ 
+-This Dockerfile builds and runs a **Bitcoin Knots** full node from source.
++This Dockerfile builds and runs a **Bitcoin Roots** full node from source.
+ 
+ ## 🧱 Features
+ 
+@@ -18,7 +18,7 @@ This Dockerfile builds and runs a **Bitcoin Knots** full node from source.
+ ```bash
+ docker build \
+   -f contrib/docker/Dockerfile \
+-  -t bitcoinknots \
++  -t bitcoinroots \
+   --build-arg USER_ID=$(id -u) \
+   --build-arg GROUP_ID=$(id -g) \
+   --load .
+@@ -32,11 +32,11 @@ docker build \
+ docker run -d \
+   --init \
+   --user $(id -u):$(id -g) \
+-  --name bitcoinknots \
++  --name bitcoinroots \
+   -p 8333:8333 -p 127.0.0.1:8332:8332 \
+   -v path/to/conf:/etc/bitcoin/bitcoin.conf:ro \
+   -v path/to/data:/var/lib/bitcoind:rw \
+-  bitcoinknots
++  bitcoinroots
+ ```
+ 
+ In case you want to use ZeroMQ sockets, make sure to expose those ports as well by adding `-p host_port:container_port` directives to the command above.
+@@ -53,7 +53,7 @@ This will:
+ ## 📊 Check Node Status
+ 
+ ```bash
+-docker logs bitcoinknots
++docker logs bitcoinroots
+ ```
+ 
+ ---
+@@ -61,7 +61,7 @@ docker logs bitcoinknots
+ ## 🛑 Stop the Node
+ 
+ ```bash
+-docker stop bitcoinknots
++docker stop bitcoinroots
+ ```
+ 
+ ---
+diff --git a/contrib/init/bitcoind.conf b/contrib/init/bitcoind.conf
+index ccd036c4e5e7e636df785218ce31d3396e8a73cf..cfb1ac29ec3c52ef43c99f7ef763abdb2bf0d98f 100644
+--- a/contrib/init/bitcoind.conf
++++ b/contrib/init/bitcoind.conf
+@@ -1,4 +1,4 @@
+-description "Bitcoin Knots Daemon"
++description "Bitcoin Roots Daemon"
+ 
+ start on runlevel [2345]
+ stop on starting rc RUNLEVEL=[016]
+diff --git a/contrib/init/bitcoind.init b/contrib/init/bitcoind.init
+index 367b6cd74188bf380a0c37c7ff0be068d06cd228..cd90d7f3bdee9bf539efa48f4b5eaeca72d096ab 100644
+--- a/contrib/init/bitcoind.init
++++ b/contrib/init/bitcoind.init
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env bash
+ #
+-#  bitcoind The Bitcoin Knots server.
++#  bitcoind The Bitcoin Roots server.
+ #
+ #
+ # chkconfig: 345 80 20
+diff --git a/contrib/init/bitcoind.openrc b/contrib/init/bitcoind.openrc
+index aeff9f6f9a7e5cd52c056fd8da982b8d95a66534..bda80e3771cd874d95d28611cde529ec7bb7f598 100644
+--- a/contrib/init/bitcoind.openrc
++++ b/contrib/init/bitcoind.openrc
+@@ -19,7 +19,7 @@ BITCOIND_BIN=${BITCOIND_BIN:-/usr/bin/bitcoind}
+ BITCOIND_NICE=${BITCOIND_NICE:-${NICELEVEL:-0}}
+ BITCOIND_OPTS="${BITCOIND_OPTS:-${BITCOIN_OPTS}}"
+ 
+-name="Bitcoin Knots daemon"
++name="Bitcoin Roots daemon"
+ description="Bitcoin cryptocurrency P2P network daemon"
+ 
+ required_files="${BITCOIND_CONFIGFILE}"
+diff --git a/contrib/release/bitcoin-roots-release-key.asc b/contrib/release/bitcoin-roots-release-key.asc
+new file mode 100644
+index 0000000000000000000000000000000000000000..7891d12b443cbb1923ef55878fd1ea8b9e788e4a
+--- /dev/null
++++ b/contrib/release/bitcoin-roots-release-key.asc
+@@ -0,0 +1,13 @@
++-----BEGIN PGP PUBLIC KEY BLOCK-----
++
++mDMEaqJ7EBYJKwYBBAHaRw8BAQdA7JpwS53ElVbICMItsNDBvrK4o4V8QAUrJ5jl
++ZSrH17m0BlBsYW4tQoiTBBMWCgA7FiEEXq3VPyzR8Leu7pINJfxcKc1SjjIFAmqi
++exACGwMFCwkIBwICIgIGFQoJCAsCBBYCAwECHgcCF4AACgkQJfxcKc1SjjK3HAD+
++KKRpNRdOzBJOGIqUBmH1MopQAzl3utHQnCe44qdbIeMBAJ2JZbA5VLiUYdGnMaQq
++qNBpPbZqN5hRa179hPsssqwGuDgEaqJ7GhIKKwYBBAGXVQEFAQEHQLS1KISK18ND
++Sy6qZDEWsalrx5YM/HRaSK9cgYavQYE3AwEIB4h4BBgWCgAgFiEEXq3VPyzR8Leu
++7pINJfxcKc1SjjIFAmqiexoCGwwACgkQJfxcKc1SjjI7kgD+OkJdjYWBPldd5zmq
++lEPmpqLBOVcQ4R3WijbZeNSxICkA/iof3gPacebmFaKRx/RmbVSbzIaJtNzGdsFk
++P6MBLWII
++=+Ity
++-----END PGP PUBLIC KEY BLOCK-----
+diff --git a/share/setup.nsi.in b/share/setup.nsi.in
+index 7a0bbd811c901ed406fe85cc21db6340566b8ea0..0a186a9586d0c9902d06a6ebdfc179c541fd6399 100644
+--- a/share/setup.nsi.in
++++ b/share/setup.nsi.in
+@@ -64,7 +64,7 @@ VIAddVersionKey CompanyName "${COMPANY}"
+ VIAddVersionKey CompanyWebsite "${URL}"
+ VIAddVersionKey FileVersion "@CLIENT_VERSION_STRING@"
+ VIAddVersionKey FileDescription "Installer for @CLIENT_NAME@"
+-VIAddVersionKey LegalCopyright "Copyright (C) 2009-@COPYRIGHT_YEAR@ @COPYRIGHT_HOLDERS_FINAL@"
++VIAddVersionKey LegalCopyright "Copyright (C) @COPYRIGHT_YEAR@ @COPYRIGHT_FOUNDATION@; Copyright (C) 2009-@COPYRIGHT_YEAR@ @COPYRIGHT_HOLDERS_FINAL@; Copyright (C) 2009-@COPYRIGHT_YEAR@ The Bitcoin Core developers"
+ InstallDirRegKey HKCU "${REGKEY}" Path
+ ShowUninstDetails show
+ 
+diff --git a/src/clientversion.cpp b/src/clientversion.cpp
+index e932c336b9ab2261c72e4e7cf25e8a880068e4f5..b8cde926c95cf3012143549b394495c679b18c84 100644
+--- a/src/clientversion.cpp
++++ b/src/clientversion.cpp
+@@ -32,7 +32,10 @@ const std::string UA_NAME("Satoshi");
+ 
+ //! git will put "#define GIT_COMMIT_ID ..." on the next line inside archives. $Format:%n#define GIT_COMMIT_ID "%H"$
+ 
+-#ifdef BUILD_GIT_TAG
++#ifdef CLIENT_VERSION_TAG
++    #define BUILD_DESC CLIENT_VERSION_TAG
++    #define BUILD_SUFFIX ""
++#elif defined(BUILD_GIT_TAG)
+     #define BUILD_DESC BUILD_GIT_TAG
+     #define BUILD_SUFFIX ""
+ #else
+@@ -69,11 +72,8 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const
+     if (!comments.empty()) comments_str = strprintf("(%s)", Join(comments, "; "));
+     std::string ua = strprintf("/%s:%s%s/", name, FormatVersion(nClientVersion), comments_str);
+     if (!base_name_only) {
+-        static const auto ua_knots = []() -> std::string {
+-            const auto pos{CLIENT_BUILD.find(".knots")};
+-            return "Knots:" + CLIENT_BUILD.substr(pos + 6) + "/";
+-        }();
+-        ua += ua_knots;
++        const std::string roots_version{CLIENT_BUILD.starts_with('v') ? CLIENT_BUILD.substr(1) : CLIENT_BUILD};
++        ua += "Roots:" + roots_version + "/";
+     }
+     return ua;
+ }
+@@ -90,11 +90,17 @@ std::string CopyrightHolders(const std::string& strPrefix)
+     return strCopyrightHolders;
+ }
+ 
++std::string CopyrightInfo()
++{
++    return strprintf("Copyright (C) %i %s\n", COPYRIGHT_YEAR, COPYRIGHT_FOUNDATION) +
++           CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ");
++}
++
+ std::string LicenseInfo()
+ {
+-    const std::string URL_SOURCE_CODE = "<https://github.com/bitcoinknots/bitcoin>";
++    const std::string URL_SOURCE_CODE = "<https://github.com/luganoplanb/bitcoin-roots>";
+ 
+-    return CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ") + "\n" +
++    return CopyrightInfo() + "\n" +
+            "\n" +
+            strprintf(_("Please contribute if you find %s useful. "
+                        "Visit %s for further information about the software."),
+diff --git a/src/clientversion.h b/src/clientversion.h
+index fc4daa2647d33c09fe65be1fb12dc830b7405d3c..0ba15ccca5cf64166307085b6d98eb9edd1bb6a5 100644
+--- a/src/clientversion.h
++++ b/src/clientversion.h
+@@ -15,7 +15,7 @@
+ #endif
+ 
+ //! Copyright string used in Windows .rc files
+-#define COPYRIGHT_STR "2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL
++#define COPYRIGHT_STR STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_FOUNDATION "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " " COPYRIGHT_HOLDERS_FINAL "; 2009-" STRINGIZE(COPYRIGHT_YEAR) " The Bitcoin Core developers"
+ 
+ /**
+  * bitcoind-res.rc includes this file, but it cannot cope with real c++ code.
+@@ -42,6 +42,9 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const
+ 
+ std::string CopyrightHolders(const std::string& strPrefix);
+ 
++/** Returns current and inherited copyright notices. */
++std::string CopyrightInfo();
++
+ /** Returns licensing information (for -version) */
+ std::string LicenseInfo();
+ 
+diff --git a/src/init.cpp b/src/init.cpp
+index 0b70a2cccf24bd1d73043dff0b652aa8dc71a39a..4c43b0771807b8c00bfb803bd354a56471011cb4 100644
+--- a/src/init.cpp
++++ b/src/init.cpp
+@@ -1580,62 +1580,6 @@ bool UserProtocolRulesCheck()
+     return InitError(strprintf(_("Unknown rule specified in -%s: %s"), CONSENSUSRULES_CONFIG_NAME, rules_requested.front()));
+ }
+ 
+-bool UserProtocolRulesConsent()
+-{
+-    static const std::string CONSENSUSRULES_MISSING{"rdts"};
+-    bool require_rdts{false};
+-    for (const auto& rulesok : gArgs.GetArgs(CONSENSUSRULES_CONFIG_NAME)) {
+-        if (rulesok == CONSENSUSRULES_MISSING) {
+-            LogPrintf("User already consented to '%s' consensus rules\n", CONSENSUSRULES_MISSING);
+-            require_rdts = true;
+-            break;
+-        }
+-    }
+-
+-    bilingual_str msg = strprintf(_(
+-        "Upcoming BIP110/RDTS Network Upgrade\n"
+-        "\n"
+-        "This version of %s does not support the upcoming BIP110 (RDTS) network upgrade, "
+-        "which fixes critical vulnerabilities in long-standing network design.\n"
+-        "\n"
+-        "Important: "
+-        "Because this upgrade already has broad community support, "
+-        "continuing to run older versions (such as this version) does not reject it. "
+-        "Running outdated software after any network upgrade only leaves your node vulnerable to displaying fake or fraudulent transactions. "
+-        "To effectively reject this upgrade, you need to run alternative software designed to split away from the upgraded network.\n"
+-        "\n"
+-        "To adopt this upgrade and remain secure, please update %s: %s\n"
+-        "\n"
+-        "For more information, see: %s"
+-    ),
+-        CLIENT_NAME,
+-        CLIENT_NAME,
+-        CLIENT_URL,
+-        "https://bitcoinknots.org/learn/2026-rdts");
+-    if (require_rdts) {
+-        const bilingual_str msg_config_suffix = strprintf(_(
+-            "Note: "
+-            "The %s flag was found in your configuration. "
+-            "This outdated version cannot support the RDTS upgrade and will not start with this flag present. "
+-            "Please update %s to adopt this upgrade. "
+-            "You should remove this flag only if you intentionally wish to leave your node vulnerable."
+-        ),
+-            CONSENSUSRULES_CONFIG_NAME + "=" + CONSENSUSRULES_MISSING,
+-            CLIENT_NAME);
+-        msg += Untranslated("\n\n") + msg_config_suffix;
+-    }
+-
+-    const bool consent = uiInterface.ThreadSafeQuestion(
+-        _("Warning:") + Untranslated(" ") + msg,
+-        msg.original
+-        , "Warning",
+-        require_rdts
+-            ? (CClientUIInterface::ICON_WARNING | CClientUIInterface::BTN_ABORT | CClientUIInterface::MODAL)
+-            : (CClientUIInterface::MSG_WARNING | CClientUIInterface::BTN_ABORT | CClientUIInterface::DEFAULT_TRUE));
+-
+-    return consent;
+-}
+-
+ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
+ {
+     const ArgsManager& args = *Assert(node.args);
+@@ -1710,20 +1654,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
+     g_wallet_init_interface.Construct(node);
+     uiInterface.InitWallet();
+ 
+-    if (!(chainparams.IsTestChain() || UserProtocolRulesConsent())) {
+-        return false;
+-    }
+-
+     if (!UserProtocolRulesCheck()) {
+         return false;
+     }
+ 
+-    scheduler.scheduleEvery([]{
+-        LogError("This version does not support the upcoming BIP110/RDTS network upgrade, and is therefore vulnerable to displaying fake or fraudulent transactions.\n");
+-        LogError("For more information, see: %s\n", "https://bitcoinknots.org/learn/2026-rdts");
+-        LogError("To adopt this upgrade and remain secure, please update %s: %s\n", CLIENT_NAME, CLIENT_URL);
+-    }, std::chrono::hours{1});
+-
+     if (interfaces::Ipc* ipc = node.init->ipc()) {
+         for (std::string address : gArgs.GetArgs("-ipcbind")) {
+             try {
+diff --git a/src/kernel/warning.h b/src/kernel/warning.h
+index 6c45ea67186110a63afaaf0a65c45ca48db7601f..888aa4074d00894fc04ee1c6b85949254166fc52 100644
+--- a/src/kernel/warning.h
++++ b/src/kernel/warning.h
+@@ -7,7 +7,6 @@
+ 
+ namespace kernel {
+ enum class Warning {
+-    RULES_NOT_ENFORCED,
+     UNKNOWN_NEW_RULES_ACTIVATED,
+     LARGE_WORK_INVALID_CHAIN,
+     UNKNOWN_NEW_RULES_SIGNAL_VBITS,
+diff --git a/src/test/util_tests.cpp b/src/test/util_tests.cpp
+index 385097314d1ba77ff68e981782b4d36991eb2cee..8db1b52e3482bda1c62b34b4415504de4816d961 100644
+--- a/src/test/util_tests.cpp
++++ b/src/test/util_tests.cpp
+@@ -1094,6 +1094,17 @@ BOOST_AUTO_TEST_CASE(test_FormatSubVersion)
+     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), true),std::string("/Test:9.99.0/"));
+     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments, true),std::string("/Test:9.99.0(comment1)/"));
+     BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, comments2, true),std::string("/Test:9.99.0(comment1; Comment2; .,_?@-; )/"));
++    const std::string full_version{FormatFullVersion()};
++    const std::string roots_version{full_version.starts_with('v') ? full_version.substr(1) : full_version};
++    BOOST_CHECK_EQUAL(FormatSubVersion("Test", 99900, std::vector<std::string>(), false), "/Test:9.99.0/Roots:" + roots_version + "/");
++}
++
++BOOST_AUTO_TEST_CASE(copyright_info)
++{
++    BOOST_CHECK_EQUAL(CopyrightInfo(),
++        "Copyright (C) 2026 Plan-₿ Foundation\n"
++        "Copyright (C) 2009-2026 The Bitcoin Knots developers\n"
++        "Copyright (C) 2009-2026 The Bitcoin Core developers");
+ }
+ 
+ BOOST_AUTO_TEST_CASE(test_ParseFixedPoint)
+diff --git a/src/util/mempressure.cpp b/src/util/mempressure.cpp
+index e2127fd798bc68c45e63e0f2bec1321e7be51050..c6d624409cf5dfccdac07078d9b135bb47da9a6c 100644
+--- a/src/util/mempressure.cpp
++++ b/src/util/mempressure.cpp
+@@ -1,4 +1,4 @@
+-// Copyright (c) 2023-present The Bitcoin Knots developers
++// Copyright (c) 2023-present The Bitcoin Roots developers
+ // Distributed under the MIT software license, see the accompanying
+ // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 
+diff --git a/src/util/mempressure.h b/src/util/mempressure.h
+index db2c5eb921191596175244e76e5c7cf81a04a196..a3b0e44c0c32c3a06a5eedf318b96e737acbc09b 100644
+--- a/src/util/mempressure.h
++++ b/src/util/mempressure.h
+@@ -1,4 +1,4 @@
+-// Copyright (c) 2023-present The Bitcoin Knots developers
++// Copyright (c) 2023-present The Bitcoin Roots developers
+ // Distributed under the MIT software license, see the accompanying
+ // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 
+diff --git a/src/util/subprocess.cpp b/src/util/subprocess.cpp
+index bb01377de12abb9a684797165e3bef1b3bdab407..c3b54c96c4e874f75dad5e26768eded8f49110d7 100644
+--- a/src/util/subprocess.cpp
++++ b/src/util/subprocess.cpp
+@@ -1,4 +1,4 @@
+-// Copyright (c) 2025-present The Bitcoin Knots developers
++// Copyright (c) 2025-present The Bitcoin Roots developers
+ // Distributed under the MIT software license, see the accompanying
+ // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 

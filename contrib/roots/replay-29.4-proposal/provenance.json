@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "l7.3-candidate-provenance",
+  "verified_at": "2026-09-15T07:53:48Z",
+  "authoritative_core_remote": "https://github.com/bitcoin/bitcoin.git",
+  "core_tags": {
+    "v29.3": {
+      "tag_object": "sha1:f2ca1bc7f94f1f662e2d7ee0858f2d90018bb863",
+      "peeled_commit": "sha1:99003bed87333f1be51bf3070235591b3a72f007",
+      "tree": "sha1:d7910bd5e9335128932f1f848a767d773895c4a4"
+    },
+    "v29.4": {
+      "tag_object": "sha1:4e70eab99b60f7718b78e2158de9fb82726f3cec",
+      "peeled_commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+      "tree": "sha1:38ad59b187f59647eb90ad1347bc481485ef4d01"
+    }
+  },
+  "calibration_inputs": {
+    "knots_29_3_commit": "sha1:99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b",
+    "knots_29_3_tree": "sha1:56f97d3a9199c1fb191e1b8a21f2caae3901b7f6",
+    "roots_29_3_commit": "sha1:42098b53c57fb6818736c7b6732fa84ffe6ad391",
+    "roots_29_3_tree": "sha1:a5708dcbf1d2611360fab68fc6a8e504db1ba95d"
+  },
+  "candidate": {
+    "base": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+    "tree_digest": "sha256:d00f365911e719b10acdfee816d98c62ab69e42962bc523a7ca214b5abb9fdb1",
+    "scoped_tree_digest": "sha256:ec3162cc49e049025eb8d6b16246f1f03229830216e2e3e6d1c6c49e0fc579d1",
+    "validation_commit": "sha1:f771e13259f23f02efc215327f2806d421cc7339",
+    "validation_ref": "ci/l7-validation/39a5e302",
+    "validation_commit_is_lineage": false
+  },
+  "rejected_validation_candidates": [
+    {"pull_request":11,"ref":"ci/l7-validation/87c57ff9","commit":"sha1:e6f4bd0e67c8ccc1c81a47934528f737873e8e20","tree":"sha1:87c57ff9043320dc034741eefc1703ddddc9f870","reason":"superseded by candidate corrections"},
+    {"pull_request":12,"ref":"ci/l7-validation/e18c94a4","commit":"sha1:fde26c0aa8e423efcf95652e94ecb98fc5495253","tree":"sha1:e18c94a459369d9312944bacf0955e115a583b96","reason":"miniupnpc correction was insufficient for the full matrix"},
+    {"pull_request":13,"ref":"ci/l7-validation/95a40f01","commit":"sha1:85ac004d58673d84f8bdb2f12e91b53688d71647","tree":"sha1:95a40f0161fe3910278bffced7f93a77350d729d","reason":"librsvg correction was insufficient for the full matrix"},
+    {"pull_request":14,"ref":"ci/l7-validation/f760491c","commit":"sha1:6104d445cbbefb76b95e454b4403a47a8ea5a554","tree":"sha1:f760491c6e3269c090fbf5e1767a4a6c8a7fb119","reason":"libicns correction was insufficient for the full matrix"}
+  ],
+  "rules": [
+    "The candidate begins at the exact peeled Core v29.4 commit.",
+    "Knots is provenance and a selected capability source, never candidate ancestry.",
+    "The disposable validation commit and rejected validation refs are excluded from accepted lineage.",
+    "No merge or wholesale cherry-pick from the 29.3 Roots or Knots trunk is permitted."
+  ]
+}

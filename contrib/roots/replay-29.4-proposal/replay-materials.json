@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "materials": {
+    "roots:l7-data-miniupnpc": {
+      "mechanism": "module/data",
+      "source": "legacy-miniupnpc.patch",
+      "destination": "depends/patches/miniupnpc/dont_leak_info.patch",
+      "expected_sha256": "sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5",
+      "expected_before_tree": "38ad59b187f59647eb90ad1347bc481485ef4d01",
+      "expected_after_tree": "f8caa38858a111bbf9180eff798c8cdc3ac2e153"
+    },
+    "roots:l7-data-readme": {
+      "mechanism": "module/data",
+      "source": "legacy-readme-windows.txt",
+      "destination": "doc/README_windows.txt",
+      "expected_sha256": "sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf",
+      "expected_before_tree": "f8caa38858a111bbf9180eff798c8cdc3ac2e153",
+      "expected_after_tree": "7ac93d37b83ac9835f7482856457e46a65eae924"
+    },
+    "roots:l7-data-completion": {
+      "mechanism": "module/data",
+      "source": "legacy-completion.bash",
+      "destination": "test/functional/data/completion/bitcoin-cli.header.bash-completion",
+      "expected_sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6",
+      "expected_before_tree": "7ac93d37b83ac9835f7482856457e46a65eae924",
+      "expected_after_tree": "60f1fc3c77115824332f54a3526aa1f09b0c263c"
+    },
+    "roots:l7-data-rpc-sort": {
+      "mechanism": "module/data",
+      "source": "legacy-rpc-sort.py",
+      "destination": "test/functional/rpc_sort_multisig.py",
+      "expected_sha256": "sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a",
+      "expected_before_tree": "60f1fc3c77115824332f54a3526aa1f09b0c263c",
+      "expected_after_tree": "339e0d6eeb8d673e592191bfed9cda7272e9e7ab"
+    },
+    "roots:l7-clean-patch": {
+      "mechanism": "patch",
+      "patch": "roots-29.4-clean.patch",
+      "expected_patch_sha256": "sha256:9610d3ec5c6e1624baa29846e1f5d1935d3cf61053fb5ab86b02915bc399e6d8",
+      "expected_before_tree": "339e0d6eeb8d673e592191bfed9cda7272e9e7ab",
+      "expected_after_tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90"
+    }
+  }
+}

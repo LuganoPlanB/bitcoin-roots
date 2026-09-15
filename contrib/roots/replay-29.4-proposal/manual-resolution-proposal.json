@@ -1,0 +1,727 @@
+{
+  "accounting": {
+    "forecast_discrepancy": "No discrepancy: 12 unique Git-tree conflicts are 6 substantive Git paths plus 6 generated manpages; snapshot-only src/clientversion.cpp is the separate seventh substantive/identity outcome, yielding 13 planned manual outcomes.",
+    "git_tree_paths": 39,
+    "snapshot_only_paths": 1,
+    "stage_records": 36,
+    "unique_manual_conflicts": 12
+  },
+  "approval_recorded": false,
+  "digest": "sha256:d058ae36da5a453d2d4ee2c85b7e009de97303a56aa67baadb8a4de66bcf0a46",
+  "inputs": {
+    "core_29_3": "sha1:99003bed87333f1be51bf3070235591b3a72f007",
+    "core_29_4": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "provisional_three_way_tree": "sha1:87ed58b92cbccc97a4be30a1a8ac500f4a22a50d",
+    "roots_29_3": "sha1:42098b53c57fb6818736c7b6732fa84ffe6ad391"
+  },
+  "kind": "l7-3-non-authoritative-manual-resolution-proposal",
+  "outcomes": [
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": ".editorconfig",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:9bf970ee78f372c5736daf94e2ac52b3a4fc4354",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:af667f0fdb5142967f1148f05197993f2b760c25",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:0892ac19d46748ccd7a226c29da94cd58a1eb496",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "ci-security-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": ".github/actions/configure-docker/action.yml",
+      "proposed_diff": "three-way stage blobs above; final blob preserves the reviewed Core-first cache boundary",
+      "proposed_status": "manual",
+      "resolution": "Core 29.4 action retained with Roots read-only cache controls; pending independent approval",
+      "result_blob": "sha1:0892ac19d46748ccd7a226c29da94cd58a1eb496",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:b0af3eb95fe106b132993c49655daec57c192728",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:2a6839706141a1bc9430b4d890b83a2d35da0bf2",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:3fa5a1a829ef0d94aba0c1afb7f6e7e9f477c1db",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "ci-platform-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": ".github/workflows/ci.yml",
+      "proposed_diff": "three-way stage blobs above; final blob adds only the reviewed Roots matrix and hash-locked Windows GUI-tools correction",
+      "proposed_status": "manual",
+      "resolution": "Core 29.4 runner topology retained with Roots identity, read-only permissions, and standard Win64 GUI setup; pending independent approval",
+      "result_blob": "sha1:b3f6a95148c428875d67bbccd73fe0ac83b6d970",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "CMakeLists.txt",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:81e048ce687cac81c4bec316fe27917de5c3a501",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:a73c8df5e753a02dfd019d8edb92cc67ceb4fa52",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:c54720773ecc71b29a3f13ad32dbdf0cab37cba9",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "ci-documentation-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": "ci/README.md",
+      "proposed_diff": "three-way stage blobs above; final blob documents the Core-first Roots CI contract",
+      "proposed_status": "manual",
+      "resolution": "retain Core 29.4 runner semantics and document Roots cache/token restrictions; pending independent approval",
+      "result_blob": "sha1:47e1a61e106820923d46ee2c5ad4de9eba2ada30",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "ci/test/00_setup_env_i686_multiprocess.sh",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "contrib/guix/INSTALL.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "contrib/tracing/README.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "depends/gen_id",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "doc/build-freebsd.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "doc/build-netbsd.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "doc/build-openbsd.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:6146224cdd124676d3f00464e3521b7eb9f2e498",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:d88916809acc2502716fe10c27492ba05057ad18",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:43a52982fcfac46a487233bdaff45f42f9c679de",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoin-cli.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:c6d894b57b936072d202213147cbb66b9b9cb648",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:a4fec08c7a5e46bdcfc0770b08a2091f50276550",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:4610681e31fab2b2830df33b5a3912a814856fff",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:b9944b7e76a993e090ecc937cd406a0e8d59eca7",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoin-qt.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:ce8a9688398692f25088d9f2d9c993393e1c47cc",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:a58bfea152a736edc7c208f5f12fd6af6d91c225",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:b2fc2b14093f21459bf97c59aca2b5e6a2117347",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:8f539318e07b9d7f48b0a872d3409854156f5fbf",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoin-tx.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:5357e4a8ccc82f7f7b3f5085c56901fa3aeaed9a",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:b7e0127ae1e0270d0c3b5576f047827675a6a76d",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:a4e2543cbb0936efdbe395d94c706cef92d6c827",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:97a315ba36e76e251633b7902635a362c1f84067",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoin-util.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:d632ec3157a4597d83d5ae65c1e56db200b5e352",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:96c2f4e1c9bbcb5fded991036cc0b5582bb05cb2",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:daabe2c3bf537560c3600154b27d956f1caac5d7",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:191e2dbbf2a2098fce0d906a65dc6e58e8639139",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoin-wallet.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:5fc2fac8228e95e786ef606682a372bf69650434",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:10ec23f6956fb588a4a90a8647be45083bebf727",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:10b9e6d8377a2137136812b04a491d6c0ebed6f9",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:6b9fd16985adea1a0f29dab41629c647dd81398a",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "generated-output-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "generated",
+      "path": "doc/man/bitcoind.1",
+      "proposed_diff": "regenerated from the final candidate binary and version identity",
+      "proposed_status": "rewritten",
+      "resolution": "generated-output recipe completed; pending independent approval",
+      "result_blob": "sha1:a79b70076a8d9a67aa69727bcdd0817c48340bcf",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "doc/release-notes.md",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "absorbed",
+      "path": "src/common/netif.cpp",
+      "proposed_status": "absorbed",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/dbwrapper.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/dbwrapper.h",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/leveldb/db/autocompact_test.cc",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/leveldb/db/db_test.cc",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/leveldb/db/version_set.cc",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:56101561b1102d463d3ef760c898c12c89b12709",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:c45c97100d872d430cb5b513549c413227b7d967",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:def41cdcee44ad6da82096f8ef07844d2926874f",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "policy-consensus-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": "src/node/miner.h",
+      "proposed_diff": "proposed final blob sha1:42cd31872cb7f37f98b988297fb1e2a553783837; Core 29.4 direct multi-index container form plus Roots-only block-template declarations",
+      "proposed_status": "manual",
+      "result_blob": "sha1:42cd31872cb7f37f98b988297fb1e2a553783837",
+      "resolution": "pending independent approval; direct container form replaces the obsolete Roots Boost wrapper",
+      "semantic_intent": "Retain Roots block-template policy declarations while adopting Core's container representation.",
+      "upstream_preserved": "Core 29.4 direct multi-index container migration.",
+      "roots_policy_preserved": "Block-template priority and policy declarations only.",
+      "consensus_neutrality": "No block validity, script, serialization, or consensus parameter change.",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/test/coins_tests.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/test/fuzz/deserialize.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/txdb.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/txdb.h",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:10acb2aa22f49794c924b6d6c00b6af0d521a2f2",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:acc52aef1d9543f1e582aecaca049612dbd155dc",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:fbb08dc11e405f89b1357bd7d58f1e820327203a",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "policy-consensus-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": "src/txmempool.h",
+      "proposed_diff": "proposed final blob sha1:5e9ba6339af3adbdbec59954768dc134c95af0d3; Core 29.4 direct multi-index container form plus Roots-only policy declarations",
+      "proposed_status": "manual",
+      "result_blob": "sha1:5e9ba6339af3adbdbec59954768dc134c95af0d3",
+      "resolution": "pending independent approval; direct container form replaces the obsolete Roots Boost wrapper",
+      "semantic_intent": "Retain configured local mempool-policy declarations while adopting Core's container representation.",
+      "upstream_preserved": "Core 29.4 direct multi-index container migration.",
+      "roots_policy_preserved": "Dynamic-dust, priority, and script-policy declarations.",
+      "consensus_neutrality": "Local mempool policy remains separate from block acceptance.",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "alternatives_rejected": [
+        "blind textual conflict resolution",
+        "unreviewed policy/consensus or P2P behavior change"
+      ],
+      "conflict_stages": {
+        "1": {
+          "blob": "sha1:5909146427b708c568e995f86e6472206ce9013e",
+          "mode": "100644"
+        },
+        "2": {
+          "blob": "sha1:521ddec901d50444c8d724f499534e96126e8a91",
+          "mode": "100644"
+        },
+        "3": {
+          "blob": "sha1:e85fbb02c8a965070d798f39dd067d9f6e3b6d69",
+          "mode": "100644"
+        }
+      },
+      "expert_marker": "p2p-review",
+      "git_tree_delta": true,
+      "l4_expected_outcome": "manual",
+      "path": "src/txrequest.cpp",
+      "proposed_diff": "Core stage-2 blob sha1:521ddec901d50444c8d724f499534e96126e8a91",
+      "proposed_status": "absorbed",
+      "result_blob": "sha1:521ddec901d50444c8d724f499534e96126e8a91",
+      "resolution": "Core 29.4 absorbs the prior Roots Boost wrapper; pending independent confirmation",
+      "semantic_intent": "No Roots-specific request-tracker behavior exists in this path.",
+      "upstream_preserved": "Core 29.4 direct multi-index container migration.",
+      "roots_policy_preserved": "Not applicable; wrapper adaptation is absorbed.",
+      "consensus_neutrality": "P2P request bookkeeping does not affect consensus validity.",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/validation.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/wallet/CMakeLists.txt",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/wallet/rpc/spend.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "src/wallet/spend.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/wallet/test/fuzz/crypter.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "exact",
+      "path": "src/wallet/test/spend_tests.cpp",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "git_tree_delta": true,
+      "l4_expected_outcome": "clean-textual",
+      "path": "test/lint/test_runner/src/main.rs",
+      "proposed_status": "automatic",
+      "resolution": "apply clean three-way result",
+      "tests": [
+        "L4 locked upstream unit coverage",
+        "three-way candidate replay"
+      ]
+    },
+    {
+      "expert_marker": "identity-review",
+      "git_tree_delta": false,
+      "l4_expected_outcome": "snapshot-only",
+      "path": "src/clientversion.cpp",
+      "proposed_status": "manual",
+      "result_blob": "sha1:b8cde926c95cf3012143549b394495c679b18c84",
+      "resolution": "archive GIT_COMMIT_ID substitution only; do not treat as Core Git delta or hard-code 29.4 identity",
+      "tests": [
+        "tagged and untagged version assertions",
+        "manpage regeneration"
+      ]
+    }
+  ],
+  "schema_version": 1
+}
