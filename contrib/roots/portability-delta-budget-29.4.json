@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "roots-portability-delta-budget",
+  "baseline": {
+    "release_window": "29.3-to-29.4",
+    "logical_adaptation_units": 16,
+    "upstream_files_touched": 839,
+    "manual_outcomes": 6,
+    "manual_adaptation_units": ["roots-roots-build-ci-build-or-release", "roots-knots-p2p-networking", "roots-roots-common-maintenance", "roots-knots-policy-local-policy"],
+    "window_manual_rate": {"numerator": 6, "denominator": 40, "basis_points": 1500},
+    "generated_outcomes": 6,
+    "critical_invariants": {"passing": 15, "total": 15},
+    "longitudinal_conflict_rate": "not-recorded",
+    "hotspots": {"ranked_manual_ids": ["roots-roots-build-ci-build-or-release", "roots-knots-p2p-networking", "roots-roots-common-maintenance", "roots-knots-policy-local-policy"], "sample_limitation": "one migration window; this is not longitudinal churn"},
+    "ownership": {"cohesive_queue_ids": ["roots-roots-build-ci-build-or-release", "roots-knots-policy-local-policy"], "scattered_ids": ["roots-roots-common-maintenance", "roots-knots-common-maintenance"], "source": "manifest-owned manual paths plus L9 hotspot/seam decisions"}
+  },
+  "identity_normalization": [
+    {"case": "split-patch", "adaptation_id": "roots-roots-build-ci-build-or-release", "metric_owner": "one logical unit"},
+    {"case": "squashed-patch", "adaptation_id": "roots-knots-policy-local-policy", "metric_owner": "one logical unit"},
+    {"case": "generated-churn", "adaptation_id": "roots-roots-release-generated-output", "metric_owner": "generated outcome, excluded from source-scattering score"},
+    {"case": "moved-module", "adaptation_id": "roots-knots-gui-branding-ui", "metric_owner": "stable ID across paths"},
+    {"case": "absorbed", "adaptation_id": "roots-knots-p2p-networking", "metric_owner": "retained identity, removed only with reviewed absorption evidence"}
+  ],
+  "review_triggers": [
+    {"id": "manual-hotspot", "when": "a stable adaptation ID gains a second manual outcome or a new manual path", "action": "require hotspot/seam review with manifest path ownership", "adaptation_ids": ["roots-roots-build-ci-build-or-release", "roots-knots-p2p-networking", "roots-roots-common-maintenance", "roots-knots-policy-local-policy"]},
+    {"id": "generated-noise", "when": "generated output changes without declared source inputs", "action": "reject until deterministic generator/provenance evidence is recorded", "adaptation_ids": ["roots-roots-release-generated-output"]},
+    {"id": "policy-boundary", "when": "a policy adaptation changes block acceptance, script, serialization, or consensus parameters", "action": "block review and require consensus-boundary evidence", "adaptation_ids": ["roots-knots-policy-local-policy"], "invariant": "RDTS/BIP110 enforcement remains absent and local policy remains outside block validity"},
+    {"id": "scattering", "when": "a proposed seam combines unrelated adaptation IDs solely to shrink a file or line count", "action": "reject and retain separate ownership records", "adaptation_ids": ["roots-roots-common-maintenance", "roots-knots-common-maintenance"]}
+  ],
+  "interpretation_rules": ["Use review triggers, never hard limits.", "Absorption, security work, modularization, moved modules, and evidence evolution require an explained baseline change.", "Do not reward line-count compression, consensus movement, hidden generated churn, or unrelated-unit aggregation."]
+}
