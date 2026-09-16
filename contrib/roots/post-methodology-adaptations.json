@@ -43,7 +43,9 @@
         "contrib/roots/continuous-accounting-pr.json",
         "contrib/roots/continuous-accounting.md",
         "contrib/roots/post-methodology-adaptations.json",
-        "contrib/roots/release-accounting.json"
+        "contrib/roots/release-accounting.json",
+        "test/lint/lint-spelling.py",
+        "test/lint/spelling.ignore-words.txt"
       ]
     },
     {
