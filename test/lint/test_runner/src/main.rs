@@ -199,7 +199,7 @@ fn commit_range() -> String {
 }
 
 fn pull_request_ci() -> bool {
-    env::var("CI_PULL_REQUEST").is_ok_and(|value| value == "1")
+    matches!(env::var("CI_PULL_REQUEST").as_deref(), Ok("1"))
 }
 
 /// Return all subtree paths
