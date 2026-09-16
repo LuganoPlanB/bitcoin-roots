@@ -359,7 +359,7 @@ class MaintainerRunbookTest(unittest.TestCase):
         staging = work / "staging-29.4"
         run(["git", "clone", "--quiet", "--no-checkout", source, staging])
         git(staging, "switch", "--quiet", "--create", "roots/integration-v29.4", CORE_29_4_COMMIT)
-        git(staging, "fetch", "--quiet", "--no-tags", canonical_destination, f"refs/heads/roots-29.4-canonical:refs/roots/candidate-29.4")
+        git(staging, "fetch", "--quiet", "--no-tags", canonical_destination, "refs/heads/roots-29.4-canonical:refs/roots/candidate-29.4")
         staged = json.loads(run([
             sys.executable, REPLAY, "stage-candidate", "--repository", staging,
             "--integration-branch", "roots/integration-v29.4",

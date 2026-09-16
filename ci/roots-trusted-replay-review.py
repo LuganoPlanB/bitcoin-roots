@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Verify replay CI artifacts against the frozen methodology, never producer data."""
-import argparse, hashlib, json
+import argparse
+import hashlib
+import json
 from pathlib import Path
 
 NAMES = {"state":"replay-state.json", "report_json":"replay-review.json", "report_text":"replay-review.txt", "generated_export":"replay-generated-series.patch"}
@@ -29,6 +31,9 @@ def verify(methodology, artifacts):
     if total > MAX_TOTAL_BYTES: raise ValueError("artifact aggregate is too large")
 
 if __name__ == "__main__":
-    p=argparse.ArgumentParser(); p.add_argument("--methodology",type=Path,required=True); p.add_argument("--artifacts",type=Path,required=True); a=p.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument("--methodology", type=Path, required=True)
+    p.add_argument("--artifacts", type=Path, required=True)
+    a = p.parse_args()
     try: verify(a.methodology,a.artifacts)
     except (OSError,ValueError,json.JSONDecodeError) as e: raise SystemExit(f"roots-trusted-replay-review: {e}")

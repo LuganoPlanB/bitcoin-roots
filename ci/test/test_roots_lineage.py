@@ -157,52 +157,84 @@ class RootsLineageTest(unittest.TestCase):
             temporary = Path(temporary_dir)
             ledger = self.fixture_ledger(temporary)
             cases = []
-            unscoped = copy.deepcopy(ledger); unscoped["claims"][0]["scope"] = []
+            unscoped = copy.deepcopy(ledger)
+            unscoped["claims"][0]["scope"] = []
             cases.append(unscoped)
-            contradictory = copy.deepcopy(ledger); contradictory["claims"].append(copy.deepcopy(ledger["claims"][0])); contradictory["claims"][1]["id"] = "fixture-tree-again"; contradictory["claims"][1]["status"] = "different"
+            contradictory = copy.deepcopy(ledger)
+            contradictory["claims"].append(copy.deepcopy(ledger["claims"][0]))
+            contradictory["claims"][1]["id"] = "fixture-tree-again"
+            contradictory["claims"][1]["status"] = "different"
             cases.append(contradictory)
-            mutable = copy.deepcopy(ledger); mutable["releases"][0]["refspec"] = "refs/heads/main:refs/tags/v1.0"
+            mutable = copy.deepcopy(ledger)
+            mutable["releases"][0]["refspec"] = "refs/heads/main:refs/tags/v1.0"
             cases.append(mutable)
-            ambiguous_tag_ref = copy.deepcopy(ledger); ambiguous_tag_ref["releases"][0]["tag_ref"] = "v1.0"
+            ambiguous_tag_ref = copy.deepcopy(ledger)
+            ambiguous_tag_ref["releases"][0]["tag_ref"] = "v1.0"
             cases.append(ambiguous_tag_ref)
-            mismatched_tag_ref = copy.deepcopy(ledger); mismatched_tag_ref["releases"][0]["tag_ref"] = "refs/tags/v1.1"
+            mismatched_tag_ref = copy.deepcopy(ledger)
+            mismatched_tag_ref["releases"][0]["tag_ref"] = "refs/tags/v1.1"
             cases.append(mismatched_tag_ref)
-            mismatched_refspec = copy.deepcopy(ledger); mismatched_refspec["releases"][0]["refspec"] = "refs/tags/v1.0:refs/tags/v1.1"
+            mismatched_refspec = copy.deepcopy(ledger)
+            mismatched_refspec["releases"][0]["refspec"] = "refs/tags/v1.0:refs/tags/v1.1"
             cases.append(mismatched_refspec)
-            cross_project_tag = copy.deepcopy(ledger); cross_project_tag["releases"][0]["tag"] = "v1.0.knots"; cross_project_tag["releases"][0]["tag_ref"] = "refs/tags/v1.0.knots"; cross_project_tag["releases"][0]["refspec"] = "refs/tags/v1.0.knots:refs/tags/v1.0.knots"
+            cross_project_tag = copy.deepcopy(ledger)
+            cross_project_tag["releases"][0]["tag"] = "v1.0.knots"
+            cross_project_tag["releases"][0]["tag_ref"] = "refs/tags/v1.0.knots"
+            cross_project_tag["releases"][0]["refspec"] = "refs/tags/v1.0.knots:refs/tags/v1.0.knots"
             cases.append(cross_project_tag)
             for unsafe_url in ("http://example.invalid/core.git", "https://user@example.invalid/core.git", "https://example.invalid:443/core.git", "https://example.invalid/core.git?ref=v1.0", "https://example.invalid/roots/../core.git"):
-                unsafe_repository = copy.deepcopy(ledger); unsafe_repository["releases"][0]["repository"] = unsafe_url
+                unsafe_repository = copy.deepcopy(ledger)
+                unsafe_repository["releases"][0]["repository"] = unsafe_url
                 cases.append(unsafe_repository)
-            ambiguous_oid = copy.deepcopy(ledger); ambiguous_oid["releases"][0]["tag_object"] = "a" * 40
+            ambiguous_oid = copy.deepcopy(ledger)
+            ambiguous_oid["releases"][0]["tag_object"] = "a" * 40
             cases.append(ambiguous_oid)
-            absolute = copy.deepcopy(ledger); absolute["claims"][0]["scope"] = ["/tmp/source"]
+            absolute = copy.deepcopy(ledger)
+            absolute["claims"][0]["scope"] = ["/tmp/source"]
             cases.append(absolute)
-            timestamp = copy.deepcopy(ledger); timestamp["generated_at"] = "2026-01-01T00:00:00Z"
+            timestamp = copy.deepcopy(ledger)
+            timestamp["generated_at"] = "2026-01-01T00:00:00Z"
             cases.append(timestamp)
-            cycle = copy.deepcopy(ledger); cycle["releases"][0]["depends_on"] = ["knots"]
+            cycle = copy.deepcopy(ledger)
+            cycle["releases"][0]["depends_on"] = ["knots"]
             cases.append(cycle)
-            missing_peeled = copy.deepcopy(ledger); del missing_peeled["releases"][0]["peeled_commit"]
+            missing_peeled = copy.deepcopy(ledger)
+            del missing_peeled["releases"][0]["peeled_commit"]
             cases.append(missing_peeled)
-            missing_tree = copy.deepcopy(ledger); del missing_tree["releases"][0]["tree"]
+            missing_tree = copy.deepcopy(ledger)
+            del missing_tree["releases"][0]["tree"]
             cases.append(missing_tree)
-            missing_tag_object = copy.deepcopy(ledger); del missing_tag_object["releases"][0]["tag_object"]
+            missing_tag_object = copy.deepcopy(ledger)
+            del missing_tag_object["releases"][0]["tag_object"]
             cases.append(missing_tag_object)
-            malformed_tag_object = copy.deepcopy(ledger); malformed_tag_object["releases"][0]["tag_object"] = "sha1:" + "z" * 40
+            malformed_tag_object = copy.deepcopy(ledger)
+            malformed_tag_object["releases"][0]["tag_object"] = "sha1:" + "z" * 40
             cases.append(malformed_tag_object)
-            bad_key = copy.deepcopy(ledger); bad_key["releases"][0]["signature"] = "verified"; bad_key["releases"][0]["trusted_key_fingerprint"] = "REVOKED"
+            bad_key = copy.deepcopy(ledger)
+            bad_key["releases"][0]["signature"] = "verified"
+            bad_key["releases"][0]["trusted_key_fingerprint"] = "REVOKED"
             cases.append(bad_key)
-            revoked_key = copy.deepcopy(ledger); revoked_key["releases"][0]["signature"] = "verified"; revoked_key["releases"][0]["trusted_key_fingerprint"] = "A" * 40; revoked_key["releases"][0]["trust_status"] = "revoked"
+            revoked_key = copy.deepcopy(ledger)
+            revoked_key["releases"][0]["signature"] = "verified"
+            revoked_key["releases"][0]["trusted_key_fingerprint"] = "A" * 40
+            revoked_key["releases"][0]["trust_status"] = "revoked"
             cases.append(revoked_key)
-            verified_missing_object = copy.deepcopy(ledger); del verified_missing_object["releases"][0]["tree"]; verified_missing_object["releases"][0]["signature"] = "verified"; verified_missing_object["releases"][0]["trust_status"] = "verified"; verified_missing_object["releases"][0]["trusted_key_fingerprint"] = "A" * 40
+            verified_missing_object = copy.deepcopy(ledger)
+            del verified_missing_object["releases"][0]["tree"]
+            verified_missing_object["releases"][0]["signature"] = "verified"
+            verified_missing_object["releases"][0]["trust_status"] = "verified"
+            verified_missing_object["releases"][0]["trusted_key_fingerprint"] = "A" * 40
             cases.append(verified_missing_object)
-            contradictory_trust = copy.deepcopy(ledger); contradictory_trust["releases"][0]["signature"] = "not-available"; contradictory_trust["releases"][0]["trust_status"] = "verified"
+            contradictory_trust = copy.deepcopy(ledger)
+            contradictory_trust["releases"][0]["signature"] = "not-available"
+            contradictory_trust["releases"][0]["trust_status"] = "verified"
             cases.append(contradictory_trust)
             unresolved = copy.deepcopy(ledger)
             unresolved["releases"].append({"id": "roots-1.0-roots", "project": "roots", "release_label": "1.0-roots", "repository": "https://example.invalid/roots.git", "tag": "v1.0-roots", "tag_ref": "refs/tags/v1.0-roots", "resolution_status": "unavailable", "retrieval": "local-fixture", "refspec": "refs/tags/v1.0-roots:refs/tags/v1.0-roots", "signature": "not-available", "trust_status": "not-available"})
             unresolved["claims"][0]["left"] = "roots-1.0-roots"
             cases.append(unresolved)
-            malformed_unicode = copy.deepcopy(ledger); malformed_unicode["exceptions"].append({"id": "unicode", "release": "core-1.0", "state": "manual", "reason": "\ud800"})
+            malformed_unicode = copy.deepcopy(ledger)
+            malformed_unicode["exceptions"].append({"id": "unicode", "release": "core-1.0", "state": "manual", "reason": "\ud800"})
             cases.append(malformed_unicode)
             for index, case in enumerate(cases):
                 with self.subTest(index=index):

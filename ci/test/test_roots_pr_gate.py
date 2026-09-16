@@ -42,34 +42,46 @@ def run_gate(repository, record, base, candidate):
 
 class RootsPrGateTest(unittest.TestCase):
     def repositories(self, paths):
-        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
         root, base_repo = Path(temporary.name), Path(temporary.name) / "base"
         subprocess.run(["git", "init", str(base_repo)], check=True, capture_output=True)
-        git(base_repo, "config", "user.email", "test@example.invalid"); git(base_repo, "config", "user.name", "Test")
+        git(base_repo, "config", "user.email", "test@example.invalid")
+        git(base_repo, "config", "user.name", "Test")
         for path in paths:
-            target = base_repo / path; target.parent.mkdir(parents=True, exist_ok=True); target.write_text("base\n")
-        git(base_repo, "add", "."); git(base_repo, "commit", "-m", "base"); base = git(base_repo, "rev-parse", "HEAD")
+            target = base_repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("base\n")
+        git(base_repo, "add", ".")
+        git(base_repo, "commit", "-m", "base")
+        base = git(base_repo, "rev-parse", "HEAD")
         fork, trusted = root / "fork", root / "trusted"
         for clone in (fork, trusted): subprocess.run(["git", "clone", str(base_repo), str(clone)], check=True, capture_output=True)
-        git(fork, "config", "user.email", "test@example.invalid"); git(fork, "config", "user.name", "Test")
+        git(fork, "config", "user.email", "test@example.invalid")
+        git(fork, "config", "user.name", "Test")
         for path in paths: (fork / path).write_text("candidate\n")
-        git(fork, "commit", "-am", "candidate data"); changed = git(fork, "rev-parse", "HEAD")
+        git(fork, "commit", "-am", "candidate data")
+        changed = git(fork, "rev-parse", "HEAD")
         owners = {path: unit["id"] for unit in json.loads((ROOT / "contrib/roots/adaptation-manifest-29.3.json").read_text())["units"] for path in unit["touched"]["paths"]}
         changes = [entry(*atom, "exempt" if atom[0].startswith(("doc/", "README")) else "update") for atom in sorted(ACCOUNTING.atoms(fork, base, changed))]
         for item in changes:
             if item["path"] in owners:
                 item["adaptation"] = owners[item["path"]]
-        record = fork / RECORD; record.parent.mkdir(parents=True, exist_ok=True)
+        record = fork / RECORD
+        record.parent.mkdir(parents=True, exist_ok=True)
         record.write_text(json.dumps({"schema_version": 1, "changes": changes}, sort_keys=True))
-        git(fork, "add", RECORD); git(fork, "commit", "-m", "account atoms")
+        git(fork, "add", RECORD)
+        git(fork, "commit", "-m", "account atoms")
         registry_paths = sorted(path for path in paths if path not in owners)
         (fork / "contrib/roots/post-methodology-adaptations.json").write_text(json.dumps({"schema_version": 1, "units": [{"id": "roots-post-methodology-pr-gate-v1", "paths": registry_paths}]}))
         methodology = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
         for item in methodology["frozen_inputs"]:
             source, destination = ROOT / item["path"], fork / item["path"]
-            destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes(source.read_bytes())
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
         for name in ("adaptation-manifest-29.3.json", "adaptation-manifest.schema.json", "methodology-v1.json"):
-            destination = fork / "contrib/roots" / name; destination.write_bytes((ROOT / "contrib/roots" / name).read_bytes())
+            destination = fork / "contrib/roots" / name
+            destination.write_bytes((ROOT / "contrib/roots" / name).read_bytes())
         return trusted, fork, base, git(fork, "rev-parse", "HEAD")
 
     def transfer(self, trusted, fork, candidate):
@@ -80,18 +92,24 @@ class RootsPrGateTest(unittest.TestCase):
 
     def test_offline_fork_matrix_is_exactly_accounted(self):
         paths = ["README.md", "doc/guide.md", "generated/output.txt", "src/validation.cpp", "src/util/tool.cpp"]
-        trusted, fork, base, candidate = self.repositories(paths); self.transfer(trusted, fork, candidate)
+        trusted, fork, base, candidate = self.repositories(paths)
+        self.transfer(trusted, fork, candidate)
         report = run_gate(trusted, fork / RECORD, base, candidate)
-        self.assertEqual(report["atom_count"], len(paths)); self.assertEqual({x["path"] for x in report["changes"]}, set(paths))
+        self.assertEqual(report["atom_count"], len(paths))
+        self.assertEqual({x["path"] for x in report["changes"]}, set(paths))
         self.assertEqual(next(x["risk"] for x in report["changes"] if x["path"] == "src/validation.cpp"), "critical")
 
     def test_missing_extra_stale_wrong_owner_and_embargo_fail_closed(self):
-        trusted, fork, base, candidate = self.repositories(["doc/guide.md", "src/validation.cpp"]); self.transfer(trusted, fork, candidate)
+        trusted, fork, base, candidate = self.repositories(["doc/guide.md", "src/validation.cpp"])
+        self.transfer(trusted, fork, candidate)
         record = json.loads((fork / RECORD).read_text())
         for mutate in (lambda v: v["changes"].pop(), lambda v: v["changes"].append(copy.deepcopy(v["changes"][0])), lambda v: v["changes"][0].__setitem__("digest", "sha256:" + "0" * 64), lambda v: v["changes"][0].__setitem__("adaptation", "")):
-            invalid = copy.deepcopy(record); mutate(invalid); (fork / RECORD).write_text(json.dumps(invalid))
+            invalid = copy.deepcopy(record)
+            mutate(invalid)
+            (fork / RECORD).write_text(json.dumps(invalid))
             with self.assertRaises(GATE.GateError): run_gate(trusted, fork / RECORD, base, candidate)
-        embargoed = copy.deepcopy(record); item = embargoed["changes"][0]
+        embargoed = copy.deepcopy(record)
+        item = embargoed["changes"][0]
         embargoed["changes"][0] = {key: item[key] for key in ("path", "kind", "digest", "disposition", "adaptation")}
         embargoed["changes"][0].update({"disposition":"embargoed", "tracking_reference":"SEC-2026-001", "reconcile_by":"2026-12-31", "reconciliation_state":"pending"})
         observed = ACCOUNTING.atoms(trusted, base, candidate) - {atom for atom in ACCOUNTING.atoms(trusted, base, candidate) if atom[0] == RECORD}
@@ -100,11 +118,15 @@ class RootsPrGateTest(unittest.TestCase):
     def test_candidate_replacements_never_execute_and_missing_object_fails(self):
         trusted, fork, base, candidate = self.repositories(["doc/guide.md"])
         with self.assertRaises(GATE.GateError): run_gate(trusted, fork / RECORD, base, candidate)
-        self.transfer(trusted, fork, candidate); marker = fork / "executed"
+        self.transfer(trusted, fork, candidate)
+        marker = fork / "executed"
         payload = f"from pathlib import Path\nPath({str(marker)!r}).write_text('bad')\nraise RuntimeError()\n"
         for name in ("roots-continuous-accounting.py", "roots-pr-gate.py"):
-            target = fork / "contrib/devtools" / name; target.parent.mkdir(parents=True, exist_ok=True); target.write_text(payload)
-        run_gate(trusted, fork / RECORD, base, candidate); self.assertFalse(marker.exists())
+            target = fork / "contrib/devtools" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(payload)
+        run_gate(trusted, fork / RECORD, base, candidate)
+        self.assertFalse(marker.exists())
 
     def test_workflow_is_pinned_read_only_and_offline(self):
         workflow = WORKFLOW.read_text()
@@ -114,21 +136,30 @@ class RootsPrGateTest(unittest.TestCase):
         self.assertTrue(actions and all(re.fullmatch(r"actions/checkout@[0-9a-f]{40}", action) for action in actions))
 
     def test_manifest_schema_methodology_and_plausible_wrong_owner_fail_closed(self):
-        trusted, fork, base, candidate = self.repositories(["doc/guide.md"]); self.transfer(trusted, fork, candidate)
-        root = fork / "contrib/roots"; manifest = root / "adaptation-manifest-29.3.json"; methodology = root / "methodology-v1.json"; schema = root / "adaptation-manifest.schema.json"
+        trusted, fork, base, candidate = self.repositories(["doc/guide.md"])
+        self.transfer(trusted, fork, candidate)
+        root = fork / "contrib/roots"
+        manifest = root / "adaptation-manifest-29.3.json"
+        methodology = root / "methodology-v1.json"
+        schema = root / "adaptation-manifest.schema.json"
         for path in (manifest, methodology, schema): path.write_bytes((ROOT / "contrib/roots" / path.name).read_bytes())
         registry = root / "post-methodology-adaptations.json"
-        record = json.loads((fork / RECORD).read_text()); record["changes"][0]["adaptation"] = "roots-roots-build-ci-build-or-release"; (fork / RECORD).write_text(json.dumps(record))
+        record = json.loads((fork / RECORD).read_text())
+        record["changes"][0]["adaptation"] = "roots-roots-build-ci-build-or-release"
+        (fork / RECORD).write_text(json.dumps(record))
         with self.assertRaises(Exception): GATE.gate(trusted, fork / RECORD, manifest, methodology, registry, base, candidate, TOOLS)
-        record["changes"][0]["adaptation"] = "roots-post-methodology-pr-gate-v1"; (fork / RECORD).write_text(json.dumps(record))
+        record["changes"][0]["adaptation"] = "roots-post-methodology-pr-gate-v1"
+        (fork / RECORD).write_text(json.dumps(record))
         schema.write_text("{}")
         with self.assertRaises(Exception): GATE.gate(trusted, fork / RECORD, manifest, methodology, registry, base, candidate, TOOLS)
-        schema.write_bytes((ROOT / "contrib/roots/adaptation-manifest.schema.json").read_bytes()); methodology.write_text("{}")
+        schema.write_bytes((ROOT / "contrib/roots/adaptation-manifest.schema.json").read_bytes())
+        methodology.write_text("{}")
         with self.assertRaises(Exception): GATE.gate(trusted, fork / RECORD, manifest, methodology, registry, base, candidate, TOOLS)
 
     def test_path_policies_and_registry_ambiguity_fail_closed(self):
         paths = [".github/workflows/roots-portability.yml", "ci/test/example.py", "contrib/devtools/roots-pr-gate.py", "doc/guide.md", "generated/output.txt", "src/util/tool.cpp", "src/validation.cpp"]
-        trusted, fork, base, candidate = self.repositories(paths); self.transfer(trusted, fork, candidate)
+        trusted, fork, base, candidate = self.repositories(paths)
+        self.transfer(trusted, fork, candidate)
         original = json.loads((fork / RECORD).read_text())
         mutations = [
             ("doc/guide.md", "risk", "high"),
@@ -180,7 +211,8 @@ class RootsPrGateTest(unittest.TestCase):
                 GATE.validate_ownership(record, manifest, invalid)
 
     def test_candidate_control_symlinks_and_frozen_inputs_fail_closed(self):
-        trusted, fork, base, candidate = self.repositories(["doc/guide.md"]); self.transfer(trusted, fork, candidate)
+        trusted, fork, base, candidate = self.repositories(["doc/guide.md"])
+        self.transfer(trusted, fork, candidate)
         root = fork / "contrib/roots"
         for name in ("adaptation-manifest-29.3.json", "methodology-v1.json", "adaptation-manifest.schema.json"):
             target = root / name
@@ -188,24 +220,38 @@ class RootsPrGateTest(unittest.TestCase):
         registry = root / "post-methodology-adaptations.json"
         for name in ("adaptation-manifest-29.3.json", "methodology-v1.json", "adaptation-manifest.schema.json", "post-methodology-adaptations.json"):
             target = root / name
-            saved = target.read_bytes(); target.unlink(); target.symlink_to(ROOT / "contrib/roots" / name)
+            saved = target.read_bytes()
+            target.unlink()
+            target.symlink_to(ROOT / "contrib/roots" / name)
             with self.assertRaises(GATE.GateError): GATE.gate(trusted, fork / RECORD, root / "adaptation-manifest-29.3.json", root / "methodology-v1.json", registry, base, candidate, TOOLS)
-            target.unlink(); target.write_bytes(saved)
+            target.unlink()
+            target.write_bytes(saved)
         manifest = root / "adaptation-manifest-29.3.json"
-        value = json.loads(manifest.read_text()); value["units"] = list(reversed(value["units"])); manifest.write_text(json.dumps(value))
+        value = json.loads(manifest.read_text())
+        value["units"] = list(reversed(value["units"]))
+        manifest.write_text(json.dumps(value))
         with self.assertRaises(GATE.GateError): GATE.gate(trusted, fork / RECORD, manifest, root / "methodology-v1.json", registry, base, candidate, TOOLS)
 
     def test_candidate_parent_symlinks_fail_closed(self):
-        trusted, fork, base, candidate = self.repositories(["doc/guide.md"]); self.transfer(trusted, fork, candidate)
-        root = fork / "contrib/roots"; registry = root / "post-methodology-adaptations.json"
-        external = fork.parent / "external-contrib"; (fork / "contrib").rename(external); (fork / "contrib").symlink_to(external, target_is_directory=True)
+        trusted, fork, base, candidate = self.repositories(["doc/guide.md"])
+        self.transfer(trusted, fork, candidate)
+        root = fork / "contrib/roots"
+        registry = root / "post-methodology-adaptations.json"
+        external = fork.parent / "external-contrib"
+        (fork / "contrib").rename(external)
+        (fork / "contrib").symlink_to(external, target_is_directory=True)
         with self.assertRaises(GATE.GateError): GATE.gate(trusted, fork / RECORD, root / "adaptation-manifest-29.3.json", root / "methodology-v1.json", registry, base, candidate, TOOLS)
-        (fork / "contrib").unlink(); external.rename(fork / "contrib")
-        frozen_parent = fork / "contrib/roots/replay-29.3-release"; external = fork.parent / "external-frozen"; frozen_parent.rename(external); frozen_parent.symlink_to(external, target_is_directory=True)
+        (fork / "contrib").unlink()
+        external.rename(fork / "contrib")
+        frozen_parent = fork / "contrib/roots/replay-29.3-release"
+        external = fork.parent / "external-frozen"
+        frozen_parent.rename(external)
+        frozen_parent.symlink_to(external, target_is_directory=True)
         with self.assertRaises(GATE.GateError): GATE.gate(trusted, fork / RECORD, root / "adaptation-manifest-29.3.json", root / "methodology-v1.json", registry, base, candidate, TOOLS)
 
     def test_oversized_atoms_and_linked_record_fail_closed(self):
-        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
         linked = Path(temporary.name) / "record.json"
         linked.symlink_to(ROOT / RECORD)
         with self.assertRaises(GATE.GateError): run_gate(ROOT, linked, "0" * 40, "1" * 40)
@@ -219,15 +265,19 @@ class RootsPrGateTest(unittest.TestCase):
             run_gate(ROOT, ROOT / RECORD, "0" * 40, "1" * 40)
 
     def test_bounded_atom_report_fails_at_report_limit(self):
-        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
         root = Path(temporary.name) / "candidate"
         methodology = json.loads((ROOT / "contrib/roots/methodology-v1.json").read_text())
         for item in methodology["frozen_inputs"]:
             source, destination = ROOT / item["path"], root / item["path"]
-            destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes(source.read_bytes())
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
         for name in ("adaptation-manifest-29.3.json", "adaptation-manifest.schema.json", "methodology-v1.json"):
-            destination = root / "contrib/roots" / name; destination.write_bytes((ROOT / "contrib/roots" / name).read_bytes())
-        registry_path = root / "contrib/roots/post-methodology-adaptations.json"; record_path = root / "contrib/roots/record.json"
+            destination = root / "contrib/roots" / name
+            destination.write_bytes((ROOT / "contrib/roots" / name).read_bytes())
+        registry_path = root / "contrib/roots/post-methodology-adaptations.json"
+        record_path = root / "contrib/roots/record.json"
         paths = [f"generated/output-{i:04d}.txt" for i in range(500)]
         registry_path.write_text(json.dumps({"schema_version": 1, "units": [{"id": "roots-post-methodology-pr-gate-v1", "paths": paths}]}))
         changes = [entry(path, "modify", "sha256:" + f"{index:064x}") for index, path in enumerate(paths)]

@@ -15,11 +15,14 @@ SCRIPT = ROOT / "ci/roots-trusted-replay-gate.py"
 REVIEW_SCRIPT = ROOT / "ci/roots-trusted-replay-review.py"
 BUILD_SCRIPT = ROOT / "ci/roots-trusted-candidate-build.py"
 spec = importlib.util.spec_from_file_location("trusted_replay_gate", SCRIPT)
-GATE = importlib.util.module_from_spec(spec); spec.loader.exec_module(GATE)
+GATE = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(GATE)
 review_spec = importlib.util.spec_from_file_location("trusted_replay_review", REVIEW_SCRIPT)
-REVIEW = importlib.util.module_from_spec(review_spec); review_spec.loader.exec_module(REVIEW)
+REVIEW = importlib.util.module_from_spec(review_spec)
+review_spec.loader.exec_module(REVIEW)
 build_spec = importlib.util.spec_from_file_location("trusted_candidate_build", BUILD_SCRIPT)
-BUILD = importlib.util.module_from_spec(build_spec); build_spec.loader.exec_module(BUILD)
+BUILD = importlib.util.module_from_spec(build_spec)
+build_spec.loader.exec_module(BUILD)
 
 class TrustedReplayCiTest(unittest.TestCase):
     def test_workflow_has_only_trusted_read_only_paths(self):
@@ -58,40 +61,52 @@ class TrustedReplayCiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "trusted-replay-report.json"
             args = ("manual", "false", "none", ROOT / "contrib/roots/adaptation-manifest-29.3.json", ROOT / "contrib/roots/methodology-v1.json", ROOT / "contrib/roots/core-29.4-migration-fixture.json")
-            first = GATE.report(*args); second = GATE.report(*args)
-            self.assertEqual(first, second); self.assertEqual(first["decision"], "no-op")
+            first = GATE.report(*args)
+            second = GATE.report(*args)
+            self.assertEqual(first, second)
+            self.assertEqual(first["decision"], "no-op")
             self.assertEqual(GATE.decision("schedule", "false"), "replay")
             self.assertEqual(GATE.decision("manual", "false", "auto"), "no-op")
             self.assertEqual(GATE.decision("manual", "false", "force"), "replay")
             for later_base in ("core-29.4", "branch-name", "https://example.invalid/core.git", "0" * 40):
                 with self.subTest(later_base=later_base), self.assertRaises(GATE.GateError):
                     GATE.report("manual", "true", later_base, *args[3:])
-            fixture = json.loads((ROOT / "contrib/roots/core-29.4-migration-fixture.json").read_text()); fixture["core_inputs"]["v29.3"]["tree"] = "z" * 40
-            bad = Path(directory) / "fixture.json"; bad.write_text(json.dumps(fixture))
+            fixture = json.loads((ROOT / "contrib/roots/core-29.4-migration-fixture.json").read_text())
+            fixture["core_inputs"]["v29.3"]["tree"] = "z" * 40
+            bad = Path(directory) / "fixture.json"
+            bad.write_text(json.dumps(fixture))
             with self.assertRaises(GATE.GateError): GATE.report("manual", "true", "none", *args[3:5], bad)
-            fixture["core_inputs"]["v29.3"]["tree"] = "0" * 40; bad.write_text(json.dumps(fixture))
+            fixture["core_inputs"]["v29.3"]["tree"] = "0" * 40
+            bad.write_text(json.dumps(fixture))
             with self.assertRaises(GATE.GateError): GATE.report("manual", "true", "none", *args[3:5], bad)
             output.write_bytes(b"occupied")
             self.assertTrue(output.exists())
 
     def test_artifact_manifest_rejects_extra_large_and_digest_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); expected = {}
+            root = Path(directory)
+            expected = {}
             for name in GATE.EXPECTED_ARTIFACTS:
-                path = root / name; path.write_text(name); expected[name] = GATE.digest(path)
+                path = root / name
+                path.write_text(name)
+                expected[name] = GATE.digest(path)
             GATE.verify_artifacts(root, expected)
             (root / "extra").write_text("x")
             with self.assertRaises(GATE.GateError): GATE.verify_artifacts(root, expected)
-            (root / "extra").unlink(); (root / "replay-review.txt").write_bytes(b"x" * (GATE.MAX_REPORT_BYTES + 1))
+            (root / "extra").unlink()
+            (root / "replay-review.txt").write_bytes(b"x" * (GATE.MAX_REPORT_BYTES + 1))
             with self.assertRaises(GATE.GateError): GATE.verify_artifacts(root, expected)
 
     def test_review_uses_frozen_role_expectations_and_rejects_mutations(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); artifacts = root / "artifacts"; roles = {}
+            root = Path(directory)
+            artifacts = root / "artifacts"
+            roles = {}
             for role in ("core-to-knots-29.3", "roots-29.3", "core-29.4"):
                 digests = {}
                 for run in ("a", "b"):
-                    target = artifacts / role / run; target.mkdir(parents=True)
+                    target = artifacts / role / run
+                    target.mkdir(parents=True)
                     state = {"candidate_tree": "a" * 40, "completed_units": [role]}
                     for kind, name in REVIEW.NAMES.items():
                         path = target / name
@@ -99,7 +114,8 @@ class TrustedReplayCiTest(unittest.TestCase):
                         digests[kind] = REVIEW.sha(path)
                     digests["outcome_set"] = "sha256:" + __import__("hashlib").sha256(json.dumps(state["completed_units"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 roles[role] = {"target_tree": "sha1:" + "a" * 40, "artifact_digests": digests}
-            methodology = root / "methodology.json"; methodology.write_text(json.dumps({"reconstructions": roles}))
+            methodology = root / "methodology.json"
+            methodology.write_text(json.dumps({"reconstructions": roles}))
             REVIEW.verify(methodology, artifacts)
             for role in roles:
                 for run in ("a", "b"):

@@ -1518,7 +1518,11 @@ class RootsReplayTest(unittest.TestCase):
         first, second = self.clone_equivalent_source("source-a"), self.clone_equivalent_source("source-b")
         outputs = []
         for index, source in enumerate((first, second)):
-            root = self.root / f"fixture-{index}"; root.mkdir(); manifest, materials = self.fixture_manifest(root); states = root / "states"; states.mkdir()
+            root = self.root / f"fixture-{index}"
+            root.mkdir()
+            manifest, materials = self.fixture_manifest(root)
+            states = root / "states"
+            states.mkdir()
             subprocess.run([sys.executable, str(SCRIPT), "replay", "--repository", str(source), "--revision", self.revision, "--expected-tree", self.tree, "--manifest", str(manifest), "--materials", str(materials), "--materials-root", str(root), "--state-directory", str(states), "--apply"], check=True, capture_output=True, text=True)
             outputs.append((states / "replay-state-0001.json").read_bytes())
         self.assertEqual(*outputs)
@@ -1646,7 +1650,8 @@ class RootsReplayTest(unittest.TestCase):
 
     def test_fixture_public_replay_apply_persists_boundary_and_source(self):
         manifest, materials = self.fixture_manifest(self.root)
-        states = self.root / "fixture-states"; states.mkdir()
+        states = self.root / "fixture-states"
+        states.mkdir()
         before = REPLAY._repository_snapshot(self.repository.resolve())
         result = subprocess.run([sys.executable, str(SCRIPT), "replay", "--repository", str(self.repository), "--revision", self.revision, "--expected-tree", self.tree, "--manifest", str(manifest), "--materials", str(materials), "--materials-root", str(self.root), "--state-directory", str(states), "--apply"], text=True, capture_output=True, check=True)
         self.assertEqual(json.loads(result.stdout)["outcomes"][0]["outcome"], "manual")
@@ -1674,27 +1679,48 @@ class RootsReplayTest(unittest.TestCase):
 
     def test_fixture_public_patch_replay(self):
         before_revision, before_tree = self.revision, self.tree
-        (self.repository / "one.txt").write_text("two\n", encoding="utf-8"); git(self.repository, "add", "one.txt"); git(self.repository, "commit", "-m", "patch fixture")
+        (self.repository / "one.txt").write_text("two\n", encoding="utf-8")
+        git(self.repository, "add", "one.txt")
+        git(self.repository, "commit", "-m", "patch fixture")
         after_revision, after_tree = git(self.repository, "rev-parse", "HEAD"), git(self.repository, "write-tree")
         payload = subprocess.run(["git", "-C", str(self.repository), "diff", "--binary", "--full-index", before_revision, after_revision], check=True, capture_output=True).stdout
-        fixture = self.root / "fixture.patch"; fixture.write_bytes(payload); git(self.repository, "reset", "--hard", before_revision)
+        fixture = self.root / "fixture.patch"
+        fixture.write_bytes(payload)
+        git(self.repository, "reset", "--hard", before_revision)
         manifest, materials = self.fixture_manifest(self.root)
-        value = json.loads(manifest.read_text()); value["units"][0]["application"] = {"mechanism": "patch", "reference": "fixture:patch"}; manifest.write_text(json.dumps(value))
+        value = json.loads(manifest.read_text())
+        value["units"][0]["application"] = {"mechanism": "patch", "reference": "fixture:patch"}
+        manifest.write_text(json.dumps(value))
         digest = "sha256:" + __import__("hashlib").sha256(payload).hexdigest()
         materials.write_text(json.dumps({"schema_version": 1, "materials": {"fixture:patch": {"mechanism":"patch", "patch":"fixture.patch", "expected_patch_sha256":digest, "expected_before_tree":before_tree, "expected_after_tree":after_tree}}}))
-        states = self.root / "patch-states"; states.mkdir(); before = REPLAY._repository_snapshot(self.repository.resolve())
+        states = self.root / "patch-states"
+        states.mkdir()
+        before = REPLAY._repository_snapshot(self.repository.resolve())
         result = subprocess.run([sys.executable,str(SCRIPT),"replay","--repository",str(self.repository),"--revision",before_revision,"--expected-tree",before_tree,"--manifest",str(manifest),"--materials",str(materials),"--materials-root",str(self.root),"--state-directory",str(states),"--apply"],capture_output=True,text=True,check=True)
-        self.assertEqual(json.loads(result.stdout)["outcomes"][0]["outcome"], "applied"); self.assertEqual(git(states / "owned-candidate", "write-tree"), after_tree); self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()), before)
+        self.assertEqual(json.loads(result.stdout)["outcomes"][0]["outcome"], "applied")
+        self.assertEqual(git(states / "owned-candidate", "write-tree"), after_tree)
+        self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()), before)
 
     def test_fixture_public_data_replay(self):
-        source = self.root / "fixture.data"; source.write_text("payload\n")
+        source = self.root / "fixture.data"
+        source.write_text("payload\n")
         digest = "sha256:" + __import__("hashlib").sha256(source.read_bytes()).hexdigest()
-        (self.repository / "data.txt").write_bytes(source.read_bytes()); git(self.repository,"add","data.txt"); after = git(self.repository,"write-tree"); git(self.repository,"reset","--hard","HEAD")
-        manifest, materials = self.fixture_manifest(self.root); value=json.loads(manifest.read_text()); value["units"][0]["application"]={"mechanism":"module/data","reference":"fixture:data"}; manifest.write_text(json.dumps(value))
+        (self.repository / "data.txt").write_bytes(source.read_bytes())
+        git(self.repository,"add","data.txt")
+        after = git(self.repository,"write-tree")
+        git(self.repository,"reset","--hard","HEAD")
+        manifest, materials = self.fixture_manifest(self.root)
+        value=json.loads(manifest.read_text())
+        value["units"][0]["application"]={"mechanism":"module/data","reference":"fixture:data"}
+        manifest.write_text(json.dumps(value))
         materials.write_text(json.dumps({"schema_version":1,"materials":{"fixture:data":{"mechanism":"module/data","source":"fixture.data","destination":"data.txt","expected_sha256":digest,"expected_before_tree":self.tree,"expected_after_tree":after}}}))
-        states=self.root/"data-states"; states.mkdir(); before=REPLAY._repository_snapshot(self.repository.resolve())
+        states=self.root/"data-states"
+        states.mkdir()
+        before=REPLAY._repository_snapshot(self.repository.resolve())
         result=subprocess.run([sys.executable,str(SCRIPT),"replay","--repository",str(self.repository),"--revision",self.revision,"--expected-tree",self.tree,"--manifest",str(manifest),"--materials",str(materials),"--materials-root",str(self.root),"--state-directory",str(states),"--apply"],text=True,capture_output=True,check=True)
-        self.assertEqual(json.loads(result.stdout)["outcomes"][0]["outcome"],"applied"); self.assertEqual(git(states/"owned-candidate","write-tree"),after); self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()),before)
+        self.assertEqual(json.loads(result.stdout)["outcomes"][0]["outcome"],"applied")
+        self.assertEqual(git(states/"owned-candidate","write-tree"),after)
+        self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()),before)
 
     def test_verify_is_read_only_and_records_locked_input(self):
         before = git(self.repository, "status", "--porcelain=v1")
@@ -1907,7 +1933,9 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         materials = self.materials_for_manifest(self.root)
         base = [sys.executable, str(SCRIPT), "replay", "--repository", str(self.repository), "--revision", self.revision, "--expected-tree", self.tree, "--manifest", str(manifest), "--materials", str(materials), "--materials-root", str(self.root), "--state-directory", str(states), "--apply"]
         subprocess.run(base, check=True, capture_output=True, text=True)
-        value = json.loads(materials.read_text(encoding="utf-8")); value["materials"][next(iter(value["materials"]))]["extra"] = "drift"; materials.write_text(json.dumps(value), encoding="utf-8")
+        value = json.loads(materials.read_text(encoding="utf-8"))
+        value["materials"][next(iter(value["materials"]))]["extra"] = "drift"
+        materials.write_text(json.dumps(value), encoding="utf-8")
         result = subprocess.run([sys.executable, str(SCRIPT), "resume", "--repository", str(self.repository), "--revision", self.revision, "--expected-tree", self.tree, "--manifest", str(manifest), "--materials", str(materials), "--materials-root", str(self.root), "--state", str(states / "replay-state-0016.json"), "--state-directory", str(states)], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
 
@@ -1926,8 +1954,10 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         manifest.write_text(json.dumps(value), encoding="utf-8")
         self.assertEqual(len(REPLAY.read_manifest_units(manifest)), 16)
         result = subprocess.run([sys.executable, str(SCRIPT), "resume", "--repository", str(self.repository), "--revision", self.revision, "--expected-tree", self.tree, "--manifest", str(manifest), "--materials", str(materials), "--materials-root", str(self.root), "--state", str(states / "replay-state-0016.json"), "--state-directory", str(states)], capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0); self.assertIn("drifted", result.stderr)
-        self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()), before_source); self.assertEqual(git(candidate, "write-tree"), before_tree)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("drifted", result.stderr)
+        self.assertEqual(REPLAY._repository_snapshot(self.repository.resolve()), before_source)
+        self.assertEqual(git(candidate, "write-tree"), before_tree)
 
     def test_stage_candidate_requires_all_guards_and_updates_only_target_branch(self):
         git(self.repository, "branch", "integration/replay")
