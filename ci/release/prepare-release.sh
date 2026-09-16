@@ -6,8 +6,8 @@
 export LC_ALL=C
 set -Eeuo pipefail
 
-if [[ "$#" -ne 8 ]]; then
-    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT EVIDENCE_FILE SOURCE_REPOSITORY SOURCE_REVISION\n' "$0" >&2
+if [[ "$#" -ne 9 ]]; then
+    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT EVIDENCE_FILE BUILD_EVIDENCE_FILE SOURCE_REPOSITORY SOURCE_REVISION\n' "$0" >&2
     exit 2
 fi
 
@@ -17,8 +17,9 @@ public_key_file=$3
 release_name=$4
 expected_package_count=$5
 evidence_file=$6
-source_repository=$7
-source_revision=$8
+build_evidence_file=$7
+source_repository=$8
+source_revision=$9
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 archive_tool="$script_dir/archive.py"
 
@@ -67,15 +68,35 @@ if [[ ! -f "$evidence_file" || -L "$evidence_file" || "${evidence_file##*/}" != 
     printf 'Release evidence is unavailable or unsafe: %s\n' "$evidence_file" >&2
     exit 1
 fi
+if [[ ! -f "$build_evidence_file" || -L "$build_evidence_file" || "${build_evidence_file##*/}" != roots-release-build-evidence.json ]]; then
+    printf 'Release build evidence is unavailable or unsafe: %s\n' "$build_evidence_file" >&2
+    exit 1
+fi
+build_evidence_directory="$(cd -- "$(dirname -- "$build_evidence_file")" && pwd)"
+(
+    cd "$build_evidence_directory"
+    python3 "$script_dir/roots-build-evidence.py" verify \
+        --artifacts "$(cd -- "$download_dir" && pwd)" \
+        --source-repository "$(cd -- "$source_repository" && pwd)" \
+        --source-revision "$source_revision" \
+        --expected-count "$expected_package_count" \
+        --output roots-release-build-evidence.json
+)
 python3 "$script_dir/roots-release-evidence.py" \
     --ledger contrib/roots/lineage-ledger.json \
     --manifest contrib/roots/adaptation-manifest-29.3.json \
     --replay-result contrib/roots/replay-29.4-proposal/acceptance-evidence.json \
+    --fixture contrib/roots/core-29.4-migration-fixture.json \
+    --registry contrib/roots/post-methodology-adaptations.json \
+    --accounting contrib/roots/continuous-accounting-pr.json \
+    --release-accounting contrib/roots/release-accounting.json \
+    --build-evidence "$build_evidence_file" \
     --source-repository "$source_repository" \
     --source-revision "$source_revision" \
     --candidate-tree "sha1:$(git -C "$source_repository" rev-parse "${source_revision}^{tree}")" \
     --output "$evidence_file" --verify
 cp -- "$evidence_file" "$output_dir/roots-release-evidence.json"
+cp -- "$build_evidence_file" "$output_dir/roots-release-build-evidence.json"
 
 archive_root="$(RELEASE_TAG="$release_name" python3 "$archive_tool" root-name)"
 for package_path in "${package_paths[@]}"; do
@@ -97,4 +118,5 @@ manifest="$output_dir/SHA512SUMS"
         (cd "$output_dir" && sha512sum -- "$package_name")
     done
     (cd "$output_dir" && sha512sum roots-release-evidence.json)
+    (cd "$output_dir" && sha512sum roots-release-build-evidence.json)
 } > "$manifest"

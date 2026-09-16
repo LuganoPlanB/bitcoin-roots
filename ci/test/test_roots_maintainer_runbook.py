@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -17,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,8 +29,12 @@ METHODOLOGY = ROOT / "contrib/roots/methodology-v1.json"
 TRUSTED_GATE = ROOT / "ci/roots-trusted-replay-gate.py"
 ACCOUNTING_TOOL = ROOT / "contrib/devtools/roots-continuous-accounting.py"
 RELEASE_EVIDENCE = ROOT / "ci/release/roots-release-evidence.py"
+BUILD_EVIDENCE = ROOT / "ci/release/roots-build-evidence.py"
 PREPARE_RELEASE = ROOT / "ci/release/prepare-release.sh"
 PUBLIC_KEY = ROOT / "contrib/release/bitcoin-roots-release-key.asc"
+release_fixture_spec = importlib.util.spec_from_file_location("release_fixture", ROOT / "ci/test/test_roots_release_evidence.py")
+RELEASE_FIXTURE = importlib.util.module_from_spec(release_fixture_spec)
+release_fixture_spec.loader.exec_module(RELEASE_FIXTURE)
 
 CORE_29_3_COMMIT = "99003bed87333f1be51bf3070235591b3a72f007"
 CORE_29_3_TREE = "d7910bd5e9335128932f1f848a767d773895c4a4"
@@ -179,38 +185,28 @@ class MaintainerRunbookTest(unittest.TestCase):
         }
 
     def release_source(self, work):
-        repository = work / "release-source"
-        for relative in (
-            "contrib/roots/lineage-ledger.json",
-            "contrib/roots/adaptation-manifest-29.3.json",
-            "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
-        ):
-            destination = repository / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / relative, destination)
-        run(["git", "init", "--quiet", repository])
-        git(repository, "config", "user.email", "rehearsal@example.invalid")
-        git(repository, "config", "user.name", "Roots rehearsal")
-        git(repository, "add", "contrib")
-        environment = {
-            **os.environ,
-            "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
-            "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
-        }
-        run(["git", "-C", repository, "commit", "--quiet", "-m", "accepted release inputs"], env=environment)
-        return repository
+        fixture_root = work / "release-fixture"
+        fixture_root.mkdir()
+        return RELEASE_FIXTURE.ReleaseEvidenceTest().fixture(fixture_root)
 
     def write_package(self, path):
         content = b"runbook package"
         member = "bitcoin-roots-29.4-roots.1/bin/bitcoin-qt"
-        with tarfile.open(path, mode="w:gz") as package:
-            info = tarfile.TarInfo(member)
-            info.size = len(content)
-            package.addfile(info, io.BytesIO(content))
+        if path.name.endswith(".tar.gz"):
+            with path.open("wb") as destination:
+                with gzip.GzipFile(fileobj=destination, mode="wb", mtime=0) as compressed:
+                    with tarfile.open(fileobj=compressed, mode="w") as package:
+                        info = tarfile.TarInfo(member)
+                        info.size = len(content)
+                        info.mtime = 0
+                        package.addfile(info, io.BytesIO(content))
+        else:
+            with zipfile.ZipFile(path, mode="w") as package:
+                info = zipfile.ZipInfo(member, date_time=(1980, 1, 1, 0, 0, 0))
+                package.writestr(info, content)
 
     def rehearse_release(self, work):
-        source = self.release_source(work)
-        revision = git(source, "rev-parse", "HEAD")
+        source, revision, _unused_build = self.release_source(work)
         tree = git(source, "rev-parse", "HEAD^{tree}")
         tags_before = git(source, "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags")
         release = work / "release"
@@ -219,19 +215,29 @@ class MaintainerRunbookTest(unittest.TestCase):
         release.mkdir()
         downloads.mkdir()
         evidence = release / "roots-release-evidence.json"
+        build_evidence = release / "roots-release-build-evidence.json"
+        for name in ("bitcoin-roots-linux-x86_64.tar.gz", "bitcoin-roots-darwin-arm64.zip", "bitcoin-roots-windows-x86_64.zip"):
+            package = downloads / name
+            self.write_package(package)
+            run([sys.executable, BUILD_EVIDENCE, "attest", "--artifact", package, "--source-repository", source, "--source-revision", revision, "--output", downloads / (name + ".build-attestation.json")])
+        run([sys.executable, BUILD_EVIDENCE, "aggregate", "--artifacts", downloads, "--source-repository", source, "--source-revision", revision, "--expected-count", "3", "--output", build_evidence.name], cwd=release)
         inputs = [
             "--ledger", source / "contrib/roots/lineage-ledger.json",
             "--manifest", source / "contrib/roots/adaptation-manifest-29.3.json",
             "--replay-result", source / "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+            "--fixture", source / "contrib/roots/core-29.4-migration-fixture.json",
+            "--registry", source / "contrib/roots/post-methodology-adaptations.json",
+            "--accounting", source / "contrib/roots/continuous-accounting-pr.json",
+            "--release-accounting", source / "contrib/roots/release-accounting.json",
+            "--build-evidence", build_evidence,
             "--source-repository", source, "--source-revision", revision,
             "--candidate-tree", "sha1:" + tree, "--output", evidence.name,
         ]
         run([sys.executable, RELEASE_EVIDENCE, *inputs], cwd=release)
         run([sys.executable, RELEASE_EVIDENCE, *inputs, "--verify"], cwd=release)
-        self.write_package(downloads / "bitcoin-roots-linux-x86_64.tar.gz")
         run([
-            PREPARE_RELEASE, downloads, prepared, PUBLIC_KEY, "v29.4-roots.1", "1",
-            evidence, source, revision,
+            PREPARE_RELEASE, downloads, prepared, PUBLIC_KEY, "v29.4-roots.1", "3",
+            evidence, build_evidence, source, revision,
         ], cwd=ROOT)
         run(["sha512sum", "--check", "SHA512SUMS"], cwd=prepared)
         tags_after = git(source, "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags")

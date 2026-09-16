@@ -1746,6 +1746,18 @@ class RootsReplayTest(unittest.TestCase):
     def test_hostile_paths_and_bare_repositories_are_rejected(self):
         with self.assertRaises(REPLAY.ReplayError):
             REPLAY._directory("relative", "repository")
+        real = self.root / "real-directory"
+        real.mkdir()
+        linked = self.root / "linked-directory"
+        linked.symlink_to(real, target_is_directory=True)
+        with self.assertRaises(REPLAY.ReplayError):
+            REPLAY._directory(str(linked), "repository")
+        state = real / "replay-state.json"
+        state.write_text("{}", encoding="utf-8")
+        state_link = self.root / "replay-state.json"
+        state_link.symlink_to(state)
+        with self.assertRaises(REPLAY.ReplayError):
+            REPLAY._safe_json_file(state_link, "replay-state.json", "state")
         bare = self.root / "bare"
         subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
         with self.assertRaises(REPLAY.ReplayError):
@@ -2210,6 +2222,69 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         unit["generator"] = "untrusted-command"
         with self.assertRaises(REPLAY.ReplayError):
             REPLAY.apply_typed_unit(self.repository.resolve(), unit)
+
+    def test_generator_rejects_symlink_parent_without_external_write(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        victim = outside / "victim.txt"
+        victim.write_bytes(b"original\n")
+        (self.repository / "input.txt").write_bytes(b"locked\r\n")
+        (self.repository / "escape").symlink_to(outside, target_is_directory=True)
+        git(self.repository, "add", "input.txt", "escape")
+        git(self.repository, "commit", "-m", "symlink fixture")
+        before_tree = git(self.repository, "rev-parse", "HEAD^{tree}")
+        source = (self.repository / "input.txt").read_bytes()
+        output = source.replace(b"\r\n", b"\n")
+        unit = {
+            "id": "roots-generated-output", "mechanism": "generator", "generator": "normalize-lf",
+            "source": "input.txt", "destination": "escape/victim.txt",
+            "expected_source_sha256": "sha256:" + __import__("hashlib").sha256(source).hexdigest(),
+            "expected_output_sha256": "sha256:" + __import__("hashlib").sha256(output).hexdigest(),
+            "expected_before_tree": before_tree, "expected_after_tree": "0" * 40,
+        }
+        with self.assertRaises(REPLAY.ReplayError):
+            REPLAY.apply_typed_unit(self.repository.resolve(), unit)
+        self.assertEqual(victim.read_bytes(), b"original\n")
+        victim.unlink()
+        with self.assertRaises(REPLAY.ReplayError):
+            REPLAY.apply_typed_unit(self.repository.resolve(), unit)
+        self.assertFalse(victim.exists())
+
+    def test_public_replay_rejects_generator_symlink_parent_without_external_write(self):
+        outside = self.root / "public-outside"
+        outside.mkdir()
+        victim = outside / "victim.txt"
+        victim.write_bytes(b"original\n")
+        (self.repository / "input.txt").write_bytes(b"locked\r\n")
+        (self.repository / "escape").symlink_to(outside, target_is_directory=True)
+        git(self.repository, "add", "input.txt", "escape")
+        git(self.repository, "commit", "-m", "public symlink fixture")
+        revision = git(self.repository, "rev-parse", "HEAD")
+        tree = git(self.repository, "rev-parse", "HEAD^{tree}")
+        fixture = self.root / "public-generator"
+        fixture.mkdir()
+        manifest, materials = self.fixture_manifest(fixture)
+        manifest_value = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest_value["units"][0]["application"] = {"mechanism": "generator", "reference": "fixture:generator"}
+        manifest.write_text(json.dumps(manifest_value), encoding="utf-8")
+        source = (self.repository / "input.txt").read_bytes()
+        output = source.replace(b"\r\n", b"\n")
+        materials.write_text(json.dumps({"schema_version": 1, "materials": {"fixture:generator": {
+            "mechanism": "generator", "generator": "normalize-lf", "source": "input.txt",
+            "destination": "escape/victim.txt", "expected_source_sha256": "sha256:" + __import__("hashlib").sha256(source).hexdigest(),
+            "expected_output_sha256": "sha256:" + __import__("hashlib").sha256(output).hexdigest(),
+            "expected_before_tree": tree, "expected_after_tree": "0" * 40,
+        }}}), encoding="utf-8")
+        state = fixture / "state"
+        state.mkdir()
+        result = subprocess.run([
+            sys.executable, str(SCRIPT), "replay", "--repository", str(self.repository),
+            "--revision", revision, "--expected-tree", tree, "--manifest", str(manifest),
+            "--materials", str(materials), "--materials-root", str(fixture),
+            "--state-directory", str(state), "--apply",
+        ], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_bytes(), b"original\n")
 
     def test_commit_unit_uses_locked_single_parent_binary_diff(self):
         before = git(self.repository, "rev-parse", "HEAD")

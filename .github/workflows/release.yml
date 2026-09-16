@@ -112,6 +112,11 @@ jobs:
             cd "${package_dir}"
             sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
           )
+          python3 ci/release/roots-build-evidence.py attest \
+            --artifact "$archive" \
+            --source-repository "$GITHUB_WORKSPACE" \
+            --source-revision "$GITHUB_SHA" \
+            --output "${archive}.build-attestation.json"
 
       - name: Upload unsigned release artifacts
         uses: actions/upload-artifact@v4
@@ -268,6 +273,14 @@ jobs:
           }
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
           "$hash  bitcoin-roots-windows-x86_64.zip" | Set-Content (Join-Path $packageDir "SHA256SUMS")
+          & python ci/release/roots-build-evidence.py attest `
+            --artifact $archive `
+            --source-repository $env:GITHUB_WORKSPACE `
+            --source-revision $env:GITHUB_SHA `
+            --output "${archive}.build-attestation.json"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create source-bound build attestation"
+          }
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -373,6 +386,11 @@ jobs:
             cd "${package_dir}"
             shasum -a 256 "${ARTIFACT_NAME}.zip" > SHA256SUMS
           )
+          python3 ci/release/roots-build-evidence.py attest \
+            --artifact "$archive" \
+            --source-repository "$GITHUB_WORKSPACE" \
+            --source-revision "$GITHUB_SHA" \
+            --output "${archive}.build-attestation.json"
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -382,8 +400,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-release:
-    name: 'Publish signed draft release'
+  prepare-release:
+    name: 'Prepare verified release assets'
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - release-metadata-tests
@@ -394,7 +412,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       actions: read
-      contents: write
+      contents: read
     env:
       EXPECTED_FINGERPRINT: '5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32'
       EXPECTED_PACKAGE_COUNT: '5'
@@ -419,33 +437,96 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: bitcoin-roots-*-${{ github.sha }}
-          path: downloaded-artifacts
+          path: ${{ runner.temp }}/downloaded-artifacts
 
       - name: Prepare release assets and SHA-512 manifest
         run: |
-          python3 ci/release/roots-release-evidence.py \
-            --ledger contrib/roots/lineage-ledger.json \
-            --manifest contrib/roots/adaptation-manifest-29.3.json \
-            --replay-result contrib/roots/replay-29.4-proposal/acceptance-evidence.json \
-            --source-repository "$GITHUB_WORKSPACE" \
-            --source-revision "$GITHUB_SHA" \
-            --candidate-tree "sha1:$(git rev-parse HEAD^{tree})" \
-            --output roots-release-evidence.json
+          set -Eeuo pipefail
+          evidence_dir="${RUNNER_TEMP}/roots-release-evidence"
+          mkdir "$evidence_dir"
+          (
+            cd "$evidence_dir"
+            python3 "$GITHUB_WORKSPACE/ci/release/roots-build-evidence.py" aggregate \
+              --artifacts "$RUNNER_TEMP/downloaded-artifacts" \
+              --source-repository "$GITHUB_WORKSPACE" \
+              --source-revision "$GITHUB_SHA" \
+              --expected-count "$EXPECTED_PACKAGE_COUNT" \
+              --output roots-release-build-evidence.json
+            python3 "$GITHUB_WORKSPACE/ci/release/roots-release-evidence.py" \
+              --ledger "$GITHUB_WORKSPACE/contrib/roots/lineage-ledger.json" \
+              --manifest "$GITHUB_WORKSPACE/contrib/roots/adaptation-manifest-29.3.json" \
+              --replay-result "$GITHUB_WORKSPACE/contrib/roots/replay-29.4-proposal/acceptance-evidence.json" \
+              --fixture "$GITHUB_WORKSPACE/contrib/roots/core-29.4-migration-fixture.json" \
+              --registry "$GITHUB_WORKSPACE/contrib/roots/post-methodology-adaptations.json" \
+              --accounting "$GITHUB_WORKSPACE/contrib/roots/continuous-accounting-pr.json" \
+              --release-accounting "$GITHUB_WORKSPACE/contrib/roots/release-accounting.json" \
+              --build-evidence roots-release-build-evidence.json \
+              --source-repository "$GITHUB_WORKSPACE" \
+              --source-revision "$GITHUB_SHA" \
+              --candidate-tree "sha1:$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD^{tree})" \
+              --output roots-release-evidence.json
+          )
           ci/release/prepare-release.sh \
-            downloaded-artifacts \
-            release-assets \
+            "$RUNNER_TEMP/downloaded-artifacts" \
+            "$RUNNER_TEMP/release-assets" \
             "$PUBLIC_KEY_FILE" \
             "$GITHUB_REF_NAME" \
             "$EXPECTED_PACKAGE_COUNT" \
-            roots-release-evidence.json \
+            "$evidence_dir/roots-release-evidence.json" \
+            "$evidence_dir/roots-release-build-evidence.json" \
             "$GITHUB_WORKSPACE" \
             "$GITHUB_SHA"
 
-      - name: Sign and verify SHA-512 manifest
+      - name: Upload verified unsigned release assets
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: roots-unsigned-release-${{ github.sha }}
+          path: ${{ runner.temp }}/release-assets/
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-release:
+    name: 'Sign verified release manifest'
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: prepare-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release-signing
+    permissions:
+      actions: read
+      contents: read
+    env:
+      EXPECTED_FINGERPRINT: '5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32'
+      EXPECTED_PACKAGE_COUNT: '5'
+    steps:
+      - name: Download verified unsigned assets
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: roots-unsigned-release-${{ github.sha }}
+          path: release-assets
+
+      - name: Sign and verify SHA-512 manifest in isolated runner
         env:
           BITCOIN_ROOTS_GPG_SK: ${{ secrets.BITCOIN_ROOTS_GPG_SK }}
         run: |
           set -Eeuo pipefail
+          test "$(find release-assets -type l | wc -l)" = 0
+          test "$(find release-assets -mindepth 1 -maxdepth 1 -type d | wc -l)" = 0
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" = "$((EXPECTED_PACKAGE_COUNT + 3))"
+          test "$(find release-assets -maxdepth 1 -type f -size +2147483648c | wc -l)" = 0
+          package_count=0
+          for asset in release-assets/*; do
+            test -f "$asset" && test ! -L "$asset"
+            name="${asset##*/}"
+            if [[ "$name" =~ ^bitcoin-roots-(linux|darwin|windows)-[A-Za-z0-9_.-]+\.(tar\.gz|zip)$ ]]; then
+              package_count=$((package_count + 1))
+            elif [[ "$name" != SHA512SUMS && "$name" != roots-release-evidence.json && "$name" != roots-release-build-evidence.json ]]; then
+              printf 'Unexpected unsigned release asset: %s\n' "$name" >&2
+              exit 1
+            fi
+          done
+          test "$package_count" = "$EXPECTED_PACKAGE_COUNT"
+          (cd release-assets && sha512sum --check SHA512SUMS)
           if [[ -z "${BITCOIN_ROOTS_GPG_SK:-}" ]]; then
             printf 'BITCOIN_ROOTS_GPG_SK is not configured\n' >&2
             exit 1
@@ -455,15 +536,6 @@ jobs:
           install -d -m 0700 "$gpg_home"
           trap 'rm -rf -- "$gpg_home"' EXIT
           export GNUPGHOME="$gpg_home"
-
-          public_fingerprint="$(
-            gpg --batch --with-colons --import-options show-only --import "$PUBLIC_KEY_FILE" |
-              awk -F: '$1 == "fpr" { print $10; exit }'
-          )"
-          if [[ "$public_fingerprint" != "$EXPECTED_FINGERPRINT" ]]; then
-            printf 'Unexpected release public-key fingerprint: %s\n' "$public_fingerprint" >&2
-            exit 1
-          fi
 
           printf '%s\n' "$BITCOIN_ROOTS_GPG_SK" | gpg --batch --import
           secret_fingerprint="$(
@@ -481,7 +553,33 @@ jobs:
             --detach-sign release-assets/SHA512SUMS
           gpg --batch --verify release-assets/SHA512SUMS.asc release-assets/SHA512SUMS
 
-      - name: Create draft GitHub release
+      - name: Upload signed release assets
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: roots-signed-release-${{ github.sha }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    name: 'Publish signed draft release'
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: sign-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      EXPECTED_PACKAGE_COUNT: '5'
+    steps:
+      - name: Download signed release assets
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: roots-signed-release-${{ github.sha }}
+          path: release-assets
+
+      - name: Create draft GitHub release without signing credentials
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -497,9 +595,9 @@ jobs:
             release_options+=(--prerelease)
           fi
           release_assets=(release-assets/*)
-          if [[ "${#release_assets[@]}" -ne "$((EXPECTED_PACKAGE_COUNT + 3))" ]]; then
+          if [[ "${#release_assets[@]}" -ne "$((EXPECTED_PACKAGE_COUNT + 4))" ]]; then
             printf 'Expected %s release assets, found %s\n' \
-              "$((EXPECTED_PACKAGE_COUNT + 3))" "${#release_assets[@]}" >&2
+              "$((EXPECTED_PACKAGE_COUNT + 4))" "${#release_assets[@]}" >&2
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" \

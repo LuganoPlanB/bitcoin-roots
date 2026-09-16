@@ -36,7 +36,7 @@
     },
     {
       "path": "contrib/devtools/roots-replay.py",
-      "sha256": "sha256:be12f8317d091013ce15148fe1970ebf0c24e2f0c3b295886c1131c4ab7aac46"
+      "sha256": "sha256:b23a7c2c90b36e48fe91bdb54579fa6e2d2637ed62a5789d7607d2861ac7f29c"
     },
     {
       "path": "contrib/devtools/roots-retrospective.py",
@@ -392,7 +392,7 @@
     "legacy schema v1 cannot negotiate v2 features",
     "incremental history is diagnostic only"
   ],
-  "digest": "sha256:bad213ce06b0037c2ab9f37401d46d53061fb9212957e87d5d3bd778e23ef504",
+  "digest": "sha256:99e723435e73d7ae17c7921abd9965786863d39ebea8e72da3f8263403843a8c",
   "governing_inputs": [
     "contrib/devtools/roots-adaptation-manifest.py",
     "contrib/devtools/roots-delta-atlas.py",

@@ -229,29 +229,52 @@ CANDIDATE_SOURCE=/absolute/path/to/reviewed-candidate
 SOURCE_REVISION="$(git -C "$CANDIDATE_SOURCE" rev-parse HEAD)"
 SOURCE_TREE="$(git -C "$CANDIDATE_SOURCE" rev-parse "$SOURCE_REVISION^{tree}")"
 mkdir "$WORK/release"
+(
+cd "$WORK/release"
+python3 "$ROOTS_SOURCE/ci/release/roots-build-evidence.py" aggregate \
+  --artifacts "$DOWNLOAD_DIR" \
+  --source-repository "$CANDIDATE_SOURCE" --source-revision "$SOURCE_REVISION" \
+  --expected-count "$EXPECTED_PACKAGE_COUNT" \
+  --output roots-release-build-evidence.json
 python3 "$ROOTS_SOURCE/ci/release/roots-release-evidence.py" \
   --ledger "$CANDIDATE_SOURCE/contrib/roots/lineage-ledger.json" \
   --manifest "$CANDIDATE_SOURCE/contrib/roots/adaptation-manifest-29.3.json" \
   --replay-result "$CANDIDATE_SOURCE/contrib/roots/replay-29.4-proposal/acceptance-evidence.json" \
+  --fixture "$CANDIDATE_SOURCE/contrib/roots/core-29.4-migration-fixture.json" \
+  --registry "$CANDIDATE_SOURCE/contrib/roots/post-methodology-adaptations.json" \
+  --accounting "$CANDIDATE_SOURCE/contrib/roots/continuous-accounting-pr.json" \
+  --release-accounting "$CANDIDATE_SOURCE/contrib/roots/release-accounting.json" \
+  --build-evidence roots-release-build-evidence.json \
   --source-repository "$CANDIDATE_SOURCE" --source-revision "$SOURCE_REVISION" \
   --candidate-tree "sha1:$SOURCE_TREE" \
-  --output "$WORK/release/roots-release-evidence.json"
+  --output roots-release-evidence.json
 python3 "$ROOTS_SOURCE/ci/release/roots-release-evidence.py" \
   --ledger "$CANDIDATE_SOURCE/contrib/roots/lineage-ledger.json" \
   --manifest "$CANDIDATE_SOURCE/contrib/roots/adaptation-manifest-29.3.json" \
   --replay-result "$CANDIDATE_SOURCE/contrib/roots/replay-29.4-proposal/acceptance-evidence.json" \
+  --fixture "$CANDIDATE_SOURCE/contrib/roots/core-29.4-migration-fixture.json" \
+  --registry "$CANDIDATE_SOURCE/contrib/roots/post-methodology-adaptations.json" \
+  --accounting "$CANDIDATE_SOURCE/contrib/roots/continuous-accounting-pr.json" \
+  --release-accounting "$CANDIDATE_SOURCE/contrib/roots/release-accounting.json" \
+  --build-evidence roots-release-build-evidence.json \
   --source-repository "$CANDIDATE_SOURCE" --source-revision "$SOURCE_REVISION" \
   --candidate-tree "sha1:$SOURCE_TREE" \
-  --output "$WORK/release/roots-release-evidence.json" --verify
+  --output roots-release-evidence.json --verify
+)
 bash "$ROOTS_SOURCE/ci/release/prepare-release.sh" \
   "$DOWNLOAD_DIR" "$WORK/prepared" \
   "$ROOTS_SOURCE/contrib/release/bitcoin-roots-release-key.asc" \
   "$RELEASE_NAME" "$EXPECTED_PACKAGE_COUNT" \
-  "$WORK/release/roots-release-evidence.json" "$CANDIDATE_SOURCE" "$SOURCE_REVISION"
+  "$WORK/release/roots-release-evidence.json" \
+  "$WORK/release/roots-release-build-evidence.json" \
+  "$CANDIDATE_SOURCE" "$SOURCE_REVISION"
 (cd "$WORK/prepared" && sha512sum --check SHA512SUMS)
 ```
 
-Stop if evidence inputs are not committed at `SOURCE_REVISION`, the candidate
+Each downloaded package must be accompanied by the build job's
+`<package>.build-attestation.json`; aggregation rejects any missing, duplicate,
+stale, tree-mismatched, or byte-mismatched attestation. Stop if evidence inputs
+are not committed at `SOURCE_REVISION`, the candidate
 tree differs, an archive root/name/count is wrong, SHA512 verification fails,
 or the output directory is nonempty. A human reviewer separately authorizes
 any signature, tag, or publication.

@@ -59,8 +59,9 @@ def _safe_json_file(path: Path, expected_name: str | None, field: str) -> Any:
         suffix = expected_name if expected_name is not None else "JSON"
         raise ReplayError(f"{field} must be an absolute {suffix} path")
     try:
+        _reject_symlink_components(path, field)
         resolved = path.resolve(strict=True)
-        if not resolved.is_file() or resolved.is_symlink() or resolved.stat().st_size > MAX_JSON_BYTES:
+        if not resolved.is_file() or resolved.stat().st_size > MAX_JSON_BYTES:
             raise ReplayError(f"{field} file is unsafe")
         return json.loads(resolved.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -78,12 +79,59 @@ def _directory(value: str, field: str) -> Path:
     if not path.is_absolute():
         raise ReplayError(f"{field} must be an absolute path")
     try:
+        _reject_symlink_components(path, field)
         resolved = path.resolve(strict=True)
     except OSError as error:
         raise ReplayError(f"{field} does not exist") from error
-    if not resolved.is_dir() or resolved.is_symlink():
+    if not resolved.is_dir():
         raise ReplayError(f"{field} must name a real directory")
     return resolved
+
+
+def _reject_symlink_components(path: Path, field: str) -> None:
+    """Reject a link at any existing component before resolving the path."""
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current /= component
+        if current.is_symlink():
+            raise ReplayError(f"{field} must not traverse a symlink")
+
+
+def _write_relative_no_follow(root: Path, relative: Path, payload: bytes) -> None:
+    """Write beneath root without following a destination symlink component."""
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    if no_follow is None or directory_flag is None:
+        raise ReplayError("platform lacks safe no-follow file creation")
+    descriptors: list[int] = []
+    try:
+        descriptor = os.open(root, os.O_RDONLY | directory_flag | no_follow)
+        descriptors.append(descriptor)
+        for component in relative.parts[:-1]:
+            try:
+                child = os.open(component, os.O_RDONLY | directory_flag | no_follow, dir_fd=descriptor)
+            except FileNotFoundError:
+                os.mkdir(component, 0o755, dir_fd=descriptor)
+                child = os.open(component, os.O_RDONLY | directory_flag | no_follow, dir_fd=descriptor)
+            descriptors.append(child)
+            descriptor = child
+        output = os.open(
+            relative.name,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | no_follow,
+            0o600,
+            dir_fd=descriptor,
+        )
+        try:
+            with os.fdopen(output, "wb", closefd=False) as stream:
+                stream.write(payload)
+        finally:
+            os.close(output)
+    except OSError as error:
+        raise ReplayError("generator destination is unsafe") from error
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def _git(repository: Path, *args: str) -> str:
@@ -652,6 +700,11 @@ def apply_generator_unit(worktree: Path, unit_id: str, generator: str, source: s
     expected_before_tree = _oid(expected_before_tree, "expected before tree")
     expected_after_tree = _oid(expected_after_tree, "expected after tree")
     source_path, target = worktree / source, worktree / destination
+    try:
+        _reject_symlink_components(source_path, "generator input")
+        _reject_symlink_components(target, "generator output")
+    except ReplayError:
+        raise
     if not source_path.is_file() or source_path.is_symlink() or (target.exists() and target.is_symlink()):
         raise ReplayError("generator input or output is not a regular file")
     source_bytes = source_path.read_bytes()
@@ -664,8 +717,7 @@ def apply_generator_unit(worktree: Path, unit_id: str, generator: str, source: s
     if not _git_succeeds(worktree, "diff", "--quiet") or _git(worktree, "write-tree") != expected_before_tree:
         raise ReplayError("generator worktree does not match its locked input")
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(output)
+        _write_relative_no_follow(worktree, Path(destination), output)
         _git(worktree, "add", "--", destination)
         if _git(worktree, "write-tree") != expected_after_tree:
             raise ReplayError("generator did not produce its locked tree")

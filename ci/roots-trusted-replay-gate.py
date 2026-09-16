@@ -20,7 +20,7 @@ LOCKS = {
 }
 LOCKED_DIGESTS = {
     "manifest": "sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb",
-    "methodology": "sha256:e9f5d5406e5fbd33880bb5ff250e1fb519a3b76bc1844980af954a556702b118",
+    "methodology": "sha256:8471ed3049d20ae3a9efd6f2b2dc430706ed579a52cc804a4f52c0663de46d20",
 }
 EXPECTED_ARTIFACTS = frozenset({"replay-review.json", "replay-review.txt", "replay-generated-series.patch", "comparison.json"})
 

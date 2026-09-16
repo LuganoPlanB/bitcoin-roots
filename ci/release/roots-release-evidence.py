@@ -20,7 +20,12 @@ CANONICAL_INPUTS = (
     "contrib/roots/lineage-ledger.json",
     "contrib/roots/adaptation-manifest-29.3.json",
     "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+    "contrib/roots/core-29.4-migration-fixture.json",
+    "contrib/roots/post-methodology-adaptations.json",
+    "contrib/roots/continuous-accounting-pr.json",
+    "contrib/roots/release-accounting.json",
 )
+BUILD_EVIDENCE_NAME = "roots-release-build-evidence.json"
 REPLAY_CANDIDATE_KEYS = {
     "base_commit", "base_tree", "tree", "tree_digest", "scoped_tree_digest",
 }
@@ -82,6 +87,14 @@ def source_revision(root, revision):
     return result.stdout.strip()
 
 
+def git(root, *arguments):
+    result = subprocess.run(
+        ["git", "-C", root, *arguments], capture_output=True, text=True
+    )
+    require(result.returncode == 0, "release topology is invalid")
+    return result.stdout.strip()
+
+
 def validate_revision_inputs(root, revision):
     commit = source_revision(root, revision)
     for name in CANONICAL_INPUTS:
@@ -105,7 +118,114 @@ def validate_revision_inputs(root, revision):
         check=False,
     )
     require(tree.returncode == 0, "source revision tree is invalid")
-    return "sha1:" + tree.stdout.strip()
+    return commit, "sha1:" + tree.stdout.strip()
+
+
+def validate_build_evidence(path, release_tree):
+    require(path.name == BUILD_EVIDENCE_NAME, "build evidence name is invalid")
+    value = read_json(path, "build evidence")
+    require(
+        isinstance(value, dict)
+        and set(value) == {"schema_version", "release_source_commit", "release_source_tree", "matrix", "artifacts", "status", "digest"}
+        and value["schema_version"] == 2
+        and matches(SHA1, value["release_source_commit"])
+        and value["release_source_tree"] == release_tree
+        and value["status"] == "pass",
+        "build evidence is invalid or belongs to another source tree",
+    )
+    require(
+        isinstance(value["matrix"], list)
+        and value["matrix"] == sorted(set(value["matrix"]))
+        and set(value["matrix"]) == {"linux", "macos", "windows"},
+        "build evidence matrix is incomplete",
+    )
+    require(
+        isinstance(value["artifacts"], list)
+        and value["artifacts"]
+        and all(
+            isinstance(item, dict)
+            and set(item) == {"name", "platform", "sha256", "attestation_digest"}
+            and is_relative_path(item["name"])
+            and "/" not in item["name"]
+            and matches(SHA256, item["sha256"])
+            and matches(SHA256, item["attestation_digest"])
+            and item["platform"] in {"linux", "macos", "windows"}
+            for item in value["artifacts"]
+        )
+        and [item["name"] for item in value["artifacts"]]
+        == sorted({item["name"] for item in value["artifacts"]}),
+        "build evidence artifacts are invalid",
+    )
+    require({item["platform"] for item in value["artifacts"]} == set(value["matrix"]), "build evidence artifact matrix differs")
+    reported = value["digest"]
+    unsigned = dict(value)
+    unsigned.pop("digest")
+    require(
+        matches(SHA256, reported)
+        and reported == "sha256:" + hashlib.sha256(canonical_json(unsigned)).hexdigest(),
+        "build evidence digest mismatch",
+    )
+    return value
+
+
+def validate_release_topology(root, release_commit, ledger, replay, fixture, manifest, registry_path, accounting_path):
+    anchors = [item for item in ledger["releases"] if item.get("id") == "roots-29.3-roots.1" and item.get("project") == "roots"]
+    require(len(anchors) == 1, "production Roots release anchor is unavailable")
+    anchor = anchors[0]
+    anchor_commit = anchor["peeled_commit"].split(":", 1)[1]
+    anchor_tree = anchor["tree"]
+    require(git(root, "cat-file", "-t", anchor_commit) == "commit", "production Roots anchor commit is unavailable")
+    require("sha1:" + git(root, "rev-parse", f"{anchor_commit}^{{tree}}") == anchor_tree, "production Roots anchor tree differs")
+    result = subprocess.run(["git", "-C", root, "merge-base", "--is-ancestor", anchor_commit, release_commit])
+    require(result.returncode == 0, "release source does not descend from the production Roots anchor")
+    require(
+        not git(root, "rev-list", "--merges", f"{anchor_commit}..{release_commit}"),
+        "release first-parent topology contains a merge",
+    )
+    core = fixture.get("core_inputs", {}).get("v29.4", {})
+    candidate = replay["candidate"]
+    require(
+        core.get("commit") == candidate["base_commit"].split(":", 1)[1]
+        and core.get("tree") == candidate["base_tree"].split(":", 1)[1]
+        and set(replay["reproducibility"]["fresh_replay_trees"] + replay["reproducibility"]["canonical_lineage_trees"]) == {candidate["tree"]},
+        "future Core replay recipe differs from immutable inputs",
+    )
+    accounting = trusted_validator("roots-continuous-accounting.py")
+    pr_gate = trusted_validator("roots-pr-gate.py")
+    record = read_json(accounting_path, "release accounting record")
+    registry = read_json(registry_path, "post-methodology registry")
+    require(
+        isinstance(record, dict)
+        and set(record) == {"schema_version", "range", "changes"}
+        and record["schema_version"] == 2
+        and record["range"] == {
+            "base_commit": "sha1:" + anchor_commit,
+            "base_tree": anchor_tree,
+            "excluded_paths": [CANONICAL_INPUTS[-2], CANONICAL_INPUTS[-1]],
+        },
+        "release accounting range is invalid",
+    )
+    excluded = set(record["range"]["excluded_paths"])
+    observed = {atom for atom in accounting.atoms(root, anchor_commit, release_commit) if atom[0] not in excluded}
+    envelope = {"schema_version": 1, "changes": record["changes"]}
+    accounting.validate(envelope, observed, public_release=True)
+    pr_gate.validate_ownership(envelope, manifest, registry)
+    ownership = {path: unit["id"] for unit in manifest["units"] for path in unit["touched"]["paths"]}
+    ownership.update({path: unit["id"] for unit in registry["units"] for path in unit["paths"]})
+    commit_summaries = []
+    for position, commit in enumerate(git(root, "rev-list", "--reverse", f"{anchor_commit}..{release_commit}").splitlines(), 1):
+        parent = git(root, "rev-parse", f"{commit}^")
+        atoms = sorted(atom for atom in accounting.atoms(root, parent, commit) if atom[0] not in excluded)
+        require(all(path in ownership for path, _kind, _digest in atoms), "post-replay commit has an unowned path")
+        commit_summaries.append({
+            "position": position,
+            "commit": "sha1:" + commit,
+            "atom_count": len(atoms),
+            "atom_digest": "sha256:" + hashlib.sha256(canonical_json(atoms)).hexdigest(),
+            "adaptations": sorted({ownership[path] for path, _kind, _digest in atoms}),
+        })
+    require(commit_summaries, "release has no production delta history")
+    return anchor_commit, observed, commit_summaries
 
 
 def require(condition, message):
@@ -276,35 +396,54 @@ def build(
     candidate_tree=None,
     source_repository=None,
     source_revision_name=None,
+    fixture_path=None,
+    registry_path=None,
+    accounting_path=None,
+    build_evidence_path=None,
 ):
     if source_repository is not None:
         require(source_revision_name is not None, "source revision is required")
-        revision_tree = validate_revision_inputs(source_repository, source_revision_name)
+        release_commit, revision_tree = validate_revision_inputs(source_repository, source_revision_name)
         if candidate_tree is None:
             candidate_tree = revision_tree
         require(
             candidate_tree == revision_tree,
             "release source tree does not match source revision",
         )
-        ledger_path, manifest_path, replay_path = (source_input(source_repository, name) for name in CANONICAL_INPUTS)
+        inputs = [source_input(source_repository, name) for name in CANONICAL_INPUTS]
+        canonical_paths = inputs
+        ledger_path, manifest_path, replay_path = inputs[:3]
+        fixture_path, registry_path, _pr_accounting_path, accounting_path = inputs[3:]
     ledger = read_json(ledger_path, "ledger")
     manifest = read_json(manifest_path, "manifest")
     replay = read_json(replay_path, "replay result")
+    fixture = read_json(fixture_path, "Core migration fixture")
     validate_inputs(ledger, manifest, replay)
     candidate = replay["candidate"]
     if candidate_tree is not None:
         require(matches(SHA1, candidate_tree), "release source tree is invalid")
+    require(registry_path is not None and accounting_path is not None, "release accounting inputs are required")
+    require(build_evidence_path is not None, "release build evidence is required")
+    anchor_commit, observed, commit_summaries = validate_release_topology(
+        source_repository, release_commit, ledger, replay, fixture, manifest, registry_path, accounting_path
+    )
+    build_evidence = validate_build_evidence(build_evidence_path, candidate_tree)
+    require(build_evidence["release_source_commit"] == "sha1:" + release_commit, "build evidence belongs to another release commit")
     outcome_counts = {}
     for gate in replay["gates"]:
         outcome_counts[gate["status"]] = outcome_counts.get(gate["status"], 0) + 1
     value = {
         "artifact_links": [
-            {"path": "contrib/roots/lineage-ledger.json", "sha256": sha256_file(ledger_path)},
-            {"path": "contrib/roots/adaptation-manifest-29.3.json", "sha256": sha256_file(manifest_path)},
-            {"path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json", "sha256": sha256_file(replay_path)},
+            *({"path": name, "sha256": sha256_file(path)} for name, path in zip(CANONICAL_INPUTS, canonical_paths, strict=True)),
+            {"path": BUILD_EVIDENCE_NAME, "sha256": sha256_file(build_evidence_path)},
         ],
         "base_tree": candidate["base_tree"],
-        "build_matrix": replay.get("platform_and_behavior", {}).get("supported_platforms", []),
+        "build_matrix": build_evidence["matrix"],
+        "build_evidence_digest": build_evidence["digest"],
+        "future_base_replay_commits": replay["reproducibility"]["canonical_lineage_commits"],
+        "production_anchor_commit": "sha1:" + anchor_commit,
+        "production_delta_atom_count": len(observed),
+        "production_delta_commits": commit_summaries,
         "replay_candidate_tree": candidate["tree"],
         "release_source_tree": candidate_tree or candidate["tree"],
         "exceptions": ledger["exceptions"],
@@ -343,13 +482,17 @@ def validate_evidence(
     candidate_tree=None,
     source_repository=None,
     source_revision_name=None,
+    fixture_path=None,
+    registry_path=None,
+    accounting_path=None,
+    build_evidence_path=None,
 ):
     value = read_json(path, "release evidence")
     require(isinstance(value, dict), "release evidence schema is invalid")
     expected = {
-        "artifact_links", "base_tree", "build_matrix", "digest", "exceptions", "invariants",
+        "artifact_links", "base_tree", "build_matrix", "build_evidence_digest", "future_base_replay_commits", "production_anchor_commit", "digest", "exceptions", "invariants",
         "ledger_digest", "manifest_digest", "manual_approvals", "outcome_counts",
-        "replay_candidate_tree", "release_source_tree", "replay_result_digest", "replay_tool_version", "reproducibility", "schema_version",
+        "production_delta_atom_count", "production_delta_commits", "replay_candidate_tree", "release_source_tree", "replay_result_digest", "replay_tool_version", "reproducibility", "schema_version",
     }
     require(set(value) == expected and value["schema_version"] == 1 and value["replay_tool_version"] == "1", "release evidence schema is invalid")
     require(
@@ -358,10 +501,34 @@ def validate_evidence(
         and matches(SHA1, value["release_source_tree"]),
         "release evidence trees are invalid",
     )
+    require(
+        matches(SHA1, value["production_anchor_commit"])
+        and is_nonnegative_integer(value["production_delta_atom_count"])
+        and isinstance(value["future_base_replay_commits"], list)
+        and value["future_base_replay_commits"]
+        and all(matches(SHA1, item) for item in value["future_base_replay_commits"]),
+        "release evidence topology summary is invalid",
+    )
+    require(
+        isinstance(value["production_delta_commits"], list)
+        and value["production_delta_commits"]
+        and all(
+            isinstance(item, dict)
+            and set(item) == {"position", "commit", "atom_count", "atom_digest", "adaptations"}
+            and item["position"] == index
+            and matches(SHA1, item["commit"])
+            and is_nonnegative_integer(item["atom_count"])
+            and matches(SHA256, item["atom_digest"])
+            and isinstance(item["adaptations"], list)
+            and item["adaptations"] == sorted(set(item["adaptations"]))
+            for index, item in enumerate(value["production_delta_commits"], 1)
+        ),
+        "release evidence commit accounting is invalid",
+    )
     require(isinstance(value["build_matrix"], list) and value["build_matrix"] and all(isinstance(item, str) and item for item in value["build_matrix"]), "release evidence build matrix is invalid")
     require(
         isinstance(value["artifact_links"], list)
-        and len(value["artifact_links"]) == 3
+        and len(value["artifact_links"]) == len(CANONICAL_INPUTS) + 1
         and all(
             isinstance(item, dict)
             and set(item) == {"path", "sha256"}
@@ -371,7 +538,7 @@ def validate_evidence(
         ),
         "release evidence artifact links are invalid",
     )
-    require([item["path"] for item in value["artifact_links"]] == list(CANONICAL_INPUTS), "release evidence artifact link order is invalid")
+    require([item["path"] for item in value["artifact_links"]] == [*CANONICAL_INPUTS, BUILD_EVIDENCE_NAME], "release evidence artifact link order is invalid")
     require(isinstance(value["manual_approvals"], list) and value["manual_approvals"] and all(isinstance(item, str) and item for item in value["manual_approvals"]), "release evidence approvals are invalid")
     require(isinstance(value["exceptions"], list) and all(isinstance(item, dict) for item in value["exceptions"]), "release evidence exceptions are invalid")
     require(isinstance(value["outcome_counts"], dict) and value["outcome_counts"] and all(isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in value["outcome_counts"].values()), "release evidence outcomes are invalid")
@@ -379,7 +546,7 @@ def validate_evidence(
     require(
         all(
             matches(SHA256, value[item])
-            for item in ("ledger_digest", "manifest_digest", "replay_result_digest", "digest")
+            for item in ("ledger_digest", "manifest_digest", "replay_result_digest", "build_evidence_digest", "digest")
         ),
         "release evidence digests are invalid",
     )
@@ -397,6 +564,10 @@ def validate_evidence(
                 candidate_tree,
                 source_repository,
                 source_revision_name,
+                fixture_path,
+                registry_path,
+                accounting_path,
+                build_evidence_path,
             ),
             "release evidence does not match authoritative inputs",
         )
@@ -407,6 +578,11 @@ def main():
     parser.add_argument("--ledger", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--replay-result", type=Path)
+    parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--registry", type=Path)
+    parser.add_argument("--accounting", type=Path)
+    parser.add_argument("--release-accounting", type=Path)
+    parser.add_argument("--build-evidence", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--candidate-tree")
     parser.add_argument("--source-repository", type=Path)
@@ -422,7 +598,7 @@ def main():
         )
         require(arguments.source_revision is not None, "source revision is required")
         if arguments.verify:
-            require(arguments.ledger and arguments.manifest and arguments.replay_result, "authoritative evidence inputs are required")
+            require(all((arguments.ledger, arguments.manifest, arguments.replay_result, arguments.fixture, arguments.registry, arguments.accounting, arguments.release_accounting, arguments.build_evidence)), "authoritative evidence inputs are required")
             validate_evidence(
                 arguments.output,
                 arguments.ledger,
@@ -431,9 +607,13 @@ def main():
                 arguments.candidate_tree,
                 arguments.source_repository,
                 arguments.source_revision,
+                arguments.fixture,
+                arguments.registry,
+                arguments.release_accounting,
+                arguments.build_evidence,
             )
         else:
-            require(arguments.ledger and arguments.manifest and arguments.replay_result, "evidence inputs are required")
+            require(all((arguments.ledger, arguments.manifest, arguments.replay_result, arguments.fixture, arguments.registry, arguments.accounting, arguments.release_accounting, arguments.build_evidence)), "evidence inputs are required")
             write_output(
                 arguments.output,
                 build(
@@ -443,6 +623,10 @@ def main():
                     arguments.candidate_tree,
                     arguments.source_repository,
                     arguments.source_revision,
+                    arguments.fixture,
+                    arguments.registry,
+                    arguments.release_accounting,
+                    arguments.build_evidence,
                 ),
             )
     except (OSError, ValueError) as error:

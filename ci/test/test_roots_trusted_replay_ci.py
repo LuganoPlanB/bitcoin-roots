@@ -13,10 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/roots-trusted-replay.yml"
 SCRIPT = ROOT / "ci/roots-trusted-replay-gate.py"
 REVIEW_SCRIPT = ROOT / "ci/roots-trusted-replay-review.py"
+BUILD_SCRIPT = ROOT / "ci/roots-trusted-candidate-build.py"
 spec = importlib.util.spec_from_file_location("trusted_replay_gate", SCRIPT)
 GATE = importlib.util.module_from_spec(spec); spec.loader.exec_module(GATE)
 review_spec = importlib.util.spec_from_file_location("trusted_replay_review", REVIEW_SCRIPT)
 REVIEW = importlib.util.module_from_spec(review_spec); review_spec.loader.exec_module(REVIEW)
+build_spec = importlib.util.spec_from_file_location("trusted_candidate_build", BUILD_SCRIPT)
+BUILD = importlib.util.module_from_spec(build_spec); build_spec.loader.exec_module(BUILD)
 
 class TrustedReplayCiTest(unittest.TestCase):
     def test_workflow_has_only_trusted_read_only_paths(self):
@@ -27,6 +30,30 @@ class TrustedReplayCiTest(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         actions = re.findall(r"^\s*-\s+uses:\s*([^\s#]+)", text, re.MULTILINE)
         self.assertTrue(actions and all(re.fullmatch(r"actions/(?:checkout|upload-artifact|download-artifact)@[0-9a-f]{40}", action) for action in actions))
+        for required in ("roots-trusted-candidate-build.py", "core-to-knots-29.3", "roots-29.3", "core-29.4", "timeout-minutes: 180"):
+            self.assertIn(required, text)
+        build_text = BUILD_SCRIPT.read_text()
+        self.assertIn('"cmake", "--build"', build_text)
+        self.assertIn('"ctest", "--test-dir"', build_text)
+        self.assertIn('"-DENABLE_WALLET=ON"', build_text)
+        self.assertIn('"-DWITH_BDB=OFF"', build_text)
+        for invariant_test in ("feature_block.py", "p2p_segwit.py", "mempool_datacarrier.py"):
+            self.assertIn(invariant_test, build_text)
+
+    def test_tree_valid_candidate_still_fails_on_build_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "candidate"
+            repository.mkdir()
+            tree = "a" * 40
+            responses = [
+                mock.Mock(returncode=0, stdout=tree + "\n"),
+                mock.Mock(returncode=0),
+                mock.Mock(returncode=1),
+            ]
+            with mock.patch.object(BUILD.subprocess, "run", side_effect=responses):
+                with self.assertRaisesRegex(ValueError, "candidate acceptance command failed"):
+                    BUILD.build_and_test(repository.resolve(), tree, root / "new-build", 2)
     def test_decisions_locks_and_failures_are_deterministic(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "trusted-replay-report.json"
