@@ -227,7 +227,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:034ae14a51d8b22bd43ad7f12cd5c01d187c5e7d58c191bae16eba82abb91c50",
+      "digest": "sha256:ae1c08e92245876fc807d06fb92cc6aa2c89c82752f548e9a1d91a1a6730cc9d",
       "disposition": "add",
       "kind": "add",
       "path": ".github/workflows/roots-portability.yml",
@@ -759,7 +759,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:0359d8973836735a671c57b04584b287c3910fe55395c83af79ca5d0d1a8a89b",
+      "digest": "sha256:8af64ba6b4024c39a93593c1eb6cc58af4de770151304467bb0fc3d00ca3412d",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_pr_gate.py",
@@ -843,7 +843,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:90636246bf505150a73c5c21411885b8c4992dc73836bf7a7c11517cac311e2e",
+      "digest": "sha256:e97c3ed8a22e0b0a9f949480f357e2b8f25903c9a89a4062cf40efab1c6efacf",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-adaptation-manifest.py",
@@ -885,7 +885,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:aae30c8d815260d629bc4495616edaeb7c68b022f13acff3b78e720070deac0a",
+      "digest": "sha256:817b77ab93ebcb86839e1a3c73965f92e5acbfdc6d44c0bf745e9aaf6de2c936",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-delta-atlas.py",
@@ -899,7 +899,7 @@
     {
       "adaptation": "roots-post-methodology-hardening-handoff-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:d7fed6712d73b9b8814f5cf870b36c6ff7f9608f39457d862fb6b9ae847c6409",
+      "digest": "sha256:ad3ce448c5a40999c92759e618690da7b153f2a9c70e43d261345301b6ba208b",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-hardening-handoff.py",
@@ -913,7 +913,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:1bef47d2ccffb920370c577d143bfdcddb4addec181782400e7cd98287ffc662",
+      "digest": "sha256:1e4ae4073424196303ce49dc30026cdfd4ef0dd1369b2d49b30d916542433966",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-lineage.py",
@@ -983,7 +983,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:27c76e615a837309276b73a89a90a8e16de3767706bf623f8fcb349fc138a127",
+      "digest": "sha256:b73d5e435465a2e24df50bd449279c9bef3f7a817cdbca40af6ee6bf1ad48977",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-retrospective.py",
@@ -1445,7 +1445,7 @@
     {
       "adaptation": "roots-post-methodology-terminal-review-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:11c75dabe9e45cfe3a5445211d49395f6eed8cdf7ed07c85209dec0879aed4a8",
+      "digest": "sha256:7394a19c2b2541e224f04c117a41676c4204e7e781df509533adb46f18cae455",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/methodology-v1.json",
@@ -2537,6 +2537,20 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
+      "digest": "sha256:315627cef85169188ec667794c6617b4c7cb4e6b365265f814f58d4376107abb",
+      "disposition": "update",
+      "kind": "modify",
+      "path": "test/lint/spelling.ignore-words.txt",
+      "provenance": "CI gate correction",
+      "rationale": "keep pull-request validation reproducible and operational",
+      "replay_impact": "CI accountability",
+      "risk": "high",
+      "scope": "test/lint/spelling.ignore-words.txt",
+      "tests": "ci/test/test_roots_pr_gate.py lint"
+    },
+    {
+      "adaptation": "roots-post-methodology-pr-gate-v1",
+      "dependencies": "production Roots anchor",
       "digest": "sha256:3b33563990e28a89aab276a36e96a2b52c7783ef65e71f7d8f403e4d2709f583",
       "disposition": "update",
       "kind": "modify",
@@ -2551,7 +2565,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:41112b26c438b121d742b371d4acbc50964d1f355866255eac4fe711203da6cc",
+      "digest": "sha256:45d31de1d87175e16e03ef873046bf026b092689be1a4069f346aa3268baeb89",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",
@@ -2565,7 +2579,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:4e7e8d31fee8a9856f0031d4f8de9946f51b74a148fa6f8086714e68495623e9",
+      "digest": "sha256:5d3d8222b1dc90925e0de86a2cf697b33c5b0020ee4287afdb629dbcb94b0af5",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",
@@ -2579,7 +2593,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:6ae00f3bcc06717b4b84fee958a5aef45dcde256e52f97eb208cdb485deda38f",
+      "digest": "sha256:6228f9a86d29d9b0fd26b3929e19ab95ce30e46494fc279e29cf8d470438e35c",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",
@@ -2593,7 +2607,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:916dd7d113a91981407e55340dfd07cbb3c77a04374c93b7f8320410c72f8252",
+      "digest": "sha256:824fdff004eb67206921eaec44fda400f92ca0b4cbac4c0bd95fddafbdd6ec00",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",
@@ -2607,7 +2621,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:a1e0ac8186957445df9119860321da69cc2c261c0dbf9460493e7c78243253ab",
+      "digest": "sha256:ae0fdca80eaf0b463fd1e152353874befaaeb16b759fd8a9e948ac229d30cd48",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",
@@ -2621,21 +2635,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "production Roots anchor",
-      "digest": "sha256:b1b5324f1fa12858c3cff36d47768277868cf561b7e5abcd333d4991b98309f7",
-      "disposition": "update",
-      "kind": "modify",
-      "path": "test/lint/spelling.ignore-words.txt",
-      "provenance": "CI gate correction",
-      "rationale": "keep pull-request validation reproducible and operational",
-      "replay_impact": "CI accountability",
-      "risk": "high",
-      "scope": "test/lint/spelling.ignore-words.txt",
-      "tests": "ci/test/test_roots_pr_gate.py lint"
-    },
-    {
-      "adaptation": "roots-post-methodology-pr-gate-v1",
-      "dependencies": "production Roots anchor",
-      "digest": "sha256:c1f47ac1d6500f2041f1570d7f3b759b33ee14cdce152d4ccdc06aea868f0854",
+      "digest": "sha256:b7f996ed3212f3dbbb5dd77a38d165b027a6168c811b8b9fbf88824157b14e3b",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/spelling.ignore-words.txt",

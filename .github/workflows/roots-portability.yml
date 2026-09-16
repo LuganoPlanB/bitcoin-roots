@@ -43,7 +43,7 @@ jobs:
         with:
           # Used only by the pull request that first introduces the gate. Once
           # merged, validators always come from the pull request base.
-          ref: 0a3408b4fe6ab68be092ae11d79d69a4b7131d3f
+          ref: 6f85dfb728ca0976658e0fbd26101e7df5e35a14
           fetch-depth: 1
           persist-credentials: false
           path: bootstrap-validator
