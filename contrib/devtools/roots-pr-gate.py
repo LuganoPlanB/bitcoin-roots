@@ -17,7 +17,7 @@ from typing import Any
 
 
 MAX_CHANGED_FILES = 2_000
-MAX_REPORT_BYTES = 65_536
+MAX_REPORT_BYTES = 131_072
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 ID_RE = re.compile(r"^roots-[a-z0-9]+(?:-[a-z0-9]+)*$")
 ACCOUNTING_RECORD = "contrib/roots/continuous-accounting-pr.json"
