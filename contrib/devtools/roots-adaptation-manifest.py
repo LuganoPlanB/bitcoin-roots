@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any
+from typing import AbstractSet, Any
 
 
 MAX_JSON_BYTES = 4_000_000
@@ -97,7 +97,7 @@ def _expect_strings(value: Any, field: str, *, nonempty: bool = False) -> list[s
     return value
 
 
-def _expect_keys(value: dict[str, Any], field: str, required: set[str], optional: set[str] = frozenset()) -> None:
+def _expect_keys(value: dict[str, Any], field: str, required: set[str], optional: AbstractSet[str] = frozenset()) -> None:
     missing, extra = required - value.keys(), value.keys() - required - optional
     if missing or extra:
         raise ManifestError(f"{field} has invalid keys")
@@ -228,7 +228,7 @@ def application_order(value: dict[str, Any], release_tag: str | None = None, sel
                 raise ManifestError(f"duplicate provider: {capability}")
             providers[capability] = unit_id
     indegree = {unit_id: 0 for unit_id in selected}
-    successors = {unit_id: [] for unit_id in selected}
+    successors: dict[str, list[str]] = {unit_id: [] for unit_id in selected}
     for unit_id in selected:
         for dependency in units[unit_id]["dependencies"]:
             successors[dependency].append(unit_id)
@@ -305,6 +305,8 @@ def classify_layers(ledger: dict[str, Any], partition: dict[str, Any], report: d
     all_keys: set[tuple[str, str]] = set()
     for layer in layers:
         layer_id = layer["id"]
+        if not isinstance(layer_id, str):
+            raise ManifestError("malformed atlas layer")
         records = layer.get("records")
         if not isinstance(records, list) or layer.get("record_count") != len(records):
             raise ManifestError("malformed atlas layer")
@@ -312,8 +314,10 @@ def classify_layers(ledger: dict[str, Any], partition: dict[str, Any], report: d
         output_records = []
         for raw in records:
             path = raw.get("path") if isinstance(raw, dict) else None
+            if not isinstance(path, str):
+                raise ManifestError("atlas layer/classification coverage mismatch")
             key = (layer_id, path)
-            if not isinstance(path, str) or key not in classification_index or key in all_keys:
+            if key not in classification_index or key in all_keys:
                 raise ManifestError("atlas layer/classification coverage mismatch")
             all_keys.add(key)
             output_records.append({
@@ -473,7 +477,7 @@ def build_coverage(partition: dict[str, Any], classification: dict[str, Any]) ->
     layers_by_path: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for (layer, path), entry in index.items():
         layers_by_path.setdefault(path, []).append((layer, entry))
-    records = []
+    records: list[dict[str, Any]] = []
     for delta in sorted(direct, key=lambda item: item.get("path", "")):
         if not isinstance(delta, dict) or not isinstance(delta.get("path"), str):
             raise ManifestError("malformed direct delta")

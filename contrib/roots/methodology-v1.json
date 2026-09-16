@@ -24,11 +24,11 @@
   "frozen_inputs": [
     {
       "path": "contrib/devtools/roots-adaptation-manifest.py",
-      "sha256": "sha256:6484582b8f2db10e7a192cbfe8dc0802da791df379e16f2488da9020bbf2e628"
+      "sha256": "sha256:bd1ad5da3f57f282c800ec82a06e8405bb5887987bb4493deccf6f7d9728c363"
     },
     {
       "path": "contrib/devtools/roots-delta-atlas.py",
-      "sha256": "sha256:d13256e416459a1bed79e095366e44027a7f892f8ff55c64a2096b866680bc8b"
+      "sha256": "sha256:52c15f1ca2fa1f8d30000df1b2940b104150063d1189a6e872af7bffdecab359"
     },
     {
       "path": "contrib/devtools/roots-methodology.py",
@@ -40,7 +40,7 @@
     },
     {
       "path": "contrib/devtools/roots-retrospective.py",
-      "sha256": "sha256:2d48d777f2cf080b4d1c4b446ec989c4259e6e193367ad5560b217d00dcf9e7c"
+      "sha256": "sha256:23e9e196434d1275fd12d0958949950ac7de39e9679a9c42bf38c5842bc34606"
     },
     {
       "path": "contrib/devtools/roots-semantic-safety.py",
@@ -392,7 +392,7 @@
     "legacy schema v1 cannot negotiate v2 features",
     "incremental history is diagnostic only"
   ],
-  "digest": "sha256:99e723435e73d7ae17c7921abd9965786863d39ebea8e72da3f8263403843a8c",
+  "digest": "sha256:34e969ededeffd18291a130869bf03cc9610d450d5942c4bee6fb8b1152ef293",
   "governing_inputs": [
     "contrib/devtools/roots-adaptation-manifest.py",
     "contrib/devtools/roots-delta-atlas.py",

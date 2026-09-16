@@ -16,7 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, cast
 
 
 class RetrospectiveError(ValueError):
@@ -58,6 +58,8 @@ def forecast_paths(fixture: dict[str, Any]) -> dict[str, str]:
     outcomes = fixture.get("expected_outcomes")
     snapshot = fixture.get("snapshot_only")
     _require(isinstance(outcomes, dict) and isinstance(snapshot, dict), "fixture lacks forecast outcomes")
+    outcomes = cast(dict[str, Any], outcomes)
+    snapshot = cast(dict[str, Any], snapshot)
     result: dict[str, str] = {}
     for forecast, paths in outcomes.items():
         _require(isinstance(forecast, str) and isinstance(paths, list), "invalid fixture outcome group")
@@ -74,6 +76,7 @@ def outcome_rows(fixture: dict[str, Any], proposal: dict[str, Any]) -> list[dict
     forecast = forecast_paths(fixture)
     outcomes = proposal.get("outcomes")
     _require(isinstance(outcomes, list), "proposal lacks outcomes")
+    outcomes = cast(list[Any], outcomes)
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
     for outcome in outcomes:
@@ -103,6 +106,10 @@ def metrics(rows: list[dict[str, str]], acceptance: dict[str, Any], validation: 
     fresh = validation.get("fresh_replay")
     raw = incremental.get("comparisons", {}).get("raw_tree")
     _require(isinstance(accounting, dict) and isinstance(actions, dict) and isinstance(fresh, dict) and isinstance(raw, dict), "evidence records are incomplete")
+    accounting = cast(dict[str, Any], accounting)
+    actions = cast(dict[str, Any], actions)
+    fresh = cast(dict[str, Any], fresh)
+    raw = cast(dict[str, Any], raw)
     _require(accounting.get("unaccounted") == [], "acceptance evidence has unaccounted outcomes")
     _require(actions.get("run_conclusion") != "success" and actions.get("lint", {}).get("status") == "known-inherited-failure", "platform evidence does not preserve its qualified failure")
     _require(fresh.get("status") == "pass" and _exact_int(fresh.get("runs")) and fresh["runs"] >= 2, "fresh reconstruction evidence is incomplete")
@@ -117,7 +124,8 @@ def metrics(rows: list[dict[str, str]], acceptance: dict[str, Any], validation: 
     critical_gates = [gate for gate in acceptance.get("gates", []) if isinstance(gate, dict) and gate.get("critical")]
     _require(len(critical_gates) > 0 and all(gate.get("status") == "pass" for gate in critical_gates), "critical invariant gate is not passing")
     artifacts = fresh.get("artifacts")
-    _require(isinstance(artifacts, dict) and artifacts, "fresh replay report artifacts are missing")
+    _require(isinstance(artifacts, dict) and bool(artifacts), "fresh replay report artifacts are missing")
+    artifacts = cast(dict[str, Any], artifacts)
     total = len(rows)
     return {
         "automation": {"total_outcomes": total, "automatic_outcomes": len(automatic), "basis_points": 10000 * len(automatic) // total},
@@ -177,8 +185,8 @@ def validate_schema(record: dict[str, Any]) -> None:
     _require(_exact_int(record.get("schema_version")) and record["schema_version"] == 1 and isinstance(record["digest"], str) and record["digest"].startswith("sha256:"), "retrospective schema version or digest is invalid")
     _require(isinstance(record["inputs"], list) and len(record["inputs"]) >= 1 and len({item.get("role") for item in record["inputs"] if isinstance(item, dict)}) == len(record["inputs"]), "retrospective inputs are invalid")
     _require(all(isinstance(item, dict) and set(item) == {"role", "digest"} and isinstance(item["role"], str) and isinstance(item["digest"], str) and item["digest"].startswith("sha256:") for item in record["inputs"]), "retrospective input shape is invalid")
-    _require(isinstance(record["outcomes"], list) and record["outcomes"] and all(isinstance(item, dict) and set(item) == {"path", "forecast", "actual"} and all(isinstance(item[key], str) and item[key] for key in item) for item in record["outcomes"]), "retrospective outcomes are invalid")
-    _require(isinstance(record["transitions"], list) and record["transitions"] and all(isinstance(item, dict) and set(item) == {"forecast", "actual", "paths"} and isinstance(item["forecast"], str) and isinstance(item["actual"], str) and isinstance(item["paths"], list) and item["paths"] for item in record["transitions"]), "retrospective transitions are invalid")
+    _require(isinstance(record["outcomes"], list) and bool(record["outcomes"]) and all(isinstance(item, dict) and set(item) == {"path", "forecast", "actual"} and all(isinstance(item[key], str) and item[key] for key in item) for item in record["outcomes"]), "retrospective outcomes are invalid")
+    _require(isinstance(record["transitions"], list) and bool(record["transitions"]) and all(isinstance(item, dict) and set(item) == {"forecast", "actual", "paths"} and isinstance(item["forecast"], str) and isinstance(item["actual"], str) and isinstance(item["paths"], list) and bool(item["paths"]) for item in record["transitions"]), "retrospective transitions are invalid")
     _require(isinstance(record["metrics"], dict) and set(record["metrics"]) == {"automation", "classification", "manual_effort", "provenance", "invariants", "generated_files", "replay_restarts", "report_usability", "fresh_vs_incremental"}, "retrospective metric categories are incomplete")
     metrics_value = record["metrics"]
     count_shapes = {
@@ -194,7 +202,7 @@ def validate_schema(record: dict[str, Any]) -> None:
     _require(isinstance(metrics_value["report_usability"], dict) and set(metrics_value["report_usability"]) == {"published_artifacts", "independent_reproduction_status"} and _exact_int(metrics_value["report_usability"]["published_artifacts"]) and metrics_value["report_usability"]["published_artifacts"] >= 0 and metrics_value["report_usability"]["independent_reproduction_status"] in {"recorded", "not-recorded"}, "retrospective usability metric is invalid")
     _require(isinstance(metrics_value["fresh_vs_incremental"], dict) and set(metrics_value["fresh_vs_incremental"]) == {"fresh_runs", "incremental_differences", "incremental_lineage_accepted"} and _exact_int(metrics_value["fresh_vs_incremental"]["fresh_runs"]) and _exact_int(metrics_value["fresh_vs_incremental"]["incremental_differences"]) and isinstance(metrics_value["fresh_vs_incremental"]["incremental_lineage_accepted"], bool), "retrospective comparison metric is invalid")
     metric_categories = {name.replace("_", "-") for name in record["metrics"]}
-    _require(isinstance(record["observations"], list) and record["observations"] and {item.get("category") for item in record["observations"] if isinstance(item, dict)} >= metric_categories, "retrospective findings do not cover every metric category")
+    _require(isinstance(record["observations"], list) and bool(record["observations"]) and {item.get("category") for item in record["observations"] if isinstance(item, dict)} >= metric_categories, "retrospective findings do not cover every metric category")
     required = {"category", "status", "owner", "severity", "action", "acceptance_rationale"}
     _require(all(isinstance(item, dict) and set(item) == required and item["status"] in {"resolved", "action-required", "accepted-limitation"} and item["severity"] in {"low", "medium", "high", "critical"} and all(isinstance(item[key], str) and item[key] for key in required) for item in record["observations"]), "retrospective finding shape is invalid")
 

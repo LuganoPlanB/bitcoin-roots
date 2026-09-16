@@ -414,8 +414,8 @@ def inventory(left: Path, right: Path, left_revision: str, right_revision: str) 
         if before == after:
             continue
         status = "added" if before is None else "deleted" if after is None else "modified"
-        record = {"classification": classify_path(path), "left": after,
-                  "path": path, "right": before, "status": status}
+        record: dict[str, Any] = {"classification": classify_path(path), "left": after,
+                                  "path": path, "right": before, "status": status}
         if (not before or before[1] == "blob") and (not after or after[1] == "blob") and path.endswith((".cpp", ".h", ".py", ".md", ".cmake", ".yml", ".yaml", ".txt", ".in", ".json", ".sh")):
             def blob(repository: Path, object_id: str) -> str:
                 raw = subprocess.run(["git", "-C", str(repository), "cat-file", "blob", object_id], check=True, capture_output=True).stdout

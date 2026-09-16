@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +32,7 @@ class ContractError(Exception):
         self.code = code
 
 
-def fail(code: str, message: str) -> None:
+def fail(code: str, message: str) -> NoReturn:
     raise ContractError(code, message)
 
 

@@ -371,7 +371,7 @@ def classify_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             records.append({"classification": classify_record(layer_id, record), "layer": layer_id, "path": record["path"]})
     if len(records) != sum(layer.get("record_count", -1) for layer in inventory["layers"]):
         raise AtlasError("classification coverage failure")
-    queues = {"critical": [], "high": [], "ambiguous": []}
+    queues: dict[str, list[str]] = {"critical": [], "high": [], "ambiguous": []}
     for record in records:
         classification = record["classification"]
         if classification["risk"] in {"critical", "high"}:
@@ -471,11 +471,11 @@ def input_lock(ledger_path: Path, snapshots: list[str], required_releases: list[
     ):
         raise AtlasError("required release IDs are invalid")
     required = (
-        set(required_releases)
-        if not legacy_mode
-        else {"knots-29.3.knots20260507", "roots-29.3-roots.1"}
+        {"knots-29.3.knots20260507", "roots-29.3-roots.1"}
+        if required_releases is None
+        else set(required_releases)
     )
-    if not legacy_mode and len(required) != len(required_releases):
+    if required_releases is not None and len(required) != len(required_releases):
         raise AtlasError("required release IDs must be unique")
     for release in releases:
         if not isinstance(release, dict) or release.get("id") not in required:
