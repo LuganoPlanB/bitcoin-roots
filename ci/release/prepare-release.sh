@@ -6,8 +6,8 @@
 export LC_ALL=C
 set -Eeuo pipefail
 
-if [[ "$#" -ne 5 ]]; then
-    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT\n' "$0" >&2
+if [[ "$#" -ne 8 ]]; then
+    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT EVIDENCE_FILE SOURCE_REPOSITORY SOURCE_REVISION\n' "$0" >&2
     exit 2
 fi
 
@@ -16,6 +16,9 @@ output_dir=$2
 public_key_file=$3
 release_name=$4
 expected_package_count=$5
+evidence_file=$6
+source_repository=$7
+source_revision=$8
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 archive_tool="$script_dir/archive.py"
 
@@ -60,6 +63,20 @@ for package_path in "${package_paths[@]}"; do
     package_names[$package_name]=1
 done
 
+if [[ ! -f "$evidence_file" || -L "$evidence_file" || "${evidence_file##*/}" != roots-release-evidence.json ]]; then
+    printf 'Release evidence is unavailable or unsafe: %s\n' "$evidence_file" >&2
+    exit 1
+fi
+python3 "$script_dir/roots-release-evidence.py" \
+    --ledger contrib/roots/lineage-ledger.json \
+    --manifest contrib/roots/adaptation-manifest-29.3.json \
+    --replay-result contrib/roots/replay-29.4-proposal/acceptance-evidence.json \
+    --source-repository "$source_repository" \
+    --source-revision "$source_revision" \
+    --candidate-tree "sha1:$(git -C "$source_repository" rev-parse "${source_revision}^{tree}")" \
+    --output "$evidence_file" --verify
+cp -- "$evidence_file" "$output_dir/roots-release-evidence.json"
+
 archive_root="$(RELEASE_TAG="$release_name" python3 "$archive_tool" root-name)"
 for package_path in "${package_paths[@]}"; do
     package_name=${package_path##*/}
@@ -79,4 +96,5 @@ manifest="$output_dir/SHA512SUMS"
     for package_name in "${package_names_sorted[@]}"; do
         (cd "$output_dir" && sha512sum -- "$package_name")
     done
+    (cd "$output_dir" && sha512sum roots-release-evidence.json)
 } > "$manifest"

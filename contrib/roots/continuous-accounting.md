@@ -14,6 +14,17 @@ reconcile every such hunk into an ordinary add/update/absorb/exempt entry with
 its eventual provenance, risk, dependencies, replay impact, and tests. The
 public manifest must never contain confidential vulnerability details.
 
+## Pull-request transport record
+
+The read-only pull-request gate reads the candidate's
+`contrib/roots/continuous-accounting-pr.json` as data and validates every atom
+other than that one transport file with the same contract. The transport file
+is deliberately excluded from its own atom set: requiring it to contain its
+own digest would be circular. This exception is fixed to that exact path and
+does not exempt any other path, hunk, generated output, or documentation
+change. The gate executes only trusted-base validator code; candidate scripts
+are never imported or executed.
+
 Run the read-only gate with full immutable commit IDs:
 
 ```sh

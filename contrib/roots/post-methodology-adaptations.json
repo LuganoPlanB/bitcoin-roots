@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "units": [
+    {
+      "id": "roots-post-methodology-hardening-handoff-v1",
+      "paths": [
+        "ci/test/test_roots_hardening_handoff.py",
+        "contrib/devtools/roots-hardening-handoff.py",
+        "contrib/roots/hardening-handoff-v1.json"
+      ]
+    },
+    {
+      "id": "roots-post-methodology-llm-contract-v1",
+      "paths": [
+        "ci/test/test_roots_llm_contract.py",
+        "contrib/devtools/roots-llm-contract.py",
+        "contrib/roots/llm-execution-contract-v1.json",
+        "contrib/roots/llm-execution-contract-v1.md"
+      ]
+    },
+    {
+      "id": "roots-post-methodology-maintainer-runbook-v1",
+      "paths": [
+        "ci/test/test_roots_maintainer_runbook.py",
+        "contrib/roots/maintainer-runbook-review.json",
+        "contrib/roots/maintainer-runbook.md"
+      ]
+    },
+    {
+      "id": "roots-post-methodology-pr-gate-v1",
+      "paths": [
+        ".github/workflows/roots-portability.yml",
+        ".github/workflows/roots-trusted-replay.yml",
+        "ci/release/roots-release-evidence.py",
+        "ci/roots-trusted-replay-gate.py",
+        "ci/roots-trusted-replay-review.py",
+        "ci/test/test_roots_pr_gate.py",
+        "ci/test/test_roots_release_evidence.py",
+        "ci/test/test_roots_trusted_replay_ci.py",
+        "contrib/devtools/roots-pr-gate.py",
+        "contrib/roots/continuous-accounting-pr.json",
+        "contrib/roots/continuous-accounting.md",
+        "contrib/roots/post-methodology-adaptations.json"
+      ]
+    }
+  ]
+}

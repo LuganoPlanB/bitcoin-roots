@@ -423,12 +423,23 @@ jobs:
 
       - name: Prepare release assets and SHA-512 manifest
         run: |
+          python3 ci/release/roots-release-evidence.py \
+            --ledger contrib/roots/lineage-ledger.json \
+            --manifest contrib/roots/adaptation-manifest-29.3.json \
+            --replay-result contrib/roots/replay-29.4-proposal/acceptance-evidence.json \
+            --source-repository "$GITHUB_WORKSPACE" \
+            --source-revision "$GITHUB_SHA" \
+            --candidate-tree "sha1:$(git rev-parse HEAD^{tree})" \
+            --output roots-release-evidence.json
           ci/release/prepare-release.sh \
             downloaded-artifacts \
             release-assets \
             "$PUBLIC_KEY_FILE" \
             "$GITHUB_REF_NAME" \
-            "$EXPECTED_PACKAGE_COUNT"
+            "$EXPECTED_PACKAGE_COUNT" \
+            roots-release-evidence.json \
+            "$GITHUB_WORKSPACE" \
+            "$GITHUB_SHA"
 
       - name: Sign and verify SHA-512 manifest
         env:
@@ -486,9 +497,9 @@ jobs:
             release_options+=(--prerelease)
           fi
           release_assets=(release-assets/*)
-          if [[ "${#release_assets[@]}" -ne "$((EXPECTED_PACKAGE_COUNT + 2))" ]]; then
+          if [[ "${#release_assets[@]}" -ne "$((EXPECTED_PACKAGE_COUNT + 3))" ]]; then
             printf 'Expected %s release assets, found %s\n' \
-              "$((EXPECTED_PACKAGE_COUNT + 2))" "${#release_assets[@]}" >&2
+              "$((EXPECTED_PACKAGE_COUNT + 3))" "${#release_assets[@]}" >&2
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" \

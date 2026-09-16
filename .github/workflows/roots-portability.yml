@@ -1,0 +1,69 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Roots portability PR gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+# This workflow runs untrusted pull-request code. It has no write permission,
+# receives no persisted checkout credential, and neither restores nor saves a cache.
+permissions:
+  contents: read
+
+concurrency:
+  group: roots-portability-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: manifest and provenance accountability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted base without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: trusted-base
+      - name: Checkout candidate as data without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: candidate
+      - name: Transfer candidate object locally into trusted comparison repository
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          git -C candidate update-ref refs/roots-pr/candidate "${HEAD_SHA}"
+          git -C candidate bundle create "${RUNNER_TEMP}/roots-pr-candidate.bundle" refs/roots-pr/candidate
+          git -C trusted-base fetch --no-tags "${RUNNER_TEMP}/roots-pr-candidate.bundle" refs/roots-pr/candidate:refs/roots-pr/candidate
+          git -C trusted-base cat-file -e "${BASE_SHA}^{commit}"
+          git -C trusted-base cat-file -e "${HEAD_SHA}^{commit}"
+      - name: Validate candidate data with trusted base validators
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 trusted-base/contrib/devtools/roots-pr-gate.py \
+            --repository trusted-base \
+            --trusted-tools trusted-base/contrib/devtools \
+            --record candidate/contrib/roots/continuous-accounting-pr.json \
+            --manifest candidate/contrib/roots/adaptation-manifest-29.3.json \
+            --methodology candidate/contrib/roots/methodology-v1.json \
+            --registry candidate/contrib/roots/post-methodology-adaptations.json \
+            --base "${BASE_SHA}" \
+            --candidate "${HEAD_SHA}" \
+            --report roots-portability-pr-report.json
+      - name: Check bounded report
+        run: |
+          set -Eeuo pipefail
+          test "$(wc -c < roots-portability-pr-report.json)" -le 65536

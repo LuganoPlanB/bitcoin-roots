@@ -1,0 +1,118 @@
+name: Trusted Roots replay
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      run: {description: Run accepted locks even when unchanged, required: true, default: auto, type: choice, options: [auto, force]}
+permissions: {contents: read}
+concurrency: {group: roots-trusted-replay-${{ github.workflow }}, cancel-in-progress: true}
+env:
+  CORE_29_3_COMMIT: 99003bed87333f1be51bf3070235591b3a72f007
+  CORE_29_3_TREE: d7910bd5e9335128932f1f848a767d773895c4a4
+  CORE_29_4_COMMIT: 3fc0865963a38b871e9f7d94e6151c4953563516
+  CORE_29_4_TREE: 38ad59b187f59647eb90ad1347bc481485ef4d01
+  KNOTS_29_3_COMMIT: 99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b
+  KNOTS_29_3_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
+  LOCKED_INPUT_DIGEST: 5e0ef55a9fb46837f52064e82b67f5806dc336fba3063e2096821957f6d6470e
+jobs:
+  gate:
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs: {decision: '${{ steps.gate.outputs.decision }}'}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - id: gate
+        env: {EVENT: '${{ github.event_name }}', RUN: '${{ inputs.run || 'auto' }}'}
+        run: |
+          set -Eeuo pipefail
+          mode=manual; [[ "$EVENT" == schedule ]] && mode=schedule
+          digest="$(sha256sum contrib/roots/adaptation-manifest-29.3.json contrib/roots/methodology-v1.json contrib/roots/core-29.4-migration-fixture.json | sha256sum | awk '{print $1}')"
+          changed=false; [[ "$digest" != "$LOCKED_INPUT_DIGEST" ]] && changed=true
+          mkdir "$RUNNER_TEMP/replay-gate"
+          decision="$(python3 ci/roots-trusted-replay-gate.py --mode "$mode" --changed "$changed" --manual-run "$RUN" --later-base none --manifest contrib/roots/adaptation-manifest-29.3.json --methodology contrib/roots/methodology-v1.json --fixture contrib/roots/core-29.4-migration-fixture.json --output "$RUNNER_TEMP/replay-gate/trusted-replay-report.json")"
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+  fetch:
+    needs: gate
+    if: needs.gate.outputs.decision == 'replay'
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - run: |
+          set -Eeuo pipefail
+          git init "$RUNNER_TEMP/core-source"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoin/bitcoin.git "$CORE_29_3_COMMIT" "$CORE_29_4_COMMIT"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoinknots/bitcoin.git "$KNOTS_29_3_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_3_COMMIT^{tree}")" = "$CORE_29_3_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_4_COMMIT^{tree}")" = "$CORE_29_4_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_COMMIT^{tree}")" = "$KNOTS_29_3_TREE"
+  replay:
+    needs: [gate, fetch]
+    if: needs.gate.outputs.decision == 'replay'
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - run: |
+          set -Eeuo pipefail
+          reconstruct() {
+            local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" work="$RUNNER_TEMP/$1-$7"
+            git clone --no-checkout . "$work"
+            remote=https://github.com/bitcoin/bitcoin.git
+            [[ "$name" == roots-29.3 ]] && remote=https://github.com/bitcoinknots/bitcoin.git
+            git -C "$work" remote add immutable "$remote"
+            git -C "$work" fetch --no-tags immutable "$revision"
+            git -C "$work" checkout --detach "$revision"
+            python3 contrib/devtools/roots-replay.py replay --repository "$work" --revision "$revision" --expected-tree "$tree" --manifest "$GITHUB_WORKSPACE/$manifest" --materials "$GITHUB_WORKSPACE/$materials" --materials-root "$GITHUB_WORKSPACE/$root" --state-directory "$RUNNER_TEMP/$name-$7-state" --apply
+            state="$(find "$RUNNER_TEMP/$name-$7-state" -name 'replay-state*.json' -type f | sort | tail -n 1)"
+            python3 contrib/devtools/roots-replay.py report --state "$state" --output-directory "$RUNNER_TEMP/$name-$7-report"
+            python3 contrib/devtools/roots-replay.py export-patches --repository "$work" --state "$state" --output "$RUNNER_TEMP/$name-$7-report/replay-generated-series.patch"
+            cp "$state" "$RUNNER_TEMP/$name-$7-report/replay-state.json"
+          }
+          reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 a
+          reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 b
+          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a
+          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release b
+          reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal a
+          reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal b
+          mkdir "$RUNNER_TEMP/replay-artifacts"
+          for pair in "core-to-knots-29.3:calibration" "roots-29.3:roots-29.3" "core-29.4:locked-29.4"; do role="${pair%%:*}"; source="${pair##*:}"; for run in a b; do mkdir -p "$RUNNER_TEMP/replay-artifacts/$role/$run"; cp "$RUNNER_TEMP/$source-$run-report/replay-state.json" "$RUNNER_TEMP/$source-$run-report/replay-review.json" "$RUNNER_TEMP/$source-$run-report/replay-review.txt" "$RUNNER_TEMP/$source-$run-report/replay-generated-series.patch" "$RUNNER_TEMP/replay-artifacts/$role/$run/"; done; done
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with: {name: roots-replay-evidence-${{ github.sha }}, path: '${{ runner.temp }}/replay-artifacts/', if-no-files-found: error, retention-days: 7}
+  review:
+    needs: replay
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: {name: roots-replay-evidence-${{ github.sha }}, path: '${{ runner.temp }}/replay-artifacts'}
+      - run: |
+          set -Eeuo pipefail
+          test "$(find "$RUNNER_TEMP/replay-artifacts" -type f | wc -l)" = 24
+          test "$(find "$RUNNER_TEMP/replay-artifacts" -type l | wc -l)" = 0
+          test "$(find "$RUNNER_TEMP/replay-artifacts" -type f -size +10000000c | wc -l)" = 0
+          python3 ci/roots-trusted-replay-review.py --methodology contrib/roots/methodology-v1.json --artifacts "$RUNNER_TEMP/replay-artifacts"
+  build-test:
+    needs: review
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: {name: roots-replay-evidence-${{ github.sha }}, path: '${{ runner.temp }}/replay-artifacts'}
+      - run: |
+          set -Eeuo pipefail
+          test -f "$RUNNER_TEMP/replay-artifacts/core-29.4/a/replay-review.json"
+          python3 ci/test/test_roots_replay.py
