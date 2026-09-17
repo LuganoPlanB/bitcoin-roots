@@ -1,0 +1,44 @@
+{
+  "approvals": [
+    "l4-root-review-pending"
+  ],
+  "candidate_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+  "configuration_digests": {
+    "post-candidate-invariants-29.4.json": "sha256:d317de2e0ffa203930856a911f42028f57b539ff198526f226747917bd79d0ca",
+    "post-candidate-inventory-29.4.json": "sha256:f518ce3aec5fb3fcfb281b5d03094390391eaf690cbfd7add2572a5791f9365e",
+    "post-candidate-replay-29.4.json": "sha256:8e0cb01605172bcbbe5bb4cff19c22c64e58313a7d1b70b14eb7bd17a713392e"
+  },
+  "final_commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+  "git_version": "git version 2.47.3",
+  "invariants": "sha256:d317de2e0ffa203930856a911f42028f57b539ff198526f226747917bd79d0ca",
+  "limitations": [
+    "publication authorization remains false",
+    "private local evidence only"
+  ],
+  "links": {
+    "invariants": "contrib/roots/post-candidate-invariants-29.4.json",
+    "inventory": "contrib/roots/post-candidate-inventory-29.4.json",
+    "replay": "contrib/roots/post-candidate-replay-29.4.json"
+  },
+  "outcomes": {
+    "inventory": "sha256:f518ce3aec5fb3fcfb281b5d03094390391eaf690cbfd7add2572a5791f9365e",
+    "replay": "sha256:8e0cb01605172bcbbe5bb4cff19c22c64e58313a7d1b70b14eb7bd17a713392e"
+  },
+  "patch_series_sha256": "sha256:e5666ede7edd7aeb4dd815a186a192ae8345e5f69563ab581d7b2709ab0a2fba",
+  "provenance": {
+    "core_commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "inventory": "sha256:f518ce3aec5fb3fcfb281b5d03094390391eaf690cbfd7add2572a5791f9365e",
+    "replay": "sha256:8e0cb01605172bcbbe5bb4cff19c22c64e58313a7d1b70b14eb7bd17a713392e"
+  },
+  "publication_authorized": false,
+  "range_diff_sha256": "sha256:1c871fc5539d1b6b6f17f64956c6c2a8872cb0e08081672e5bec0ceb6a97043c",
+  "result_tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde",
+  "schema_version": 1,
+  "scoped_diff_sha256": "sha256:dd9293c8101d974025d0abccbae38173610c66128a8336f0f22d1312e5c90ebc",
+  "tests": [
+    "ci.test.test_roots_post_candidate_inventory",
+    "ci.test.test_roots_post_candidate_replay",
+    "ci.test.test_roots_post_candidate_invariants",
+    "ci.test.test_roots_freeze_production"
+  ]
+}

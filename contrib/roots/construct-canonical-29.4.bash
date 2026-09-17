@@ -8,7 +8,6 @@ umask 077
 readonly CORE_COMMIT=3fc0865963a38b871e9f7d94e6151c4953563516
 readonly CORE_TREE=38ad59b187f59647eb90ad1347bc481485ef4d01
 readonly CORE_TAG_OBJECT=4e70eab99b60f7718b78e2158de9fb82726f3cec
-readonly REPLAY_COMMIT=f771e13259f23f02efc215327f2806d421cc7339
 readonly CANDIDATE_TREE=39a5e30207a09962e78ae81c24cc65b1e478ef90
 readonly CANONICAL_COMMIT=cbc88cff9b35b95a549c0313e424e13093fcd6a1
 readonly OUTPUT_REF=refs/roots/private/canonical-29.4
@@ -68,13 +67,15 @@ export GIT_NO_REPLACE_OBJECTS=1 GIT_OPTIONAL_LOCKS=0 LC_ALL=C TZ=UTC
 git -C "$destination" init -q --initial-branch=private-construction
 git -C "$destination" -c core.hooksPath=/dev/null -c commit.gpgSign=false \
     -c tag.gpgSign=false -c rerere.enabled=false -c core.useReplaceRefs=false \
-    fetch -q --no-tags "$source_repository" "$CORE_COMMIT" "$REPLAY_COMMIT"
+    fetch -q --no-tags "$source_repository" "$CORE_COMMIT" "$CANONICAL_COMMIT"
 
 core_tree=$(git -C "$destination" rev-parse "$CORE_COMMIT^{tree}")
 [[ "$core_tree" == "$CORE_TREE" ]] || die "Core tree does not match lock"
-candidate_tree=$(git -C "$destination" rev-parse "$REPLAY_COMMIT^{tree}")
+candidate_tree=$(git -C "$destination" rev-parse "$CANONICAL_COMMIT^{tree}")
 [[ "$candidate_tree" == "$CANDIDATE_TREE" ]] || die "accepted replay result tree does not match lock"
-[[ $(git -C "$destination" rev-parse "$REPLAY_COMMIT^" ) == "$CORE_COMMIT" ]] || die "accepted replay has the wrong Core parent"
+[[ $(git -C "$destination" rev-list --first-parent --count "$CANONICAL_COMMIT" "^$CORE_COMMIT") == 16 ]] || die "accepted lineage does not contain sixteen commits"
+first_lineage_commit=$(git -C "$destination" rev-list --first-parent "$CANONICAL_COMMIT" -n 16 | tail -n 1)
+[[ $(git -C "$destination" rev-parse "$first_lineage_commit^") == "$CORE_COMMIT" ]] || die "accepted lineage is not Core-rooted"
 
 jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" \
     --arg candidate "sha1:$CANDIDATE_TREE" --arg canonical "sha1:$CANONICAL_COMMIT" '
@@ -84,7 +85,7 @@ jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" \
     (.gates | all(.[]; (.critical | not) or (.status == "pass" and .waiver == false)))' \
     "$acceptance" >/dev/null || die "accepted replay state is not locked"
 jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" \
-    --arg candidate "sha1:$CANDIDATE_TREE" --arg canonical "sha1:$CANONICAL_COMMIT" --arg replay "sha1:$REPLAY_COMMIT" '
+    --arg candidate "sha1:$CANDIDATE_TREE" --arg canonical "sha1:$CANONICAL_COMMIT" '
     .core.commit == $core and .core.tree == $tree and .candidate.tree == $candidate and
     .candidate.canonical_commit == $canonical and .candidate.input_commit == $canonical and
     .production.head == $canonical and .authorization == false' "$promotion" >/dev/null ||

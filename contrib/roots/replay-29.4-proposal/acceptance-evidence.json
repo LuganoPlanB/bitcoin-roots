@@ -74,11 +74,11 @@
   },
   "lineage": {
     "row": "lineage-row-29.4.json",
-    "row_sha256": "sha256:edf06b2644a8d53e2a0526a36d1a67d42e09291b38a57753d86850de5c3ed216",
+    "row_sha256": "sha256:bbc16932d67fb6b5a5568afa0eb889e9cd9bc27bcdf32c425d78a7009aeb2464",
     "topology": "canonical-topology.json",
     "topology_sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40",
     "constructor": "canonical-lineage.bash",
-    "constructor_sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5",
+    "constructor_sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199",
     "first_parent_exact_core_tag": true,
     "first_parent_commit_count": 16,
     "merge_commit_count": 0,
@@ -150,5 +150,5 @@
     "pushed": false,
     "authorized": false
   },
-  "digest": "sha256:75a0eb07b028c6b75443f6b444775fe338549ba328442dd12eb7269ae2d2324f"
+  "digest": "sha256:946a845ca2c46fdd8131603c844bcfdb65f5ed7cc636c33063c25b44be2f225a"
 }

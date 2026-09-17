@@ -1,0 +1,23 @@
+{
+  "candidate_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+  "core_commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+  "decision": "accepted",
+  "invariants": {
+    "core_valid_block_acceptance": "inherited-no-runtime-delta",
+    "no_rdts_bip110_enforcement": "inherited-no-runtime-delta",
+    "policy_rejection_block_acceptance": "inherited-no-runtime-delta"
+  },
+  "path_count": 153,
+  "result_tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde",
+  "runtime_zone_paths": {
+    "build": [],
+    "chain_parameters": [],
+    "consensus_validation": [],
+    "crypto": [],
+    "networking": [],
+    "policy_consensus": [],
+    "serialization_script": [],
+    "wallet": []
+  },
+  "scoped_diff_sha256": "sha256:dd9293c8101d974025d0abccbae38173610c66128a8336f0f22d1312e5c90ebc"
+}

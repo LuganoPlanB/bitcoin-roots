@@ -38,7 +38,7 @@ def validate_contracts(value):
     if not isinstance(value, dict) or set(value) != required or value["replay_tool"] != "1" or not isinstance(schemas, list) or any(not exact_int(item) for item in schemas) or schemas != [1, 2] or any(not exact_int(value[key]) or value[key] < 1 for key in required - {"replay_tool", "replay_material_schemas"}): fail("methodology contracts are invalid")
 
 
-def expected_input_paths(root, governing_inputs, reconstructions):
+def expected_input_paths(root, governing_inputs, reconstructions, exclusions):
     paths = set(governing_inputs)
     for result in reconstructions.values():
         for relative in result["input_roots"]:
@@ -49,7 +49,9 @@ def expected_input_paths(root, governing_inputs, reconstructions):
                 if item.is_symlink() or (not item.is_dir() and not item.is_file()):
                     fail("methodology reconstruction entry is invalid")
                 if item.is_file():
-                    paths.add(item.relative_to(root).as_posix())
+                    path = item.relative_to(root).as_posix()
+                    if path not in exclusions:
+                        paths.add(path)
     return paths
 
 
@@ -78,11 +80,22 @@ def validate_reconstructions(value):
 def validate(path):
     value = json.loads(path.read_text(encoding="utf-8"))
     digest = value.pop("digest", None)
-    if set(value) != {"schema_version", "methodology_version", "runtime", "contracts", "governing_inputs", "frozen_inputs", "reconstructions", "limitations"} or not exact_int(value.get("schema_version")) or value.get("schema_version") != 1 or value.get("methodology_version") != "1" or not isinstance(digest, str) or digest != SHA256_PREFIX + hashlib.sha256(canonical(value)).hexdigest():
+    if set(value) != {"schema_version", "methodology_version", "runtime", "contracts", "governing_inputs", "frozen_inputs", "reconstructions", "limitations", "production_exclusions"} or not exact_int(value.get("schema_version")) or value.get("schema_version") != 1 or value.get("methodology_version") != "1" or not isinstance(digest, str) or digest != SHA256_PREFIX + hashlib.sha256(canonical(value)).hexdigest():
         fail("methodology bundle digest is invalid")
     validate_runtime(value["runtime"])
     validate_contracts(value["contracts"])
     validate_reconstructions(value["reconstructions"])
+    exclusions = value.get("production_exclusions")
+    upstream_roots = [record["input_roots"] for record in value["reconstructions"].values() if record["role"] == "upstream-release"]
+    if len(upstream_roots) != 1 or len(upstream_roots[0]) != 1:
+        fail("methodology production exclusion root is invalid")
+    upstream_root = upstream_roots[0][0]
+    if exclusions != [
+        {"path": f"{upstream_root}/incremental-oracle.bash", "rationale": "requires a rejected non-ancestral Roots 29.3 comparison and is excluded from production reconstruction"},
+        {"path": f"{upstream_root}/post-candidate-production-overlay.patch", "rationale": "is a later control-plane overlay bound by post-candidate replay evidence"},
+    ]:
+        fail("methodology production exclusions are invalid")
+    excluded_paths = {item["path"] for item in exclusions}
     inputs = value.get("frozen_inputs")
     if not isinstance(inputs, list) or not inputs or inputs != sorted(inputs, key=lambda item: item.get("path", "") if isinstance(item, dict) else ""):
         fail("methodology frozen inputs are invalid")
@@ -99,7 +112,7 @@ def validate(path):
         if not candidate.is_file() or candidate.is_symlink() or "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest() != item["sha256"]:
             fail("methodology frozen input drift")
     governing = value["governing_inputs"]
-    if not isinstance(governing, list) or any(not isinstance(item, str) or not item or item == "." or Path(item).is_absolute() or ".." in Path(item).parts for item in governing) or len(governing) != len(set(governing)) or seen != expected_input_paths(root, governing, value["reconstructions"]):
+    if not isinstance(governing, list) or any(not isinstance(item, str) or not item or item == "." or Path(item).is_absolute() or ".." in Path(item).parts for item in governing) or len(governing) != len(set(governing)) or seen != expected_input_paths(root, governing, value["reconstructions"], excluded_paths):
         fail("methodology frozen input closure is incomplete")
     for result in value["reconstructions"].values():
         record = result["record"]

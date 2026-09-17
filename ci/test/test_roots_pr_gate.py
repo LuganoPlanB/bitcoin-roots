@@ -2,6 +2,7 @@
 """Focused contract tests for the trusted Roots pull-request gate."""
 from __future__ import annotations
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -39,6 +40,15 @@ def entry(path, kind, digest, disposition="update"):
 def run_gate(repository, record, base, candidate):
     candidate_root = record.parents[2]
     return GATE.gate(repository, record, candidate_root / "contrib/roots/adaptation-manifest-29.3.json", candidate_root / "contrib/roots/methodology-v1.json", record.parent / "post-methodology-adaptations.json", base, candidate, TOOLS)
+
+def refresh_methodology_inputs(root):
+    path = root / "contrib/roots/methodology-v1.json"
+    value = json.loads(path.read_text())
+    for item in value["frozen_inputs"]:
+        item["sha256"] = "sha256:" + hashlib.sha256((root / item["path"]).read_bytes()).hexdigest()
+    body = {key: item for key, item in value.items() if key != "digest"}
+    value["digest"] = "sha256:" + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    path.write_text(json.dumps(value), encoding="utf-8")
 
 class RootsPrGateTest(unittest.TestCase):
     def repositories(self, paths):

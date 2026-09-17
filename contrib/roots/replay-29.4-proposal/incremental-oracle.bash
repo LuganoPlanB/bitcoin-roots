@@ -42,7 +42,7 @@ command -v realpath >/dev/null 2>&1 || die "realpath is required"
 source_repository="$(realpath "$1")"
 readonly source_repository
 readonly destination="$2"
-[[ -d "$source_repository/.git" ]] || die "source is not a Git worktree"
+[[ "$(git -C "$source_repository" rev-parse --is-inside-work-tree 2>/dev/null || true)" == "true" ]] || die "source is not a Git worktree"
 [[ ! -e "$destination" ]] || die "destination already exists"
 
 git init -q "$destination"

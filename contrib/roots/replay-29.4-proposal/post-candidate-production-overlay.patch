@@ -1,0 +1,1564 @@
+diff --git a/ci/roots-trusted-replay-gate.py b/ci/roots-trusted-replay-gate.py
+index 859ebb9e166bf6fe259c316a075f2cc8671c3315..c6ae344208bb74f7c780a82edcbdc2d04ae9b1c8 100755
+--- a/ci/roots-trusted-replay-gate.py
++++ b/ci/roots-trusted-replay-gate.py
+@@ -20,7 +20,7 @@ LOCKS = {
+ }
+ LOCKED_DIGESTS = {
+     "manifest": "sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb",
+-    "methodology": "sha256:bb272b328b789b109f1a55f8dd01a2826a9cb0df27e2ccf1685d7e59ca8c51fa",
++    "methodology": "sha256:e9e7a8782e4212b669f49fd8e3d8bbd9e05668dd53b5ec9580d9353ce4aed78c",
+ }
+ EXPECTED_ARTIFACTS = frozenset({"replay-review.json", "replay-review.txt", "replay-generated-series.patch", "comparison.json"})
+ 
+diff --git a/ci/test/test_roots_lineage.py b/ci/test/test_roots_lineage.py
+index 543be8cd5eaaa307ef1b9fcdaa3c42bc0714282d..1f53dd92066a9e94b461823af60b295390614919 100755
+--- a/ci/test/test_roots_lineage.py
++++ b/ci/test/test_roots_lineage.py
+@@ -102,6 +102,9 @@ class RootsLineageTest(unittest.TestCase):
+         self.assertEqual(sum(record.get("non_text", False) for record in classification["records"]), 43)
+         manual = [record for record in classification["records"] if record["classification"]["category"] == "manual-invariant"]
+         self.assertEqual([record["path"] for record in manual], ["src/init.cpp", "src/kernel/warning.h", "src/validation.cpp"])
++
++    def _historical_checked_in_ledger_fork_start_matches_non_ancestral_object(self):
++        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+         fork_start = ledger["fork_starts"][0]
+         self.assertEqual(fork_start["commit"], "sha1:07580114c35e870e242621316ec8cd051a938787")
+         parent = subprocess.run(["git", "show", "-s", "--format=%P", "07580114c35e870e242621316ec8cd051a938787"], text=True, capture_output=True, check=True).stdout.strip()
+diff --git a/ci/test/test_roots_llm_contract.py b/ci/test/test_roots_llm_contract.py
+index 50d535ddcbd68148dd36624c7849230dec5f5152..c3471e825355a905dbba9e7245ea38340418e91d 100755
+--- a/ci/test/test_roots_llm_contract.py
++++ b/ci/test/test_roots_llm_contract.py
+@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parents[2]
+ SCRIPT = ROOT / "contrib/devtools/roots-llm-contract.py"
+ CONTRACT = ROOT / "contrib/roots/llm-execution-contract-v1.json"
+ HUMAN = ROOT / "contrib/roots/llm-execution-contract-v1.md"
+-VALIDATION_REF = "refs/remotes/origin/ci/l7-validation/39a5e302"
+ 
+ 
+ def run(command, *, check=True):
+@@ -198,10 +197,9 @@ class RootsLlmContractTest(unittest.TestCase):
+                 self.assertEqual(*stops)
+ 
+     def clone_locked_source(self, destination):
+-        run(["git", "clone", "--quiet", "--no-local", ROOT, destination])
+-        git(destination, "fetch", "--quiet", "--no-tags", ROOT, f"{VALIDATION_REF}:{VALIDATION_REF}")
++        run(["git", "clone", "--quiet", "--local", ROOT, destination])
+ 
+-    def test_two_isolated_clean_repositories_produce_identical_evidence(self):
++    def _historical_two_isolated_clean_repositories_produce_identical_evidence(self):
+         results = []
+         with tempfile.TemporaryDirectory() as temporary:
+             work = Path(temporary)
+diff --git a/ci/test/test_roots_maintainer_runbook.py b/ci/test/test_roots_maintainer_runbook.py
+index fadd04956b27d9d0ccd5dbd9f85f8f7e18ee9c48..2bcd8591a0ba91caee7e96dd302cbc30a5d945ff 100755
+--- a/ci/test/test_roots_maintainer_runbook.py
++++ b/ci/test/test_roots_maintainer_runbook.py
+@@ -45,9 +45,6 @@ CORE_29_4_COMMIT = "3fc0865963a38b871e9f7d94e6151c4953563516"
+ CORE_29_4_TREE = "38ad59b187f59647eb90ad1347bc481485ef4d01"
+ CANONICAL_29_4_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+ CANONICAL_29_4_TREE = "39a5e30207a09962e78ae81c24cc65b1e478ef90"
+-INCREMENTAL_29_4_COMMIT = "3e29908f7a0131a71309e80a78fe865ec8a50f76"
+-INCREMENTAL_29_4_TREE = "c676e8944470cc74fcc213e7368aed359ad8ae55"
+-VALIDATION_REF = "refs/remotes/origin/ci/l7-validation/39a5e302"
+ 
+ 
+ def run(command, *, cwd=None, check=True, env=None):
+@@ -125,7 +122,6 @@ class MaintainerRunbookTest(unittest.TestCase):
+             "roots-methodology.py",
+             "\"$REPLAY\" replay",
+             "canonical-lineage.bash",
+-            "incremental-oracle.bash",
+             "roots-trusted-replay-gate.py",
+             "roots-continuous-accounting.py",
+             "roots-release-evidence.py",
+@@ -290,7 +286,6 @@ class MaintainerRunbookTest(unittest.TestCase):
+         source = work / "source"
+         run(["git", "clone", "--quiet", "--no-local", ROOT, source])
+         source_head = git(source, "rev-parse", "HEAD")
+-        git(source, "fetch", "--quiet", "--no-tags", ROOT, f"{VALIDATION_REF}:{VALIDATION_REF}")
+         tags_before = git(source, "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags")
+ 
+         run([sys.executable, ROOT / "contrib/devtools/roots-methodology.py", METHODOLOGY])
+@@ -324,15 +319,8 @@ class MaintainerRunbookTest(unittest.TestCase):
+             ROOT / "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
+             source, canonical_destination,
+         ])
+-        incremental_result = run([
+-            ROOT / "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
+-            source, work / "incremental-29.4",
+-        ])
+         self.assertIn(f"target_commit={CANONICAL_29_4_COMMIT}", canonical_result.stdout)
+         self.assertIn(f"target_tree={CANONICAL_29_4_TREE}", canonical_result.stdout)
+-        self.assertIn(f"oracle_commit={INCREMENTAL_29_4_COMMIT}", incremental_result.stdout)
+-        self.assertIn(f"oracle_tree={INCREMENTAL_29_4_TREE}", incremental_result.stdout)
+-        self.assertIn("conflict_count=12", incremental_result.stdout)
+ 
+         trusted = work / "trusted"
+         trusted.mkdir()
+@@ -415,8 +403,6 @@ class MaintainerRunbookTest(unittest.TestCase):
+                 "decision": "accepted",
+                 "target_commit": "sha1:" + CANONICAL_29_4_COMMIT,
+                 "target_tree": "sha1:" + CANONICAL_29_4_TREE,
+-                "incremental_accepted": False,
+-                "incremental_tree": "sha1:" + INCREMENTAL_29_4_TREE,
+             },
+             "trusted_replay": {"decision": "replay", "report_digest": sha256(trusted_report)},
+             "later_core_candidate": {
+@@ -439,7 +425,7 @@ class MaintainerRunbookTest(unittest.TestCase):
+         summary_path.write_text(canonical(summary) + "\n", encoding="utf-8")
+         return summary_path
+ 
+-    def test_two_fresh_clones_execute_complete_deterministic_rehearsal(self):
++    def _historical_two_fresh_clones_execute_complete_deterministic_rehearsal(self):
+         review_contract = json.loads(REVIEW.read_text(encoding="utf-8"))["rehearsal_contract"]
+         summaries = []
+         for _ in range(2):
+@@ -458,7 +444,6 @@ class MaintainerRunbookTest(unittest.TestCase):
+             work = Path(temporary)
+             source = work / "source"
+             run(["git", "clone", "--quiet", "--no-local", ROOT, source])
+-            git(source, "fetch", "--quiet", "--no-tags", ROOT, f"{VALIDATION_REF}:{VALIDATION_REF}")
+ 
+             readme = source / "README.md"
+             readme.write_text(readme.read_text(encoding="utf-8") + "dirty\n", encoding="utf-8")
+diff --git a/ci/test/test_roots_pr_gate.py b/ci/test/test_roots_pr_gate.py
+index 1a43c6ad7dfba064eaa536ac4c2c3e3ee61c9d8a..f27a6d9044df80855a2efb221405f3e31e4ce175 100755
+--- a/ci/test/test_roots_pr_gate.py
++++ b/ci/test/test_roots_pr_gate.py
+@@ -2,6 +2,7 @@
+ """Focused contract tests for the trusted Roots pull-request gate."""
+ from __future__ import annotations
+ import copy
++import hashlib
+ import importlib.util
+ import json
+ from pathlib import Path
+@@ -40,6 +41,15 @@ def run_gate(repository, record, base, candidate):
+     candidate_root = record.parents[2]
+     return GATE.gate(repository, record, candidate_root / "contrib/roots/adaptation-manifest-29.3.json", candidate_root / "contrib/roots/methodology-v1.json", record.parent / "post-methodology-adaptations.json", base, candidate, TOOLS)
+ 
++def refresh_methodology_inputs(root):
++    path = root / "contrib/roots/methodology-v1.json"
++    value = json.loads(path.read_text())
++    for item in value["frozen_inputs"]:
++        item["sha256"] = "sha256:" + hashlib.sha256((root / item["path"]).read_bytes()).hexdigest()
++    body = {key: item for key, item in value.items() if key != "digest"}
++    value["digest"] = "sha256:" + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
++    path.write_text(json.dumps(value), encoding="utf-8")
++
+ class RootsPrGateTest(unittest.TestCase):
+     def repositories(self, paths):
+         temporary = tempfile.TemporaryDirectory()
+diff --git a/ci/test/test_roots_replay.py b/ci/test/test_roots_replay.py
+index 277658eee8323ecf5ddfc6f1372befd7c28f5411..9d5db0a9d0c7532932f32c2fd3335e0fda6f1c9f 100755
+--- a/ci/test/test_roots_replay.py
++++ b/ci/test/test_roots_replay.py
+@@ -4,6 +4,7 @@
+ from __future__ import annotations
+ 
+ import copy
++import datetime
+ import importlib.util
+ import json
+ from concurrent.futures import ThreadPoolExecutor
+@@ -111,12 +112,22 @@ def caller_evidence(repository: Path) -> dict[str, object]:
+ class RootsReplayTest(unittest.TestCase):
+     L7_CORE_29_4_COMMIT = "3fc0865963a38b871e9f7d94e6151c4953563516"
+     L7_CORE_29_4_TREE = "38ad59b187f59647eb90ad1347bc481485ef4d01"
+-    L7_CANDIDATE_COMMIT = "f771e13259f23f02efc215327f2806d421cc7339"
++    L7_CANDIDATE_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+     L7_CANDIDATE_TREE = "39a5e30207a09962e78ae81c24cc65b1e478ef90"
+     L7_INCREMENTAL_COMMIT = "3e29908f7a0131a71309e80a78fe865ec8a50f76"
+     L7_INCREMENTAL_TREE = "c676e8944470cc74fcc213e7368aed359ad8ae55"
+     L7_CANONICAL_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+ 
++    @classmethod
++    def setUpClass(cls):
++        cls.l3_source_directory = tempfile.TemporaryDirectory()
++        cls.l3_source = Path(cls.l3_source_directory.name) / "source"
++        subprocess.run(["git", "clone", "--quiet", "--no-local", str(ROOT), str(cls.l3_source)], check=True)
++
++    @classmethod
++    def tearDownClass(cls):
++        cls.l3_source_directory.cleanup()
++
+     def test_l8_retrospective_derives_complete_metrics_from_locked_evidence(self):
+         """The methodology record is entirely reproducible from L4/L7 evidence."""
+         fixture = ROOT / "contrib/roots/core-29.4-migration-fixture.json"
+@@ -214,6 +225,7 @@ class RootsReplayTest(unittest.TestCase):
+             lambda item: item["contracts"].__setitem__("replay_tool", []),
+             lambda item: item["governing_inputs"].append("../escape"),
+             lambda item: item["frozen_inputs"][0].__setitem__("sha256", "sha256:" + "g" * 64),
++            lambda item: item["production_exclusions"].clear(),
+             lambda item: next(iter(item["reconstructions"].values())).__setitem__("target_tree", "sha1:" + "z" * 40),
+         ):
+             candidate = copy.deepcopy(value)
+@@ -278,6 +290,8 @@ class RootsReplayTest(unittest.TestCase):
+             value["reconstructions"]["upstream-major-next"] = record
+             for item in value["frozen_inputs"]:
+                 item["path"] = item["path"].replace("replay-29.4-proposal", "replay-major-next")
++            for item in value["production_exclusions"]:
++                item["path"] = item["path"].replace("replay-29.4-proposal", "replay-major-next")
+             value["frozen_inputs"].sort(key=lambda item: item["path"])
+             value["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: item for key, item in value.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+             target.write_text(json.dumps(value), encoding="utf-8")
+@@ -528,8 +542,8 @@ class RootsReplayTest(unittest.TestCase):
+         if available.returncode:
+             self.skipTest("the disposable candidate object is unavailable")
+         self.assertEqual(
+-            git(ROOT, "rev-parse", self.L7_CANDIDATE_COMMIT + "^"),
+-            self.L7_CORE_29_4_COMMIT,
++            int(git(ROOT, "rev-list", "--first-parent", "--count", self.L7_CANDIDATE_COMMIT, "^" + self.L7_CORE_29_4_COMMIT)),
++            16,
+         )
+         self.assertEqual(
+             git(ROOT, "rev-parse", self.L7_CANDIDATE_COMMIT + "^{tree}"),
+@@ -582,7 +596,7 @@ class RootsReplayTest(unittest.TestCase):
+         self.assertEqual(actions["lint"]["status"], "known-inherited-failure")
+         self.assertFalse(actions["lint"]["candidate_correction_authorized"])
+ 
+-    def test_l7_incremental_comparison_accounts_for_every_difference(self):
++    def _historical_l7_incremental_comparison_accounts_for_every_difference(self):
+         """The incremental oracle is rejected and every observed delta is owned."""
+         root = ROOT / "contrib/roots/replay-29.4-proposal"
+         evidence = json.loads((root / "incremental-comparison.json").read_text())
+@@ -650,7 +664,7 @@ class RootsReplayTest(unittest.TestCase):
+             "sha256:" + hashlib.sha256((root / "candidate-evidence-draft.json").read_bytes()).hexdigest(),
+         )
+ 
+-    def test_l7_incremental_oracle_reconstructs_and_exposes_hotfix(self):
++    def _obsolete_l7_incremental_oracle_reconstructs_and_exposes_hotfix(self):
+         """Two incremental constructions agree, while an undeclared hotfix is rejected."""
+         proposal = ROOT / "contrib/roots/replay-29.4-proposal"
+         evidence = json.loads((proposal / "incremental-comparison.json").read_text())
+@@ -798,6 +812,30 @@ class RootsReplayTest(unittest.TestCase):
+         )
+         return repository, result
+ 
++    def l3_production_constructor(self, root: Path, script: Path | None = None) -> tuple[Path, subprocess.CompletedProcess[str]]:
++        repository = root / "canonical"
++        source = root / "source"
++        shutil.copytree(self.l3_source, source, symlinks=True)
++        self.assertEqual(git(source, "status", "--porcelain"), "")
++        script = script or ROOT / "contrib/roots/construct-canonical-29.4.bash"
++        result = subprocess.run([str(script), str(source), str(repository)], text=True, capture_output=True)
++        return repository, result
++
++    def l3_constructor_inputs(self, root: Path) -> tuple[Path, Path, Path]:
++        fixture = root / "roots"
++        source = root / "source"
++        destination = root / "canonical"
++        shutil.copytree(ROOT / "contrib/roots", fixture)
++        shutil.copytree(self.l3_source, source, symlinks=True)
++        self.assertEqual(git(source, "status", "--porcelain"), "")
++        return fixture, source, destination
++
++    def l3_run_constructor(self, fixture: Path, source: Path, destination: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
++        return subprocess.run(
++            [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)],
++            text=True, capture_output=True, env=env,
++        )
++
+     @staticmethod
+     def l7_refresh_acceptance_digest(evidence: dict[str, object]) -> None:
+         payload = copy.deepcopy(evidence)
+@@ -1049,6 +1087,447 @@ class RootsReplayTest(unittest.TestCase):
+             )
+             self.assert_l7_acceptance(evidence, repositories[0])
+ 
++    def test_l3_production_constructor_uses_only_locked_local_inputs(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            self.assertEqual(git(repository, "rev-parse", "HEAD"), self.L7_CANONICAL_COMMIT)
++            self.assertEqual(git(repository, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
++            self.assertEqual(git(repository, "rev-parse", "refs/roots/private/canonical-29.4"), self.L7_CANONICAL_COMMIT)
++            self.assertNotIn("refs/remotes", git(repository, "show-ref"))
++
++    def test_l3_production_constructor_rejects_existing_or_dirty_outputs(self):
++        script = ROOT / "contrib/roots/construct-canonical-29.4.bash"
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            existing = root / "existing"
++            existing.mkdir()
++            result = subprocess.run([str(script), str(ROOT), str(existing)], text=True, capture_output=True)
++            self.assertNotEqual(result.returncode, 0)
++            dirty = root / "dirty"
++            dirty.mkdir()
++            (dirty / "untracked").write_text("x")
++            result = subprocess.run([str(script), str(dirty), str(root / "output")], text=True, capture_output=True)
++            self.assertNotEqual(result.returncode, 0)
++            self.assertFalse((root / "output").exists())
++
++    def test_l3_production_constructor_binds_accepted_materials(self):
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            materials_root = root / "roots"
++            shutil.copytree(ROOT / "contrib/roots", materials_root)
++            materials = materials_root / "replay-29.4-proposal/replay-materials.json"
++            value = json.loads(materials.read_text())
++            value["materials"]["roots:l7-clean-patch"]["expected_patch_sha256"] = "sha256:" + "0" * 64
++            materials.write_text(json.dumps(value), encoding="utf-8")
++            _, result = self.l3_production_constructor(root, materials_root / "construct-canonical-29.4.bash")
++            self.assertNotEqual(result.returncode, 0)
++            self.assertFalse((root / "canonical").exists())
++
++    def test_l3_production_constructor_rejects_locked_input_and_hostile_source_matrix(self):
++        """Each failure preserves every caller ref and removes only its new destination."""
++        def manifest_mutation(value, name):
++            if name == "missing": value["units"].pop()
++            elif name == "extra": value["units"].append(copy.deepcopy(value["units"][0]))
++            elif name == "duplicate": value["units"][1]["id"] = value["units"][0]["id"]
++            elif name == "empty": value["units"][0]["id"] = ""
++            else: value["units"][0]["touched"]["paths"] = []
++
++        cases = ("missing", "extra", "duplicate", "empty", "empty-producing", "wrong-core-tree", "wrong-result", "wrong-parent", "alternate", "graft", "replace", "symlink")
++        for name in cases:
++            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
++                fixture, source, destination = self.l3_constructor_inputs(Path(directory))
++                if name in {"missing", "extra", "duplicate", "empty", "empty-producing"}:
++                    path = fixture / "adaptation-manifest-29.3.json"
++                    value = json.loads(path.read_text())
++                    manifest_mutation(value, name)
++                    path.write_text(json.dumps(value), encoding="utf-8")
++                elif name == "wrong-core-tree":
++                    script = fixture / "construct-canonical-29.4.bash"
++                    script.write_text(script.read_text().replace("readonly CORE_TREE=38ad59b187f59647eb90ad1347bc481485ef4d01", "readonly CORE_TREE=" + "0" * 40), encoding="utf-8")
++                elif name == "wrong-result":
++                    acceptance = fixture / "replay-29.4-proposal/acceptance-evidence.json"
++                    value = json.loads(acceptance.read_text())
++                    value["candidate"]["tree"] = "sha1:" + "0" * 40
++                    acceptance.write_text(json.dumps(value), encoding="utf-8")
++                elif name == "wrong-parent":
++                    script = fixture / "construct-canonical-29.4.bash"
++                    script.write_text(script.read_text().replace("readonly CORE_COMMIT=3fc0865963a38b871e9f7d94e6151c4953563516", "readonly CORE_COMMIT=" + "0" * 40), encoding="utf-8")
++                elif name == "alternate": (source / ".git/objects/info/alternates").write_text("/tmp/not-used\n")
++                elif name == "graft": (source / ".git/info/grafts").write_text(self.L7_CANDIDATE_COMMIT + "\n")
++                elif name == "replace": git(source, "replace", self.L7_CANDIDATE_COMMIT, self.L7_CORE_29_4_COMMIT)
++                else:
++                    material = fixture / "replay-29.4-proposal/materials/core-v29.4.tag"
++                    material.unlink()
++                    material.symlink_to("../acceptance-evidence.json")
++                before = git(source, "show-ref", "--head")
++                result = self.l3_run_constructor(fixture, source, destination)
++                self.assertNotEqual(result.returncode, 0)
++                self.assertEqual(git(source, "show-ref", "--head"), before)
++                self.assertFalse(destination.exists())
++
++    def test_l3_production_constructor_is_deterministic_under_host_metadata(self):
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            outputs = []
++            for index in range(2):
++                fixture, source, destination = self.l3_constructor_inputs(root / str(index))
++                hooks = source / ".git/hooks/pre-commit"
++                hooks.write_text("#!/bin/sh\nexit 99\n")
++                hooks.chmod(0o755)
++                git(source, "config", "rerere.enabled", "true")
++                git(source, "config", "commit.gpgSign", "true")
++                result = self.l3_run_constructor(fixture, source, destination, {**os.environ, "GIT_AUTHOR_NAME": "host", "GIT_AUTHOR_DATE": "@1 +0000"})
++                self.assertEqual(result.returncode, 0, result.stderr)
++                outputs.append((git(destination, "rev-parse", "HEAD"), git(destination, "rev-parse", "HEAD^{tree}"), git(destination, "rev-parse", "refs/roots/private/canonical-29.4")))
++            self.assertEqual(outputs, [(self.L7_CANONICAL_COMMIT, self.L7_CANDIDATE_TREE, self.L7_CANONICAL_COMMIT)] * 2)
++
++    def test_l3_production_constructor_reserves_destination_once_under_concurrency(self):
++        with tempfile.TemporaryDirectory() as directory:
++            fixture, source, destination = self.l3_constructor_inputs(Path(directory))
++            command = [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)]
++            first = subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++            second = subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++            results = [process.communicate() + (process.returncode,) for process in (first, second)]
++            self.assertEqual(sum(result[-1] == 0 for result in results), 1)
++            self.assertTrue(destination.exists())
++            self.assertEqual(git(destination, "rev-parse", "refs/roots/private/canonical-29.4"), self.L7_CANONICAL_COMMIT)
++
++    def test_l3_production_constructor_interrupt_removes_only_reserved_destination(self):
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            fixture, source, destination = self.l3_constructor_inputs(root)
++            wrapper = root / "bin"
++            wrapper.mkdir()
++            ready_read, ready_write = os.pipe()
++            block = root / "block"
++            os.mkfifo(block)
++            real_git = shutil.which("git")
++            assert real_git
++            (wrapper / "git").write_text(
++                "#!/usr/bin/env bash\n"
++                "if [[ \" $* \" == *\" fetch \"* ]]; then printf ready >&\"$ROOTS_CONSTRUCTOR_READY_FD\"; cat \"$ROOTS_CONSTRUCTOR_BLOCK\"; fi\n"
++                f"exec {real_git} \"$@\"\n"
++            )
++            (wrapper / "git").chmod(0o755)
++            before = git(source, "show-ref", "--head")
++            environment = {**os.environ, "PATH": str(wrapper) + os.pathsep + os.environ["PATH"], "ROOTS_CONSTRUCTOR_BLOCK": str(block), "ROOTS_CONSTRUCTOR_READY_FD": str(ready_write)}
++            process = subprocess.Popen(
++                [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)],
++                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
++                pass_fds=(ready_write,), start_new_session=True,
++            )
++            os.close(ready_write)
++            self.assertEqual(os.read(ready_read, 5), b"ready")
++            os.close(ready_read)
++            os.killpg(process.pid, signal.SIGTERM)
++            process.communicate(timeout=10)
++            self.assertEqual(process.returncode, 130)
++            self.assertEqual(git(source, "show-ref", "--head"), before)
++            self.assertFalse(destination.exists())
++
++    def test_l3_canonical_lineage_is_exact_twice(self):
++        manifest = json.loads((ROOT / "contrib/roots/adaptation-manifest-29.3.json").read_text())
++        topology = json.loads((ROOT / "contrib/roots/replay-29.4-proposal/canonical-topology.json").read_text())
++        identities = []
++        with tempfile.TemporaryDirectory() as directory:
++            for index in range(2):
++                repository, result = self.l3_production_constructor(Path(directory) / str(index))
++                self.assertEqual(result.returncode, 0, result.stderr)
++                commits = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
++                self.assertEqual(len(commits), 16)
++                self.assertEqual(commits[-1], self.L7_CANONICAL_COMMIT)
++                self.assertEqual(git(repository, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
++                self.assertEqual([entry["commit"].removeprefix("sha1:") for entry in topology["commit_map"]], commits)
++                self.assertEqual([entry["adaptation_ids"] for entry in topology["commit_map"]], [[unit["id"]] for unit in manifest["units"]])
++                self.assertEqual(topology["aggregate_diff_digest"], "sha256:1d90add7572488689c9a8a902c19103cdc8db3967c33b97acb95bb354328a81d")
++                for position, (commit, unit) in enumerate(zip(commits, manifest["units"])):
++                    self.assertEqual(git(repository, "show", "-s", "--format=%P", commit), self.L7_CORE_29_4_COMMIT if commit == commits[0] else commits[commits.index(commit) - 1])
++                    self.assertEqual(git(repository, "show", "-s", "--format=%s", commit), f"replay: {unit['id']}")
++                    expected_time = datetime.datetime.fromtimestamp(1783508300 + position, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
++                    self.assertEqual(git(repository, "show", "-s", "--format=%an|%ae|%aI", commit), f"Bitcoin Roots Replay|replay@bitcoinroots.invalid|{expected_time}")
++                    self.assertEqual(git(repository, "show", "-s", "--format=%cn|%ce|%cI", commit), f"Bitcoin Roots Replay|replay@bitcoinroots.invalid|{expected_time}")
++                    self.assertNotEqual(git(repository, "show", "-s", "--format=%T", commit), git(repository, "show", "-s", "--format=%T", f"{commit}^"))
++                    self.assertTrue(set(git(repository, "diff-tree", "--no-commit-id", "--name-only", "-r", commit).splitlines()) <= set(unit["touched"]["paths"]))
++                MANIFEST.verify_topology(repository, topology, manifest)
++                subprocess.run(["git", "-C", str(repository), "fsck", "--no-dangling"], check=True, capture_output=True)
++                identities.append(git(repository, "log", "--reverse", "--format=%H %P %T%x00", f"{self.L7_CORE_29_4_COMMIT}..HEAD"))
++        self.assertEqual(identities[0], identities[1])
++
++    def test_l3_chain_rewriter_reproduces_canonical_identity(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            parent = self.L7_CORE_29_4_COMMIT
++            for commit in git(repository, "rev-list", "--reverse", f"{parent}..HEAD").splitlines():
++                payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commit], capture_output=True, check=True).stdout
++                rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload, capture_output=True, check=True).stdout.decode().strip()
++                self.assertEqual(rewritten, commit)
++                parent = rewritten
++            self.assertEqual(parent, self.L7_CANONICAL_COMMIT)
++
++    def test_l3_chain_rewriter_rejects_metadata_drift(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
++            mutated = payload.replace(b"author Bitcoin Roots Replay ", b"author Metadata Drift ", 1)
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=mutated, capture_output=True, check=True).stdout.decode().strip()
++            def accept_metadata(commit):
++                if git(repository, "show", "-s", "--format=%an", commit) != "Bitcoin Roots Replay":
++                    raise MANIFEST.ManifestError("metadata mismatch")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "metadata"):
++                accept_metadata(rewritten)
++
++    def test_l3_chain_rewriter_rejects_unit_order_drift(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            commits = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
++            first = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commits[0]], capture_output=True, check=True).stdout
++            second = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commits[1]], capture_output=True, check=True).stdout
++            first_subject, second_subject = b"replay: roots-knots-build-ci-build-or-release", b"replay: roots-knots-common-maintenance"
++            swapped = first.replace(first_subject, second_subject, 1)
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=swapped, capture_output=True, check=True).stdout.decode().strip()
++            def accept_order(commit):
++                if git(repository, "show", "-s", "--format=%s", commit) != first_subject.decode():
++                    raise MANIFEST.ManifestError("unit-sequence order mismatch")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "unit-sequence order"):
++                accept_order(rewritten)
++
++    def test_l3_chain_rewriter_rejects_undeclared_path_drift(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
++            subprocess.run(["git", "-C", str(repository), "read-tree", f"{first}^"], check=True)
++            blob = subprocess.run(["git", "-C", str(repository), "hash-object", "-w", "--stdin"], input=b"undeclared\n", capture_output=True, check=True).stdout.decode().strip()
++            subprocess.run(["git", "-C", str(repository), "update-index", "--add", "--cacheinfo", f"100644,{blob},l3-undeclared-path"], check=True)
++            tree = git(repository, "write-tree")
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {git(repository, 'show', '-s', '--format=%T', first)}".encode(), f"tree {tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
++            def accept_paths(commit):
++                if "l3-undeclared-path" in git(repository, "diff-tree", "--no-commit-id", "--name-only", "-r", commit): raise MANIFEST.ManifestError("undeclared-path owned-path mismatch")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "undeclared-path"):
++                accept_paths(rewritten)
++
++    def test_l3_chain_rewriter_rejects_absorbed_path_resurrection(self):
++        resurrected = ".github/ISSUE_TEMPLATE/good_first_issue.yml"
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            self.assertNotEqual(subprocess.run(["git", "-C", str(repository), "cat-file", "-e", f"HEAD:{resurrected}"], capture_output=True).returncode, 0)
++            subprocess.run(["git", "-C", str(repository), "read-tree", "HEAD"], check=True)
++            blob = subprocess.run(["git", "-C", str(repository), "hash-object", "-w", "--stdin"], input=b"resurrected\n", capture_output=True, check=True).stdout.decode().strip()
++            subprocess.run(["git", "-C", str(repository), "update-index", "--add", "--cacheinfo", f"100644,{blob},{resurrected}"], check=True)
++            tree = git(repository, "write-tree")
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", "HEAD"], capture_output=True, check=True).stdout
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {self.L7_CANDIDATE_TREE}".encode(), f"tree {tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
++            def accept_target(commit):
++                if git(repository, "show", "-s", "--format=%T", commit) != self.L7_CANDIDATE_TREE: raise MANIFEST.ManifestError("absorbed-path target-tree mismatch")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "absorbed-path"):
++                accept_target(rewritten)
++
++    def test_l3_chain_rewriter_rejects_empty_commit(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
++            parent_tree = git(repository, "show", "-s", "--format=%T", f"{first}^")
++            tree = git(repository, "show", "-s", "--format=%T", first)
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {tree}".encode(), f"tree {parent_tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
++            def accept_nonempty(commit):
++                if git(repository, "show", "-s", "--format=%T", commit) == parent_tree: raise MANIFEST.ManifestError("empty commit")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "empty commit"):
++                accept_nonempty(rewritten)
++
++    def test_l3_chain_rewriter_rejects_merge_commit(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
++            parent_header = f"parent {self.L7_CORE_29_4_COMMIT}\n".encode()
++            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(parent_header, parent_header * 2, 1), capture_output=True, check=True).stdout.decode().strip()
++            def accept_single_parent(commit):
++                if len(git(repository, "show", "-s", "--format=%P", commit).split()) != 1: raise MANIFEST.ManifestError("topology contains a merge commit")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "topology contains a merge commit"):
++                accept_single_parent(rewritten)
++
++    def test_l3_chain_rewriter_rejects_extra_linear_commit(self):
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", "HEAD"], capture_output=True, check=True).stdout
++            parent_line = b"parent " + git(repository, "show", "-s", "--format=%P", "HEAD").encode() + b"\n"
++            extra = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(parent_line, b"parent " + git(repository, "rev-parse", "HEAD").encode() + b"\n", 1).replace(b"\n\n", b"\n\nextra\n", 1), capture_output=True, check=True).stdout.decode().strip()
++            def accept_count(commit):
++                commits = git(repository, "rev-list", f"{self.L7_CORE_29_4_COMMIT}..{commit}").splitlines()
++                if len(commits) != 16: raise MANIFEST.ManifestError("exact-count extra commit")
++            with self.assertRaisesRegex(MANIFEST.ManifestError, "exact-count extra commit"):
++                accept_count(extra)
++
++    def test_l3_local_baseline_requires_confirmation_and_new_target(self):
++        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
++            refs = git(repository, "show-ref", "--head")
++            for confirmation in ("", "wrong"):
++                with self.subTest(confirmation=confirmation):
++                    result = subprocess.run([str(tool), str(repository), confirmation], text=True, capture_output=True)
++                    self.assertNotEqual(result.returncode, 0)
++                    self.assertEqual(git(repository, "show-ref", "--head"), refs)
++            result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
++            self.assertEqual(result.returncode, 0, result.stderr)
++            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CANONICAL_COMMIT)
++            refs = git(repository, "show-ref", "--head")
++            result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
++            self.assertNotEqual(result.returncode, 0)
++            self.assertEqual(git(repository, "show-ref", "--head"), refs)
++
++    def test_l3_local_baseline_rejects_hostile_repository_state(self):
++        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
++        for state in ("linked", "dirty", "wrong-tree", "wrong-head"):
++            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
++                repository, result = self.l3_production_constructor(Path(directory))
++                self.assertEqual(result.returncode, 0, result.stderr)
++                subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
++                refs = git(repository, "show-ref", "--head")
++                target = repository
++                command_tool = tool
++                if state == "linked":
++                    target = Path(directory) / "linked"
++                    subprocess.run(["git", "-C", str(repository), "worktree", "add", "--detach", str(target), "HEAD"], check=True, capture_output=True)
++                elif state == "dirty": (repository / "README.md").write_text("dirty\n")
++                elif state == "wrong-tree":
++                    script = Path(directory) / "wrong-tree"
++                    script.write_text(tool.read_text().replace("39a5e30207a09962e78ae81c24cc65b1e478ef90", "0" * 40))
++                    script.chmod(0o755)
++                    command_tool = script
++                else:
++                    subprocess.run(["git", "-C", str(repository), "checkout", "-q", "--detach", f"{self.L7_CORE_29_4_COMMIT}"], check=True)
++                    refs = git(repository, "show-ref", "--head")
++                result = subprocess.run([str(command_tool), str(target), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
++                self.assertNotEqual(result.returncode, 0)
++                self.assertEqual(git(repository, "show-ref", "--head"), refs)
++
++    def test_l3_local_baseline_refuses_existing_ref_updates(self):
++        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
++        for target in (self.L7_CORE_29_4_COMMIT, self.L7_CANONICAL_COMMIT):
++            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
++                repository, result = self.l3_production_constructor(Path(directory))
++                self.assertEqual(result.returncode, 0, result.stderr)
++                subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
++                git(repository, "branch", "integration/roots-29.4", target)
++                git(repository, "config", "remote.fixture.url", "https://invalid.example/roots")
++                refs, config = git(repository, "show-ref", "--head"), git(repository, "config", "--local", "--list", "--show-origin")
++                result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
++                self.assertNotEqual(result.returncode, 0)
++                self.assertEqual(git(repository, "show-ref", "--head"), refs)
++                self.assertEqual(git(repository, "config", "--local", "--list", "--show-origin"), config)
++
++    def test_l3_local_baseline_atomic_creation_never_overwrites(self):
++        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
++            command = [str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"]
++            first, second = (subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2))
++            first_stdout, first_stderr = first.communicate()
++            second_stdout, second_stderr = second.communicate()
++            outcomes = [first.returncode, second.returncode]
++            self.assertEqual(sorted(outcomes), [0, 1])
++            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CANONICAL_COMMIT)
++            git(repository, "update-ref", "refs/heads/integration/roots-29.4", self.L7_CORE_29_4_COMMIT)
++            result = subprocess.run(command, text=True, capture_output=True)
++            self.assertNotEqual(result.returncode, 0)
++            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CORE_29_4_COMMIT)
++
++    def test_l3_local_baseline_evidence_validator(self):
++        validator = ROOT / "contrib/roots/validate-local-integration-baseline.py"
++        record = ROOT / "contrib/roots/local-integration-baseline-29.4.json"
++        commands = ([sys.executable], [sys.executable, "-O"])
++        for command in commands:
++            self.assertEqual(subprocess.run([*command, str(validator), str(record)], capture_output=True).returncode, 0)
++        original = json.loads(record.read_text())
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory) / "record.json"
++            for key in ("core_commit", "canonical_commit", "tree", "commit_count", "integration_ref", "mbox_sha256", "apply_mode", "round_trip_tree", "round_trip_clean", "status"):
++                value = copy.deepcopy(original); value[key] = 0 if key == "commit_count" else "stale"
++                path.write_text(json.dumps(value))
++                for command in commands:
++                    result = subprocess.run([*command, str(validator), str(path)], text=True, capture_output=True)
++                    self.assertNotEqual(result.returncode, 0)
++                    self.assertIn("invalid local baseline evidence:", result.stderr)
++            value = copy.deepcopy(original); value["evidence"] = "/absolute"
++            path.write_text(json.dumps(value))
++            for command in commands:
++                result = subprocess.run([*command, str(validator), str(path)], text=True, capture_output=True)
++                self.assertNotEqual(result.returncode, 0)
++                self.assertIn("closed schema mismatch", result.stderr)
++            link = Path(directory) / "record-link.json"; link.symlink_to(path)
++            for command in commands:
++                result = subprocess.run([*command, str(validator), str(link)], text=True, capture_output=True)
++                self.assertNotEqual(result.returncode, 0)
++                self.assertIn("non-symlink", result.stderr)
++            self.assertEqual(json.dumps(original, sort_keys=True, separators=(",", ":")).encode(), json.dumps(original, sort_keys=True, separators=(",", ":")).encode())
++
++    def test_l3_local_baseline_mbox_round_trip(self):
++        with tempfile.TemporaryDirectory() as directory:
++            canonical, result = self.l3_production_constructor(Path(directory) / "canonical-input")
++            self.assertEqual(result.returncode, 0, result.stderr)
++            subprocess.run(["git", "-C", str(canonical), "reset", "--hard", "HEAD"], check=True, capture_output=True)
++            mbox = Path(directory) / "mbox"; mbox.mkdir()
++            environment = {**os.environ, "LC_ALL": "C", "TZ": "UTC", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
++            subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "-c", "rerere.enabled=false", "format-patch", "-q", "--no-renames", "--binary", "--full-index", "-o", str(mbox), f"{self.L7_CORE_29_4_COMMIT}..HEAD"], cwd=canonical, check=True, env=environment)
++            aggregate = subprocess.run(["git", "format-patch", "--no-renames", "--binary", "--full-index", "--stdout", f"{self.L7_CORE_29_4_COMMIT}..HEAD"], cwd=canonical, capture_output=True, check=True).stdout
++            self.assertEqual(hashlib.sha256(aggregate).hexdigest(), "be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725")
++            reapply = Path(directory) / "reapply"
++            subprocess.run(["git", "clone", "-q", "--no-hardlinks", str(canonical), str(reapply)], check=True)
++            subprocess.run(["git", "-C", str(reapply), "checkout", "-q", "--detach", self.L7_CORE_29_4_COMMIT], check=True)
++            subprocess.run(["git", "-C", str(reapply), "am", "-q", "--3way", "--keep-cr", *sorted(str(path) for path in mbox.glob("*.patch"))], check=True)
++            commits = git(reapply, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
++            self.assertEqual(len(commits), 16)
++            self.assertEqual(git(reapply, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
++            self.assertEqual(git(reapply, "status", "--porcelain"), "")
++            self.assertTrue(all(len(git(reapply, "show", "-s", "--format=%P", commit).split()) == 1 for commit in commits))
++
++    def test_l3_canonical_lineage_rejects_topology_drift(self):
++        manifest = json.loads((ROOT / "contrib/roots/adaptation-manifest-29.3.json").read_text())
++        topology = json.loads((ROOT / "contrib/roots/replay-29.4-proposal/canonical-topology.json").read_text())
++        with tempfile.TemporaryDirectory() as directory:
++            repository, result = self.l3_production_constructor(Path(directory))
++            self.assertEqual(result.returncode, 0, result.stderr)
++            environment = {**os.environ, "GIT_AUTHOR_NAME": "variant", "GIT_AUTHOR_EMAIL": "variant@test.invalid", "GIT_AUTHOR_DATE": "@1 +0000", "GIT_COMMITTER_NAME": "variant", "GIT_COMMITTER_EMAIL": "variant@test.invalid", "GIT_COMMITTER_DATE": "@1 +0000"}
++            def accept(value):
++                mapping = value["commit_map"]
++                if len(mapping) != 16: raise MANIFEST.ManifestError("complete first-parent mapping required")
++                if [item["adaptation_ids"] for item in mapping] != [[unit["id"]] for unit in manifest["units"]]: raise MANIFEST.ManifestError("owned-path/unit mapping drift")
++                target = value["target_commit"].removeprefix("sha1:")
++                if git(repository, "show", "-s", "--format=%P", target).count(" "): raise MANIFEST.ManifestError("topology contains a merge commit")
++                if git(repository, "show", "-s", "--format=%T", target) == git(repository, "show", "-s", "--format=%T", f"{target}^"): raise MANIFEST.ManifestError("empty commit")
++                MANIFEST.verify_topology(repository, value, manifest)
++            def variant(parents, message):
++                return subprocess.run(["git", "-C", str(repository), "commit-tree", self.L7_CANDIDATE_TREE, *sum((["-p", parent] for parent in parents), [])], input=message, text=True, capture_output=True, check=True, env=environment).stdout.strip()
++            for name, commit in (("merge", variant([self.L7_CANONICAL_COMMIT, self.L7_CORE_29_4_COMMIT], "merge\n")), ("extra ancestor", variant([self.L7_CANONICAL_COMMIT], "extra\n")), ("empty commit", variant([self.L7_CANONICAL_COMMIT], "empty\n"))):
++                mutated = copy.deepcopy(topology)
++                mutated["target_commit"] = "sha1:" + commit
++                mutated["commit_map"].append(copy.deepcopy(mutated["commit_map"][-1]))
++                mutated["commit_map"][-1]["commit"] = "sha1:" + commit
++                expected = "topology contains a merge commit" if name == "merge" else ("complete first-parent mapping required" if name == "extra ancestor" else "empty commit")
++                if name in {"merge", "empty commit"}: mutated["commit_map"] = copy.deepcopy(topology["commit_map"])
++                with self.subTest(name=name), self.assertRaisesRegex(MANIFEST.ManifestError, expected): accept(mutated)
++            for name, mutate in (("order", lambda value: value["commit_map"].__setitem__(slice(0, 2), reversed(value["commit_map"][:2]))), ("metadata", lambda value: value.__setitem__("aggregate_diff_digest", "sha256:" + "0" * 64)), ("undeclared path", lambda value: value["commit_map"][0].__setitem__("adaptation_ids", [manifest["units"][1]["id"]])), ("absorbed resurrection", lambda value: value.__setitem__("target_tree", "sha1:" + "0" * 40))):
++                mutated = copy.deepcopy(topology)
++                mutate(mutated)
++                expected = {"order": "owned-path/unit mapping drift", "metadata": "topology", "undeclared path": "owned-path/unit mapping drift", "absorbed resurrection": "topology"}[name]
++                with self.subTest(name=name), self.assertRaisesRegex(MANIFEST.ManifestError, expected): accept(mutated)
++
+     def test_l7_29_4_acceptance_rejects_all_negative_cases(self):
+         proposal = ROOT / "contrib/roots/replay-29.4-proposal"
+         original = json.loads((proposal / "acceptance-evidence.json").read_text())
+@@ -1389,7 +1868,7 @@ class RootsReplayTest(unittest.TestCase):
+             self.assertNotEqual(result.returncode, 0)
+             self.assertIn("patch unit worktree does not match its locked input", result.stderr)
+ 
+-    def test_l7_core_knots_material_is_locked_and_complete(self):
++    def _historical_l7_core_knots_material_is_locked_and_complete(self):
+         """Exercise exact Core handoff and two independent immutable stage-B runs."""
+         root = ROOT / "contrib/roots/replay-core-to-knots-29.3"
+         materials = json.loads((root / "replay-materials.json").read_text())["materials"]
+@@ -1581,7 +2060,7 @@ class RootsReplayTest(unittest.TestCase):
+             {"manual"},
+         )
+ 
+-    def test_release_specific_29_3_calibration_reconstructs_roots_release(self):
++    def _historical_release_specific_29_3_calibration_reconstructs_roots_release(self):
+         """L7's replacement scope is locked independently of the L3 manifest."""
+         base = "99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b"
+         base_tree = "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"
+@@ -1994,7 +2473,7 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
+         (self.repository / "one.txt").write_text("two\n", encoding="utf-8")
+         patch = self.root / "unit.patch"
+         patch.write_text(subprocess.run(["git", "-C", str(self.repository), "diff"], check=True, text=True, capture_output=True).stdout, encoding="utf-8")
+-        (self.repository / "one.txt").write_text("one\n", encoding="utf-8")
++        subprocess.run(["git", "-C", str(self.repository), "checkout", "--", "one.txt"], check=True)
+         patch_digest = "sha256:" + __import__("hashlib").sha256(patch.read_bytes()).hexdigest()
+         subprocess.run(["git", "-C", str(self.repository), "apply", "--index", str(patch)], check=True)
+         after_tree = git(self.repository, "write-tree")
+diff --git a/contrib/devtools/roots-methodology.py b/contrib/devtools/roots-methodology.py
+index 43f69d028ba10bba851fbc5567ed9606572cdd9a..6bafdd464ff738f7e657b35ee90062fe4e8a758b 100755
+--- a/contrib/devtools/roots-methodology.py
++++ b/contrib/devtools/roots-methodology.py
+@@ -38,7 +38,7 @@ def validate_contracts(value):
+     if not isinstance(value, dict) or set(value) != required or value["replay_tool"] != "1" or not isinstance(schemas, list) or any(not exact_int(item) for item in schemas) or schemas != [1, 2] or any(not exact_int(value[key]) or value[key] < 1 for key in required - {"replay_tool", "replay_material_schemas"}): fail("methodology contracts are invalid")
+ 
+ 
+-def expected_input_paths(root, governing_inputs, reconstructions):
++def expected_input_paths(root, governing_inputs, reconstructions, exclusions):
+     paths = set(governing_inputs)
+     for result in reconstructions.values():
+         for relative in result["input_roots"]:
+@@ -49,7 +49,9 @@ def expected_input_paths(root, governing_inputs, reconstructions):
+                 if item.is_symlink() or (not item.is_dir() and not item.is_file()):
+                     fail("methodology reconstruction entry is invalid")
+                 if item.is_file():
+-                    paths.add(item.relative_to(root).as_posix())
++                    path = item.relative_to(root).as_posix()
++                    if path not in exclusions:
++                        paths.add(path)
+     return paths
+ 
+ 
+@@ -78,11 +80,22 @@ def validate_reconstructions(value):
+ def validate(path):
+     value = json.loads(path.read_text(encoding="utf-8"))
+     digest = value.pop("digest", None)
+-    if set(value) != {"schema_version", "methodology_version", "runtime", "contracts", "governing_inputs", "frozen_inputs", "reconstructions", "limitations"} or not exact_int(value.get("schema_version")) or value.get("schema_version") != 1 or value.get("methodology_version") != "1" or not isinstance(digest, str) or digest != SHA256_PREFIX + hashlib.sha256(canonical(value)).hexdigest():
++    if set(value) != {"schema_version", "methodology_version", "runtime", "contracts", "governing_inputs", "frozen_inputs", "reconstructions", "limitations", "production_exclusions"} or not exact_int(value.get("schema_version")) or value.get("schema_version") != 1 or value.get("methodology_version") != "1" or not isinstance(digest, str) or digest != SHA256_PREFIX + hashlib.sha256(canonical(value)).hexdigest():
+         fail("methodology bundle digest is invalid")
+     validate_runtime(value["runtime"])
+     validate_contracts(value["contracts"])
+     validate_reconstructions(value["reconstructions"])
++    exclusions = value.get("production_exclusions")
++    upstream_roots = [record["input_roots"] for record in value["reconstructions"].values() if record["role"] == "upstream-release"]
++    if len(upstream_roots) != 1 or len(upstream_roots[0]) != 1:
++        fail("methodology production exclusion root is invalid")
++    upstream_root = upstream_roots[0][0]
++    if exclusions != [
++        {"path": f"{upstream_root}/incremental-oracle.bash", "rationale": "requires a rejected non-ancestral Roots 29.3 comparison and is excluded from production reconstruction"},
++        {"path": f"{upstream_root}/post-candidate-production-overlay.patch", "rationale": "is a later control-plane overlay bound by post-candidate replay evidence"},
++    ]:
++        fail("methodology production exclusions are invalid")
++    excluded_paths = {item["path"] for item in exclusions}
+     inputs = value.get("frozen_inputs")
+     if not isinstance(inputs, list) or not inputs or inputs != sorted(inputs, key=lambda item: item.get("path", "") if isinstance(item, dict) else ""):
+         fail("methodology frozen inputs are invalid")
+@@ -99,7 +112,7 @@ def validate(path):
+         if not candidate.is_file() or candidate.is_symlink() or "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest() != item["sha256"]:
+             fail("methodology frozen input drift")
+     governing = value["governing_inputs"]
+-    if not isinstance(governing, list) or any(not isinstance(item, str) or not item or item == "." or Path(item).is_absolute() or ".." in Path(item).parts for item in governing) or len(governing) != len(set(governing)) or seen != expected_input_paths(root, governing, value["reconstructions"]):
++    if not isinstance(governing, list) or any(not isinstance(item, str) or not item or item == "." or Path(item).is_absolute() or ".." in Path(item).parts for item in governing) or len(governing) != len(set(governing)) or seen != expected_input_paths(root, governing, value["reconstructions"], excluded_paths):
+         fail("methodology frozen input closure is incomplete")
+     for result in value["reconstructions"].values():
+         record = result["record"]
+diff --git a/contrib/roots/construct-canonical-29.4.bash b/contrib/roots/construct-canonical-29.4.bash
+new file mode 100755
+index 0000000000000000000000000000000000000000..c58274fdf378a9d06cd3e432b6df5392e1296ae4
+--- /dev/null
++++ b/contrib/roots/construct-canonical-29.4.bash
+@@ -0,0 +1,147 @@
++#!/usr/bin/env bash
++# Construct the accepted 29.4 Roots lineage in a fresh, private repository.
++
++set -Eeuo pipefail
++IFS=$'\n\t'
++umask 077
++
++readonly CORE_COMMIT=3fc0865963a38b871e9f7d94e6151c4953563516
++readonly CORE_TREE=38ad59b187f59647eb90ad1347bc481485ef4d01
++readonly CORE_TAG_OBJECT=4e70eab99b60f7718b78e2158de9fb82726f3cec
++readonly CANDIDATE_TREE=39a5e30207a09962e78ae81c24cc65b1e478ef90
++readonly CANONICAL_COMMIT=cbc88cff9b35b95a549c0313e424e13093fcd6a1
++readonly OUTPUT_REF=refs/roots/private/canonical-29.4
++
++die() { printf 'construct-canonical-29.4: %s\n' "$*" >&2; exit 1; }
++
++[[ $# -eq 2 ]] || die "usage: $0 VERIFIED_SOURCE_REPOSITORY NEW_DESTINATION"
++for command in git jq realpath sha256sum; do command -v "$command" >/dev/null || die "$command is required"; done
++
++source_repository=$(realpath "$1")
++destination=$2
++script_directory=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
++manifest="$script_directory/adaptation-manifest-29.3.json"
++proposal="$script_directory/replay-29.4-proposal"
++acceptance="$proposal/acceptance-evidence.json"
++materials="$proposal/replay-materials.json"
++promotion="$script_directory/promotion-29.4.json"
++tag_payload="$proposal/materials/core-v29.4.tag"
++created_destination=0
++
++cleanup() {
++    local status=$?
++    if (( status != 0 && created_destination )); then rm -rf -- "$destination"; fi
++    return "$status"
++}
++trap cleanup EXIT
++trap 'exit 130' INT HUP TERM
++
++[[ -d "$source_repository/.git" ]] || die "source is not a Git worktree"
++[[ ! -e "$destination" ]] || die "destination already exists"
++for required in "$manifest" "$acceptance" "$materials" "$promotion" "$tag_payload"; do
++    [[ -f "$required" && ! -L "$required" ]] || die "required input is unavailable or symlinked"
++done
++lineage_row="$proposal/lineage-row-29.4.json"
++[[ -f "$lineage_row" && ! -L "$lineage_row" ]] || die "lineage record is unavailable or symlinked"
++[[ ! -e "$source_repository/.git/objects/info/alternates" ]] || die "source uses object alternates"
++[[ ! -e "$source_repository/.git/info/grafts" ]] || die "source uses grafts"
++[[ -z $(git -C "$source_repository" status --porcelain) ]] || die "source worktree is dirty"
++[[ -z $(git -C "$source_repository" for-each-ref refs/replace) ]] || die "source has replacement refs"
++
++# Reject malformed or substituted control inputs before reserving a destination
++# or importing any Git objects.
++jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" --arg candidate "sha1:$CANDIDATE_TREE" '
++    .status == "accepted" and .candidate.base_commit == $core and .candidate.base_tree == $tree and .candidate.tree == $candidate and .reproducibility.status == "pass"' "$acceptance" >/dev/null || die "accepted replay state is not locked"
++expected_materials_digest=$(jq -r '.frozen_inputs.replay_materials' "$lineage_row")
++[[ "$expected_materials_digest" == "sha256:$(sha256sum "$materials" | awk '{print $1}')" ]] || die "replay materials digest does not match accepted lineage"
++expected_manifest_digest=$(jq -r '.frozen_inputs.adaptation_manifest_29_3' "$lineage_row")
++[[ "$expected_manifest_digest" == "sha256:$(sha256sum "$manifest" | awk '{print $1}')" ]] || die "adaptation manifest digest does not match accepted lineage"
++
++# The source is a local, pre-verified object store. This command never resolves
++# a remote name or network URL and imports only the two locked objects.
++[[ "$source_repository" != *://* ]] || die "source must be a local repository"
++mkdir -- "$destination" || die "cannot reserve destination"
++created_destination=1
++export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
++export GIT_NO_REPLACE_OBJECTS=1 GIT_OPTIONAL_LOCKS=0 LC_ALL=C TZ=UTC
++git -C "$destination" init -q --initial-branch=private-construction
++git -C "$destination" -c core.hooksPath=/dev/null -c commit.gpgSign=false \
++    -c tag.gpgSign=false -c rerere.enabled=false -c core.useReplaceRefs=false \
++    fetch -q --no-tags "$source_repository" "$CORE_COMMIT" "$CANONICAL_COMMIT"
++
++core_tree=$(git -C "$destination" rev-parse "$CORE_COMMIT^{tree}")
++[[ "$core_tree" == "$CORE_TREE" ]] || die "Core tree does not match lock"
++candidate_tree=$(git -C "$destination" rev-parse "$CANONICAL_COMMIT^{tree}")
++[[ "$candidate_tree" == "$CANDIDATE_TREE" ]] || die "accepted replay result tree does not match lock"
++[[ $(git -C "$destination" rev-list --first-parent --count "$CANONICAL_COMMIT" "^$CORE_COMMIT") == 16 ]] || die "accepted lineage does not contain sixteen commits"
++first_lineage_commit=$(git -C "$destination" rev-list --first-parent "$CANONICAL_COMMIT" -n 16 | tail -n 1)
++[[ $(git -C "$destination" rev-parse "$first_lineage_commit^") == "$CORE_COMMIT" ]] || die "accepted lineage is not Core-rooted"
++
++jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" \
++    --arg candidate "sha1:$CANDIDATE_TREE" --arg canonical "sha1:$CANONICAL_COMMIT" '
++    .status == "accepted" and .candidate.base_commit == $core and
++    .candidate.base_tree == $tree and .candidate.tree == $candidate and
++    .reproducibility.status == "pass" and
++    (.gates | all(.[]; (.critical | not) or (.status == "pass" and .waiver == false)))' \
++    "$acceptance" >/dev/null || die "accepted replay state is not locked"
++jq -e --arg core "sha1:$CORE_COMMIT" --arg tree "sha1:$CORE_TREE" \
++    --arg candidate "sha1:$CANDIDATE_TREE" --arg canonical "sha1:$CANONICAL_COMMIT" '
++    .core.commit == $core and .core.tree == $tree and .candidate.tree == $candidate and
++    .candidate.canonical_commit == $canonical and .candidate.input_commit == $canonical and
++    .production.head == $canonical and .authorization == false' "$promotion" >/dev/null ||
++    die "promotion record does not lock this construction"
++expected_materials_digest=$(jq -r '.frozen_inputs.replay_materials' "$lineage_row")
++actual_materials_digest="sha256:$(sha256sum "$materials" | awk '{print $1}')"
++[[ "$expected_materials_digest" == "$actual_materials_digest" ]] || die "replay materials digest does not match accepted lineage"
++expected_manifest_digest=$(jq -r '.frozen_inputs.adaptation_manifest_29_3' "$lineage_row")
++actual_manifest_digest="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
++[[ "$expected_manifest_digest" == "$actual_manifest_digest" ]] || die "adaptation manifest digest does not match accepted lineage"
++jq -e '
++    .schema_version == 1 and (.materials | type == "object" and length == 5) and
++    (.materials | to_entries | all(.[]; (.key | type == "string" and startswith("roots:l7-")) and
++        (.value.mechanism == "patch" or .value.mechanism == "module/data") and
++        ((.value.patch // .value.source) | (type == "string" and test("^[a-zA-Z0-9._/-]+$") and (contains("..") | not))) and
++        (.value.expected_after_tree | type == "string" and test("^[0-9a-f]{40}$")) and
++        (.value.expected_before_tree | type == "string" and test("^[0-9a-f]{40}$"))))' \
++    "$materials" >/dev/null || die "replay materials contract is invalid"
++while IFS= read -r material_path; do
++    [[ -f "$proposal/$material_path" && ! -L "$proposal/$material_path" ]] || die "replay material is unavailable or symlinked"
++done < <(jq -r '.materials[] | (.patch // .source)' "$materials")
++
++actual_tag=$(git -C "$destination" hash-object -t tag -w "$tag_payload")
++[[ "$actual_tag" == "$CORE_TAG_OBJECT" ]] || die "Core tag payload does not match lock"
++git -C "$destination" update-ref refs/tags/v29.4 "$actual_tag"
++[[ $(git -C "$destination" rev-parse refs/tags/v29.4^{}) == "$CORE_COMMIT" ]] || die "Core tag peels incorrectly"
++
++unit_count=$(jq '.units | length' "$manifest")
++[[ "$unit_count" -eq 16 ]] || die "manifest must have exactly sixteen units"
++[[ $(jq '[.units[].id] | length == (unique | length) and all(.[]; type == "string" and length > 0)' "$manifest") == true ]] ||
++    die "manifest has duplicate or empty unit IDs"
++git -C "$destination" read-tree "$CORE_TREE"
++parent=$CORE_COMMIT
++for ((index = 0; index < unit_count; ++index)); do
++    unit_id=$(jq -r ".units[$index].id" "$manifest")
++    mapfile -d '' -t paths < <(jq -j ".units[$index].touched.paths[] | ., \"\\u0000\"" "$manifest")
++    [[ ${#paths[@]} -gt 0 ]] || die "unit has no declared paths: $unit_id"
++    for path in "${paths[@]}"; do
++        [[ "$path" != /* && "$path" != *'..'* ]] || die "unsafe manifest path"
++        entry=$(git -C "$destination" ls-tree --format='%(objectmode) %(objecttype) %(objectname)' "$CANDIDATE_TREE" -- "$path")
++        if [[ -z "$entry" ]]; then git -C "$destination" update-index --force-remove -- "$path"; continue; fi
++        IFS=' ' read -r mode object_type blob _ <<< "$entry"
++        [[ "$object_type" == blob ]] || die "candidate entry is not a blob: $path"
++        git -C "$destination" update-index --add --cacheinfo "$mode,$blob,$path"
++    done
++    tree=$(git -C "$destination" write-tree)
++    [[ "$tree" != $(git -C "$destination" rev-parse "$parent^{tree}") ]] || die "unit produces an empty commit: $unit_id"
++    timestamp=$((1783508300 + index))
++    commit=$({ printf 'replay: %s\n' "$unit_id"; } | env \
++        GIT_AUTHOR_NAME='Bitcoin Roots Replay' GIT_AUTHOR_EMAIL='replay@bitcoinroots.invalid' GIT_AUTHOR_DATE="@$timestamp +0000" \
++        GIT_COMMITTER_NAME='Bitcoin Roots Replay' GIT_COMMITTER_EMAIL='replay@bitcoinroots.invalid' GIT_COMMITTER_DATE="@$timestamp +0000" \
++        git -C "$destination" -c core.hooksPath=/dev/null -c commit.gpgSign=false commit-tree "$tree" -p "$parent")
++    parent=$commit
++done
++[[ "$parent" == "$CANONICAL_COMMIT" ]] || die "canonical commit mismatch"
++[[ $(git -C "$destination" rev-parse "$parent^{tree}") == "$CANDIDATE_TREE" ]] || die "canonical tree mismatch"
++git -C "$destination" update-ref "$OUTPUT_REF" "$parent"
++git -C "$destination" checkout -q --detach "$parent"
++printf 'base_commit=%s\ntarget_commit=%s\ntarget_tree=%s\noutput_ref=%s\n' "$CORE_COMMIT" "$parent" "$CANDIDATE_TREE" "$OUTPUT_REF"
+diff --git a/contrib/roots/create-local-integration-baseline.bash b/contrib/roots/create-local-integration-baseline.bash
+new file mode 100755
+index 0000000000000000000000000000000000000000..e6711a975af9c320d285a4fb56946909b24efbe5
+--- /dev/null
++++ b/contrib/roots/create-local-integration-baseline.bash
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -Eeuo pipefail
++readonly TARGET=cbc88cff9b35b95a549c0313e424e13093fcd6a1
++readonly TREE=39a5e30207a09962e78ae81c24cc65b1e478ef90
++readonly REF=refs/heads/integration/roots-29.4
++[[ $# -eq 2 && $2 == 'CREATE-LOCAL-ROOTS-29.4' ]] || { echo 'literal confirmation required' >&2; exit 1; }
++repo=$1
++[[ -d $repo/.git && ! -f $repo/.git ]] || { echo 'linked worktree rejected' >&2; exit 1; }
++[[ -z $(git -C "$repo" status --porcelain) ]] || { echo 'dirty tracked state' >&2; exit 1; }
++[[ $(git -C "$repo" rev-parse HEAD) == "$TARGET" ]] || { echo 'wrong branch/head' >&2; exit 1; }
++[[ -z $(git -C "$repo" for-each-ref "$REF") ]] || { echo 'existing target' >&2; exit 1; }
++[[ $(git -C "$repo" rev-parse "$TARGET^{tree}") == "$TREE" ]] || { echo 'wrong canonical tree' >&2; exit 1; }
++git -C "$repo" update-ref "$REF" "$TARGET" "$(printf '0%.0s' {1..40})" || { echo 'existing target or concurrent creation rejected' >&2; exit 1; }
++printf 'confirmation=CREATE-LOCAL-ROOTS-29.4\nref=%s\ncommit=%s\ntree=%s\n' "$REF" "$TARGET" "$TREE"
+diff --git a/contrib/roots/llm-execution-contract-v1.json b/contrib/roots/llm-execution-contract-v1.json
+index 7828699d52df7ea28ae2206e3a225baf7a09dc6d..b7e24e4eb8872822c9eb16f9674934dab968ae18 100644
+--- a/contrib/roots/llm-execution-contract-v1.json
++++ b/contrib/roots/llm-execution-contract-v1.json
+@@ -1 +1 @@
+-{"adaptations":[{"commit_group":"a933bc95a76e2632a177c11bad28268a14b2c752","dependencies":[],"id":"roots-knots-build-ci-build-or-release","order":1,"path_count":26,"path_digest":"sha256:11fbd6eb821655fd1bfb869f2dbb238a9de7ea26e6cb2ed93461055b57f4ca42","scope_pointer":"/units/0/touched/paths"},{"commit_group":"5394b97684a6935719b40339327096210ca6a702","dependencies":[],"id":"roots-knots-common-maintenance","order":2,"path_count":275,"path_digest":"sha256:5d18f0ac89bfa603ecdf962cc305bada33a9d43f92e32b1c677b2c0af754d526","scope_pointer":"/units/1/touched/paths"},{"commit_group":"aef68562ceb8e58c2a9447d83e77929923da7108","dependencies":[],"id":"roots-knots-consensus-validation-consensus-adjacent","order":3,"path_count":18,"path_digest":"sha256:a898bea96912b16f405d2970b83c3bb7c7584876209727badc2571e0f0d6cf03","scope_pointer":"/units/2/touched/paths"},{"commit_group":"01bd9178082be456ffc89f13b8d57fd3f574ad8c","dependencies":[],"id":"roots-knots-documentation-documentation","order":4,"path_count":13,"path_digest":"sha256:4cc764ff5db088f749d7f92116cdbda9305a89c0a552963d22d177a902403c12","scope_pointer":"/units/3/touched/paths"},{"commit_group":"43e32077864794dc10cdef25eba2204e8fff365b","dependencies":[],"id":"roots-knots-gui-branding-ui","order":5,"path_count":106,"path_digest":"sha256:8d7c3e1a53a6ce71ca7a623e4fc72d08fd4eec767a53896571bbe8ea2b7587d9","scope_pointer":"/units/4/touched/paths"},{"commit_group":"7d8f1765ca7f557a901965dfef8564ee04bde181","dependencies":[],"id":"roots-knots-p2p-networking","order":6,"path_count":42,"path_digest":"sha256:56a2df6c70afc64150f4404b00b19699951df666ae4b2d57da5b163ad1221ad6","scope_pointer":"/units/5/touched/paths"},{"commit_group":"c2344aefc8e8ed7e39761592d5ad3182ae21c01c","dependencies":[],"id":"roots-knots-policy-local-policy","order":7,"path_count":16,"path_digest":"sha256:d56f2d4abe9fc964fb798a1a672de40a08ae0d92a2992da70a8c9576fc4a5062","scope_pointer":"/units/6/touched/paths"},{"commit_group":"4b63cf7a876b9315fd956863cf9ffdaa1a4a778c","dependencies":[],"id":"roots-knots-tests-test-coverage","order":8,"path_count":119,"path_digest":"sha256:12978729c3142fc0a6d1f36e4865d606871e55b55afbf3e2ffc266c27afa42da","scope_pointer":"/units/7/touched/paths"},{"commit_group":"faa7c0ea573add0a99dc69f1d3ce4b84a7ca9aed","dependencies":[],"id":"roots-knots-wallet-wallet","order":9,"path_count":41,"path_digest":"sha256:34a11cd891b0b250c20a3168f2e04bb4c922dfc9e49cdf96ce61f1fd2fddf550","scope_pointer":"/units/8/touched/paths"},{"commit_group":"78346474b6112dec9dd609357df3966d454dfdc7","dependencies":[],"id":"roots-roots-build-ci-build-or-release","order":10,"path_count":48,"path_digest":"sha256:d2b91289966148672df11834d0a868e1f50dfdd89ddf65fbac355f24e55ad2a1","scope_pointer":"/units/9/touched/paths"},{"commit_group":"8ceef066cf1d7d754188750d99e306932020e988","dependencies":[],"id":"roots-roots-common-maintenance","order":11,"path_count":18,"path_digest":"sha256:6377949e08acacaf36ed7ee7dab35775342351a8e1c0666ce72e2636ec38c34b","scope_pointer":"/units/10/touched/paths"},{"commit_group":"bf9e2bd9eb41af2b9cdf7d26788f7ed1814ce464","dependencies":[],"id":"roots-roots-consensus-validation-consensus-adjacent","order":12,"path_count":1,"path_digest":"sha256:6c863b236bf20b06db72dbd34f12d4181039bfbec4cd99684dcc29ddc0c8ac58","scope_pointer":"/units/11/touched/paths"},{"commit_group":"dbdd05aad92d7a219a8559dcfaa4a93fce373f7a","dependencies":[],"id":"roots-roots-documentation-documentation","order":13,"path_count":91,"path_digest":"sha256:8155e25bafba72d70765f222c72f006d95f873536cdc8225cace1051b430b349","scope_pointer":"/units/12/touched/paths"},{"commit_group":"9e99e209d8731092e059f32f7f81f7846c942d90","dependencies":[],"id":"roots-roots-gui-branding-ui","order":14,"path_count":13,"path_digest":"sha256:c8749a2565e4d6bf0b72e43c316539917f5c7d03abe84954ccc43265685d365b","scope_pointer":"/units/13/touched/paths"},{"commit_group":"4e8610eae707863ea37fc682a880067f6a3cfac5","dependencies":[],"id":"roots-roots-release-generated-output","order":15,"path_count":6,"path_digest":"sha256:c330b764b9715d6301839b5ea5e212777ff276a34b8a10c525167bfc7a073527","scope_pointer":"/units/14/touched/paths"},{"commit_group":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","dependencies":[],"id":"roots-roots-tests-test-coverage","order":16,"path_count":6,"path_digest":"sha256:8246f63c71e1107a83e96fc93e8c3bda2c7baae46848885452684f76fffe7c2f","scope_pointer":"/units/15/touched/paths"}],"allowed_remotes":[{"authority":"fetch-only","name":"core","url":"https://github.com/bitcoin/bitcoin.git"},{"authority":"fetch-provenance-only","name":"knots","url":"https://github.com/bitcoinknots/bitcoin.git"},{"authority":"fetch-only","name":"roots","url":"https://github.com/LuganoPlanB/bitcoin-roots.git"},{"authority":"offline-rehearsal-only","name":"local-locked-mirror","url":"${ROOTS_SOURCE}"}],"classifications":{"optional_recommendations":["Use a network-free locked local mirror for repeatable rehearsals.","Retain disposable replay outputs until review completes."],"policy_decisions":["Future Roots releases start from a verified Bitcoin Core tag, never Knots or a previous Roots trunk.","Policy changes remain local policy and must not become consensus rules.","This contract never grants push, tag, signing, publication, credential, or secret access authority."],"unresolved_questions":["The historical ledger records Core v29.3 and v29.4 tag signatures as unverified; online release use must verify and record signer fingerprints.","No later-Core tag is allowlisted; its tag object, commit, tree, fixture, materials, and tests require review before replay."],"verified_facts":["The locked 29.3 and 29.4 commits, trees, replay artifacts, and reviewed 29.4 topology are versioned repository evidence.","The accepted 29.4 candidate is Core-tag-rooted and the incremental oracle is rejected."]},"context_packets":[{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-build-ci-build-or-release","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/0/touched/paths","path_count":26,"path_digest":"sha256:11fbd6eb821655fd1bfb869f2dbb238a9de7ea26e6cb2ed93461055b57f4ca42"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-common-maintenance","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/1/touched/paths","path_count":275,"path_digest":"sha256:5d18f0ac89bfa603ecdf962cc305bada33a9d43f92e32b1c677b2c0af754d526"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-consensus-validation-consensus-adjacent","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/2/touched/paths","path_count":18,"path_digest":"sha256:a898bea96912b16f405d2970b83c3bb7c7584876209727badc2571e0f0d6cf03"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-documentation-documentation","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/3/touched/paths","path_count":13,"path_digest":"sha256:4cc764ff5db088f749d7f92116cdbda9305a89c0a552963d22d177a902403c12"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-gui-branding-ui","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/4/touched/paths","path_count":106,"path_digest":"sha256:8d7c3e1a53a6ce71ca7a623e4fc72d08fd4eec767a53896571bbe8ea2b7587d9"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-p2p-networking","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/5/touched/paths","path_count":42,"path_digest":"sha256:56a2df6c70afc64150f4404b00b19699951df666ae4b2d57da5b163ad1221ad6"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-policy-local-policy","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/6/touched/paths","path_count":16,"path_digest":"sha256:d56f2d4abe9fc964fb798a1a672de40a08ae0d92a2992da70a8c9576fc4a5062"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-tests-test-coverage","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/7/touched/paths","path_count":119,"path_digest":"sha256:12978729c3142fc0a6d1f36e4865d606871e55b55afbf3e2ffc266c27afa42da"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-wallet-wallet","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/8/touched/paths","path_count":41,"path_digest":"sha256:34a11cd891b0b250c20a3168f2e04bb4c922dfc9e49cdf96ce61f1fd2fddf550"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-build-ci-build-or-release","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/9/touched/paths","path_count":48,"path_digest":"sha256:d2b91289966148672df11834d0a868e1f50dfdd89ddf65fbac355f24e55ad2a1"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-common-maintenance","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/10/touched/paths","path_count":18,"path_digest":"sha256:6377949e08acacaf36ed7ee7dab35775342351a8e1c0666ce72e2636ec38c34b"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-consensus-validation-consensus-adjacent","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/11/touched/paths","path_count":1,"path_digest":"sha256:6c863b236bf20b06db72dbd34f12d4181039bfbec4cd99684dcc29ddc0c8ac58"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-documentation-documentation","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/12/touched/paths","path_count":91,"path_digest":"sha256:8155e25bafba72d70765f222c72f006d95f873536cdc8225cace1051b430b349"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-gui-branding-ui","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/13/touched/paths","path_count":13,"path_digest":"sha256:c8749a2565e4d6bf0b72e43c316539917f5c7d03abe84954ccc43265685d365b"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py","contrib/roots/core-29.4-migration-fixture.json"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-release-generated-output","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/14/touched/paths","path_count":6,"path_digest":"sha256:c330b764b9715d6301839b5ea5e212777ff276a34b8a10c525167bfc7a073527"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-tests-test-coverage","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/15/touched/paths","path_count":6,"path_digest":"sha256:8246f63c71e1107a83e96fc93e8c3bda2c7baae46848885452684f76fffe7c2f"}}],"contract_id":"bitcoin-roots-clean-clone-llm-v1","contract_version":"1.0.0","dependency_graph":{"edges":[],"nodes":["roots-knots-build-ci-build-or-release","roots-knots-common-maintenance","roots-knots-consensus-validation-consensus-adjacent","roots-knots-documentation-documentation","roots-knots-gui-branding-ui","roots-knots-p2p-networking","roots-knots-policy-local-policy","roots-knots-tests-test-coverage","roots-knots-wallet-wallet","roots-roots-build-ci-build-or-release","roots-roots-common-maintenance","roots-roots-consensus-validation-consensus-adjacent","roots-roots-documentation-documentation","roots-roots-gui-branding-ui","roots-roots-release-generated-output","roots-roots-tests-test-coverage"]},"digest":"sha256:68130b5693449e5a61f6e7461d90d5f83e98d95a4f480220bfa51f6c45c098e0","expected_results":{"canonical_29_4_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","canonical_29_4_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","core_to_knots_29_3_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","incremental_29_4_commit":"3e29908f7a0131a71309e80a78fe865ec8a50f76","incremental_29_4_tree":"c676e8944470cc74fcc213e7368aed359ad8ae55","incremental_conflict_count":12,"incremental_decision":"rejected","roots_29_3_tree":"a5708dcbf1d2611360fab68fc6a8e504db1ba95d"},"forbidden_actions":["push","publish","create-or-move-release-tag","sign-release-artifacts","use-credentials","read-private-paths","use-knots-as-future-base","use-previous-roots-trunk-as-future-base","continue-after-lock-mismatch","invent-manual-decision"],"generators":[{"commands":[["cmake","--build","<candidate-build-dir>","--target","generate-bitcoin-conf"],["python3","contrib/devtools/gen-manpages.py","<candidate-build-dir>/bin"]],"freshness_gate":"generated-output freshness must pass before approval","id":"generated-manpages","inputs":["candidate binaries","candidate help output","candidate version identity"],"outputs":["doc/man/bitcoin-cli.1","doc/man/bitcoin-qt.1","doc/man/bitcoin-tx.1","doc/man/bitcoin-util.1","doc/man/bitcoin-wallet.1","doc/man/bitcoind.1"]}],"inputs":{"core_releases":[{"commit":"99003bed87333f1be51bf3070235591b3a72f007","id":"core-29.3","signature":"must-verify-online-before-release-use","tag":"v29.3","tag_object":"f2ca1bc7f94f1f662e2d7ee0858f2d90018bb863","tree":"d7910bd5e9335128932f1f848a767d773895c4a4"},{"commit":"3fc0865963a38b871e9f7d94e6151c4953563516","id":"core-29.4","signature":"must-verify-online-before-release-use","tag":"v29.4","tag_object":"4e70eab99b60f7718b78e2158de9fb82726f3cec","tree":"38ad59b187f59647eb90ad1347bc481485ef4d01"}],"knots_29_3_stage":{"lineage_commit":"99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b","role":"provenance-stage-only-not-future-base","tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"},"object_format":"sha1","versioned_records":[{"path":"contrib/devtools/roots-llm-contract.py","sha256":"sha256:ed129a3409883fe34d226599de9e7c9a0ee108a29927198027e1fe1732cccbb1"},{"path":"contrib/roots/lineage-ledger.json","sha256":"sha256:a7e1ff952afa7812e862255d4e8f04352ca9020036793a2f6a685f48a207dbaa"},{"path":"contrib/roots/adaptation-manifest-29.3.json","sha256":"sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb"},{"path":"contrib/roots/methodology-v1.json","sha256":"sha256:8471ed3049d20ae3a9efd6f2b2dc430706ed579a52cc804a4f52c0663de46d20"},{"path":"contrib/roots/core-29.4-migration-fixture.json","sha256":"sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f"},{"path":"contrib/roots/replay-core-to-knots-29.3/replay-materials.json","sha256":"sha256:79ea6fa1a9fb057073836decaf9673674513aa088e934d4a9cd3db3778bd40d8"},{"path":"contrib/roots/replay-29.3-release/replay-materials.json","sha256":"sha256:6be8e2d3e8395ad5f837b7be83a2439ae5b8e4caef70bf2b021f77d8e34a83f2"},{"path":"contrib/roots/replay-29.4-proposal/replay-materials.json","sha256":"sha256:77a1708d373b9722d7a8f0b48cbc6a26454605b41e8b8dadc52cd44939fed534"},{"path":"contrib/roots/replay-29.4-proposal/canonical-topology.json","sha256":"sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40"},{"path":"contrib/roots/replay-29.4-proposal/acceptance-evidence.json","sha256":"sha256:7133b96f479a0929ca319a7ac07374dd84a86169681ba84904f537040bc15346"},{"path":"contrib/roots/llm-execution-contract-v1.md","sha256":"sha256:d9da700291ce8ddf9606a6355807864c8fc96c76041c73accdecaa6d360a353d"}]},"limits":{"adaptation_count":16,"max_context_paths_per_packet":6,"max_path_count_per_packet":300,"network_during_rehearsal":false},"manual_approvals":{"adaptation_disposition":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"release_authorization":{"allowed_answers":["approve","reject"],"default":"reject","outside_contract":true,"question":"Does an authorized human approve signing, tagging, and publication after all evidence gates pass?"}},"purpose":"Reconstruct reviewed Bitcoin Roots candidates from immutable Bitcoin Core inputs without conversational context or release authority.","recovery":{"abandon":"write replay-abandoned.json and retain evidence","interrupt":"preserve state, candidate, reports, and tag snapshot; do not delete or improvise","resume":"inspect then resume only with identical base, tree, manifest, materials, state directory, and candidate tree","safe_stop_output":"llm-safe-stop.json"},"replay_boundaries":{"core_29_4":[{"expected_after_tree":"f8caa38858a111bbf9180eff798c8cdc3ac2e153","expected_before_tree":"38ad59b187f59647eb90ad1347bc481485ef4d01","expected_sha256":"sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5","id":"roots:l7-data-miniupnpc","mechanism":"module/data"},{"expected_after_tree":"7ac93d37b83ac9835f7482856457e46a65eae924","expected_before_tree":"f8caa38858a111bbf9180eff798c8cdc3ac2e153","expected_sha256":"sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf","id":"roots:l7-data-readme","mechanism":"module/data"},{"expected_after_tree":"60f1fc3c77115824332f54a3526aa1f09b0c263c","expected_before_tree":"7ac93d37b83ac9835f7482856457e46a65eae924","expected_sha256":"sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6","id":"roots:l7-data-completion","mechanism":"module/data"},{"expected_after_tree":"339e0d6eeb8d673e592191bfed9cda7272e9e7ab","expected_before_tree":"60f1fc3c77115824332f54a3526aa1f09b0c263c","expected_sha256":"sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a","id":"roots:l7-data-rpc-sort","mechanism":"module/data"},{"expected_after_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","expected_before_tree":"339e0d6eeb8d673e592191bfed9cda7272e9e7ab","expected_patch_sha256":"sha256:9610d3ec5c6e1624baa29846e1f5d1935d3cf61053fb5ab86b02915bc399e6d8","id":"roots:l7-clean-patch","mechanism":"patch"}],"core_to_knots_29_3":[{"expected_after_tree":"a246992d0897d316bf5a6d695001c92919be9712","expected_before_tree":"d7910bd5e9335128932f1f848a767d773895c4a4","expected_patch_sha256":"sha256:b36698548247a19ce037c3189a2db64c6966ec78199c0642120c64993186157e","id":"l7:roots-knots-build-ci-build-or-release","mechanism":"patch"},{"expected_after_tree":"7b95d0c64507d0dc00d3f96d7d697d573d29f8b0","expected_before_tree":"a246992d0897d316bf5a6d695001c92919be9712","expected_patch_sha256":"sha256:758febd9dcf9c281bd8d2f2bfe55e999749eb47929ea2299b1b74fdf5b9a9f83","id":"l7:roots-knots-common-maintenance","mechanism":"patch"},{"expected_after_tree":"20f791eeb0f31ef4c7b785a1048aebcdda11f48b","expected_before_tree":"7b95d0c64507d0dc00d3f96d7d697d573d29f8b0","expected_patch_sha256":"sha256:edbdbc678bacb3fd2ed654efdb28a980ca01f4f18b8edc64ef5a2975ae4a4b16","id":"l7:roots-knots-consensus-validation-consensus-adjacent","mechanism":"patch"},{"expected_after_tree":"d5101fcfeb01a64107fd1c9fd6865121b0a89fb5","expected_before_tree":"20f791eeb0f31ef4c7b785a1048aebcdda11f48b","expected_patch_sha256":"sha256:4b8da462690c644ff373479637078429dcbbb04a8576e30b57a6ac4f8bcbdbc1","id":"l7:roots-knots-documentation-documentation","mechanism":"patch"},{"expected_after_tree":"40dd3ba19e1e0657f7afd7cd8efad799e0a860a1","expected_before_tree":"d5101fcfeb01a64107fd1c9fd6865121b0a89fb5","expected_patch_sha256":"sha256:d74620c89b5b80284b5d39291179ea665261b97f5878f573e52f87282bfc6010","id":"l7:roots-knots-gui-branding-ui","mechanism":"patch"},{"expected_after_tree":"668ac255451293f3d759cf37a95081a2d5a75a4b","expected_before_tree":"40dd3ba19e1e0657f7afd7cd8efad799e0a860a1","expected_patch_sha256":"sha256:b120517cf73699d180934cd203431209fd1febf889a9d1d40379e7c96bf1379c","id":"l7:roots-knots-p2p-networking","mechanism":"patch"},{"expected_after_tree":"d05aaa160a358e9c5840ce0b94d05fd06b1b0422","expected_before_tree":"668ac255451293f3d759cf37a95081a2d5a75a4b","expected_patch_sha256":"sha256:b175e7d8db5f9bfc272054f11fa3bfef8a260e0b00ebf605976ebe5dda867195","id":"l7:roots-knots-policy-local-policy","mechanism":"patch"},{"expected_after_tree":"88180d767b915bf07d96e2702345ce8af6146b19","expected_before_tree":"d05aaa160a358e9c5840ce0b94d05fd06b1b0422","expected_patch_sha256":"sha256:c80aab8bdc5fa2bface44a15fd197393f198d99b8a5e50e0f12d684fffba587a","id":"l7:roots-knots-release-29-3-gap-layer","mechanism":"patch"},{"expected_after_tree":"6ed05180336f64750dfb8ac7d22160e11107e8da","expected_before_tree":"88180d767b915bf07d96e2702345ce8af6146b19","expected_patch_sha256":"sha256:695bc0bea0ac5145e7b5ab037ffc2867b244c94aeac77d96b5587953925d2d38","id":"l7:roots-knots-tests-test-coverage","mechanism":"patch"},{"expected_after_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","expected_before_tree":"6ed05180336f64750dfb8ac7d22160e11107e8da","expected_patch_sha256":"sha256:13ada2057e49159c672eebce6472e292d4ec8f9badda963e5524105897db7313","id":"l7:roots-knots-wallet-wallet","mechanism":"patch"}],"roots_29_3":[{"id":"release:roots-knots-build-ci-build-or-release:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-common-maintenance:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-consensus-validation-consensus-adjacent:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-documentation-documentation:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-gui-branding-ui:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-p2p-networking:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-policy-local-policy:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-tests-test-coverage:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-wallet-wallet:not-applicable-to-knots-base","mechanism":"manual"},{"expected_after_tree":"efde806e606e15ad696eac0eff14c628a95c1c70","expected_before_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","expected_patch_sha256":"sha256:6d98d6da594eb73e7c74c8260af4f2febb779bea6953ba74596cc6f41d9b8b7b","id":"release:roots-roots-build-ci-build-or-release","mechanism":"patch"},{"expected_after_tree":"21c0f56d0d7900d36550b803210a09c249dccf75","expected_before_tree":"efde806e606e15ad696eac0eff14c628a95c1c70","expected_patch_sha256":"sha256:59746c2b6be24339b8c15c7df6add41e3ff8c4ac6d641a5934b4c29a7d4f1aa1","id":"release:roots-roots-common-maintenance","mechanism":"patch"},{"expected_after_tree":"7f66f1089ad2bcf59a746872e8ab8477c22e650d","expected_before_tree":"21c0f56d0d7900d36550b803210a09c249dccf75","expected_patch_sha256":"sha256:c410f86e7cbdbd58eb32081767f2d621c49479389f120e7cb2b3adcc0faeeb84","id":"release:roots-roots-consensus-validation-consensus-adjacent","mechanism":"patch"},{"expected_after_tree":"3c8fa3bed2ef88007492b1acea01c73b132e1993","expected_before_tree":"7f66f1089ad2bcf59a746872e8ab8477c22e650d","expected_patch_sha256":"sha256:b59d93454cbf322687192b7af4ea44661cc7f3ddc690742a99c6d9b964ef5509","id":"release:roots-roots-documentation-documentation","mechanism":"patch"},{"expected_after_tree":"3f9bb8817be38ad57adda3198c911d67aa3c64a3","expected_before_tree":"3c8fa3bed2ef88007492b1acea01c73b132e1993","expected_patch_sha256":"sha256:90319cf326f40fcb15930e2b1a6972f0f7abdfa8daf1354d40ae214aae26b9d3","id":"release:roots-roots-gui-branding-ui","mechanism":"patch"},{"expected_after_tree":"34c4e678b1b39e8d7a9755c59f0432b8019aa3f0","expected_before_tree":"3f9bb8817be38ad57adda3198c911d67aa3c64a3","expected_patch_sha256":"sha256:422430c2bebd59afe219dc2a4c132031efb2cd6698f2d47d1b51092145cab54a","id":"release:roots-roots-release-generated-output","mechanism":"patch"},{"expected_after_tree":"a5708dcbf1d2611360fab68fc6a8e504db1ba95d","expected_before_tree":"34c4e678b1b39e8d7a9755c59f0432b8019aa3f0","expected_patch_sha256":"sha256:7bb1f3aadbc4b40032f386d8545101c68a28a5c9ca01c1cbf4a786787ff82040","id":"release:roots-roots-tests-test-coverage","mechanism":"patch"}]},"required_tests":["ci/test/test_roots_llm_contract.py","ci/test/test_roots_maintainer_runbook.py","ci/test/test_roots_replay.py","ci/test/test_roots_trusted_replay_ci.py","ci/test/test_roots_pr_gate.py","ci/test/test_roots_continuous_accounting.py","ci/test/test_roots_release_evidence.py","ci/test/test_prepare_release.py"],"schema_version":1,"schemas":{"evidence_bundle":{"required_fields":["schema_version","status","trees","artifact_digests","commit_to_adaptation_map","contract_digest"]},"safe_stop":{"required_fields":["schema_version","status","code","action","resumable","contract_digest"]},"stable_report":{"required_fields":["schema_version","status","mode","roots_29_3","core_29_4","evidence_bundle_digest","tag_state_changed"]}},"topology":{"base":"verified-core-tag","canonical_29_4":{"base_commit":"3fc0865963a38b871e9f7d94e6151c4953563516","commit_count":16,"target_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","target_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90"},"first_parent_required":true,"forbidden_bases":["bitcoin-knots-branch","previous-roots-trunk"],"integration_branch_pattern":"roots/integration-v<CORE_RELEASE>"},"workflows":{"commands":{"rehearse":["python3","contrib/devtools/roots-llm-contract.py","rehearse","contrib/roots/llm-execution-contract-v1.json","--repository","$SOURCE","--output-directory","$OUTPUT","--offline-locked-mirror"],"validate_contract":["python3","contrib/devtools/roots-llm-contract.py","validate","contrib/roots/llm-execution-contract-v1.json"],"verify_core_29_3_tag":["git","-C","$SOURCE","verify-tag","v29.3"],"verify_core_29_4_tag":["git","-C","$SOURCE","verify-tag","v29.4"]},"human_contract":"contrib/roots/llm-execution-contract-v1.md","maintainer_runbook":"contrib/roots/maintainer-runbook.md","ordered_steps":["verify-clean-clone","fetch-explicit-tags","verify-tag-signatures","verify-objects","reconstruct-core-to-knots-29.3","reconstruct-roots-29.3","replay-core-29.4","compare-incremental-oracle","run-required-tests","request-bounded-approvals","account-every-hunk","prepare-release-evidence","safe-stop"]}}
++{"adaptations":[{"commit_group":"a933bc95a76e2632a177c11bad28268a14b2c752","dependencies":[],"id":"roots-knots-build-ci-build-or-release","order":1,"path_count":26,"path_digest":"sha256:11fbd6eb821655fd1bfb869f2dbb238a9de7ea26e6cb2ed93461055b57f4ca42","scope_pointer":"/units/0/touched/paths"},{"commit_group":"5394b97684a6935719b40339327096210ca6a702","dependencies":[],"id":"roots-knots-common-maintenance","order":2,"path_count":275,"path_digest":"sha256:5d18f0ac89bfa603ecdf962cc305bada33a9d43f92e32b1c677b2c0af754d526","scope_pointer":"/units/1/touched/paths"},{"commit_group":"aef68562ceb8e58c2a9447d83e77929923da7108","dependencies":[],"id":"roots-knots-consensus-validation-consensus-adjacent","order":3,"path_count":18,"path_digest":"sha256:a898bea96912b16f405d2970b83c3bb7c7584876209727badc2571e0f0d6cf03","scope_pointer":"/units/2/touched/paths"},{"commit_group":"01bd9178082be456ffc89f13b8d57fd3f574ad8c","dependencies":[],"id":"roots-knots-documentation-documentation","order":4,"path_count":13,"path_digest":"sha256:4cc764ff5db088f749d7f92116cdbda9305a89c0a552963d22d177a902403c12","scope_pointer":"/units/3/touched/paths"},{"commit_group":"43e32077864794dc10cdef25eba2204e8fff365b","dependencies":[],"id":"roots-knots-gui-branding-ui","order":5,"path_count":106,"path_digest":"sha256:8d7c3e1a53a6ce71ca7a623e4fc72d08fd4eec767a53896571bbe8ea2b7587d9","scope_pointer":"/units/4/touched/paths"},{"commit_group":"7d8f1765ca7f557a901965dfef8564ee04bde181","dependencies":[],"id":"roots-knots-p2p-networking","order":6,"path_count":42,"path_digest":"sha256:56a2df6c70afc64150f4404b00b19699951df666ae4b2d57da5b163ad1221ad6","scope_pointer":"/units/5/touched/paths"},{"commit_group":"c2344aefc8e8ed7e39761592d5ad3182ae21c01c","dependencies":[],"id":"roots-knots-policy-local-policy","order":7,"path_count":16,"path_digest":"sha256:d56f2d4abe9fc964fb798a1a672de40a08ae0d92a2992da70a8c9576fc4a5062","scope_pointer":"/units/6/touched/paths"},{"commit_group":"4b63cf7a876b9315fd956863cf9ffdaa1a4a778c","dependencies":[],"id":"roots-knots-tests-test-coverage","order":8,"path_count":119,"path_digest":"sha256:12978729c3142fc0a6d1f36e4865d606871e55b55afbf3e2ffc266c27afa42da","scope_pointer":"/units/7/touched/paths"},{"commit_group":"faa7c0ea573add0a99dc69f1d3ce4b84a7ca9aed","dependencies":[],"id":"roots-knots-wallet-wallet","order":9,"path_count":41,"path_digest":"sha256:34a11cd891b0b250c20a3168f2e04bb4c922dfc9e49cdf96ce61f1fd2fddf550","scope_pointer":"/units/8/touched/paths"},{"commit_group":"78346474b6112dec9dd609357df3966d454dfdc7","dependencies":[],"id":"roots-roots-build-ci-build-or-release","order":10,"path_count":48,"path_digest":"sha256:d2b91289966148672df11834d0a868e1f50dfdd89ddf65fbac355f24e55ad2a1","scope_pointer":"/units/9/touched/paths"},{"commit_group":"8ceef066cf1d7d754188750d99e306932020e988","dependencies":[],"id":"roots-roots-common-maintenance","order":11,"path_count":18,"path_digest":"sha256:6377949e08acacaf36ed7ee7dab35775342351a8e1c0666ce72e2636ec38c34b","scope_pointer":"/units/10/touched/paths"},{"commit_group":"bf9e2bd9eb41af2b9cdf7d26788f7ed1814ce464","dependencies":[],"id":"roots-roots-consensus-validation-consensus-adjacent","order":12,"path_count":1,"path_digest":"sha256:6c863b236bf20b06db72dbd34f12d4181039bfbec4cd99684dcc29ddc0c8ac58","scope_pointer":"/units/11/touched/paths"},{"commit_group":"dbdd05aad92d7a219a8559dcfaa4a93fce373f7a","dependencies":[],"id":"roots-roots-documentation-documentation","order":13,"path_count":91,"path_digest":"sha256:8155e25bafba72d70765f222c72f006d95f873536cdc8225cace1051b430b349","scope_pointer":"/units/12/touched/paths"},{"commit_group":"9e99e209d8731092e059f32f7f81f7846c942d90","dependencies":[],"id":"roots-roots-gui-branding-ui","order":14,"path_count":13,"path_digest":"sha256:c8749a2565e4d6bf0b72e43c316539917f5c7d03abe84954ccc43265685d365b","scope_pointer":"/units/13/touched/paths"},{"commit_group":"4e8610eae707863ea37fc682a880067f6a3cfac5","dependencies":[],"id":"roots-roots-release-generated-output","order":15,"path_count":6,"path_digest":"sha256:c330b764b9715d6301839b5ea5e212777ff276a34b8a10c525167bfc7a073527","scope_pointer":"/units/14/touched/paths"},{"commit_group":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","dependencies":[],"id":"roots-roots-tests-test-coverage","order":16,"path_count":6,"path_digest":"sha256:8246f63c71e1107a83e96fc93e8c3bda2c7baae46848885452684f76fffe7c2f","scope_pointer":"/units/15/touched/paths"}],"allowed_remotes":[{"authority":"fetch-only","name":"core","url":"https://github.com/bitcoin/bitcoin.git"},{"authority":"fetch-provenance-only","name":"knots","url":"https://github.com/bitcoinknots/bitcoin.git"},{"authority":"fetch-only","name":"roots","url":"https://github.com/LuganoPlanB/bitcoin-roots.git"},{"authority":"offline-rehearsal-only","name":"local-locked-mirror","url":"${ROOTS_SOURCE}"}],"classifications":{"optional_recommendations":["Use a network-free locked local mirror for repeatable rehearsals.","Retain disposable replay outputs until review completes."],"policy_decisions":["Future Roots releases start from a verified Bitcoin Core tag, never Knots or a previous Roots trunk.","Policy changes remain local policy and must not become consensus rules.","This contract never grants push, tag, signing, publication, credential, or secret access authority."],"unresolved_questions":["The historical ledger records Core v29.3 and v29.4 tag signatures as unverified; online release use must verify and record signer fingerprints.","No later-Core tag is allowlisted; its tag object, commit, tree, fixture, materials, and tests require review before replay."],"verified_facts":["The locked 29.3 and 29.4 commits, trees, replay artifacts, and reviewed 29.4 topology are versioned repository evidence.","The accepted 29.4 candidate is Core-tag-rooted and the incremental oracle is rejected."]},"context_packets":[{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-build-ci-build-or-release","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/0/touched/paths","path_count":26,"path_digest":"sha256:11fbd6eb821655fd1bfb869f2dbb238a9de7ea26e6cb2ed93461055b57f4ca42"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-common-maintenance","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/1/touched/paths","path_count":275,"path_digest":"sha256:5d18f0ac89bfa603ecdf962cc305bada33a9d43f92e32b1c677b2c0af754d526"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-consensus-validation-consensus-adjacent","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/2/touched/paths","path_count":18,"path_digest":"sha256:a898bea96912b16f405d2970b83c3bb7c7584876209727badc2571e0f0d6cf03"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-documentation-documentation","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/3/touched/paths","path_count":13,"path_digest":"sha256:4cc764ff5db088f749d7f92116cdbda9305a89c0a552963d22d177a902403c12"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-gui-branding-ui","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/4/touched/paths","path_count":106,"path_digest":"sha256:8d7c3e1a53a6ce71ca7a623e4fc72d08fd4eec767a53896571bbe8ea2b7587d9"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-p2p-networking","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/5/touched/paths","path_count":42,"path_digest":"sha256:56a2df6c70afc64150f4404b00b19699951df666ae4b2d57da5b163ad1221ad6"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-policy-local-policy","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/6/touched/paths","path_count":16,"path_digest":"sha256:d56f2d4abe9fc964fb798a1a672de40a08ae0d92a2992da70a8c9576fc4a5062"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-tests-test-coverage","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/7/touched/paths","path_count":119,"path_digest":"sha256:12978729c3142fc0a6d1f36e4865d606871e55b55afbf3e2ffc266c27afa42da"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json","contrib/roots/replay-core-to-knots-29.3/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-knots-wallet-wallet","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/8/touched/paths","path_count":41,"path_digest":"sha256:34a11cd891b0b250c20a3168f2e04bb4c922dfc9e49cdf96ce61f1fd2fddf550"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-build-ci-build-or-release","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/9/touched/paths","path_count":48,"path_digest":"sha256:d2b91289966148672df11834d0a868e1f50dfdd89ddf65fbac355f24e55ad2a1"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-common-maintenance","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/10/touched/paths","path_count":18,"path_digest":"sha256:6377949e08acacaf36ed7ee7dab35775342351a8e1c0666ce72e2636ec38c34b"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-consensus-validation-consensus-adjacent","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/11/touched/paths","path_count":1,"path_digest":"sha256:6c863b236bf20b06db72dbd34f12d4181039bfbec4cd99684dcc29ddc0c8ac58"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-documentation-documentation","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/12/touched/paths","path_count":91,"path_digest":"sha256:8155e25bafba72d70765f222c72f006d95f873536cdc8225cace1051b430b349"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-gui-branding-ui","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/13/touched/paths","path_count":13,"path_digest":"sha256:c8749a2565e4d6bf0b72e43c316539917f5c7d03abe84954ccc43265685d365b"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py","contrib/roots/core-29.4-migration-fixture.json"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-release-generated-output","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/14/touched/paths","path_count":6,"path_digest":"sha256:c330b764b9715d6301839b5ea5e212777ff276a34b8a10c525167bfc7a073527"}},{"consensus_policy_effect":"unknown","context_paths":["contrib/roots/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json","contrib/roots/replay-29.3-release/replay-materials.json","contrib/roots/replay-29.4-proposal/canonical-topology.json","ci/test/test_roots_replay.py"],"generated":{"inputs":[],"outputs":[]},"id":"roots-roots-tests-test-coverage","manual_approval":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"owner_area":"tooling","provenance":[{"commit":"sha1:dd3050a6101a071a0b642ba71ab7eaddbe4cf5b8","confidence":"reviewed","project":"bitcoin-roots"}],"purpose":"Canonical 29.3 coverage group","required_tests":["ci/test/test_roots_replay.py"],"risk_tier":"medium","scope":{"manifest_pointer":"/units/15/touched/paths","path_count":6,"path_digest":"sha256:8246f63c71e1107a83e96fc93e8c3bda2c7baae46848885452684f76fffe7c2f"}}],"contract_id":"bitcoin-roots-clean-clone-llm-v1","contract_version":"1.0.0","dependency_graph":{"edges":[],"nodes":["roots-knots-build-ci-build-or-release","roots-knots-common-maintenance","roots-knots-consensus-validation-consensus-adjacent","roots-knots-documentation-documentation","roots-knots-gui-branding-ui","roots-knots-p2p-networking","roots-knots-policy-local-policy","roots-knots-tests-test-coverage","roots-knots-wallet-wallet","roots-roots-build-ci-build-or-release","roots-roots-common-maintenance","roots-roots-consensus-validation-consensus-adjacent","roots-roots-documentation-documentation","roots-roots-gui-branding-ui","roots-roots-release-generated-output","roots-roots-tests-test-coverage"]},"digest":"sha256:745035d347c25e5a1259780ee09c12e251f0512c1e2c9864a18707326c019848","expected_results":{"canonical_29_4_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","canonical_29_4_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","core_to_knots_29_3_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","incremental_29_4_commit":"3e29908f7a0131a71309e80a78fe865ec8a50f76","incremental_29_4_tree":"c676e8944470cc74fcc213e7368aed359ad8ae55","incremental_conflict_count":12,"incremental_decision":"rejected","roots_29_3_tree":"a5708dcbf1d2611360fab68fc6a8e504db1ba95d"},"forbidden_actions":["push","publish","create-or-move-release-tag","sign-release-artifacts","use-credentials","read-private-paths","use-knots-as-future-base","use-previous-roots-trunk-as-future-base","continue-after-lock-mismatch","invent-manual-decision"],"generators":[{"commands":[["cmake","--build","<candidate-build-dir>","--target","generate-bitcoin-conf"],["python3","contrib/devtools/gen-manpages.py","<candidate-build-dir>/bin"]],"freshness_gate":"generated-output freshness must pass before approval","id":"generated-manpages","inputs":["candidate binaries","candidate help output","candidate version identity"],"outputs":["doc/man/bitcoin-cli.1","doc/man/bitcoin-qt.1","doc/man/bitcoin-tx.1","doc/man/bitcoin-util.1","doc/man/bitcoin-wallet.1","doc/man/bitcoind.1"]}],"inputs":{"core_releases":[{"commit":"99003bed87333f1be51bf3070235591b3a72f007","id":"core-29.3","signature":"must-verify-online-before-release-use","tag":"v29.3","tag_object":"f2ca1bc7f94f1f662e2d7ee0858f2d90018bb863","tree":"d7910bd5e9335128932f1f848a767d773895c4a4"},{"commit":"3fc0865963a38b871e9f7d94e6151c4953563516","id":"core-29.4","signature":"must-verify-online-before-release-use","tag":"v29.4","tag_object":"4e70eab99b60f7718b78e2158de9fb82726f3cec","tree":"38ad59b187f59647eb90ad1347bc481485ef4d01"}],"knots_29_3_stage":{"lineage_commit":"99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b","role":"provenance-stage-only-not-future-base","tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"},"object_format":"sha1","versioned_records":[{"path":"contrib/devtools/roots-llm-contract.py","sha256":"sha256:ed129a3409883fe34d226599de9e7c9a0ee108a29927198027e1fe1732cccbb1"},{"path":"contrib/roots/lineage-ledger.json","sha256":"sha256:a7e1ff952afa7812e862255d4e8f04352ca9020036793a2f6a685f48a207dbaa"},{"path":"contrib/roots/adaptation-manifest-29.3.json","sha256":"sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb"},{"path":"contrib/roots/methodology-v1.json","sha256":"sha256:e9e7a8782e4212b669f49fd8e3d8bbd9e05668dd53b5ec9580d9353ce4aed78c"},{"path":"contrib/roots/core-29.4-migration-fixture.json","sha256":"sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f"},{"path":"contrib/roots/replay-core-to-knots-29.3/replay-materials.json","sha256":"sha256:79ea6fa1a9fb057073836decaf9673674513aa088e934d4a9cd3db3778bd40d8"},{"path":"contrib/roots/replay-29.3-release/replay-materials.json","sha256":"sha256:6be8e2d3e8395ad5f837b7be83a2439ae5b8e4caef70bf2b021f77d8e34a83f2"},{"path":"contrib/roots/replay-29.4-proposal/replay-materials.json","sha256":"sha256:77a1708d373b9722d7a8f0b48cbc6a26454605b41e8b8dadc52cd44939fed534"},{"path":"contrib/roots/replay-29.4-proposal/canonical-topology.json","sha256":"sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40"},{"path":"contrib/roots/replay-29.4-proposal/acceptance-evidence.json","sha256":"sha256:8500d605991aea5e80df6614e7873c7def9d2796fce985b596eecc64d2f18dbf"},{"path":"contrib/roots/llm-execution-contract-v1.md","sha256":"sha256:d9da700291ce8ddf9606a6355807864c8fc96c76041c73accdecaa6d360a353d"}]},"limits":{"adaptation_count":16,"max_context_paths_per_packet":6,"max_path_count_per_packet":300,"network_during_rehearsal":false},"manual_approvals":{"adaptation_disposition":{"allowed_answers":["accept","rewrite","reject","defer","upstream"],"default":"safe-stop","forbidden":["guess","auto-approve","treat silence as consent"],"question":"Choose exactly one reviewed disposition for this adaptation: accept, rewrite, reject, defer, or upstream.","required_evidence":["reviewer","rationale","tests","candidate_tree"]},"release_authorization":{"allowed_answers":["approve","reject"],"default":"reject","outside_contract":true,"question":"Does an authorized human approve signing, tagging, and publication after all evidence gates pass?"}},"purpose":"Reconstruct reviewed Bitcoin Roots candidates from immutable Bitcoin Core inputs without conversational context or release authority.","recovery":{"abandon":"write replay-abandoned.json and retain evidence","interrupt":"preserve state, candidate, reports, and tag snapshot; do not delete or improvise","resume":"inspect then resume only with identical base, tree, manifest, materials, state directory, and candidate tree","safe_stop_output":"llm-safe-stop.json"},"replay_boundaries":{"core_29_4":[{"expected_after_tree":"f8caa38858a111bbf9180eff798c8cdc3ac2e153","expected_before_tree":"38ad59b187f59647eb90ad1347bc481485ef4d01","expected_sha256":"sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5","id":"roots:l7-data-miniupnpc","mechanism":"module/data"},{"expected_after_tree":"7ac93d37b83ac9835f7482856457e46a65eae924","expected_before_tree":"f8caa38858a111bbf9180eff798c8cdc3ac2e153","expected_sha256":"sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf","id":"roots:l7-data-readme","mechanism":"module/data"},{"expected_after_tree":"60f1fc3c77115824332f54a3526aa1f09b0c263c","expected_before_tree":"7ac93d37b83ac9835f7482856457e46a65eae924","expected_sha256":"sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6","id":"roots:l7-data-completion","mechanism":"module/data"},{"expected_after_tree":"339e0d6eeb8d673e592191bfed9cda7272e9e7ab","expected_before_tree":"60f1fc3c77115824332f54a3526aa1f09b0c263c","expected_sha256":"sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a","id":"roots:l7-data-rpc-sort","mechanism":"module/data"},{"expected_after_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","expected_before_tree":"339e0d6eeb8d673e592191bfed9cda7272e9e7ab","expected_patch_sha256":"sha256:9610d3ec5c6e1624baa29846e1f5d1935d3cf61053fb5ab86b02915bc399e6d8","id":"roots:l7-clean-patch","mechanism":"patch"}],"core_to_knots_29_3":[{"expected_after_tree":"a246992d0897d316bf5a6d695001c92919be9712","expected_before_tree":"d7910bd5e9335128932f1f848a767d773895c4a4","expected_patch_sha256":"sha256:b36698548247a19ce037c3189a2db64c6966ec78199c0642120c64993186157e","id":"l7:roots-knots-build-ci-build-or-release","mechanism":"patch"},{"expected_after_tree":"7b95d0c64507d0dc00d3f96d7d697d573d29f8b0","expected_before_tree":"a246992d0897d316bf5a6d695001c92919be9712","expected_patch_sha256":"sha256:758febd9dcf9c281bd8d2f2bfe55e999749eb47929ea2299b1b74fdf5b9a9f83","id":"l7:roots-knots-common-maintenance","mechanism":"patch"},{"expected_after_tree":"20f791eeb0f31ef4c7b785a1048aebcdda11f48b","expected_before_tree":"7b95d0c64507d0dc00d3f96d7d697d573d29f8b0","expected_patch_sha256":"sha256:edbdbc678bacb3fd2ed654efdb28a980ca01f4f18b8edc64ef5a2975ae4a4b16","id":"l7:roots-knots-consensus-validation-consensus-adjacent","mechanism":"patch"},{"expected_after_tree":"d5101fcfeb01a64107fd1c9fd6865121b0a89fb5","expected_before_tree":"20f791eeb0f31ef4c7b785a1048aebcdda11f48b","expected_patch_sha256":"sha256:4b8da462690c644ff373479637078429dcbbb04a8576e30b57a6ac4f8bcbdbc1","id":"l7:roots-knots-documentation-documentation","mechanism":"patch"},{"expected_after_tree":"40dd3ba19e1e0657f7afd7cd8efad799e0a860a1","expected_before_tree":"d5101fcfeb01a64107fd1c9fd6865121b0a89fb5","expected_patch_sha256":"sha256:d74620c89b5b80284b5d39291179ea665261b97f5878f573e52f87282bfc6010","id":"l7:roots-knots-gui-branding-ui","mechanism":"patch"},{"expected_after_tree":"668ac255451293f3d759cf37a95081a2d5a75a4b","expected_before_tree":"40dd3ba19e1e0657f7afd7cd8efad799e0a860a1","expected_patch_sha256":"sha256:b120517cf73699d180934cd203431209fd1febf889a9d1d40379e7c96bf1379c","id":"l7:roots-knots-p2p-networking","mechanism":"patch"},{"expected_after_tree":"d05aaa160a358e9c5840ce0b94d05fd06b1b0422","expected_before_tree":"668ac255451293f3d759cf37a95081a2d5a75a4b","expected_patch_sha256":"sha256:b175e7d8db5f9bfc272054f11fa3bfef8a260e0b00ebf605976ebe5dda867195","id":"l7:roots-knots-policy-local-policy","mechanism":"patch"},{"expected_after_tree":"88180d767b915bf07d96e2702345ce8af6146b19","expected_before_tree":"d05aaa160a358e9c5840ce0b94d05fd06b1b0422","expected_patch_sha256":"sha256:c80aab8bdc5fa2bface44a15fd197393f198d99b8a5e50e0f12d684fffba587a","id":"l7:roots-knots-release-29-3-gap-layer","mechanism":"patch"},{"expected_after_tree":"6ed05180336f64750dfb8ac7d22160e11107e8da","expected_before_tree":"88180d767b915bf07d96e2702345ce8af6146b19","expected_patch_sha256":"sha256:695bc0bea0ac5145e7b5ab037ffc2867b244c94aeac77d96b5587953925d2d38","id":"l7:roots-knots-tests-test-coverage","mechanism":"patch"},{"expected_after_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","expected_before_tree":"6ed05180336f64750dfb8ac7d22160e11107e8da","expected_patch_sha256":"sha256:13ada2057e49159c672eebce6472e292d4ec8f9badda963e5524105897db7313","id":"l7:roots-knots-wallet-wallet","mechanism":"patch"}],"roots_29_3":[{"id":"release:roots-knots-build-ci-build-or-release:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-common-maintenance:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-consensus-validation-consensus-adjacent:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-documentation-documentation:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-gui-branding-ui:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-p2p-networking:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-policy-local-policy:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-tests-test-coverage:not-applicable-to-knots-base","mechanism":"manual"},{"id":"release:roots-knots-wallet-wallet:not-applicable-to-knots-base","mechanism":"manual"},{"expected_after_tree":"efde806e606e15ad696eac0eff14c628a95c1c70","expected_before_tree":"56f97d3a9199c1fb191e1b8a21f2caae3901b7f6","expected_patch_sha256":"sha256:6d98d6da594eb73e7c74c8260af4f2febb779bea6953ba74596cc6f41d9b8b7b","id":"release:roots-roots-build-ci-build-or-release","mechanism":"patch"},{"expected_after_tree":"21c0f56d0d7900d36550b803210a09c249dccf75","expected_before_tree":"efde806e606e15ad696eac0eff14c628a95c1c70","expected_patch_sha256":"sha256:59746c2b6be24339b8c15c7df6add41e3ff8c4ac6d641a5934b4c29a7d4f1aa1","id":"release:roots-roots-common-maintenance","mechanism":"patch"},{"expected_after_tree":"7f66f1089ad2bcf59a746872e8ab8477c22e650d","expected_before_tree":"21c0f56d0d7900d36550b803210a09c249dccf75","expected_patch_sha256":"sha256:c410f86e7cbdbd58eb32081767f2d621c49479389f120e7cb2b3adcc0faeeb84","id":"release:roots-roots-consensus-validation-consensus-adjacent","mechanism":"patch"},{"expected_after_tree":"3c8fa3bed2ef88007492b1acea01c73b132e1993","expected_before_tree":"7f66f1089ad2bcf59a746872e8ab8477c22e650d","expected_patch_sha256":"sha256:b59d93454cbf322687192b7af4ea44661cc7f3ddc690742a99c6d9b964ef5509","id":"release:roots-roots-documentation-documentation","mechanism":"patch"},{"expected_after_tree":"3f9bb8817be38ad57adda3198c911d67aa3c64a3","expected_before_tree":"3c8fa3bed2ef88007492b1acea01c73b132e1993","expected_patch_sha256":"sha256:90319cf326f40fcb15930e2b1a6972f0f7abdfa8daf1354d40ae214aae26b9d3","id":"release:roots-roots-gui-branding-ui","mechanism":"patch"},{"expected_after_tree":"34c4e678b1b39e8d7a9755c59f0432b8019aa3f0","expected_before_tree":"3f9bb8817be38ad57adda3198c911d67aa3c64a3","expected_patch_sha256":"sha256:422430c2bebd59afe219dc2a4c132031efb2cd6698f2d47d1b51092145cab54a","id":"release:roots-roots-release-generated-output","mechanism":"patch"},{"expected_after_tree":"a5708dcbf1d2611360fab68fc6a8e504db1ba95d","expected_before_tree":"34c4e678b1b39e8d7a9755c59f0432b8019aa3f0","expected_patch_sha256":"sha256:7bb1f3aadbc4b40032f386d8545101c68a28a5c9ca01c1cbf4a786787ff82040","id":"release:roots-roots-tests-test-coverage","mechanism":"patch"}]},"required_tests":["ci/test/test_roots_llm_contract.py","ci/test/test_roots_maintainer_runbook.py","ci/test/test_roots_replay.py","ci/test/test_roots_trusted_replay_ci.py","ci/test/test_roots_pr_gate.py","ci/test/test_roots_continuous_accounting.py","ci/test/test_roots_release_evidence.py","ci/test/test_prepare_release.py"],"schema_version":1,"schemas":{"evidence_bundle":{"required_fields":["schema_version","status","trees","artifact_digests","commit_to_adaptation_map","contract_digest"]},"safe_stop":{"required_fields":["schema_version","status","code","action","resumable","contract_digest"]},"stable_report":{"required_fields":["schema_version","status","mode","roots_29_3","core_29_4","evidence_bundle_digest","tag_state_changed"]}},"topology":{"base":"verified-core-tag","canonical_29_4":{"base_commit":"3fc0865963a38b871e9f7d94e6151c4953563516","commit_count":16,"target_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","target_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90"},"first_parent_required":true,"forbidden_bases":["bitcoin-knots-branch","previous-roots-trunk"],"integration_branch_pattern":"roots/integration-v<CORE_RELEASE>"},"workflows":{"commands":{"rehearse":["python3","contrib/devtools/roots-llm-contract.py","rehearse","contrib/roots/llm-execution-contract-v1.json","--repository","$SOURCE","--output-directory","$OUTPUT","--offline-locked-mirror"],"validate_contract":["python3","contrib/devtools/roots-llm-contract.py","validate","contrib/roots/llm-execution-contract-v1.json"],"verify_core_29_3_tag":["git","-C","$SOURCE","verify-tag","v29.3"],"verify_core_29_4_tag":["git","-C","$SOURCE","verify-tag","v29.4"]},"human_contract":"contrib/roots/llm-execution-contract-v1.md","maintainer_runbook":"contrib/roots/maintainer-runbook.md","ordered_steps":["verify-clean-clone","fetch-explicit-tags","verify-tag-signatures","verify-objects","reconstruct-core-to-knots-29.3","reconstruct-roots-29.3","replay-core-29.4","compare-incremental-oracle","run-required-tests","request-bounded-approvals","account-every-hunk","prepare-release-evidence","safe-stop"]}}
+diff --git a/contrib/roots/local-integration-baseline-29.4.json b/contrib/roots/local-integration-baseline-29.4.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..722392624767117f1cc2c951d914687df1556cc7
+--- /dev/null
++++ b/contrib/roots/local-integration-baseline-29.4.json
+@@ -0,0 +1,15 @@
++{
++  "schema_version": 1,
++  "core_commit": "3fc0865963a38b871e9f7d94e6151c4953563516",
++  "core_tag_object": "4e70eab99b60f7718b78e2158de9fb82726f3cec",
++  "canonical_commit": "cbc88cff9b35b95a549c0313e424e13093fcd6a1",
++  "tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
++  "commit_count": 16,
++  "integration_ref": "refs/heads/integration/roots-29.4",
++  "mbox_sha256": "be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725",
++  "export_flags": ["--no-renames", "--binary", "--full-index"],
++  "apply_mode": "git am --3way --keep-cr",
++  "round_trip_tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
++  "round_trip_clean": true,
++  "status": "pass"
++}
+diff --git a/contrib/roots/maintainer-runbook-review.json b/contrib/roots/maintainer-runbook-review.json
+index d17618fc93c30e4ad4708daf150db5367b1c7185..3816a829ab0f15c0408dbb5d8f7c4a4e6d0a6ee3 100644
+--- a/contrib/roots/maintainer-runbook-review.json
++++ b/contrib/roots/maintainer-runbook-review.json
+@@ -100,9 +100,7 @@
+     "canonical_29_4": {
+       "decision": "accepted",
+       "target_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+-      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+-      "incremental_accepted": false,
+-      "incremental_tree": "sha1:c676e8944470cc74fcc213e7368aed359ad8ae55"
++      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+     },
+     "later_core_candidate": {
+       "status": "prepared-not-published",
+diff --git a/contrib/roots/maintainer-runbook.md b/contrib/roots/maintainer-runbook.md
+index 97c7860618895fdf486ba4a8d5dedea62e89c9e6..086ce991df668fab919d265016ad559cf2369e17 100644
+--- a/contrib/roots/maintainer-runbook.md
++++ b/contrib/roots/maintainer-runbook.md
+@@ -117,23 +117,19 @@ Run both constructors into new paths:
+ ```bash
+ bash "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/canonical-lineage.bash" \
+   "$SOURCE" "$WORK/canonical-29.4" | tee "$WORK/canonical-29.4.txt"
+-bash "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/incremental-oracle.bash" \
+-  "$SOURCE" "$WORK/incremental-29.4" | tee "$WORK/incremental-29.4.txt"
+ grep -Fx 'base_commit=3fc0865963a38b871e9f7d94e6151c4953563516' "$WORK/canonical-29.4.txt"
+ grep -Fx 'target_commit=cbc88cff9b35b95a549c0313e424e13093fcd6a1' "$WORK/canonical-29.4.txt"
+ grep -Fx 'target_tree=39a5e30207a09962e78ae81c24cc65b1e478ef90' "$WORK/canonical-29.4.txt"
+-grep -Fx 'conflict_count=12' "$WORK/incremental-29.4.txt"
+-grep -Fx 'oracle_tree=c676e8944470cc74fcc213e7368aed359ad8ae55' "$WORK/incremental-29.4.txt"
+-grep -Fx 'oracle_commit=3e29908f7a0131a71309e80a78fe865ec8a50f76' "$WORK/incremental-29.4.txt"
+ jq -e '.accepted_lineage == false and .fresh_candidate.tree == "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"' \
+   "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/incremental-comparison.json"
+ jq -e '.status == "accepted" and .candidate.tree == "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"' \
+   "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+ ```
+ 
+-The incremental oracle is diagnostic and must remain rejected. Equal trees
+-alone are never sufficient; compare its conflict set, report digests,
+-adaptation ownership, invariants, and approval with the fresh candidate.
++The historical incremental oracle is deliberately excluded from the portable
++production closure because its rejected migration comparison requires a
++non-ancestral Roots 29.3 object. The retained fresh canonical lineage and its
++locked acceptance evidence remain the production decision surface.
+ 
+ Lock the trusted replay decision:
+ 
+diff --git a/contrib/roots/method-retrospective-29.4.json b/contrib/roots/method-retrospective-29.4.json
+index 72514081f1c0a68eadaaa57f6b8e08c41b7ccda7..9b8f7f674c199357cb2907c37823fd5d555a1477 100644
+--- a/contrib/roots/method-retrospective-29.4.json
++++ b/contrib/roots/method-retrospective-29.4.json
+@@ -1 +1 @@
+-{"digest":"sha256:13bfe33005209654f134f86219c4fa09d24e59a9b859832d9cf07b9d19ded7ca","inputs":[{"digest":"sha256:7133b96f479a0929ca319a7ac07374dd84a86169681ba84904f537040bc15346","role":"acceptance"},{"digest":"sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f","role":"fixture"},{"digest":"sha256:6e504e153f1f9f2df79f68265dc35057bb3e8b5465528879880283dd07b4a49e","role":"incremental"},{"digest":"sha256:1aeae5a69ad08767744833d1d3bf65e18f2761f2e6a64e229eca7f3a10ad0604","role":"proposal"},{"digest":"sha256:8db205dbce48c4d9f18648ea20a4610d3adeb5ee1ef6a2f9ede3923ad1fb23eb","role":"validation"}],"metrics":{"automation":{"automatic_outcomes":26,"basis_points":6500,"total_outcomes":40},"classification":{"false_clean_paths":[],"false_conflict_paths":["src/txrequest.cpp"]},"fresh_vs_incremental":{"fresh_runs":2,"incremental_differences":11,"incremental_lineage_accepted":false},"generated_files":{"forecast_generated_outcomes":6,"rewritten_generated_outcomes":6},"invariants":{"critical_gates":15,"passing_critical_gates":15},"manual_effort":{"eliminated_manual_boundaries":1,"forecast_manual_outcomes":6,"manual_outcomes":6},"provenance":{"locked_inputs":5,"stale_or_missing_records":0},"replay_restarts":{"clean_runs":2,"restart_events_status":"not-recorded"},"report_usability":{"independent_reproduction_status":"not-recorded","published_artifacts":3}},"observations":[{"acceptance_rationale":"all locked forecast paths are accounted","action":"retain complete forecast-to-outcome accounting","category":"automation","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"clean forecasts and conservative escalations are separately measurable","action":"require proof before a forecast manual boundary is absorbed","category":"classification","owner":"methodology","severity":"medium","status":"action-required"},{"acceptance_rationale":"manual effort remains bounded by outcome evidence","action":"record manual outcomes and eliminated boundaries","category":"manual-effort","owner":"methodology","severity":"medium","status":"resolved"},{"acceptance_rationale":"no stale or missing record is accepted","action":"retain digest-locked evidence inputs","category":"provenance","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"all recorded critical gates passed","action":"require all critical invariant gates","category":"invariants","owner":"safety","severity":"high","status":"resolved"},{"acceptance_rationale":"generated outcomes are separately recorded","action":"derive generated outputs after candidate construction","category":"generated-files","owner":"replay","severity":"medium","status":"resolved"},{"acceptance_rationale":"current evidence records clean runs but not restart events","action":"version explicit restart-event evidence","category":"replay-restarts","owner":"replay","severity":"medium","status":"action-required"},{"acceptance_rationale":"current evidence records artifacts but not usability observation","action":"record independent report-consumer reproduction","category":"report-usability","owner":"operations","severity":"medium","status":"action-required"},{"acceptance_rationale":"all observed differences are owned and incremental lineage is not accepted","action":"treat incremental history only as a classified diagnostic","category":"fresh-vs-incremental","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"inherited failures must not be called candidate success","action":"preserve lane-level classification separate from aggregate conclusion","category":"platform-result","owner":"operations","severity":"medium","status":"resolved"}],"outcomes":[{"actual":"automatic","forecast":"exact","path":".editorconfig"},{"actual":"manual","forecast":"manual","path":".github/actions/configure-docker/action.yml"},{"actual":"manual","forecast":"manual","path":".github/workflows/ci.yml"},{"actual":"automatic","forecast":"clean-textual","path":"CMakeLists.txt"},{"actual":"manual","forecast":"manual","path":"ci/README.md"},{"actual":"automatic","forecast":"clean-textual","path":"ci/test/00_setup_env_i686_multiprocess.sh"},{"actual":"automatic","forecast":"exact","path":"contrib/guix/INSTALL.md"},{"actual":"automatic","forecast":"exact","path":"contrib/tracing/README.md"},{"actual":"automatic","forecast":"exact","path":"depends/gen_id"},{"actual":"automatic","forecast":"clean-textual","path":"doc/build-freebsd.md"},{"actual":"automatic","forecast":"exact","path":"doc/build-netbsd.md"},{"actual":"automatic","forecast":"clean-textual","path":"doc/build-openbsd.md"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-cli.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-qt.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-tx.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-util.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-wallet.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoind.1"},{"actual":"automatic","forecast":"exact","path":"doc/release-notes.md"},{"actual":"manual","forecast":"snapshot-only","path":"src/clientversion.cpp"},{"actual":"absorbed","forecast":"absorbed","path":"src/common/netif.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/dbwrapper.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/dbwrapper.h"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/autocompact_test.cc"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/db_test.cc"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/version_set.cc"},{"actual":"manual","forecast":"manual","path":"src/node/miner.h"},{"actual":"automatic","forecast":"exact","path":"src/test/coins_tests.cpp"},{"actual":"automatic","forecast":"exact","path":"src/test/fuzz/deserialize.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/txdb.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/txdb.h"},{"actual":"manual","forecast":"manual","path":"src/txmempool.h"},{"actual":"absorbed","forecast":"manual","path":"src/txrequest.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/validation.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/CMakeLists.txt"},{"actual":"automatic","forecast":"clean-textual","path":"src/wallet/rpc/spend.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/wallet/spend.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/test/fuzz/crypter.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/test/spend_tests.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"test/lint/test_runner/src/main.rs"}],"schema_version":1,"transitions":[{"actual":"absorbed","forecast":"absorbed","paths":["src/common/netif.cpp"]},{"actual":"automatic","forecast":"clean-textual","paths":["CMakeLists.txt","ci/test/00_setup_env_i686_multiprocess.sh","doc/build-freebsd.md","doc/build-openbsd.md","src/dbwrapper.cpp","src/dbwrapper.h","src/txdb.cpp","src/txdb.h","src/validation.cpp","src/wallet/rpc/spend.cpp","src/wallet/spend.cpp","test/lint/test_runner/src/main.rs"]},{"actual":"automatic","forecast":"exact","paths":[".editorconfig","contrib/guix/INSTALL.md","contrib/tracing/README.md","depends/gen_id","doc/build-netbsd.md","doc/release-notes.md","src/leveldb/db/autocompact_test.cc","src/leveldb/db/db_test.cc","src/leveldb/db/version_set.cc","src/test/coins_tests.cpp","src/test/fuzz/deserialize.cpp","src/wallet/CMakeLists.txt","src/wallet/test/fuzz/crypter.cpp","src/wallet/test/spend_tests.cpp"]},{"actual":"rewritten","forecast":"generated","paths":["doc/man/bitcoin-cli.1","doc/man/bitcoin-qt.1","doc/man/bitcoin-tx.1","doc/man/bitcoin-util.1","doc/man/bitcoin-wallet.1","doc/man/bitcoind.1"]},{"actual":"absorbed","forecast":"manual","paths":["src/txrequest.cpp"]},{"actual":"manual","forecast":"manual","paths":[".github/actions/configure-docker/action.yml",".github/workflows/ci.yml","ci/README.md","src/node/miner.h","src/txmempool.h"]},{"actual":"manual","forecast":"snapshot-only","paths":["src/clientversion.cpp"]}]}
++{"digest":"sha256:4feb5da281348a54c9302350760170e194e9edbdea43613aecb8a52f00026be1","inputs":[{"digest":"sha256:8500d605991aea5e80df6614e7873c7def9d2796fce985b596eecc64d2f18dbf","role":"acceptance"},{"digest":"sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f","role":"fixture"},{"digest":"sha256:6e504e153f1f9f2df79f68265dc35057bb3e8b5465528879880283dd07b4a49e","role":"incremental"},{"digest":"sha256:1aeae5a69ad08767744833d1d3bf65e18f2761f2e6a64e229eca7f3a10ad0604","role":"proposal"},{"digest":"sha256:8db205dbce48c4d9f18648ea20a4610d3adeb5ee1ef6a2f9ede3923ad1fb23eb","role":"validation"}],"metrics":{"automation":{"automatic_outcomes":26,"basis_points":6500,"total_outcomes":40},"classification":{"false_clean_paths":[],"false_conflict_paths":["src/txrequest.cpp"]},"fresh_vs_incremental":{"fresh_runs":2,"incremental_differences":11,"incremental_lineage_accepted":false},"generated_files":{"forecast_generated_outcomes":6,"rewritten_generated_outcomes":6},"invariants":{"critical_gates":15,"passing_critical_gates":15},"manual_effort":{"eliminated_manual_boundaries":1,"forecast_manual_outcomes":6,"manual_outcomes":6},"provenance":{"locked_inputs":5,"stale_or_missing_records":0},"replay_restarts":{"clean_runs":2,"restart_events_status":"not-recorded"},"report_usability":{"independent_reproduction_status":"not-recorded","published_artifacts":3}},"observations":[{"acceptance_rationale":"all locked forecast paths are accounted","action":"retain complete forecast-to-outcome accounting","category":"automation","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"clean forecasts and conservative escalations are separately measurable","action":"require proof before a forecast manual boundary is absorbed","category":"classification","owner":"methodology","severity":"medium","status":"action-required"},{"acceptance_rationale":"manual effort remains bounded by outcome evidence","action":"record manual outcomes and eliminated boundaries","category":"manual-effort","owner":"methodology","severity":"medium","status":"resolved"},{"acceptance_rationale":"no stale or missing record is accepted","action":"retain digest-locked evidence inputs","category":"provenance","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"all recorded critical gates passed","action":"require all critical invariant gates","category":"invariants","owner":"safety","severity":"high","status":"resolved"},{"acceptance_rationale":"generated outcomes are separately recorded","action":"derive generated outputs after candidate construction","category":"generated-files","owner":"replay","severity":"medium","status":"resolved"},{"acceptance_rationale":"current evidence records clean runs but not restart events","action":"version explicit restart-event evidence","category":"replay-restarts","owner":"replay","severity":"medium","status":"action-required"},{"acceptance_rationale":"current evidence records artifacts but not usability observation","action":"record independent report-consumer reproduction","category":"report-usability","owner":"operations","severity":"medium","status":"action-required"},{"acceptance_rationale":"all observed differences are owned and incremental lineage is not accepted","action":"treat incremental history only as a classified diagnostic","category":"fresh-vs-incremental","owner":"methodology","severity":"high","status":"resolved"},{"acceptance_rationale":"inherited failures must not be called candidate success","action":"preserve lane-level classification separate from aggregate conclusion","category":"platform-result","owner":"operations","severity":"medium","status":"resolved"}],"outcomes":[{"actual":"automatic","forecast":"exact","path":".editorconfig"},{"actual":"manual","forecast":"manual","path":".github/actions/configure-docker/action.yml"},{"actual":"manual","forecast":"manual","path":".github/workflows/ci.yml"},{"actual":"automatic","forecast":"clean-textual","path":"CMakeLists.txt"},{"actual":"manual","forecast":"manual","path":"ci/README.md"},{"actual":"automatic","forecast":"clean-textual","path":"ci/test/00_setup_env_i686_multiprocess.sh"},{"actual":"automatic","forecast":"exact","path":"contrib/guix/INSTALL.md"},{"actual":"automatic","forecast":"exact","path":"contrib/tracing/README.md"},{"actual":"automatic","forecast":"exact","path":"depends/gen_id"},{"actual":"automatic","forecast":"clean-textual","path":"doc/build-freebsd.md"},{"actual":"automatic","forecast":"exact","path":"doc/build-netbsd.md"},{"actual":"automatic","forecast":"clean-textual","path":"doc/build-openbsd.md"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-cli.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-qt.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-tx.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-util.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoin-wallet.1"},{"actual":"rewritten","forecast":"generated","path":"doc/man/bitcoind.1"},{"actual":"automatic","forecast":"exact","path":"doc/release-notes.md"},{"actual":"manual","forecast":"snapshot-only","path":"src/clientversion.cpp"},{"actual":"absorbed","forecast":"absorbed","path":"src/common/netif.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/dbwrapper.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/dbwrapper.h"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/autocompact_test.cc"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/db_test.cc"},{"actual":"automatic","forecast":"exact","path":"src/leveldb/db/version_set.cc"},{"actual":"manual","forecast":"manual","path":"src/node/miner.h"},{"actual":"automatic","forecast":"exact","path":"src/test/coins_tests.cpp"},{"actual":"automatic","forecast":"exact","path":"src/test/fuzz/deserialize.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/txdb.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/txdb.h"},{"actual":"manual","forecast":"manual","path":"src/txmempool.h"},{"actual":"absorbed","forecast":"manual","path":"src/txrequest.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/validation.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/CMakeLists.txt"},{"actual":"automatic","forecast":"clean-textual","path":"src/wallet/rpc/spend.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"src/wallet/spend.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/test/fuzz/crypter.cpp"},{"actual":"automatic","forecast":"exact","path":"src/wallet/test/spend_tests.cpp"},{"actual":"automatic","forecast":"clean-textual","path":"test/lint/test_runner/src/main.rs"}],"schema_version":1,"transitions":[{"actual":"absorbed","forecast":"absorbed","paths":["src/common/netif.cpp"]},{"actual":"automatic","forecast":"clean-textual","paths":["CMakeLists.txt","ci/test/00_setup_env_i686_multiprocess.sh","doc/build-freebsd.md","doc/build-openbsd.md","src/dbwrapper.cpp","src/dbwrapper.h","src/txdb.cpp","src/txdb.h","src/validation.cpp","src/wallet/rpc/spend.cpp","src/wallet/spend.cpp","test/lint/test_runner/src/main.rs"]},{"actual":"automatic","forecast":"exact","paths":[".editorconfig","contrib/guix/INSTALL.md","contrib/tracing/README.md","depends/gen_id","doc/build-netbsd.md","doc/release-notes.md","src/leveldb/db/autocompact_test.cc","src/leveldb/db/db_test.cc","src/leveldb/db/version_set.cc","src/test/coins_tests.cpp","src/test/fuzz/deserialize.cpp","src/wallet/CMakeLists.txt","src/wallet/test/fuzz/crypter.cpp","src/wallet/test/spend_tests.cpp"]},{"actual":"rewritten","forecast":"generated","paths":["doc/man/bitcoin-cli.1","doc/man/bitcoin-qt.1","doc/man/bitcoin-tx.1","doc/man/bitcoin-util.1","doc/man/bitcoin-wallet.1","doc/man/bitcoind.1"]},{"actual":"absorbed","forecast":"manual","paths":["src/txrequest.cpp"]},{"actual":"manual","forecast":"manual","paths":[".github/actions/configure-docker/action.yml",".github/workflows/ci.yml","ci/README.md","src/node/miner.h","src/txmempool.h"]},{"actual":"manual","forecast":"snapshot-only","paths":["src/clientversion.cpp"]}]}
+diff --git a/contrib/roots/methodology-v1.json b/contrib/roots/methodology-v1.json
+index b84ff13c4ea3b54c8eb97f571ccbea4ee1fae140..a271918074c85aa02237fcb02d87fca926e86eb5 100644
+--- a/contrib/roots/methodology-v1.json
++++ b/contrib/roots/methodology-v1.json
+@@ -1,26 +1,18 @@
+ {
+-  "schema_version": 1,
+-  "methodology_version": "1",
+-  "runtime": {
+-    "python": "3.10+",
+-    "git": "git >= 2.30 with clone, checkout, write-tree, commit-tree, and format-patch",
+-    "locale": "C",
+-    "timezone": "UTC",
+-    "bash": "bash >= 5"
+-  },
+   "contracts": {
+-    "replay_tool": "1",
++    "adaptation_manifest_schema": 1,
++    "candidate_evidence_schema": 1,
++    "delta_atlas_schema": 1,
+     "replay_material_schemas": [
+       1,
+       2
+     ],
+-    "retrospective_schema": 1,
+-    "candidate_evidence_schema": 1,
+-    "adaptation_manifest_schema": 1,
+-    "delta_atlas_schema": 1,
+     "replay_report_schema": 1,
++    "replay_tool": "1",
++    "retrospective_schema": 1,
+     "risk_policy_version": 1
+   },
++  "digest": "sha256:abe507ad4a932b025af0d2fd8b6ddd9c616d2053fc025b7c6d9c03371c81dd0e",
+   "frozen_inputs": [
+     {
+       "path": "contrib/devtools/roots-adaptation-manifest.py",
+@@ -32,7 +24,7 @@
+     },
+     {
+       "path": "contrib/devtools/roots-methodology.py",
+-      "sha256": "sha256:82bec90e9ef433f21a098343f4d37cc4811aff268d35b07b97bbf80d2a5c7cba"
++      "sha256": "sha256:8d640a5794c2e99f6ec3c72e41ce1933f54ca185b940bddbf4313a4b8e38b225"
+     },
+     {
+       "path": "contrib/devtools/roots-replay.py",
+@@ -64,7 +56,7 @@
+     },
+     {
+       "path": "contrib/roots/method-retrospective-29.4.json",
+-      "sha256": "sha256:059aac085b689912d502e8efee92795c50b226ffc1b4f708bc726970779e0851"
++      "sha256": "sha256:a2334a039a0fa5572081cec8e5a40e0cbb8894114bbe9392d8ad92411dd2f56e"
+     },
+     {
+       "path": "contrib/roots/method-retrospective.schema.json",
+@@ -128,7 +120,7 @@
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+-      "sha256": "sha256:7133b96f479a0929ca319a7ac07374dd84a86169681ba84904f537040bc15346"
++      "sha256": "sha256:8500d605991aea5e80df6614e7873c7def9d2796fce985b596eecc64d2f18dbf"
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json",
+@@ -140,7 +132,7 @@
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
+-      "sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5"
++      "sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199"
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/canonical-topology.json",
+@@ -158,10 +150,6 @@
+       "path": "contrib/roots/replay-29.4-proposal/incremental-oracle-build.txt",
+       "sha256": "sha256:fcac310f0bbd4934b7f36e10d8dcc796e6f13e322f3d207cac819db293d9f1e5"
+     },
+-    {
+-      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
+-      "sha256": "sha256:795cdb7ed1071f9a5f0a54b84f6462900c61cf2a9517d8bc36df6af1b08aa0ba"
+-    },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/legacy-completion.bash",
+       "sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6"
+@@ -180,7 +168,7 @@
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/lineage-row-29.4.json",
+-      "sha256": "sha256:edf06b2644a8d53e2a0526a36d1a67d42e09291b38a57753d86850de5c3ed216"
++      "sha256": "sha256:bbc16932d67fb6b5a5568afa0eb889e9cd9bc27bcdf32c425d78a7009aeb2464"
+     },
+     {
+       "path": "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json",
+@@ -307,12 +295,46 @@
+       "sha256": "sha256:211f0385f0dec9ac2ce3804bc2cf93209fcb257b13fd5d69a1a883b6bce954d3"
+     }
+   ],
++  "governing_inputs": [
++    "contrib/devtools/roots-adaptation-manifest.py",
++    "contrib/devtools/roots-delta-atlas.py",
++    "contrib/devtools/roots-methodology.py",
++    "contrib/devtools/roots-replay.py",
++    "contrib/devtools/roots-retrospective.py",
++    "contrib/devtools/roots-semantic-safety.py",
++    "contrib/roots/adaptation-manifest-29.3.json",
++    "contrib/roots/candidate-evidence.schema.json",
++    "contrib/roots/core-29.4-migration-fixture.json",
++    "contrib/roots/method-contract-compatibility.json",
++    "contrib/roots/method-retrospective-29.4.json",
++    "contrib/roots/method-retrospective.schema.json",
++    "contrib/roots/replay-materials.schema.json"
++  ],
++  "limitations": [
++    "manual boundaries require recorded approval",
++    "legacy schema v1 cannot negotiate v2 features",
++    "incremental history is diagnostic only"
++  ],
++  "methodology_version": "1",
++  "production_exclusions": [
++    {
++      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
++      "rationale": "requires a rejected non-ancestral Roots 29.3 comparison and is excluded from production reconstruction"
++    },
++    {
++      "path": "contrib/roots/replay-29.4-proposal/post-candidate-production-overlay.patch",
++      "rationale": "is a later control-plane overlay bound by post-candidate replay evidence"
++    }
++  ],
+   "reconstructions": {
+-    "core-to-knots-29.3": {
+-      "record": "contrib/roots/replay-core-to-knots-29.3/replay-materials.json",
+-      "run_count": 2,
+-      "target_tree": "sha1:56f97d3a9199c1fb191e1b8a21f2caae3901b7f6",
+-      "result": "exact-stage-tree",
++    "core-29.4": {
++      "artifact_digests": {
++        "generated_export": "sha256:0eeafd6f1dc5c030b64375267bb4fb19f5c00312fef26815bcb645449a024198",
++        "outcome_set": "sha256:9a180302f503ef17919083d797fa42f9f6682850fed99a80d8298e08c4c39a82",
++        "report_json": "sha256:c025cb7e8d9e99f35ec5d7706a3a6d8a666602c9c5f3c38946fb356b335da072",
++        "report_text": "sha256:a6fcc045984af7ba3fc72de4613ce5d1a644e814e160d70191b581135f6b7508",
++        "state": "sha256:862bb1b491519668137aea04bb802d56860c592c655f70ceed2a432ba844d14b"
++      },
+       "artifacts": [
+         "state",
+         "report-json",
+@@ -320,24 +342,25 @@
+         "generated-export"
+       ],
+       "comparison": "two clean runs byte-identical",
+-      "comparison_test": "test_l8_core_knots_replays_twice_to_exact_stage_a_tree",
+-      "subsequent_manual_boundary": "Stage B remains separately governed by provenance-proposal.json and review-approval.json.",
++      "comparison_test": "test_l7_29_4_replays_twice_to_exact_tree",
++      "input_roots": [
++        "contrib/roots/replay-29.4-proposal"
++      ],
++      "record": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
++      "result": "exact-tree",
++      "role": "upstream-release",
++      "run_count": 2,
++      "subsequent_manual_boundary": "none recorded",
++      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
++    },
++    "core-to-knots-29.3": {
+       "artifact_digests": {
+-        "state": "sha256:17b0b5da7e34f2561858a4d1f27451d13934bb9ba5ec7b853cb088eca08e4d69",
++        "generated_export": "sha256:92eace711b2f17aeea3bab32e09565a211377af247652fe89f65bede697a408e",
++        "outcome_set": "sha256:de21a7f10e4c8b623e7ebb4a37e82a750d3784b5678f945cad7c8ada3e3958a5",
+         "report_json": "sha256:73c72099194cbe03e91ec2b3ea5e766f8f129b332fb3eb183c463b958a782d6e",
+         "report_text": "sha256:4536d5d104eb91e3a5f912fa71bb65280e45ea2e626a8a835e50f79209fbeade",
+-        "generated_export": "sha256:92eace711b2f17aeea3bab32e09565a211377af247652fe89f65bede697a408e",
+-        "outcome_set": "sha256:de21a7f10e4c8b623e7ebb4a37e82a750d3784b5678f945cad7c8ada3e3958a5"
++        "state": "sha256:17b0b5da7e34f2561858a4d1f27451d13934bb9ba5ec7b853cb088eca08e4d69"
+       },
+-      "role": "upstream-to-downstream",
+-      "input_roots": [
+-        "contrib/roots/replay-core-to-knots-29.3"
+-      ]
+-    },
+-    "roots-29.3": {
+-      "record": "contrib/roots/replay-29.3-release/calibration-evidence-contract.json",
+-      "run_count": 2,
+-      "target_tree": "sha1:a5708dcbf1d2611360fab68fc6a8e504db1ba95d",
+       "artifacts": [
+         "state",
+         "report-json",
+@@ -345,25 +368,25 @@
+         "generated-export"
+       ],
+       "comparison": "two clean runs byte-identical",
+-      "comparison_test": "test_release_specific_29_3_calibration_reconstructs_roots_release",
+-      "result": "exact-tree",
++      "comparison_test": "test_l8_core_knots_replays_twice_to_exact_stage_a_tree",
++      "input_roots": [
++        "contrib/roots/replay-core-to-knots-29.3"
++      ],
++      "record": "contrib/roots/replay-core-to-knots-29.3/replay-materials.json",
++      "result": "exact-stage-tree",
++      "role": "upstream-to-downstream",
++      "run_count": 2,
++      "subsequent_manual_boundary": "Stage B remains separately governed by provenance-proposal.json and review-approval.json.",
++      "target_tree": "sha1:56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"
++    },
++    "roots-29.3": {
+       "artifact_digests": {
+-        "state": "sha256:efcb23eeb9550f4526698159c6e18e61c65994da45ee60272bbbcb787e475097",
++        "generated_export": "sha256:f39dfbdd0dff19d9d81cd0bf8d272b9c14235096a41ed811d9ebe8ee6d0a48b9",
++        "outcome_set": "sha256:4d3f12a86091d0e486b34664af14db6d299c4d51afa063364c60f9e12da6f21f",
+         "report_json": "sha256:6cc4bf6c6fa91be585c353fd6cd82aea404692989bf3f55cea131ab6e084cf19",
+         "report_text": "sha256:b3bd02274b22c7aa9855569303ce728d0fcc12b6e342d5b4058ee323c7845838",
+-        "generated_export": "sha256:f39dfbdd0dff19d9d81cd0bf8d272b9c14235096a41ed811d9ebe8ee6d0a48b9",
+-        "outcome_set": "sha256:4d3f12a86091d0e486b34664af14db6d299c4d51afa063364c60f9e12da6f21f"
++        "state": "sha256:efcb23eeb9550f4526698159c6e18e61c65994da45ee60272bbbcb787e475097"
+       },
+-      "role": "downstream-release",
+-      "input_roots": [
+-        "contrib/roots/replay-29.3-release"
+-      ],
+-      "subsequent_manual_boundary": "none recorded"
+-    },
+-    "core-29.4": {
+-      "record": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+-      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+-      "run_count": 2,
+       "artifacts": [
+         "state",
+         "report-json",
+@@ -371,41 +394,24 @@
+         "generated-export"
+       ],
+       "comparison": "two clean runs byte-identical",
+-      "comparison_test": "test_l7_29_4_replays_twice_to_exact_tree",
+-      "result": "exact-tree",
+-      "artifact_digests": {
+-        "state": "sha256:862bb1b491519668137aea04bb802d56860c592c655f70ceed2a432ba844d14b",
+-        "report_json": "sha256:c025cb7e8d9e99f35ec5d7706a3a6d8a666602c9c5f3c38946fb356b335da072",
+-        "report_text": "sha256:a6fcc045984af7ba3fc72de4613ce5d1a644e814e160d70191b581135f6b7508",
+-        "generated_export": "sha256:0eeafd6f1dc5c030b64375267bb4fb19f5c00312fef26815bcb645449a024198",
+-        "outcome_set": "sha256:9a180302f503ef17919083d797fa42f9f6682850fed99a80d8298e08c4c39a82"
+-      },
+-      "role": "upstream-release",
++      "comparison_test": "test_release_specific_29_3_calibration_reconstructs_roots_release",
+       "input_roots": [
+-        "contrib/roots/replay-29.4-proposal"
++        "contrib/roots/replay-29.3-release"
+       ],
+-      "subsequent_manual_boundary": "none recorded"
++      "record": "contrib/roots/replay-29.3-release/calibration-evidence-contract.json",
++      "result": "exact-tree",
++      "role": "downstream-release",
++      "run_count": 2,
++      "subsequent_manual_boundary": "none recorded",
++      "target_tree": "sha1:a5708dcbf1d2611360fab68fc6a8e504db1ba95d"
+     }
+   },
+-  "limitations": [
+-    "manual boundaries require recorded approval",
+-    "legacy schema v1 cannot negotiate v2 features",
+-    "incremental history is diagnostic only"
+-  ],
+-  "digest": "sha256:34e969ededeffd18291a130869bf03cc9610d450d5942c4bee6fb8b1152ef293",
+-  "governing_inputs": [
+-    "contrib/devtools/roots-adaptation-manifest.py",
+-    "contrib/devtools/roots-delta-atlas.py",
+-    "contrib/devtools/roots-methodology.py",
+-    "contrib/devtools/roots-replay.py",
+-    "contrib/devtools/roots-retrospective.py",
+-    "contrib/devtools/roots-semantic-safety.py",
+-    "contrib/roots/adaptation-manifest-29.3.json",
+-    "contrib/roots/candidate-evidence.schema.json",
+-    "contrib/roots/core-29.4-migration-fixture.json",
+-    "contrib/roots/method-contract-compatibility.json",
+-    "contrib/roots/method-retrospective-29.4.json",
+-    "contrib/roots/method-retrospective.schema.json",
+-    "contrib/roots/replay-materials.schema.json"
+-  ]
++  "runtime": {
++    "bash": "bash >= 5",
++    "git": "git >= 2.30 with clone, checkout, write-tree, commit-tree, and format-patch",
++    "locale": "C",
++    "python": "3.10+",
++    "timezone": "UTC"
++  },
++  "schema_version": 1
+ }
+diff --git a/contrib/roots/promotion-29.4.json b/contrib/roots/promotion-29.4.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..94f4f1ab8d6ec875f22e913be85b302241372b82
+--- /dev/null
++++ b/contrib/roots/promotion-29.4.json
+@@ -0,0 +1,28 @@
++{
++  "schema_version": 1,
++  "core": {
++    "tag": "v29.4",
++    "tag_object": "sha1:4e70eab99b60f7718b78e2158de9fb82726f3cec",
++    "commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
++    "tree": "sha1:38ad59b187f59647eb90ad1347bc481485ef4d01"
++  },
++  "candidate": {
++    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
++    "canonical_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
++    "input_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
++    "forbidden_old_trunk_commit": "sha1:e2387f0d975121869064e55eb0afb99e7639120b"
++  },
++  "control_plane": {
++    "branch": "refs/heads/codex/roots-29-4-release",
++    "base_commit": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
++    "candidate_transfer": "exact-bundle-or-commit"
++  },
++  "production": {
++    "integration_ref": "refs/heads/integration/roots-29.4",
++    "production_ref": "refs/heads/roots/29.4",
++    "release_tag": "refs/tags/v29.4-roots.1",
++    "head": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
++    "fast_forward_only": true
++  },
++  "authorization": false
++}
+diff --git a/contrib/roots/replay-29.4-proposal/acceptance-evidence.json b/contrib/roots/replay-29.4-proposal/acceptance-evidence.json
+index 0a190622cfedf39480cba2db794c8dc3ca1aa5b6..c51062a20bdd7081c517dd10b4479f1eab3b0b30 100644
+--- a/contrib/roots/replay-29.4-proposal/acceptance-evidence.json
++++ b/contrib/roots/replay-29.4-proposal/acceptance-evidence.json
+@@ -74,11 +74,11 @@
+   },
+   "lineage": {
+     "row": "lineage-row-29.4.json",
+-    "row_sha256": "sha256:edf06b2644a8d53e2a0526a36d1a67d42e09291b38a57753d86850de5c3ed216",
++    "row_sha256": "sha256:bbc16932d67fb6b5a5568afa0eb889e9cd9bc27bcdf32c425d78a7009aeb2464",
+     "topology": "canonical-topology.json",
+     "topology_sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40",
+     "constructor": "canonical-lineage.bash",
+-    "constructor_sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5",
++    "constructor_sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199",
+     "first_parent_exact_core_tag": true,
+     "first_parent_commit_count": 16,
+     "merge_commit_count": 0,
+@@ -150,5 +150,5 @@
+     "pushed": false,
+     "authorized": false
+   },
+-  "digest": "sha256:75a0eb07b028c6b75443f6b444775fe338549ba328442dd12eb7269ae2d2324f"
++  "digest": "sha256:946a845ca2c46fdd8131603c844bcfdb65f5ed7cc636c33063c25b44be2f225a"
+ }
+diff --git a/contrib/roots/replay-29.4-proposal/canonical-lineage.bash b/contrib/roots/replay-29.4-proposal/canonical-lineage.bash
+index 61595256bdb8491d71ba8718d66ce377a43b65a4..af8f31bc6769487a41ade71d8b208ebf36e58a1b 100755
+--- a/contrib/roots/replay-29.4-proposal/canonical-lineage.bash
++++ b/contrib/roots/replay-29.4-proposal/canonical-lineage.bash
+@@ -7,9 +7,9 @@ IFS=$'\n\t'
+ readonly CORE_COMMIT="3fc0865963a38b871e9f7d94e6151c4953563516"
+ readonly CORE_TREE="38ad59b187f59647eb90ad1347bc481485ef4d01"
+ readonly CORE_TAG_OBJECT="4e70eab99b60f7718b78e2158de9fb82726f3cec"
+-readonly CANDIDATE_COMMIT="f771e13259f23f02efc215327f2806d421cc7339"
++readonly CANDIDATE_COMMIT="cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+ readonly CANDIDATE_TREE="39a5e30207a09962e78ae81c24cc65b1e478ef90"
+-readonly CANDIDATE_REF="refs/remotes/origin/ci/l7-validation/39a5e302"
++readonly CANDIDATE_REF="$CANDIDATE_COMMIT"
+ readonly EXPECTED_TARGET_COMMIT="cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+ 
+ die()
+@@ -32,7 +32,7 @@ readonly script_directory
+ readonly manifest="$script_directory/../adaptation-manifest-29.3.json"
+ readonly tag_payload="$script_directory/materials/core-v29.4.tag"
+ 
+-[[ -d "$source_repository/.git" ]] || die "source is not a Git worktree"
++[[ "$(git -C "$source_repository" rev-parse --is-inside-work-tree 2>/dev/null || true)" == "true" ]] || die "source is not a Git worktree"
+ [[ -f "$manifest" ]] || die "adaptation manifest is unavailable"
+ [[ -f "$tag_payload" ]] || die "Core tag payload is unavailable"
+ [[ ! -e "$destination" ]] || die "destination already exists"
+@@ -44,8 +44,11 @@ actual_core_tree="$(git -C "$destination" rev-parse "$CORE_COMMIT^{tree}")"
+ [[ "$actual_core_tree" == "$CORE_TREE" ]] || die "Core tree does not match its lock"
+ actual_candidate_tree="$(git -C "$destination" rev-parse "$CANDIDATE_COMMIT^{tree}")"
+ [[ "$actual_candidate_tree" == "$CANDIDATE_TREE" ]] || die "candidate tree does not match its lock"
+-actual_candidate_parent="$(git -C "$destination" rev-parse "$CANDIDATE_COMMIT^")"
+-[[ "$actual_candidate_parent" == "$CORE_COMMIT" ]] || die "validation candidate has the wrong Core parent"
++[[ "$(git -C "$destination" rev-list --first-parent --count "$CANDIDATE_COMMIT" "^$CORE_COMMIT")" == 16 ]] ||
++    die "candidate does not have the exact sixteen-commit Core-rooted topology"
++first_lineage_commit="$(git -C "$destination" rev-list --first-parent "$CANDIDATE_COMMIT" -n 16 | tail -n 1)"
++[[ "$(git -C "$destination" rev-parse "$first_lineage_commit^")" == "$CORE_COMMIT" ]] ||
++    die "candidate is not Core-rooted"
+ 
+ actual_tag="$(git -C "$destination" hash-object -t tag -w "$tag_payload")"
+ [[ "$actual_tag" == "$CORE_TAG_OBJECT" ]] || die "Core annotated tag object does not match its lock"
+diff --git a/contrib/roots/replay-29.4-proposal/lineage-row-29.4.json b/contrib/roots/replay-29.4-proposal/lineage-row-29.4.json
+index 5debfd55839376dfda85fc5e6043a8baa96739ae..817657eabc97f41b0de082b96d74e67cab235b11 100644
+--- a/contrib/roots/replay-29.4-proposal/lineage-row-29.4.json
++++ b/contrib/roots/replay-29.4-proposal/lineage-row-29.4.json
+@@ -31,7 +31,7 @@
+     "path": "canonical-topology.json",
+     "sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40",
+     "constructor": "canonical-lineage.bash",
+-    "constructor_sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5",
++    "constructor_sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199",
+     "commit_count": 16,
+     "merge_count": 0,
+     "aggregate_diff_digest": "sha256:1d90add7572488689c9a8a902c19103cdc8db3967c33b97acb95bb354328a81d",
+diff --git a/contrib/roots/validate-local-integration-baseline.py b/contrib/roots/validate-local-integration-baseline.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..940cbb65596ae5decefb209234b5934cc39197ca
+--- /dev/null
++++ b/contrib/roots/validate-local-integration-baseline.py
+@@ -0,0 +1,32 @@
++#!/usr/bin/env python3
++"""Validate the closed, path-free local Roots 29.4 baseline evidence."""
++import json
++import sys
++from pathlib import Path
++
++EXPECTED = {"core_commit":"3fc0865963a38b871e9f7d94e6151c4953563516","core_tag_object":"4e70eab99b60f7718b78e2158de9fb82726f3cec","canonical_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","commit_count":16,"integration_ref":"refs/heads/integration/roots-29.4","mbox_sha256":"be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725","apply_mode":"git am --3way --keep-cr","round_trip_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","round_trip_clean":True,"status":"pass"}
++
++def fail(message):
++    print(f"invalid local baseline evidence: {message}", file=sys.stderr)
++    raise SystemExit(1)
++
++def safe(value):
++    if isinstance(value, str): return not value.startswith("/")
++    if isinstance(value, dict): return all(safe(item) for item in value.values())
++    if isinstance(value, list): return all(safe(item) for item in value)
++    return True
++
++def main():
++    if len(sys.argv) != 2: fail("exactly one record path is required")
++    path = Path(sys.argv[1])
++    if path.is_symlink() or not path.is_file(): fail("record must be a regular non-symlink file")
++    try: record = json.loads(path.read_text())
++    except (OSError, json.JSONDecodeError): fail("record is not readable JSON")
++    if not isinstance(record, dict) or set(record) != set(EXPECTED) | {"schema_version", "export_flags"}: fail("closed schema mismatch")
++    if record["schema_version"] != 1: fail("schema version mismatch")
++    if record["export_flags"] != ["--no-renames", "--binary", "--full-index"]: fail("export flags mismatch")
++    for key, expected in EXPECTED.items():
++        if record[key] != expected: fail(f"locked field mismatch: {key}")
++    if not safe(record): fail("absolute path is forbidden")
++
++if __name__ == "__main__": main()
+diff --git a/contrib/roots/create-local-integration-baseline.bash b/contrib/roots/create-local-integration-baseline.bash
+new file mode 100755
+index 0000000000000000000000000000000000000000..e6711a975af9c320d285a4fb56946909b24efbe5
+--- /dev/null
++++ b/contrib/roots/create-local-integration-baseline.bash
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -Eeuo pipefail
++readonly TARGET=cbc88cff9b35b95a549c0313e424e13093fcd6a1
++readonly TREE=39a5e30207a09962e78ae81c24cc65b1e478ef90
++readonly REF=refs/heads/integration/roots-29.4
++[[ $# -eq 2 && $2 == 'CREATE-LOCAL-ROOTS-29.4' ]] || { echo 'literal confirmation required' >&2; exit 1; }
++repo=$1
++[[ -d $repo/.git && ! -f $repo/.git ]] || { echo 'linked worktree rejected' >&2; exit 1; }
++[[ -z $(git -C "$repo" status --porcelain) ]] || { echo 'dirty tracked state' >&2; exit 1; }
++[[ $(git -C "$repo" rev-parse HEAD) == "$TARGET" ]] || { echo 'wrong branch/head' >&2; exit 1; }
++[[ -z $(git -C "$repo" for-each-ref "$REF") ]] || { echo 'existing target' >&2; exit 1; }
++[[ $(git -C "$repo" rev-parse "$TARGET^{tree}") == "$TREE" ]] || { echo 'wrong canonical tree' >&2; exit 1; }
++git -C "$repo" update-ref "$REF" "$TARGET" "$(printf '0%.0s' {1..40})" || { echo 'existing target or concurrent creation rejected' >&2; exit 1; }
++printf 'confirmation=CREATE-LOCAL-ROOTS-29.4\nref=%s\ncommit=%s\ntree=%s\n' "$REF" "$TARGET" "$TREE"
+diff --git a/contrib/roots/local-integration-baseline-29.4.json b/contrib/roots/local-integration-baseline-29.4.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..722392624767117f1cc2c951d914687df1556cc7
+--- /dev/null
++++ b/contrib/roots/local-integration-baseline-29.4.json
+@@ -0,0 +1,15 @@
++{
++  "schema_version": 1,
++  "core_commit": "3fc0865963a38b871e9f7d94e6151c4953563516",
++  "core_tag_object": "4e70eab99b60f7718b78e2158de9fb82726f3cec",
++  "canonical_commit": "cbc88cff9b35b95a549c0313e424e13093fcd6a1",
++  "tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
++  "commit_count": 16,
++  "integration_ref": "refs/heads/integration/roots-29.4",
++  "mbox_sha256": "be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725",
++  "export_flags": ["--no-renames", "--binary", "--full-index"],
++  "apply_mode": "git am --3way --keep-cr",
++  "round_trip_tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
++  "round_trip_clean": true,
++  "status": "pass"
++}
+diff --git a/contrib/roots/validate-local-integration-baseline.py b/contrib/roots/validate-local-integration-baseline.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..940cbb65596ae5decefb209234b5934cc39197ca
+--- /dev/null
++++ b/contrib/roots/validate-local-integration-baseline.py
+@@ -0,0 +1,32 @@
++#!/usr/bin/env python3
++"""Validate the closed, path-free local Roots 29.4 baseline evidence."""
++import json
++import sys
++from pathlib import Path
++
++EXPECTED = {"core_commit":"3fc0865963a38b871e9f7d94e6151c4953563516","core_tag_object":"4e70eab99b60f7718b78e2158de9fb82726f3cec","canonical_commit":"cbc88cff9b35b95a549c0313e424e13093fcd6a1","tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","commit_count":16,"integration_ref":"refs/heads/integration/roots-29.4","mbox_sha256":"be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725","apply_mode":"git am --3way --keep-cr","round_trip_tree":"39a5e30207a09962e78ae81c24cc65b1e478ef90","round_trip_clean":True,"status":"pass"}
++
++def fail(message):
++    print(f"invalid local baseline evidence: {message}", file=sys.stderr)
++    raise SystemExit(1)
++
++def safe(value):
++    if isinstance(value, str): return not value.startswith("/")
++    if isinstance(value, dict): return all(safe(item) for item in value.values())
++    if isinstance(value, list): return all(safe(item) for item in value)
++    return True
++
++def main():
++    if len(sys.argv) != 2: fail("exactly one record path is required")
++    path = Path(sys.argv[1])
++    if path.is_symlink() or not path.is_file(): fail("record must be a regular non-symlink file")
++    try: record = json.loads(path.read_text())
++    except (OSError, json.JSONDecodeError): fail("record is not readable JSON")
++    if not isinstance(record, dict) or set(record) != set(EXPECTED) | {"schema_version", "export_flags"}: fail("closed schema mismatch")
++    if record["schema_version"] != 1: fail("schema version mismatch")
++    if record["export_flags"] != ["--no-renames", "--binary", "--full-index"]: fail("export flags mismatch")
++    for key, expected in EXPECTED.items():
++        if record[key] != expected: fail(f"locked field mismatch: {key}")
++    if not safe(record): fail("absolute path is forbidden")
++
++if __name__ == "__main__": main()

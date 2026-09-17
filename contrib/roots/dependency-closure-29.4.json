@@ -1,0 +1,1592 @@
+{
+  "closure": [
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": ".gitattributes",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ec483af5b48d3c1ac20d77c78ae02e7d1493d158aa213f30e25100d50649f7cb",
+      "source_blob": "sha1:1fe449463d263fcf7fe426b37a44661270278f19"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": ".github/workflows/release.yml",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8e70fe46e436dd9be27fafffa9af2a1b3c58eeff723a9ed241b6640e5a3bd629",
+      "source_blob": "sha1:235ff25e4376b271874852a2da39c44d9d944036"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": ".github/workflows/roots-portability.yml",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:597d7a55605d3db02a504daa7962647bee2d0ce677fd7afcc1fac41cfbc63863",
+      "source_blob": "sha1:122e546df860d374de877ab82d730955c7828206"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": ".github/workflows/roots-trusted-replay.yml",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:5bfc562861a59d4f5774302d65504479f1ffa0ff203d1ff26d693d1d88ac121c",
+      "source_blob": "sha1:c3dbc1c6cf4f5b365fba015eb95acc166a8c191a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/release/archive.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:e346a3fa48cbbebb3663872ed174d9727c62cce83fc8efd7c11c604a0f40b509",
+      "source_blob": "sha1:04568a397614c3ca43453099bf31d1e4d8390c6f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/release/prepare-release.sh",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8d736614e6958d0618af63fe74e60385f5dd073cd6b8b2f7a65bd621680c0c61",
+      "source_blob": "sha1:f3ab39e22d71e3ba7e7d38e0ce45c84a9dccc6a3"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/release/roots-build-evidence.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:132ff0d15b65b2b70936647ed42c2fb1e0037f7cc28989e75102a8625d1d4e0e",
+      "source_blob": "sha1:7b8ea0505b3daa7e055cd8605a60d5124c839703"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/release/roots-release-evidence.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ec7e67e0a9f3abbbe08487cf6671fc2d089ba29bbd3a9966843285823c78cc6d",
+      "source_blob": "sha1:14356e1435cc12598da83762a5520efdbfd18e6c"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/roots-trusted-candidate-build.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b3545a5f33bee305d3de317ea1c1b57c3a55a12adb1ecdb8d186112b5db4f24e",
+      "source_blob": "sha1:ad78a89ff0d49e4d39e03c149fb5c27b7801b8cc"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "release-infrastructure",
+      "path": "ci/roots-trusted-replay-gate.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:3b031ee3e9674e6448a9927f15983883ec52caeab7411dc24798148699cfe074",
+      "source_blob": "sha1:859ebb9e166bf6fe259c316a075f2cc8671c3315"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "ci/roots-trusted-replay-review.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:baccdd56976075089210d8953f62068e5cd55211d1db7966933d0ce274adebb1",
+      "source_blob": "sha1:e2fd2992c11fb923b27afffd2d77a475a102a908"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/data/roots_delta_budget_normalization_fixture.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:42dde78463135e6ddddc835bf983737a8b3b866fe33c72165755adee447dec46",
+      "source_blob": "sha1:a0069987f2b8b1497843cf3d0f578889b8130256"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/data/roots_portability_hotspots_identity_fixture.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:84791be12b77300e0c3d22376208f4951369c48f2952b5b97abb8e1272803c3d",
+      "source_blob": "sha1:ae123b6dec0e0a6ad72fa2d290e34c793e2cb15a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/data/roots_upstream_absorption_fixture.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d50f9b90fb56a4a75b3208bae61edf37bf977d88ba60c497d0fa1b0d02fc1cb8",
+      "source_blob": "sha1:2ade407da0cf2d8eea0c0e6aaa4a5dbfadef5afc"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_gui_qrencode.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:51c665d3c7e9ab4bb92a9dce8ba44fc8472fa3d63ecf89eae1f515e15b6f2e9d",
+      "source_blob": "sha1:ef04ba61e4003d4aa3118633ca366c3f7fb7776e"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_prepare_release.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:09b949427946508786f8ccd898f588f3ea572abebb414c4d83bf04ec88fe6c11",
+      "source_blob": "sha1:f0491c7b7828f8494408e07b927e6aa8513a6bb9"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_294_fixture.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:443659af7164421a85c10e026bd3017ff74359124b2bf9540d8ebbfc8387a17b",
+      "source_blob": "sha1:a25ee0054261b363b8e1def665f1c76f948d3f5e"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_adaptation_manifest.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:e9ed010d9cc9d6450c14dce9365a799dbff23cee97125976ed33ee8e851a0a5f",
+      "source_blob": "sha1:ba969273eea6f1c6150c5ca8557261a4c5f24192"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_continuous_accounting.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:5aa31abf99a6a3a9c560830c6746efdac7136ac3eb5bd9048b895babb7ae2a55",
+      "source_blob": "sha1:e33a205dd34d52f854e2385ca8b7a319ad358138"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_delta_atlas.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f94cf04919ecd63e8ac7fbf6239eba3718ba8e3fdd7baf1327d114084bb4d2de",
+      "source_blob": "sha1:748e11eb337fe90263f8cb5f1231d6ac75cc5b08"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "obsolete",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_hardening_handoff.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d6339d23c2fe6fd442f31f6566ae2689d7c5ca27ae5ccddb3972376822efc9d1",
+      "source_blob": "sha1:3a71273c87702c2ce11f0dc11704614c73bfebae"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_lineage.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:fea520d76961d2881ee5cd612779dd681386d6839281a54a7aeeba11a13db6ee",
+      "source_blob": "sha1:543be8cd5eaaa307ef1b9fcdaa3c42bc0714282d"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_llm_contract.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7ca10b5128ba1635505f7ec469c6646348432be7a53510ae3975c84d5cb14a64",
+      "source_blob": "sha1:50d535ddcbd68148dd36624c7849230dec5f5152"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_maintainer_runbook.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:14f756766598ac7c709f8ea750d50d23e37a4b2094976d3388c0280ad634dc01",
+      "source_blob": "sha1:fadd04956b27d9d0ccd5dbd9f85f8f7e18ee9c48"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_portability_hotspots.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:6152aa5b93e8edc74810eec76eef282acf6b8478a20e6a16de85fbd666dca978",
+      "source_blob": "sha1:0647c1ed6726013c9c013cd22315b4fb8abd7cb9"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_pr_gate.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f54a8e7e90c7bc7db0e4825f63b86f6020621c68e9f8c3d36dbf255ca4f78a36",
+      "source_blob": "sha1:1a43c6ad7dfba064eaa536ac4c2c3e3ee61c9d8a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_release_evidence.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:1d0926504912e6fd0db664594d71cccd3a7ccd9bc7a79e9f631ea103dbbb4a1b",
+      "source_blob": "sha1:f2ccc61f2783905c5da7b8de0546c618b654f725"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_replay.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:20539bf3d82c4c5472eb46d9428d615a57e7635a601c0a24b51695997afcf128",
+      "source_blob": "sha1:277658eee8323ecf5ddfc6f1372befd7c28f5411"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_semantic_safety.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a25b2622e32b0288c698a4f9b4d365676a513c2981dc1ccca243d9c5e9099dfb",
+      "source_blob": "sha1:be1f34d1dc0fe1f65e0a862973910febf189977d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "ci-roots",
+      "path": "ci/test/test_roots_trusted_replay_ci.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:0e4bda1ce10cca894a5bb34095d6125533aca35d479b68f6fbf311401ec8d708",
+      "source_blob": "sha1:0bac7f3063f5aec2063fdba90f8813f6408d355f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-294-fixture.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:afdb612b0ae8d824f49f515525e937f47dbaae28c4f8d2c14bb8889385ad23ee",
+      "source_blob": "sha1:17693f7085a78a1cad42cae32907b9b5cc51a16f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-adaptation-manifest.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:bd1ad5da3f57f282c800ec82a06e8405bb5887987bb4493deccf6f7d9728c363",
+      "source_blob": "sha1:09a58d7b1795a82e7822218a7cde91f92f0fc887"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-continuous-accounting.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:06396ae4b338ea5e389a752e0d03590d597d136358f78b0c3f9c4e084667f47f",
+      "source_blob": "sha1:1e53f4763c403fe790f5888b787164e25ff30e95"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-delta-atlas.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:52c15f1ca2fa1f8d30000df1b2940b104150063d1189a6e872af7bffdecab359",
+      "source_blob": "sha1:a2774ce313f3d70d0a1480b16ad82a254e9e245b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-hardening-handoff.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:189d60a4e8fab9eeeb99091fb86d03e1d61c370c3f136a02a992a818b3c5e1a0",
+      "source_blob": "sha1:1eb205aba8edecdc44447fc52bff95126b35b418"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-lineage.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:c24f0aeacf67c63f3a40ca4d5328fcc458a97ba9fcd0778b297a879bbfb7ce66",
+      "source_blob": "sha1:d63b4951df643ea338ebd179902bd838d1ce90e3"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-llm-contract.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ed129a3409883fe34d226599de9e7c9a0ee108a29927198027e1fe1732cccbb1",
+      "source_blob": "sha1:aa738035c4681471cad252438b10aab36f5167e9"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-methodology.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:82bec90e9ef433f21a098343f4d37cc4811aff268d35b07b97bbf80d2a5c7cba",
+      "source_blob": "sha1:43f69d028ba10bba851fbc5567ed9606572cdd9a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-pr-gate.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:60805d4d4d6c4384fbf3dfd92f074c6506e57b8972990c1f7a93de62be7ff78c",
+      "source_blob": "sha1:5884e1d8d216b9c61080f69dca469a5feac7dc58"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-replay.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b23a7c2c90b36e48fe91bdb54579fa6e2d2637ed62a5789d7607d2861ac7f29c",
+      "source_blob": "sha1:14f067026c7da4a1c2a34fc0685499ee7ecba5aa"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-retrospective.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:23e9e196434d1275fd12d0958949950ac7de39e9679a9c42bf38c5842bc34606",
+      "source_blob": "sha1:7aaf2a32420cf80b3dd11d296cc5be2a97e95a7c"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-tooling",
+      "path": "contrib/devtools/roots-semantic-safety.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f76423747c44f10be3a0b8d583582dd4c107a408f6303d5d3bd0736b537ea511",
+      "source_blob": "sha1:38c561d734fc3ae04f94a412ceeb4b27adfdec9b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-coverage-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:70e02500d73097ed95f9fceec85c684bf29049ca1f70b004f1a2219895c26541",
+      "source_blob": "sha1:0cb34d8447d099d130f04026d0be727a04cc99b6"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-coverage.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:95657bee3a2160df4dbb8e5822fe148183a6a47a84d7af1b5228996b28320505",
+      "source_blob": "sha1:67318818e05c12f167dd48928d425036e491c489"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-layer-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:089ce0a905888636899011839a5898bf6b840445f04442ce33f44f40244e938d",
+      "source_blob": "sha1:e16272802588302d205b013c18b844e9552690de"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-layer.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b81ed2df8679f505dc9d82209faf923a656e79c467dda7e026173d4e5e4646a7",
+      "source_blob": "sha1:206a03eeac90ee776ee163dc4ec21236976de492"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-manifest-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb",
+      "source_blob": "sha1:284e698a3ec43aaf01a0bb41708504bdc54442ea"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/adaptation-manifest.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:adcf5752d8b759360ae42adbe81821aaf0a27a749365ddf03a1b8286cbea168a",
+      "source_blob": "sha1:a0b73e06d0737daf7a48ed78e9e06918951d806c"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-classification-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:bccc43a151f5734068d8d6d9e4896ca971f5b8a63b5d7bd3e6caa3d0900b11c9",
+      "source_blob": "sha1:4ef1e5468945750e588ecf5d9b563f6403fffadc"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-classification.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:e803ddcb34cadfa400b69df97acc5affe11dc40f1fbf1686ebd6701d782647c8",
+      "source_blob": "sha1:ba0541700022ef467cd8e75bd2d5e4d4fd219c9c"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-granularity-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:5a5c3227ac26e199111114bf4cd98fbcc3234acb52aa13b2cc1cbc29da6f5eee",
+      "source_blob": "sha1:182d39b4638c2dd2888a1c67552bfe44a3bc4635"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-granularity.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8bd27e69fc7dc9cd20189879684cf344ee7c947711ac06b0f6e1164c72dbf825",
+      "source_blob": "sha1:1f58e04acb80aef58a76fe4d5e1cff0c044b5389"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-input-lock-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:70a6457e6d90b593d2dcbb9797356773fc86358f3c1f49534df83aa178354b1c",
+      "source_blob": "sha1:350b397d28158277676ed33a793033d02038f202"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-input-lock.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d0ce839af67bc1a148b95d2756c9a86ab3c818721233598f625c0d58b866b0b9",
+      "source_blob": "sha1:0e1d068fca797f23e86838627614056b55ba4960"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-layer-partition-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:9588032b95690e8548af910bf861d6b0289ee32f3d920de3a1e077ba3d2cb858",
+      "source_blob": "sha1:85fd13af61ae65332e0eb260a29119acf70a0808"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-layer-partition.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:e02b39740e7e1766d430bf9311e4ce0750a0f794399d887fa695cf40783c39b6",
+      "source_blob": "sha1:ad9a0cb0f0c47a3831c81f6424ab1537c5787389"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-report-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8b0ae8cdcd041dea1ff80b316de47d770e973f89ccb2a671996e321ac70e1288",
+      "source_blob": "sha1:4dba6d3303cd8ef0b0cbca3728f2ad60d98cd4b8"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/atlas-report.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:9ba56940c7ef481e8bd3568d0b3c0ba393f4550966760dfa4c2cade793594c26",
+      "source_blob": "sha1:e5c51e16a7146d4b35fb5e15d486216655f43750"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/candidate-evidence.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:546e85042d68836872b17a186455ec1d7515c05e56a5dc765d9d5ad07b929daf",
+      "source_blob": "sha1:d64dec4cac57924ccd4f62bb358d25229ef514f3"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/commit-topology.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7228631f2008e86a69e136121df8d711fdccf0c007387810038d09018e0b201f",
+      "source_blob": "sha1:2768dbba137222e95eec3c9c9a9a0635236aac6d"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/construct-canonical-29.4.bash",
+      "provenance": "overlay:sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "sha256": "sha256:8512f5672ff33896e1d7a37ce3d4eb3d3abb5ae6b67dd36e553217300b30e8d9",
+      "source_blob": null
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/continuous-accounting-pr.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:11de30b450817cae862826f03e205e24e63af5acdcac29970843106edf17c694",
+      "source_blob": "sha1:e5489212baf1554468bb79b7618c892930df5b0a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/continuous-accounting.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:06f67177525ab5dfc1ed0e23443fcba1a038d333c19592a565e876fd73d0f8a6",
+      "source_blob": "sha1:9656b90b77a995d7dd0c8c9f9af07f66e019ada3"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/core-29.4-migration-fixture.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f",
+      "source_blob": "sha1:4c4157e99db029df6b3841b737c9383e6fd3e559"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/core-29.4-migration-fixture.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:87452d2613ede8a7190f2038b32a032489c082b0300e9d29995cce31f6269f7c",
+      "source_blob": "sha1:d60a1c74a09926076af022da9d1870a9da555bf5"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/create-local-integration-baseline.bash",
+      "provenance": "overlay:sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "sha256": "sha256:eba5c1613bcd783b969c8959fdb7ec496c61e053c109b4e7c1bf42906085a9a8",
+      "source_blob": null
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/hardening-handoff-v1.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:37f81798781d716b5c28373b4497a7e5dbb2a62841bce1a9940683ddc167bbaf",
+      "source_blob": "sha1:730b7226d63fa41259c3294bc857a65f14243527"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/lineage-ledger.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a7e1ff952afa7812e862255d4e8f04352ca9020036793a2f6a685f48a207dbaa",
+      "source_blob": "sha1:0c838fc138515e8aacc28babb941bc501d9842dd"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/lineage-ledger.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:139af49854aa2931228bb237d5c66c84af4bdbf8b3c25f44d68a6af6d9068b9b",
+      "source_blob": "sha1:e039eed473d962870071499e573c40f40b2375cd"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/llm-execution-contract-v1.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:37f3aff32f63eaad47bbce3fa75ae02931ebd2bd7c9f8ddbacb1ca7e74b78d50",
+      "source_blob": "sha1:7828699d52df7ea28ae2206e3a225baf7a09dc6d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/llm-execution-contract-v1.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d9da700291ce8ddf9606a6355807864c8fc96c76041c73accdecaa6d360a353d",
+      "source_blob": "sha1:bd057a1daa7397e0015cb3da57a0d8b201d55c25"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/local-integration-baseline-29.4.json",
+      "provenance": "overlay:sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "sha256": "sha256:7837595d62aca35bf402e7aa691f224877a39f3f1791b9a599c5cc9844d78d97",
+      "source_blob": null
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/maintainer-runbook-review.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f240c2d745976847091d1cd0dbce0e9c946a435b299a7aebc62bf8a046189e19",
+      "source_blob": "sha1:d17618fc93c30e4ad4708daf150db5367b1c7185"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/maintainer-runbook.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:0c78b53f96d1250e022cd64f35f1a214a2cb19668a4c2ce4ae3d4fd12effa048",
+      "source_blob": "sha1:97c7860618895fdf486ba4a8d5dedea62e89c9e6"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/method-contract-compatibility.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:5f06277a2078adb15e288e03fbe27dcb21dabe3f111705bf0093d468b0dca241",
+      "source_blob": "sha1:c33d1dc70870b7611b6d5bcf48bc20575243b6fd"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/method-retrospective-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:059aac085b689912d502e8efee92795c50b226ffc1b4f708bc726970779e0851",
+      "source_blob": "sha1:72514081f1c0a68eadaaa57f6b8e08c41b7ccda7"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/method-retrospective.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:2edc6686536b6c579528d5b0237b28e4a236affcc1aa5e3586db0f181bf6e8d1",
+      "source_blob": "sha1:7985bccdb34caa0ebd70402a500e412b6cbd258b"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/methodology-v1.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:bb272b328b789b109f1a55f8dd01a2826a9cb0df27e2ccf1685d7e59ca8c51fa",
+      "source_blob": "sha1:b84ff13c4ea3b54c8eb97f571ccbea4ee1fae140"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/portability-delta-budget-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:2bd423b4558f7e80b3b45f3a6c017753302abf39e436f9ad9b98f0ad5aff130c",
+      "source_blob": "sha1:1ec1c3899ed76272c0bdba4f0da344fd7ac6a834"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/portability-hotspots-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:591c3022e47e2f4469d726a12262314860fafaf3afccfdea294fda49f36a918c",
+      "source_blob": "sha1:c66ef6ce71591fd4b32ccb009fe82e00b2802c2d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/portability-seams-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ecdb5bc5a5bd5c75e12407e91ee75112c11574e44f003ca1cf6c14aaa64315c7",
+      "source_blob": "sha1:8caf5f5f00e234073a786aac01eceeebae1d3e2a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/post-methodology-adaptations.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:26fc1e8d696512188ce3aced02bbe1a46436285d15ee993957e45ad1617ced46",
+      "source_blob": "sha1:291e8d0dbf5b849eabb661324792366b4aa347c6"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/promotion-29.4.json",
+      "provenance": "overlay:sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "sha256": "sha256:11ba340093c8479c472d8acbd8e753ff6bf750e4e300f589d2aeba1c2c60ae38",
+      "source_blob": null
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/release-accounting.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:14f47da98edc83b2fb008813715a47e66a3a29da9b04b67764980a3064d0d1d0",
+      "source_blob": "sha1:c11ebf22fd7e308a7c5a2e538f54e3046b21e59b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/README.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:93789abaf4f866fe7763922f52e89b87b6565f6b4bcc057944e7a78ce0dccb84",
+      "source_blob": "sha1:7391fa435702d13c449135eb8b228440b683390b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d576abd5b2554849699e8ba785b96bc8e808e5af5e76d8e80737cc3cdf45b688",
+      "source_blob": "sha1:1c4605a147fde05d97192bacf0db1aa2c1f79509"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/calibration-evidence-contract.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:4008e7e70790a26d132700ef503e94c41520235b8cb957fc429830611ae87d2b",
+      "source_blob": "sha1:1f9916445b8391d59488174781ade8f3baca914b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/calibration-provenance.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:731367ca27b4b65aff1cc4dd0990e1fb9f19ff48860302c19c3f3f4fe4bd289d",
+      "source_blob": "sha1:91a5f1a696c14d2d407e93daa09d170343a44e23"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/manual-review-proposal.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:1db9051bec97e62a3582b1132f2f2a13402bd0662fe59174850cb195364fc14f",
+      "source_blob": "sha1:6b8d37d03399aee675890d7813ab18aa4af2da11"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/replay-materials.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:6be8e2d3e8395ad5f837b7be83a2439ae5b8e4caef70bf2b021f77d8e34a83f2",
+      "source_blob": "sha1:0a1ac5e0d9ba1e14d6269ab90c0fd7fb15b26365"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/review-approval.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:16de861ec4ef0e0da383be39b833384b790e75983836810e9608a7ea47e99797",
+      "source_blob": "sha1:73e39de98a6257e7c42d836c5874c76ab5dbe708"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-build-ci-build-or-release.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:6d98d6da594eb73e7c74c8260af4f2febb779bea6953ba74596cc6f41d9b8b7b",
+      "source_blob": "sha1:df3a91ce92f71dc83bcf755aaed0a20d14a80616"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-common-maintenance.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:59746c2b6be24339b8c15c7df6add41e3ff8c4ac6d641a5934b4c29a7d4f1aa1",
+      "source_blob": "sha1:ecef3d764a2b6e237aff6f8a611acb01e18a4bc9"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-consensus-validation-consensus-adjacent.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:c410f86e7cbdbd58eb32081767f2d621c49479389f120e7cb2b3adcc0faeeb84",
+      "source_blob": "sha1:c899b10081cbe07967625429b8c4c6c97c3e984e"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-documentation-documentation.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b59d93454cbf322687192b7af4ea44661cc7f3ddc690742a99c6d9b964ef5509",
+      "source_blob": "sha1:1db7ddfd2c3703c40bf68a37b4ed2babcfa2d88a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-gui-branding-ui.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:90319cf326f40fcb15930e2b1a6972f0f7abdfa8daf1354d40ae214aae26b9d3",
+      "source_blob": "sha1:d08999c13002c15cd9d73b49a4e4d6ada947673d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-release-generated-output.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:422430c2bebd59afe219dc2a4c132031efb2cd6698f2d47d1b51092145cab54a",
+      "source_blob": "sha1:a285984cd4d4499569420dd7e446d092d97abdc6"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3-release/roots-roots-tests-test-coverage.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7bb1f3aadbc4b40032f386d8545101c68a28a5c9ca01c1cbf4a786787ff82040",
+      "source_blob": "sha1:6d8e561fc2c4e622b4279089e9934a89045ac714"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.3/replay-materials.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:6fd9acac9d450ae47dbc65127365c5c7b99ab5635c5800f3b3501c50f405657b",
+      "source_blob": "sha1:28c18d523b5979cd840bfbbc22dfdca798c1fa3b"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7133b96f479a0929ca319a7ac07374dd84a86169681ba84904f537040bc15346",
+      "source_blob": "sha1:0a190622cfedf39480cba2db794c8dc3ca1aa5b6"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:78d0e11291a20033dc0ec82515a80467ab8b8e6cebeeea881623c94ba29a27b5",
+      "source_blob": "sha1:654c87287ae91fe1e8dfb57b78a7f242e8efa697"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/candidate-evidence-draft.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:bfc88b89f577cde144ed22bb4650578d795bb616edcff5256143c26be680f037",
+      "source_blob": "sha1:3db280608561aa6531fd9bb603b8e9bc40ca5028"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5",
+      "source_blob": "sha1:61595256bdb8491d71ba8718d66ce377a43b65a4"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/canonical-topology.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40",
+      "source_blob": "sha1:41d9237ef64f1a513b229d44745ac7b6755f62b9"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/downstream-unit-outcomes.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:3053ac76ffae3031d0825af64544a5437841897b616f59c1eacebef92fd73c6e",
+      "source_blob": "sha1:45286a9da24ef961e48be9b9bbb10c6b5bc57299"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/incremental-comparison.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:6e504e153f1f9f2df79f68265dc35057bb3e8b5465528879880283dd07b4a49e",
+      "source_blob": "sha1:52b6cfc3768b73cb8f3c0102b1bff259cef0d52f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle-build.txt",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:fcac310f0bbd4934b7f36e10d8dcc796e6f13e322f3d207cac819db293d9f1e5",
+      "source_blob": "sha1:6d8f7655bba71f735653c3aeca2c2da27b07e0ea"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "obsolete",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:795cdb7ed1071f9a5f0a54b84f6462900c61cf2a9517d8bc36df6af1b08aa0ba",
+      "source_blob": "sha1:d82635a98833b15b6d90722edf904811afe20c5d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/legacy-completion.bash",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6",
+      "source_blob": "sha1:875bb8da561e6eb8dbab347c0aa3abe868d11ed5"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/legacy-miniupnpc.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5",
+      "source_blob": "sha1:f11cffe0b7f98247fa340ed0e2d0a79cbdfc334b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/legacy-readme-windows.txt",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf",
+      "source_blob": "sha1:77507f5bab20844ea4284c0b2d8c4ceeeb9e0793"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/legacy-rpc-sort.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a",
+      "source_blob": "sha1:81528f4472d9ec0c1b032fc55afc1822a1f657fa"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/lineage-row-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:edf06b2644a8d53e2a0526a36d1a67d42e09291b38a57753d86850de5c3ed216",
+      "source_blob": "sha1:5debfd55839376dfda85fc5e6043a8baa96739ae"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:1aeae5a69ad08767744833d1d3bf65e18f2761f2e6a64e229eca7f3a10ad0604",
+      "source_blob": "sha1:23d0ec8b922e519001c9a55c341e2e4e2118bf8f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/core-v29.4.tag",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ebfccf529e845352cbcc1d9d963d40b2449272b8c34e02ba1eef5657d70d972a",
+      "source_blob": "sha1:575f1d29b57cb905b32075e98ba67a752b4247da"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/depends_patches_miniupnpc_dont_leak_info.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5",
+      "source_blob": "sha1:f11cffe0b7f98247fa340ed0e2d0a79cbdfc334b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/doc_README_windows.txt",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf",
+      "source_blob": "sha1:77507f5bab20844ea4284c0b2d8c4ceeeb9e0793"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/roots-29.4-candidate.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f3378485df655c0afd312cdb8b0ca574a07f9223faa3ac7702f9a557f0f1751b",
+      "source_blob": "sha1:8552ba676807012535048ef2e4f3b5b31efcd09d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/test_functional_data_completion_bitcoin-cli.header.bash-completion",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6",
+      "source_blob": "sha1:875bb8da561e6eb8dbab347c0aa3abe868d11ed5"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/materials/test_functional_rpc_sort_multisig.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a",
+      "source_blob": "sha1:81528f4472d9ec0c1b032fc55afc1822a1f657fa"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/ordered-outcome-map.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:534c9a58749ce50be35c80df2aa12fc24ce98f94da049f417760d5ada70358e4",
+      "source_blob": "sha1:8108d2e416ec01557b4a6413bce12cf1497cfc56"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/provenance.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:76db8f7768def4f778269dd7ed9bd4cd0c7ef743331160cb8ca7aa1c04079658",
+      "source_blob": "sha1:07a284ba379e15a22ab7800892439eca53cfe07a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/recreation-recipe.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:ccbd520b48e69242cb780e23920ffeac2964b1453026c0361b298f77d56a191c",
+      "source_blob": "sha1:a187115dbb1672db162a6ffe1b92f98ba7990bc4"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/replay-materials.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:77a1708d373b9722d7a8f0b48cbc6a26454605b41e8b8dadc52cd44939fed534",
+      "source_blob": "sha1:c0fe019692d8a718a0574925a3eceed2e6699a96"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/review-approval.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a6ed4fb76d2397be9c3b28b127486f13fb81194bdf1b996e03f033ee6bf615bf",
+      "source_blob": "sha1:ddec5f9bcc90e554c137e98f759bb1ad42922f00"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/roots-29.4-candidate.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:f3378485df655c0afd312cdb8b0ca574a07f9223faa3ac7702f9a557f0f1751b",
+      "source_blob": "sha1:8552ba676807012535048ef2e4f3b5b31efcd09d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/roots-29.4-clean.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:9610d3ec5c6e1624baa29846e1f5d1935d3cf61053fb5ab86b02915bc399e6d8",
+      "source_blob": "sha1:0cc4d71906ed5ac04bf54bf83de103133060221e"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-29.4-proposal/validation-evidence.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8db205dbce48c4d9f18648ea20a4610d3adeb5ee1ef6a2f9ede3923ad1fb23eb",
+      "source_blob": "sha1:7df843f824de7c81d2a7f7b99cb4e566b68a346f"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d15b16b63ea1ccfc8c87ca0c1cf4fee795bc8fe238a5dd677d64950324f83e40",
+      "source_blob": "sha1:6db829ddb577cfb2794ad7235d7af769bad90300"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/manual-review-proposal.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:5fb0f1dbc9ce2ad5e820ed68b269c4f70b70dd42a5da712fe0e236bdca187077",
+      "source_blob": "sha1:77279769147c8885071bc002df3714cc96151f15"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/provenance-proposal.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:de5f38a6348d2a1f19692c147a14437fc8cda534d64a41ea04547d04c59c5f01",
+      "source_blob": "sha1:96743991453d26a5aa364f1b2af9cd7d77439b06"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/replay-materials.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:79ea6fa1a9fb057073836decaf9673674513aa088e934d4a9cd3db3778bd40d8",
+      "source_blob": "sha1:dffe55556413b882794a5aba8e3d44b9dea7a785"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/review-approval.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d8b85cee7035bc3d722cbfe444c8a915951a6542ecf4cf695580e92faf1bfc05",
+      "source_blob": "sha1:915cbf0ddee2e320fa130bd3f2d64ca741823e95"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-build-ci-build-or-release.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b36698548247a19ce037c3189a2db64c6966ec78199c0642120c64993186157e",
+      "source_blob": "sha1:16a06e0f5bbe985300e20b4fec119df75ddf6f3b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-common-maintenance.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:758febd9dcf9c281bd8d2f2bfe55e999749eb47929ea2299b1b74fdf5b9a9f83",
+      "source_blob": "sha1:235e6c67af1ad549badb2ebaeebb20229f55b4bc"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-consensus-validation-consensus-adjacent.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:edbdbc678bacb3fd2ed654efdb28a980ca01f4f18b8edc64ef5a2975ae4a4b16",
+      "source_blob": "sha1:ebdf2a313cf396a08f918c3c263debae0f8e050a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-documentation-documentation.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:4b8da462690c644ff373479637078429dcbbb04a8576e30b57a6ac4f8bcbdbc1",
+      "source_blob": "sha1:f1df982fb0340fed512ba72c317d5b563ea6e5e1"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-gui-branding-ui.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:d74620c89b5b80284b5d39291179ea665261b97f5878f573e52f87282bfc6010",
+      "source_blob": "sha1:65fa4ab550ab9ada6e62b9e1b1fd7879555c777d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-p2p-networking.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b120517cf73699d180934cd203431209fd1febf889a9d1d40379e7c96bf1379c",
+      "source_blob": "sha1:beda088a3042473b70f14d1b365f445b3c267700"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-policy-local-policy.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:b175e7d8db5f9bfc272054f11fa3bfef8a260e0b00ebf605976ebe5dda867195",
+      "source_blob": "sha1:324dec98c90f8d4492d82c60902d92b27441cc2b"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-release-29-3-gap-layer.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:c80aab8bdc5fa2bface44a15fd197393f198d99b8a5e50e0f12d684fffba587a",
+      "source_blob": "sha1:8bc88f4026a2692f25d59febda0bb28d7e159fbd"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-tests-test-coverage.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:695bc0bea0ac5145e7b5ab037ffc2867b244c94aeac77d96b5587953925d2d38",
+      "source_blob": "sha1:5df591b4959c37765ee1ae70f71e649406db54cc"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-wallet-wallet.patch",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:13ada2057e49159c672eebce6472e292d4ec8f9badda963e5524105897db7313",
+      "source_blob": "sha1:a3cb5e6a010f962cffa3df5405c8afcbcf59a23a"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-materials.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:211f0385f0dec9ac2ce3804bc2cf93209fcb257b13fd5d69a1a883b6bce954d3",
+      "source_blob": "sha1:de5e08bbcf183a86b9db8d09af82b3119a6ed132"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/replay-plan.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:1b0c154f9239f3acbbeff682c8d95083bc482b39b1d1732e74c3f045466373c5",
+      "source_blob": "sha1:c5b506104d1cffd229f5c55a71d2c7fd3cb519a5"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/roots-knots-29.3-classification.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:8e7a2804a9bd6af6d673cd3cb50bd809ba7f118e32a3514527ace1be6dfc3d3e",
+      "source_blob": "sha1:c8497ff62f2652964cbc25f99061ffa55182d125"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/roots-knots-29.3-classification.schema.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:c6111763206363948731c1379f89fbcaff835c8caf5d85c6c962af5d88eaf0bb",
+      "source_blob": "sha1:7167f42d8ffc6cfe89671e84e3ef074f262ac507"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "roots-records",
+      "path": "contrib/roots/upstream-dispositions-29.4.json",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:29bf11cdb67bb3ff3ed88c8721d10cdf601042a1bc4cde3e362fccfbaba55f25",
+      "source_blob": "sha1:f71a195056dbae0ded2252ea1d8753114a4a11fd"
+    },
+    {
+      "adaptation_digest": "sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "dependencies": [],
+      "disposition": "adapted",
+      "owner": "roots-records",
+      "path": "contrib/roots/validate-local-integration-baseline.py",
+      "provenance": "overlay:sha256:81ad55d6eb1052ddb586308da0138acfd0c7acdb939dca3b32b1de7e5f5203db",
+      "sha256": "sha256:0d75a8e326e457417ef32b95b09675bde85d1bdb299488ab6147b26630bd5f9d",
+      "source_blob": null
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "doc/maintainers/portability-roadmap.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:491ad464f294be85c4a58c893f984c7dfdbc298f5e7e5be9674f760ec89e63cf",
+      "source_blob": "sha1:c36e6467de8308e853313f28afdd7e3fc2e4128d"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "doc/maintainers/replay-engine.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:a30015cf86fb92b0fb415204462644bcebf0045298c1e52f5090d2b79cb17f9f",
+      "source_blob": "sha1:42ee4d344b7362ad016665eea1ee68cceedd0b01"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "doc/maintainers/semantic-safety.md",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:85d341079f2a78f8ec628600cf8173c1ee2d03ce006e398446b6e06afcc3e082",
+      "source_blob": "sha1:ae1dc9920eda795c7b90fafa3d52b7cddef43f44"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "test/lint/lint-spelling.py",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:66804e409924c44ce7af7ff9104f705e3f692301a0303cb72b599ee2e8528fa4",
+      "source_blob": "sha1:e138c3bcb5ddfab265c46da6f64fd38957766a35"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "test/lint/spelling.ignore-words.txt",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:58fbc51eab8695dca2f860404f880788d0cb4c7031f7067d2667a077c5815cd1",
+      "source_blob": "sha1:3f47d684c8f3d92b929f356e174f5ac1749220ca"
+    },
+    {
+      "adaptation_digest": null,
+      "dependencies": [],
+      "disposition": "retained",
+      "owner": "release-infrastructure",
+      "path": "test/lint/test_runner/src/main.rs",
+      "provenance": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+      "sha256": "sha256:117a17b8d1819c5bb81a2064c1d48dcf6bed7a300daa5c8f0163c87c2d700aa4",
+      "source_blob": "sha1:b5d69b8db5ecc588946bb1181ada803056a4ab18"
+    }
+  ],
+  "manifest_sha256": "sha256:8e0cb01605172bcbbe5bb4cff19c22c64e58313a7d1b70b14eb7bd17a713392e",
+  "module_matrix": {
+    "excluded": [
+      {
+        "module": "ci/test/test_roots_hardening_handoff.py",
+        "rationale": "exclusive obsolete proposal/Org and remote-ref rehearsal"
+      }
+    ],
+    "excluded_methods": [
+      {
+        "method": "ci.test.test_roots_llm_contract.RootsLlmContractTest._historical_two_isolated_clean_repositories_produce_identical_evidence",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      },
+      {
+        "method": "ci.test.test_roots_maintainer_runbook.MaintainerRunbookTest._historical_two_fresh_clones_execute_complete_deterministic_rehearsal",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      },
+      {
+        "method": "ci.test.test_roots_lineage.RootsLineageTest._historical_checked_in_ledger_fork_start_matches_non_ancestral_object",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      },
+      {
+        "method": "ci.test.test_roots_replay.RootsReplayTest._historical_l7_incremental_comparison_accounts_for_every_difference",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      },
+      {
+        "method": "ci.test.test_roots_replay.RootsReplayTest._historical_l7_core_knots_material_is_locked_and_complete",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      },
+      {
+        "method": "ci.test.test_roots_replay.RootsReplayTest._historical_release_specific_29_3_calibration_reconstructs_roots_release",
+        "rationale": "requires non-ancestral historical reconstruction object"
+      }
+    ],
+    "retained_glob": "ci/test/test_roots_*.py"
+  },
+  "schema_version": 1,
+  "source_commit": "sha1:e2387f0d975121869064e55eb0afb99e7639120b"
+}
