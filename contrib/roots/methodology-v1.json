@@ -1,0 +1,417 @@
+{
+  "contracts": {
+    "adaptation_manifest_schema": 1,
+    "candidate_evidence_schema": 1,
+    "delta_atlas_schema": 1,
+    "replay_material_schemas": [
+      1,
+      2
+    ],
+    "replay_report_schema": 1,
+    "replay_tool": "1",
+    "retrospective_schema": 1,
+    "risk_policy_version": 1
+  },
+  "digest": "sha256:abe507ad4a932b025af0d2fd8b6ddd9c616d2053fc025b7c6d9c03371c81dd0e",
+  "frozen_inputs": [
+    {
+      "path": "contrib/devtools/roots-adaptation-manifest.py",
+      "sha256": "sha256:bd1ad5da3f57f282c800ec82a06e8405bb5887987bb4493deccf6f7d9728c363"
+    },
+    {
+      "path": "contrib/devtools/roots-delta-atlas.py",
+      "sha256": "sha256:52c15f1ca2fa1f8d30000df1b2940b104150063d1189a6e872af7bffdecab359"
+    },
+    {
+      "path": "contrib/devtools/roots-methodology.py",
+      "sha256": "sha256:8d640a5794c2e99f6ec3c72e41ce1933f54ca185b940bddbf4313a4b8e38b225"
+    },
+    {
+      "path": "contrib/devtools/roots-replay.py",
+      "sha256": "sha256:b23a7c2c90b36e48fe91bdb54579fa6e2d2637ed62a5789d7607d2861ac7f29c"
+    },
+    {
+      "path": "contrib/devtools/roots-retrospective.py",
+      "sha256": "sha256:23e9e196434d1275fd12d0958949950ac7de39e9679a9c42bf38c5842bc34606"
+    },
+    {
+      "path": "contrib/devtools/roots-semantic-safety.py",
+      "sha256": "sha256:f76423747c44f10be3a0b8d583582dd4c107a408f6303d5d3bd0736b537ea511"
+    },
+    {
+      "path": "contrib/roots/adaptation-manifest-29.3.json",
+      "sha256": "sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb"
+    },
+    {
+      "path": "contrib/roots/candidate-evidence.schema.json",
+      "sha256": "sha256:546e85042d68836872b17a186455ec1d7515c05e56a5dc765d9d5ad07b929daf"
+    },
+    {
+      "path": "contrib/roots/core-29.4-migration-fixture.json",
+      "sha256": "sha256:b12a19fff1bf2aae0d42926e83b8fe6f9c84b77ca7b92bec1bee0f3b9647ae1f"
+    },
+    {
+      "path": "contrib/roots/method-contract-compatibility.json",
+      "sha256": "sha256:5f06277a2078adb15e288e03fbe27dcb21dabe3f111705bf0093d468b0dca241"
+    },
+    {
+      "path": "contrib/roots/method-retrospective-29.4.json",
+      "sha256": "sha256:a2334a039a0fa5572081cec8e5a40e0cbb8894114bbe9392d8ad92411dd2f56e"
+    },
+    {
+      "path": "contrib/roots/method-retrospective.schema.json",
+      "sha256": "sha256:2edc6686536b6c579528d5b0237b28e4a236affcc1aa5e3586db0f181bf6e8d1"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/README.md",
+      "sha256": "sha256:93789abaf4f866fe7763922f52e89b87b6565f6b4bcc057944e7a78ce0dccb84"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json",
+      "sha256": "sha256:d576abd5b2554849699e8ba785b96bc8e808e5af5e76d8e80737cc3cdf45b688"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/calibration-evidence-contract.json",
+      "sha256": "sha256:4008e7e70790a26d132700ef503e94c41520235b8cb957fc429830611ae87d2b"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/calibration-provenance.json",
+      "sha256": "sha256:731367ca27b4b65aff1cc4dd0990e1fb9f19ff48860302c19c3f3f4fe4bd289d"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/manual-review-proposal.json",
+      "sha256": "sha256:1db9051bec97e62a3582b1132f2f2a13402bd0662fe59174850cb195364fc14f"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/replay-materials.json",
+      "sha256": "sha256:6be8e2d3e8395ad5f837b7be83a2439ae5b8e4caef70bf2b021f77d8e34a83f2"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/review-approval.json",
+      "sha256": "sha256:16de861ec4ef0e0da383be39b833384b790e75983836810e9608a7ea47e99797"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-build-ci-build-or-release.patch",
+      "sha256": "sha256:6d98d6da594eb73e7c74c8260af4f2febb779bea6953ba74596cc6f41d9b8b7b"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-common-maintenance.patch",
+      "sha256": "sha256:59746c2b6be24339b8c15c7df6add41e3ff8c4ac6d641a5934b4c29a7d4f1aa1"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-consensus-validation-consensus-adjacent.patch",
+      "sha256": "sha256:c410f86e7cbdbd58eb32081767f2d621c49479389f120e7cb2b3adcc0faeeb84"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-documentation-documentation.patch",
+      "sha256": "sha256:b59d93454cbf322687192b7af4ea44661cc7f3ddc690742a99c6d9b964ef5509"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-gui-branding-ui.patch",
+      "sha256": "sha256:90319cf326f40fcb15930e2b1a6972f0f7abdfa8daf1354d40ae214aae26b9d3"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-release-generated-output.patch",
+      "sha256": "sha256:422430c2bebd59afe219dc2a4c132031efb2cd6698f2d47d1b51092145cab54a"
+    },
+    {
+      "path": "contrib/roots/replay-29.3-release/roots-roots-tests-test-coverage.patch",
+      "sha256": "sha256:7bb1f3aadbc4b40032f386d8545101c68a28a5c9ca01c1cbf4a786787ff82040"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+      "sha256": "sha256:8500d605991aea5e80df6614e7873c7def9d2796fce985b596eecc64d2f18dbf"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json",
+      "sha256": "sha256:78d0e11291a20033dc0ec82515a80467ab8b8e6cebeeea881623c94ba29a27b5"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/candidate-evidence-draft.json",
+      "sha256": "sha256:bfc88b89f577cde144ed22bb4650578d795bb616edcff5256143c26be680f037"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
+      "sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/canonical-topology.json",
+      "sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/downstream-unit-outcomes.json",
+      "sha256": "sha256:3053ac76ffae3031d0825af64544a5437841897b616f59c1eacebef92fd73c6e"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/incremental-comparison.json",
+      "sha256": "sha256:6e504e153f1f9f2df79f68265dc35057bb3e8b5465528879880283dd07b4a49e"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle-build.txt",
+      "sha256": "sha256:fcac310f0bbd4934b7f36e10d8dcc796e6f13e322f3d207cac819db293d9f1e5"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/legacy-completion.bash",
+      "sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/legacy-miniupnpc.patch",
+      "sha256": "sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/legacy-readme-windows.txt",
+      "sha256": "sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/legacy-rpc-sort.py",
+      "sha256": "sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/lineage-row-29.4.json",
+      "sha256": "sha256:bbc16932d67fb6b5a5568afa0eb889e9cd9bc27bcdf32c425d78a7009aeb2464"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json",
+      "sha256": "sha256:1aeae5a69ad08767744833d1d3bf65e18f2761f2e6a64e229eca7f3a10ad0604"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/core-v29.4.tag",
+      "sha256": "sha256:ebfccf529e845352cbcc1d9d963d40b2449272b8c34e02ba1eef5657d70d972a"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/depends_patches_miniupnpc_dont_leak_info.patch",
+      "sha256": "sha256:a87fe2bbbe1bac19c3f1af14720789311e85e0a6c2c82675cdc63ec9d409cca5"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/doc_README_windows.txt",
+      "sha256": "sha256:7f5397cd78720e766b31bd2c5023e1bda73120c7074cf8189d06a04c49f396bf"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/roots-29.4-candidate.patch",
+      "sha256": "sha256:f3378485df655c0afd312cdb8b0ca574a07f9223faa3ac7702f9a557f0f1751b"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/test_functional_data_completion_bitcoin-cli.header.bash-completion",
+      "sha256": "sha256:d3dee34980fed17b1542a056bde0a21224c86f41d693de0cbc77cac7dea739c6"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/materials/test_functional_rpc_sort_multisig.py",
+      "sha256": "sha256:165586b653eb43406622db9af891117252e8b7a9a5dd0e3f5a10d0d175fd4a2a"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/ordered-outcome-map.json",
+      "sha256": "sha256:534c9a58749ce50be35c80df2aa12fc24ce98f94da049f417760d5ada70358e4"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/provenance.json",
+      "sha256": "sha256:76db8f7768def4f778269dd7ed9bd4cd0c7ef743331160cb8ca7aa1c04079658"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/recreation-recipe.json",
+      "sha256": "sha256:ccbd520b48e69242cb780e23920ffeac2964b1453026c0361b298f77d56a191c"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/replay-materials.json",
+      "sha256": "sha256:77a1708d373b9722d7a8f0b48cbc6a26454605b41e8b8dadc52cd44939fed534"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/review-approval.json",
+      "sha256": "sha256:a6ed4fb76d2397be9c3b28b127486f13fb81194bdf1b996e03f033ee6bf615bf"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/roots-29.4-candidate.patch",
+      "sha256": "sha256:f3378485df655c0afd312cdb8b0ca574a07f9223faa3ac7702f9a557f0f1751b"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/roots-29.4-clean.patch",
+      "sha256": "sha256:9610d3ec5c6e1624baa29846e1f5d1935d3cf61053fb5ab86b02915bc399e6d8"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/validation-evidence.json",
+      "sha256": "sha256:8db205dbce48c4d9f18648ea20a4610d3adeb5ee1ef6a2f9ede3923ad1fb23eb"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json",
+      "sha256": "sha256:d15b16b63ea1ccfc8c87ca0c1cf4fee795bc8fe238a5dd677d64950324f83e40"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/manual-review-proposal.json",
+      "sha256": "sha256:5fb0f1dbc9ce2ad5e820ed68b269c4f70b70dd42a5da712fe0e236bdca187077"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/provenance-proposal.json",
+      "sha256": "sha256:de5f38a6348d2a1f19692c147a14437fc8cda534d64a41ea04547d04c59c5f01"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/replay-materials.json",
+      "sha256": "sha256:79ea6fa1a9fb057073836decaf9673674513aa088e934d4a9cd3db3778bd40d8"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/review-approval.json",
+      "sha256": "sha256:d8b85cee7035bc3d722cbfe444c8a915951a6542ecf4cf695580e92faf1bfc05"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-build-ci-build-or-release.patch",
+      "sha256": "sha256:b36698548247a19ce037c3189a2db64c6966ec78199c0642120c64993186157e"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-common-maintenance.patch",
+      "sha256": "sha256:758febd9dcf9c281bd8d2f2bfe55e999749eb47929ea2299b1b74fdf5b9a9f83"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-consensus-validation-consensus-adjacent.patch",
+      "sha256": "sha256:edbdbc678bacb3fd2ed654efdb28a980ca01f4f18b8edc64ef5a2975ae4a4b16"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-documentation-documentation.patch",
+      "sha256": "sha256:4b8da462690c644ff373479637078429dcbbb04a8576e30b57a6ac4f8bcbdbc1"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-gui-branding-ui.patch",
+      "sha256": "sha256:d74620c89b5b80284b5d39291179ea665261b97f5878f573e52f87282bfc6010"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-p2p-networking.patch",
+      "sha256": "sha256:b120517cf73699d180934cd203431209fd1febf889a9d1d40379e7c96bf1379c"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-policy-local-policy.patch",
+      "sha256": "sha256:b175e7d8db5f9bfc272054f11fa3bfef8a260e0b00ebf605976ebe5dda867195"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-release-29-3-gap-layer.patch",
+      "sha256": "sha256:c80aab8bdc5fa2bface44a15fd197393f198d99b8a5e50e0f12d684fffba587a"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-tests-test-coverage.patch",
+      "sha256": "sha256:695bc0bea0ac5145e7b5ab037ffc2867b244c94aeac77d96b5587953925d2d38"
+    },
+    {
+      "path": "contrib/roots/replay-core-to-knots-29.3/roots-knots-wallet-wallet.patch",
+      "sha256": "sha256:13ada2057e49159c672eebce6472e292d4ec8f9badda963e5524105897db7313"
+    },
+    {
+      "path": "contrib/roots/replay-materials.schema.json",
+      "sha256": "sha256:211f0385f0dec9ac2ce3804bc2cf93209fcb257b13fd5d69a1a883b6bce954d3"
+    }
+  ],
+  "governing_inputs": [
+    "contrib/devtools/roots-adaptation-manifest.py",
+    "contrib/devtools/roots-delta-atlas.py",
+    "contrib/devtools/roots-methodology.py",
+    "contrib/devtools/roots-replay.py",
+    "contrib/devtools/roots-retrospective.py",
+    "contrib/devtools/roots-semantic-safety.py",
+    "contrib/roots/adaptation-manifest-29.3.json",
+    "contrib/roots/candidate-evidence.schema.json",
+    "contrib/roots/core-29.4-migration-fixture.json",
+    "contrib/roots/method-contract-compatibility.json",
+    "contrib/roots/method-retrospective-29.4.json",
+    "contrib/roots/method-retrospective.schema.json",
+    "contrib/roots/replay-materials.schema.json"
+  ],
+  "limitations": [
+    "manual boundaries require recorded approval",
+    "legacy schema v1 cannot negotiate v2 features",
+    "incremental history is diagnostic only"
+  ],
+  "methodology_version": "1",
+  "production_exclusions": [
+    {
+      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
+      "rationale": "requires a rejected non-ancestral Roots 29.3 comparison and is excluded from production reconstruction"
+    },
+    {
+      "path": "contrib/roots/replay-29.4-proposal/post-candidate-production-overlay.patch",
+      "rationale": "is a later control-plane overlay bound by post-candidate replay evidence"
+    }
+  ],
+  "reconstructions": {
+    "core-29.4": {
+      "artifact_digests": {
+        "generated_export": "sha256:0eeafd6f1dc5c030b64375267bb4fb19f5c00312fef26815bcb645449a024198",
+        "outcome_set": "sha256:9a180302f503ef17919083d797fa42f9f6682850fed99a80d8298e08c4c39a82",
+        "report_json": "sha256:c025cb7e8d9e99f35ec5d7706a3a6d8a666602c9c5f3c38946fb356b335da072",
+        "report_text": "sha256:a6fcc045984af7ba3fc72de4613ce5d1a644e814e160d70191b581135f6b7508",
+        "state": "sha256:862bb1b491519668137aea04bb802d56860c592c655f70ceed2a432ba844d14b"
+      },
+      "artifacts": [
+        "state",
+        "report-json",
+        "report-text",
+        "generated-export"
+      ],
+      "comparison": "two clean runs byte-identical",
+      "comparison_test": "test_l7_29_4_replays_twice_to_exact_tree",
+      "input_roots": [
+        "contrib/roots/replay-29.4-proposal"
+      ],
+      "record": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+      "result": "exact-tree",
+      "role": "upstream-release",
+      "run_count": 2,
+      "subsequent_manual_boundary": "none recorded",
+      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+    },
+    "core-to-knots-29.3": {
+      "artifact_digests": {
+        "generated_export": "sha256:92eace711b2f17aeea3bab32e09565a211377af247652fe89f65bede697a408e",
+        "outcome_set": "sha256:de21a7f10e4c8b623e7ebb4a37e82a750d3784b5678f945cad7c8ada3e3958a5",
+        "report_json": "sha256:73c72099194cbe03e91ec2b3ea5e766f8f129b332fb3eb183c463b958a782d6e",
+        "report_text": "sha256:4536d5d104eb91e3a5f912fa71bb65280e45ea2e626a8a835e50f79209fbeade",
+        "state": "sha256:17b0b5da7e34f2561858a4d1f27451d13934bb9ba5ec7b853cb088eca08e4d69"
+      },
+      "artifacts": [
+        "state",
+        "report-json",
+        "report-text",
+        "generated-export"
+      ],
+      "comparison": "two clean runs byte-identical",
+      "comparison_test": "test_l8_core_knots_replays_twice_to_exact_stage_a_tree",
+      "input_roots": [
+        "contrib/roots/replay-core-to-knots-29.3"
+      ],
+      "record": "contrib/roots/replay-core-to-knots-29.3/replay-materials.json",
+      "result": "exact-stage-tree",
+      "role": "upstream-to-downstream",
+      "run_count": 2,
+      "subsequent_manual_boundary": "Stage B remains separately governed by provenance-proposal.json and review-approval.json.",
+      "target_tree": "sha1:56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"
+    },
+    "roots-29.3": {
+      "artifact_digests": {
+        "generated_export": "sha256:f39dfbdd0dff19d9d81cd0bf8d272b9c14235096a41ed811d9ebe8ee6d0a48b9",
+        "outcome_set": "sha256:4d3f12a86091d0e486b34664af14db6d299c4d51afa063364c60f9e12da6f21f",
+        "report_json": "sha256:6cc4bf6c6fa91be585c353fd6cd82aea404692989bf3f55cea131ab6e084cf19",
+        "report_text": "sha256:b3bd02274b22c7aa9855569303ce728d0fcc12b6e342d5b4058ee323c7845838",
+        "state": "sha256:efcb23eeb9550f4526698159c6e18e61c65994da45ee60272bbbcb787e475097"
+      },
+      "artifacts": [
+        "state",
+        "report-json",
+        "report-text",
+        "generated-export"
+      ],
+      "comparison": "two clean runs byte-identical",
+      "comparison_test": "test_release_specific_29_3_calibration_reconstructs_roots_release",
+      "input_roots": [
+        "contrib/roots/replay-29.3-release"
+      ],
+      "record": "contrib/roots/replay-29.3-release/calibration-evidence-contract.json",
+      "result": "exact-tree",
+      "role": "downstream-release",
+      "run_count": 2,
+      "subsequent_manual_boundary": "none recorded",
+      "target_tree": "sha1:a5708dcbf1d2611360fab68fc6a8e504db1ba95d"
+    }
+  },
+  "runtime": {
+    "bash": "bash >= 5",
+    "git": "git >= 2.30 with clone, checkout, write-tree, commit-tree, and format-patch",
+    "locale": "C",
+    "python": "3.10+",
+    "timezone": "UTC"
+  },
+  "schema_version": 1
+}

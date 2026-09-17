@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "l7.3-supervised-manual-resolution-approval",
+  "id": "l7-3-supervised-root-review",
+  "reviewer_identity": "l0",
+  "role": "supervised-root-review",
+  "decision": "accepted",
+  "produced_at": "2026-09-15T08:03:52Z",
+  "candidate_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+  "proposal_digest": "sha256:d058ae36da5a453d2d4ee2c85b7e009de97303a56aa67baadb8a4de66bcf0a46",
+  "scope": {
+    "manual_rewritten_snapshot_boundaries": 13,
+    "l4_outcomes": 40,
+    "git_tree_paths": 39,
+    "snapshot_only_paths": ["src/clientversion.cpp"],
+    "downstream_units": 16,
+    "downstream_declared_paths": 839,
+    "downstream_changed_paths": 837,
+    "downstream_absorbed_paths": ["src/common/netif.cpp", "src/txrequest.cpp"]
+  },
+  "rationale": [
+    "The canonical proposal digest was independently recomputed and matched.",
+    "Every final result blob for the 13 manual, rewritten, and snapshot boundaries matches the immutable candidate tree.",
+    "The validation commit parent is the exact Core 29.4 peeled commit.",
+    "Manual source resolutions preserve Core 29.4 direct container migrations, retain Roots policy-only declarations, and do not change consensus validity.",
+    "CI resolutions preserve the Core runner topology, restrict token and cache writes, and the Win64 GUI correction passed the terminal matrix.",
+    "The clientversion outcome remains archive-only identity handling and does not hard-code a 29.4 release identity.",
+    "The six manpage results are outputs of the declared generator recipe.",
+    "The downstream ledger accounts all sixteen units and all 839 paths, with only the two declared absorbed paths."
+  ],
+  "limitations": [
+    "This approval does not mark L7.3 DONE.",
+    "This approval is not L7.5 release acceptance or lineage acceptance.",
+    "This approval does not authorize a commit, merge, push, tag, or publication.",
+    "Any change to the approved proposal digest, result blobs, candidate tree, or scope invalidates this approval."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "core_commit": "3fc0865963a38b871e9f7d94e6151c4953563516",
+  "core_tag_object": "4e70eab99b60f7718b78e2158de9fb82726f3cec",
+  "canonical_commit": "cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+  "tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
+  "commit_count": 16,
+  "integration_ref": "refs/heads/integration/roots-29.4",
+  "mbox_sha256": "be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725",
+  "export_flags": ["--no-renames", "--binary", "--full-index"],
+  "apply_mode": "git am --3way --keep-cr",
+  "round_trip_tree": "39a5e30207a09962e78ae81c24cc65b1e478ef90",
+  "round_trip_clean": true,
+  "status": "pass"
+}

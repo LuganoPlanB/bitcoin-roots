@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "input_digests", "layers", "first_fork_boundary", "handoff"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "input_digests": {"type": "object"},
+    "layers": {"type": "array"},
+    "first_fork_boundary": {"type": "object"},
+    "handoff": {"type": "string"}
+  },
+  "additionalProperties": false
+}

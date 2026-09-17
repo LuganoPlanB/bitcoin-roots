@@ -1,0 +1,382 @@
+{
+  "schema_version": 1,
+  "kind": "roots-hardening-handoff",
+  "contract_id": "bitcoin-roots-hardening-handoff-v1",
+  "baseline": {
+    "core_tag": "v29.4",
+    "core_commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "core_tree": "sha1:38ad59b187f59647eb90ad1347bc481485ef4d01",
+    "candidate_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "candidate_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+    "first_parent_commit_count": 16,
+    "future_base_rule": "exact-verified-core-tag-never-knots-or-previous-roots"
+  },
+  "authorities": {
+    "lineage": [
+      "contrib/roots/lineage-ledger.json",
+      "contrib/roots/replay-29.4-proposal/canonical-topology.json"
+    ],
+    "adaptation_inventory": [
+      "contrib/roots/adaptation-manifest-29.3.json",
+      "contrib/roots/post-methodology-adaptations.json"
+    ],
+    "backport_semantics_and_invariants": [
+      "contrib/roots/methodology-v1.json",
+      "contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+    ],
+    "modularization_design": [
+      "contrib/roots/portability-hotspots-29.4.json",
+      "contrib/roots/portability-seams-29.4.json",
+      "contrib/roots/portability-delta-budget-29.4.json",
+      "contrib/roots/upstream-dispositions-29.4.json"
+    ],
+    "release_provenance": [
+      "ci/release/roots-release-evidence.py",
+      "ci/release/prepare-release.sh",
+      "contrib/roots/maintainer-runbook.md",
+      "contrib/roots/llm-execution-contract-v1.json"
+    ],
+    "continuous_accounting": [
+      "contrib/devtools/roots-continuous-accounting.py",
+      "contrib/roots/continuous-accounting.md",
+      "contrib/roots/post-methodology-adaptations.json"
+    ]
+  },
+  "pins": {
+    "risk_paths": [
+      "src/consensus",
+      "src/validation.cpp",
+      "src/policy",
+      "src/net_processing.cpp",
+      "src/wallet",
+      "src/rpc",
+      "src/qt",
+      "src/util",
+      "depends",
+      "cmake",
+      "ci",
+      ".github/workflows"
+    ],
+    "risk_sources": [
+      "contrib/roots/portability-hotspots-29.4.json",
+      "contrib/roots/portability-seams-29.4.json",
+      "contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+    ],
+    "analyzers": {
+      "fast_candidates": [
+        "gcc-werror",
+        "clang-werror",
+        "bitcoin-tidy",
+        "clang-tidy-diff",
+        "circular-dependencies"
+      ],
+      "deep_candidates": [
+        "clang-tidy-full",
+        "scan-build-or-cppcheck",
+        "asan-ubsan",
+        "tsan"
+      ],
+      "selection_rule": "pin exact versions only after measured precision; exclude embedded subtrees unless preparing an upstream report"
+    },
+    "test_matrices": {
+      "build": [
+        "linux-gcc-default",
+        "linux-clang-default",
+        "wallet-off",
+        "sqlite-wallet",
+        "compatible-bdb-4.8-when-available",
+        "qt",
+        "zmq-usdt-upnp",
+        "windows-preset-validation"
+      ],
+      "behavior": [
+        "ctest",
+        "default-functional",
+        "affected-extended-functional",
+        "accepted-consensus-policy-rdts-invariants",
+        "wallet-format-and-lifecycle",
+        "p2p-parser-fuzz",
+        "shutdown-and-recovery"
+      ],
+      "portability": [
+        "hardening-handoff",
+        "continuous-accounting",
+        "trusted-replay",
+        "pr-gate",
+        "release-evidence",
+        "prepare-release",
+        "llm-contract",
+        "maintainer-runbook"
+      ]
+    },
+    "performance_baselines": {
+      "source": "contrib/roots/portability-delta-budget-29.4.json",
+      "required_collectors": [
+        "clean-and-incremental-build-time",
+        "binary-size",
+        "startup-shutdown",
+        "representative-mempool",
+        "block-validation",
+        "wallet-load",
+        "contention-tail-latency"
+      ],
+      "comparison_rule": "record deterministic summaries and tool versions against the accepted 29.4 candidate; do not claim longitudinal conflict trends from one migration"
+    }
+  },
+  "behavior_l1_ids": [
+    "risk-baseline",
+    "backport-workflow",
+    "build-ci-hardening",
+    "static-analysis-gate",
+    "memory-data-hardening",
+    "concurrency-hardening",
+    "consensus-policy-hardening",
+    "wallet-storage-hardening",
+    "interface-hardening",
+    "architecture-maintainability",
+    "release-quality-gates"
+  ],
+  "approved_implementation_milestones": [
+    {
+      "id": "implement-ci-identity-seam",
+      "adaptation_ids": [
+        "roots-roots-build-ci-build-or-release"
+      ],
+      "decision": "propose",
+      "source": "contrib/roots/portability-seams-29.4.json"
+    },
+    {
+      "id": "implement-qt-presentation-descriptor",
+      "adaptation_ids": [
+        "roots-knots-gui-branding-ui",
+        "roots-roots-gui-branding-ui"
+      ],
+      "decision": "propose",
+      "source": "contrib/roots/portability-seams-29.4.json"
+    }
+  ],
+  "disposition_groups": [
+    {
+      "status": "superseded",
+      "milestone_ids": [
+        "baseline-delta-manifest"
+      ],
+      "rationale": "The accepted adaptation inventory and 29.4 topology now own exhaustive delta classification.",
+      "replacement_refs": [
+        "contrib/roots/adaptation-manifest-29.3.json",
+        "contrib/roots/post-methodology-adaptations.json",
+        "contrib/roots/replay-29.4-proposal/canonical-topology.json"
+      ]
+    },
+    {
+      "status": "superseded",
+      "milestone_ids": [
+        "baseline-governance",
+        "backport-semantic-gates",
+        "roots-invariant-tests"
+      ],
+      "rationale": "The accepted methodology and technical-acceptance evidence own severity, semantic conflict, and consensus/policy/RDTS invariants.",
+      "replacement_refs": [
+        "contrib/roots/methodology-v1.json",
+        "contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
+      ]
+    },
+    {
+      "status": "superseded",
+      "milestone_ids": [
+        "backport-upstream-contract",
+        "backport-preflight-tool"
+      ],
+      "rationale": "The lineage ledger, replay engine, contributor gate, and clean-clone contracts own immutable remotes, preflight, staging, and safe-stop behavior.",
+      "replacement_refs": [
+        "contrib/roots/lineage-ledger.json",
+        "contrib/devtools/roots-replay.py",
+        "contrib/devtools/roots-pr-gate.py",
+        "contrib/roots/llm-execution-contract-v1.json"
+      ]
+    },
+    {
+      "status": "superseded",
+      "milestone_ids": [
+        "roots-adaptation-seams"
+      ],
+      "rationale": "L9 completed the design decision; only its two approved proposals become implementation milestones.",
+      "replacement_refs": [
+        "contrib/roots/portability-seams-29.4.json",
+        "implement-ci-identity-seam",
+        "implement-qt-presentation-descriptor"
+      ]
+    },
+    {
+      "status": "merged",
+      "milestone_ids": [
+        "release-acceptance-gate"
+      ],
+      "rationale": "Release provenance is accepted; future hardening extends the owning evidence schema only with hardening-specific results.",
+      "replacement_refs": [
+        "ci/release/roots-release-evidence.py",
+        "ci/release/prepare-release.sh",
+        "contrib/roots/maintainer-runbook.md"
+      ]
+    },
+    {
+      "status": "merged",
+      "milestone_ids": [
+        "risk-baseline",
+        "backport-workflow",
+        "consensus-policy-hardening",
+        "architecture-maintainability",
+        "release-quality-gates"
+      ],
+      "rationale": "The L1 retains its unimplemented hardening work while consuming accepted portability authorities for overlapping design and provenance concerns.",
+      "replacement_refs": [
+        ".gestalt/cpp-hardening-and-backports.org",
+        "contrib/roots/hardening-handoff-v1.json"
+      ]
+    },
+    {
+      "status": "retained",
+      "milestone_ids": [
+        "baseline-risk-register",
+        "baseline-quality-measurements",
+        "backport-rehearsal",
+        "build-ci-hardening",
+        "build-option-contract",
+        "dependency-supply-chain",
+        "ci-risk-matrix",
+        "ci-script-hardening",
+        "static-analysis-gate",
+        "analyzer-policy",
+        "analyzer-baseline-triage",
+        "analyzer-ci-integration",
+        "include-dependency-hygiene",
+        "memory-data-hardening",
+        "lifetime-ownership-audit",
+        "arithmetic-bounds-audit",
+        "serialization-parser-hardening",
+        "buffer-api-hardening",
+        "concurrency-hardening",
+        "concurrency-map",
+        "concurrency-dynamic-triage",
+        "concurrency-shutdown-hardening",
+        "concurrency-contention",
+        "validation-policy-separation",
+        "p2p-adversarial-hardening",
+        "policy-complexity-hardening",
+        "chainstate-recovery-hardening",
+        "wallet-storage-hardening",
+        "durable-write-hardening",
+        "filesystem-boundary-hardening",
+        "secret-handling-hardening",
+        "wallet-lifecycle-hardening",
+        "configuration-hardening",
+        "interface-hardening",
+        "rpc-rest-hardening",
+        "subprocess-boundary-hardening",
+        "gui-boundary-hardening",
+        "observability-hardening",
+        "architecture-boundary-enforcement",
+        "architecture-hotspot-refactors",
+        "architecture-ownership-debt",
+        "test-risk-coverage-map",
+        "test-reliability",
+        "fuzz-coverage-program",
+        "documentation-reconciliation",
+        "terminal-hardening-review"
+      ],
+      "rationale": "The work remains necessary, but it is re-pinned to the accepted 29.4 candidate, authorities, test matrices, and continuous-accounting/replay rule.",
+      "replacement_refs": [
+        ".gestalt/cpp-hardening-and-backports.org",
+        "contrib/roots/hardening-handoff-v1.json"
+      ]
+    }
+  ],
+  "validation": {
+    "expected_original_milestones": 59,
+    "expected_original_l1": 11,
+    "expected_original_l2": 48,
+    "allowed_dispositions": [
+      "retained",
+      "superseded",
+      "merged",
+      "obsolete"
+    ],
+    "required_l1_properties": {
+      "ACCOUNTING_ACCEPTANCE": "required",
+      "REPLAY_ACCEPTANCE": "required",
+      "ADAPTATION_ACTION": "update-or-preserve"
+    },
+    "required_dispositions": {
+      "baseline-delta-manifest": "superseded",
+      "baseline-governance": "superseded",
+      "backport-upstream-contract": "superseded",
+      "backport-preflight-tool": "superseded",
+      "backport-semantic-gates": "superseded",
+      "roots-invariant-tests": "superseded",
+      "roots-adaptation-seams": "superseded",
+      "release-acceptance-gate": "merged"
+    },
+    "forbidden_stale_phrases": [
+      "Start from commit =c0febdd25d036a6188259fd66e0f9ed37eebc1b1=",
+      "Only =origin= exists today",
+      "git diff HEAD^ HEAD",
+      "current repository state has only =origin="
+    ],
+    "forbidden_duplicate_claims": [
+      "Add a maintainer document and machine-readable manifest that record the Knots base",
+      "Add a small, tested developer tool that accepts an explicit commit/range",
+      "Create a compact invariant suite",
+      "Add a versioned release checklist/report schema"
+    ]
+  },
+  "change_gate": {
+    "accounting_tool": "contrib/devtools/roots-continuous-accounting.py",
+    "accepted_invariant_evidence": {
+      "path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
+      "sha256": "sha256:7133b96f479a0929ca319a7ac07374dd84a86169681ba84904f537040bc15346",
+      "gate_id": "consensus-policy-invariants",
+      "status": "pass",
+      "waiver": false
+    },
+    "allowed_change_classes": [
+      "documentation-noop",
+      "cpp-fix"
+    ],
+    "required_invariants": {
+      "core_consensus_compatible": "pass",
+      "local_policy_outside_block_validity": "pass",
+      "rdts_bip110_enforcement_absent": "pass"
+    },
+    "sensitive_scope": {
+      "consensus_prefixes": [
+        "src/consensus/",
+        "src/kernel/",
+        "src/primitives/",
+        "src/script/",
+        "src/validation"
+      ],
+      "policy_prefixes": [
+        "src/policy/",
+        "src/node/miner",
+        "src/miner",
+        "src/txmempool"
+      ],
+      "build_suffixes": [
+        "CMakeLists.txt",
+        ".cmake"
+      ],
+      "rdts_markers": [
+        "rdts",
+        "bip110"
+      ]
+    },
+    "required_replay": {
+      "base_tag": "v29.4",
+      "root_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+      "root_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+      "first_parent": true,
+      "merge_commits": 0
+    },
+    "safe_stop_output": "hardening-safe-stop.json"
+  }
+}

@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","input_partition_digest","layers","coverage"],"properties":{"schema_version":{"const":1},"input_partition_digest":{"type":"string"},"layers":{"type":"array"},"coverage":{"type":"object"}},"additionalProperties":false}
