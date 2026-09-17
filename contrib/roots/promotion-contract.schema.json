@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bitcoin Roots immutable production promotion contract",
+  "type": "object",
+  "required": ["schema_version", "core", "candidate", "control_plane", "production", "authorization"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "core": {"$ref": "#/$defs/core"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "control_plane": {"$ref": "#/$defs/control"},
+    "production": {"$ref": "#/$defs/production"},
+    "authorization": {"type": "boolean"}
+  },
+  "$defs": {
+    "sha1": {"type": "string", "pattern": "^sha1:[0-9a-f]{40}$"},
+    "core": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tag", "tag_object", "commit", "tree"],
+      "properties": {"tag": {"const": "v29.4"}, "tag_object": {"$ref": "#/$defs/sha1"}, "commit": {"$ref": "#/$defs/sha1"}, "tree": {"$ref": "#/$defs/sha1"}}
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tree", "canonical_commit", "input_commit", "forbidden_old_trunk_commit"],
+      "properties": {"tree": {"$ref": "#/$defs/sha1"}, "canonical_commit": {"$ref": "#/$defs/sha1"}, "input_commit": {"$ref": "#/$defs/sha1"}, "forbidden_old_trunk_commit": {"$ref": "#/$defs/sha1"}}
+    },
+    "control": {
+      "type": "object", "additionalProperties": false,
+      "required": ["branch", "base_commit", "candidate_transfer"],
+      "properties": {"branch": {"const": "refs/heads/codex/roots-29-4-release"}, "base_commit": {"$ref": "#/$defs/sha1"}, "candidate_transfer": {"const": "exact-bundle-or-commit"}}
+    },
+    "production": {
+      "type": "object", "additionalProperties": false,
+      "required": ["integration_ref", "production_ref", "release_tag", "head", "fast_forward_only"],
+      "properties": {"integration_ref": {"const": "refs/heads/integration/roots-29.4"}, "production_ref": {"const": "refs/heads/roots/29.4"}, "release_tag": {"const": "refs/tags/v29.4-roots.1"}, "head": {"$ref": "#/$defs/sha1"}, "fast_forward_only": {"const": true}}
+    }
+  }
+}

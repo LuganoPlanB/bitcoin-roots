@@ -117,8 +117,8 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertIn("roots-build-evidence.py\" aggregate", workflow)
         self.assertIn("--source-revision \"$GITHUB_SHA\"", workflow)
         self.assertIn("--release-accounting", workflow)
-        sign = workflow.split("  sign-release:", 1)[1].split("  publish-release:", 1)[0]
-        publish = workflow.split("  publish-release:", 1)[1]
+        sign = workflow.split("  sign-release:", 1)[1].split("  create-signed-draft:", 1)[0]
+        publish = workflow.split("  create-signed-draft:", 1)[1]
         self.assertNotIn("actions/checkout", sign)
         self.assertNotIn("ci/", sign)
         self.assertIn("Unexpected unsigned release asset", sign)
@@ -128,6 +128,43 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertNotIn("gpg --", publish)
         self.assertIn("contents: write", publish)
         self.assertIn("EXPECTED_PACKAGE_COUNT + 4", publish)
+
+    def test_guarded_publication_workflow_changes_only_draft_visibility(self):
+        workflow = (ROOT / ".github/workflows/publish-release.yml").read_text()
+        script = ROOT / "ci/release/publish-verified-draft.sh"
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("confirm_publication:", workflow)
+        self.assertIn("verified_manifest_sha256:", workflow)
+        self.assertIn("publish-verified-draft.sh", workflow)
+        self.assertIn("actions/checkout@v6", workflow)
+        self.assertIn("test -f ci/release/publish-verified-draft.sh", workflow)
+        self.assertIn("bash ci/release/publish-verified-draft.sh", workflow)
+        text = script.read_text()
+        self.assertIn("gh release edit", text)
+        for forbidden in ("git tag", "git push", "gpg", "gh release create", "actions/checkout"):
+            self.assertNotIn(forbidden, text)
+
+    def test_guarded_publication_rejects_without_confirmation_and_is_idempotent(self):
+        script = ROOT / "ci/release/publish-verified-draft.sh"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            log = root / "gh.log"
+            fake_gh = fake_bin / "gh"
+            fake_gh.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\ncase \"$*\" in *tagName*) printf '%s\\n' v29.4-roots.1 ;; *isDraft*) printf '%s\\n' \"${GH_DRAFT:-true}\" ;; *'release download'*) while [ \"$1\" != --dir ]; do shift; done; mkdir -p \"$2\"; printf manifest > \"$2/SHA512SUMS\" ;; *'release edit'*) exit 0 ;; esac\n", encoding="utf-8")
+            fake_gh.chmod(0o755)
+            environment = {"PATH": str(fake_bin) + ":/usr/bin:/bin", "GH_LOG": str(log)}
+            manifest_digest = hashlib.sha256(b"manifest").hexdigest()
+            rejected = subprocess.run(["bash", script, "v29.4-roots.1", "false", manifest_digest], env=environment, text=True, capture_output=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            published = subprocess.run(["bash", script, "v29.4-roots.1", "true", manifest_digest], env=environment, text=True, capture_output=True)
+            self.assertEqual(published.returncode, 0, published.stderr)
+            self.assertIn("release edit v29.4-roots.1 --draft=false", log.read_text())
+            log.write_text("", encoding="utf-8")
+            repeated = subprocess.run(["bash", script, "v29.4-roots.1", "true", manifest_digest], env={**environment, "GH_DRAFT": "false"}, text=True, capture_output=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertNotIn("release edit", log.read_text())
 
 
 if __name__ == "__main__":

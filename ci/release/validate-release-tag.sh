@@ -12,8 +12,8 @@ if [[ "$#" -ne 1 ]]; then
 fi
 
 release_tag=$1
-if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
-    printf 'Release tag must contain a numeric version and optional release suffix: %s\n' "$release_tag" >&2
+if [[ "$release_tag" != "v29.4-roots.1" ]]; then
+    printf 'Only the locked Roots 29.4 release tag is accepted: %s\n' "$release_tag" >&2
     exit 1
 fi
 if ! git check-ref-format "refs/tags/$release_tag"; then
