@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       run: {description: Run accepted locks even when unchanged, required: true, default: auto, type: choice, options: [auto, force]}
+      operation: {description: Explicit trusted operation, required: true, default: replay, type: choice, options: [replay, promote]}
+      candidate_commit: {description: Frozen integration commit for explicit promotion validation, required: false, default: '', type: string}
+      candidate_tree: {description: Frozen integration tree for explicit promotion validation, required: false, default: '', type: string}
+      control_sha: {description: Accepted control commit that must equal this event SHA, required: false, default: '', type: string}
 permissions: {contents: read}
 concurrency: {group: 'roots-trusted-replay-${{ github.workflow }}', cancel-in-progress: true}
 env:
@@ -16,6 +20,31 @@ env:
   KNOTS_29_3_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
   LOCKED_INPUT_DIGEST: 7579c043e50213b2b70c59a6a5977bb315a48fa2efd1c1a1d316b4dab9a3c401
 jobs:
+  promotion-inputs:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      candidate_commit: '${{ steps.inputs.outputs.candidate_commit }}'
+      candidate_tree: '${{ steps.inputs.outputs.candidate_tree }}'
+      control_sha: '${{ steps.inputs.outputs.control_sha }}'
+    steps:
+      - id: inputs
+        env:
+          CANDIDATE_COMMIT: '${{ inputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ inputs.candidate_tree }}'
+          CONTROL_SHA: '${{ inputs.control_sha }}'
+          EVENT_SHA: '${{ github.sha }}'
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$CONTROL_SHA" = "$EVENT_SHA"
+          printf 'candidate_commit=%s\n' "$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
+          printf 'candidate_tree=%s\n' "$CANDIDATE_TREE" >> "$GITHUB_OUTPUT"
+          printf 'control_sha=%s\n' "$CONTROL_SHA" >> "$GITHUB_OUTPUT"
   gate:
     permissions: {contents: read}
     runs-on: ubuntu-24.04
@@ -113,7 +142,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
       - name: Install supported headless build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev ccache
       - name: Reconstruct, build, and test every exact candidate
         shell: bash
         env:
@@ -140,3 +169,46 @@ jobs:
       - run: |
           set -Eeuo pipefail
           python3 ci/test/test_roots_replay.py
+  promotion:
+    needs: promotion-inputs
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - name: Fetch the hardcoded integration candidate as data
+        env:
+          CANDIDATE_COMMIT: '${{ needs.promotion-inputs.outputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ needs.promotion-inputs.outputs.candidate_tree }}'
+          CONTROL_SHA: '${{ needs.promotion-inputs.outputs.control_sha }}'
+          EVENT_SHA: '${{ github.sha }}'
+        run: |
+          set -Eeuo pipefail
+          test "$CONTROL_SHA" = "$EVENT_SHA"
+          test "$CANDIDATE_COMMIT" = dfc74d403585f7c23815ef80d2e206b85c33919a
+          test "$CANDIDATE_TREE" = 477eb9b3f50098b0b8548a9ff35efaa29fd7ecde
+          mkdir "$RUNNER_TEMP/candidate"
+          git -C "$RUNNER_TEMP/candidate" init
+          git -C "$RUNNER_TEMP/candidate" config credential.helper ''
+          git -C "$RUNNER_TEMP/candidate" remote add origin "https://github.com/${{ github.repository }}.git"
+          before="$(GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= ls-remote --refs origin refs/heads/integration/roots-29.4 | awk '{print $1}')"
+          test "$before" = "$CANDIDATE_COMMIT"
+          GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= -c core.askPass= fetch --no-tags origin "$CANDIDATE_COMMIT" "+refs/heads/integration/roots-29.4:refs/remotes/origin/integration/roots-29.4"
+          git -C "$RUNNER_TEMP/candidate" checkout --detach "$CANDIDATE_COMMIT"
+          after="$(GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= ls-remote --refs origin refs/heads/integration/roots-29.4 | awk '{print $1}')"
+          test "$after" = "$before"
+      - name: Validate and build the immutable candidate once
+        env:
+          CANDIDATE_COMMIT: '${{ needs.promotion-inputs.outputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ needs.promotion-inputs.outputs.candidate_tree }}'
+          CONTROL_SHA: '${{ needs.promotion-inputs.outputs.control_sha }}'
+        run: |
+          set -Eeuo pipefail
+          evidence="$RUNNER_TEMP/promotion-evidence"
+          mkdir "$evidence"
+          python3 ci/roots-trusted-promotion.py --candidate-commit "$CANDIDATE_COMMIT" --candidate-tree "$CANDIDATE_TREE" --control-sha "$CONTROL_SHA" --candidate-repository "$RUNNER_TEMP/candidate" --trusted-root "$GITHUB_WORKSPACE" --output "$evidence/trusted-promotion-report.json"
+          python3 ci/roots-trusted-candidate-build.py --repository "$RUNNER_TEMP/candidate" --expected-tree "$CANDIDATE_TREE" --build-directory "$RUNNER_TEMP/candidate-build" --jobs 2
+          ccache -s > "$evidence/ccache-stats.txt"
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with: {name: 'roots-promotion-evidence-${{ github.sha }}', path: '${{ runner.temp }}/promotion-evidence/', if-no-files-found: error, retention-days: 7}

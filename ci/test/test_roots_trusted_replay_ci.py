@@ -35,11 +35,17 @@ class TrustedReplayCiTest(unittest.TestCase):
         self.assertTrue(actions and all(re.fullmatch(r"actions/(?:checkout|upload-artifact|download-artifact)@[0-9a-f]{40}", action) for action in actions))
         for required in ("roots-trusted-candidate-build.py", "core-to-knots-29.3", "roots-29.3", "core-29.4", "timeout-minutes: 180"):
             self.assertIn(required, text)
+        for required in ("promotion-inputs:", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:", "test \"$CONTROL_SHA\" = \"$EVENT_SHA\"", "refs/heads/integration/roots-29.4", "Validate and build the immutable candidate once"):
+            self.assertIn(required, text)
+        self.assertFalse((ROOT / ".github/workflows/roots-trusted-promotion.yml").exists())
         build_text = BUILD_SCRIPT.read_text()
         self.assertIn('"cmake", "--build"', build_text)
         self.assertIn('"ctest", "--test-dir"', build_text)
+        self.assertIn('"-DCMAKE_C_COMPILER_LAUNCHER=ccache"', build_text)
+        self.assertIn('"-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"', build_text)
         self.assertIn('"-DENABLE_WALLET=ON"', build_text)
         self.assertIn('"-DWITH_BDB=OFF"', build_text)
+        self.assertIn('"CCACHE_DIR"', build_text)
         for invariant_test in ("feature_block.py", "p2p_segwit.py", "mempool_datacarrier.py"):
             self.assertIn(invariant_test, build_text)
 
@@ -54,9 +60,17 @@ class TrustedReplayCiTest(unittest.TestCase):
                 mock.Mock(returncode=0),
                 mock.Mock(returncode=1),
             ]
-            with mock.patch.object(BUILD.subprocess, "run", side_effect=responses):
+            with mock.patch.object(BUILD.subprocess, "run", side_effect=responses), mock.patch.object(BUILD, "verify_launchers"):
                 with self.assertRaisesRegex(ValueError, "candidate acceptance command failed"):
                     BUILD.build_and_test(repository.resolve(), tree, root / "new-build", 2)
+
+    def test_candidate_cache_environment_is_isolated_from_host(self):
+        build = Path("/tmp/roots-candidate-build")
+        with mock.patch.dict("os.environ", {"CCACHE_DIR": "/host/cache", "GITHUB_TOKEN": "token", "AWS_SECRET_ACCESS_KEY": "secret"}, clear=False):
+            environment = BUILD.candidate_environment(build)
+        self.assertEqual(environment["CCACHE_DIR"], "/tmp/roots-candidate-build/.ccache")
+        self.assertNotIn("GITHUB_TOKEN", environment)
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", environment)
     def test_decisions_locks_and_failures_are_deterministic(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "trusted-replay-report.json"
