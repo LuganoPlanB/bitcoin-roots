@@ -227,7 +227,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "n",
-      "digest": "sha256:ae1c08e92245876fc807d06fb92cc6aa2c89c82752f548e9a1d91a1a6730cc9d",
+      "digest": "sha256:2e7c8d97841e718a8806ec8cdb2a634a20f4649fa3074abb61facf532e577bab",
       "disposition": "add",
       "kind": "add",
       "path": ".github/workflows/roots-portability.yml",
@@ -367,7 +367,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "n",
-      "digest": "sha256:a3f143d87b48592dc72da278a23d93abe58b7505bf5e38382ce3f7b9f4feb818",
+      "digest": "sha256:695e374fc6b5d3e2c9ea2090a89db74a9e32f66e455e8a98919558523df09cdd",
       "disposition": "add",
       "kind": "add",
       "path": "ci/roots-trusted-replay-gate.py",
@@ -701,23 +701,9 @@
       "tests": "ci/test/test_roots_pr_gate.py"
     },
     {
-      "adaptation": "roots-post-methodology-hardening-handoff-v1",
-      "dependencies": "n",
-      "digest": "sha256:0ee734c56eb3f939b749c516c1afcb5ca6f4bb7a4cc41e8fa392cbc98b2f0612",
-      "disposition": "add",
-      "kind": "add",
-      "path": "ci/test/test_roots_hardening_handoff.py",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
-      "risk": "medium",
-      "scope": "ci/test/test_roots_hardening_handoff.py",
-      "tests": "ci/test/test_roots_pr_gate.py"
-    },
-    {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:738a43b87a23c8462988762c1778add36820211bcaee76b2961b1c9303a5687c",
+      "digest": "sha256:23f3f19c2cbc899a594f4516ee4841fd3c114c11b5e4b0f0f35bed284db11f98",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_lineage.py",
@@ -731,7 +717,7 @@
     {
       "adaptation": "roots-post-methodology-llm-contract-v1",
       "dependencies": "n",
-      "digest": "sha256:a14853b84f7160395f0784a5f1392ad35bb59845dae7dd64218e1f051018a5f9",
+      "digest": "sha256:b0d6d1606df64947ed413d11a411ff2bee4d23e2ebb064a149798babddc14f1b",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_llm_contract.py",
@@ -745,7 +731,7 @@
     {
       "adaptation": "roots-post-methodology-maintainer-runbook-v1",
       "dependencies": "n",
-      "digest": "sha256:838d19303067239549f7cfdc814016a5eb8bfbfd65654c3cdd2288a0125f0134",
+      "digest": "sha256:d13cfaf7727c65091fbf14e1d070c5260d7cd03dbd0b5262d3f2385b759d7822",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_maintainer_runbook.py",
@@ -773,7 +759,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "n",
-      "digest": "sha256:6458f2f4538a125755dc63d582353bed4f375b3bf99b3aa881917a2282765b9c",
+      "digest": "sha256:79134aefa5369eba58b1d30ef194b0520beeb9918422adcda313aadb3020ac81",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_pr_gate.py",
@@ -801,7 +787,7 @@
     {
       "adaptation": "roots-post-methodology-terminal-review-v1",
       "dependencies": "n",
-      "digest": "sha256:97fc04f182421723331a45c0d4b6d178e19f99e639d80f5e9fafba629b6b513e",
+      "digest": "sha256:cc79bb2dbe3e58b628979877cfe1aeaf6a4060240ca746365a4a2c0adf9be9f2",
       "disposition": "add",
       "kind": "add",
       "path": "ci/test/test_roots_replay.py",
@@ -955,7 +941,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:6b5341842dc2aa622834bf5c6d00b62b284e5a06cee5a9dd53868c4420d35388",
+      "digest": "sha256:a74abe198780702e95d23d90ee94965baf01c8c9e177c39dc22a562828723f21",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/devtools/roots-methodology.py",
@@ -1275,6 +1261,20 @@
       "tests": "test"
     },
     {
+      "adaptation": "roots-release-history-v1",
+      "dependencies": "none",
+      "digest": "sha256:c4960d2e72cdeb9a7908b344dae785887b85dc68ef318e9737d9f4b76cc6a691",
+      "disposition": "update",
+      "kind": "add",
+      "path": "contrib/roots/construct-canonical-29.4.bash",
+      "provenance": "reviewed",
+      "rationale": "specific G3 reconstruction atom",
+      "replay_impact": "replay",
+      "risk": "low",
+      "scope": "contrib/roots/construct-canonical-29.4.bash",
+      "tests": "ci/test/test_roots_pr_gate.py"
+    },
+    {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "n",
       "digest": "sha256:237a0d95ac86149a74d850bee5750ef244b8914946a2fa00a0e6b0794fa9d6eb",
@@ -1315,6 +1315,20 @@
       "risk": "high",
       "scope": "contrib/roots/core-29.4-migration-fixture.schema.json",
       "tests": "test"
+    },
+    {
+      "adaptation": "roots-release-history-v1",
+      "dependencies": "none",
+      "digest": "sha256:012c97f86190460f9e1f2b5ea31782d3e1cadf7336159d24f7266eda78835c9c",
+      "disposition": "update",
+      "kind": "add",
+      "path": "contrib/roots/create-local-integration-baseline.bash",
+      "provenance": "reviewed",
+      "rationale": "specific G3 reconstruction atom",
+      "replay_impact": "replay",
+      "risk": "low",
+      "scope": "contrib/roots/create-local-integration-baseline.bash",
+      "tests": "ci/test/test_roots_pr_gate.py"
     },
     {
       "adaptation": "roots-post-methodology-hardening-handoff-v1",
@@ -1361,7 +1375,7 @@
     {
       "adaptation": "roots-post-methodology-llm-contract-v1",
       "dependencies": "n",
-      "digest": "sha256:cc6ee0eb71b542846c2606d02cd44e989f73c2dfbb55491b75687655b683f739",
+      "digest": "sha256:d81477b8881055c0fede1fec193f67c75b18e3d6185155fe766171cd997c3ff6",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/llm-execution-contract-v1.json",
@@ -1387,9 +1401,23 @@
       "tests": "test"
     },
     {
+      "adaptation": "roots-release-history-v1",
+      "dependencies": "none",
+      "digest": "sha256:89b2072cf8a5162ed10a5b89c32097886501b4e0363b21cec693ea4161556aee",
+      "disposition": "update",
+      "kind": "add",
+      "path": "contrib/roots/local-integration-baseline-29.4.json",
+      "provenance": "reviewed",
+      "rationale": "specific G3 reconstruction atom",
+      "replay_impact": "replay",
+      "risk": "low",
+      "scope": "contrib/roots/local-integration-baseline-29.4.json",
+      "tests": "ci/test/test_roots_pr_gate.py"
+    },
+    {
       "adaptation": "roots-post-methodology-maintainer-runbook-v1",
       "dependencies": "n",
-      "digest": "sha256:b241cc3b4ea33010b42ad4073baabaeaf7cd9f558cced988948f5de97b091630",
+      "digest": "sha256:eb79b8808442e97d2842d1555a6cfdd7eef9f8c324a9a2dc0808ba7c5e44353a",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/maintainer-runbook-review.json",
@@ -1403,7 +1431,7 @@
     {
       "adaptation": "roots-post-methodology-maintainer-runbook-v1",
       "dependencies": "n",
-      "digest": "sha256:887e265000a8f71b6aa2598ae6469de60f75dd8bf31609fa870b74a3b496f7b3",
+      "digest": "sha256:9b445a7c6f5184009810f36f00c39db4991b15aabae5635232ed65373c11f382",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/maintainer-runbook.md",
@@ -1431,7 +1459,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:61ffb649f370e28ab4f23f3052c722c73927016622254ef22400530c48649a65",
+      "digest": "sha256:f3eb354257abbad8e13b200d183294fe48b2f892821259b25254d4ac7b3fb4a8",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/method-retrospective-29.4.json",
@@ -1459,7 +1487,7 @@
     {
       "adaptation": "roots-post-methodology-terminal-review-v1",
       "dependencies": "n",
-      "digest": "sha256:7394a19c2b2541e224f04c117a41676c4204e7e781df509533adb46f18cae455",
+      "digest": "sha256:177f722e160b59cb99a131d381a183bc07b8a5de35f1702678f2827ddb1329bb",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/methodology-v1.json",
@@ -1515,7 +1543,7 @@
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
       "dependencies": "n",
-      "digest": "sha256:1ae80d68903f5af9d41cda9345545684d361afda23f733fb64cc9c31d5b68fd2",
+      "digest": "sha256:4d5b49793436fe4c66be427aa20c7e470b2043f3968f4b3da198ada2192a883b",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/post-methodology-adaptations.json",
@@ -1525,6 +1553,20 @@
       "risk": "high",
       "scope": "contrib/roots/post-methodology-adaptations.json",
       "tests": "test"
+    },
+    {
+      "adaptation": "roots-release-history-v1",
+      "dependencies": "none",
+      "digest": "sha256:771aad336ed5037044732565db3a7e6d906016a30b1b33ac0e79b2db3a013bce",
+      "disposition": "update",
+      "kind": "add",
+      "path": "contrib/roots/promotion-29.4.json",
+      "provenance": "reviewed",
+      "rationale": "specific G3 reconstruction atom",
+      "replay_impact": "replay",
+      "risk": "low",
+      "scope": "contrib/roots/promotion-29.4.json",
+      "tests": "ci/test/test_roots_pr_gate.py"
     },
     {
       "adaptation": "roots-post-methodology-pr-gate-v1",
@@ -1753,7 +1795,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:04fc615c67c7894d48da6c44df4b779619578b8adaf3eeb1e62f2ace52f125f6",
+      "digest": "sha256:21668e02367727ae67006b45249ee71edf77c56bcac8899b5124a54d0db4660f",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/replay-29.4-proposal/acceptance-evidence.json",
@@ -1795,7 +1837,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:c2c81ee6aee6e29c79a641ec5d284dec61663490b4de0a4e597b71e52a52cbc3",
+      "digest": "sha256:e23c2f577194211a614575d0f0a8bcaa1cf45ca0dcf83e64393d673e501bf852",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
@@ -1865,20 +1907,6 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:a49efa33c7979849658de2f864666e8eee6aa05fe5f9955141073611b397769e",
-      "disposition": "add",
-      "kind": "add",
-      "path": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
-      "risk": "high",
-      "scope": "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
-      "tests": "test"
-    },
-    {
-      "adaptation": "roots-release-history-v1",
-      "dependencies": "n",
       "digest": "sha256:0c6453c070e8b859410593624343b4b5bea7814763be849d800c9ed1ed254f11",
       "disposition": "add",
       "kind": "add",
@@ -1935,7 +1963,7 @@
     {
       "adaptation": "roots-release-history-v1",
       "dependencies": "n",
-      "digest": "sha256:294f1cefa646010fa7567606eae8687c9c7eb43b4c335da825114fcf128411e2",
+      "digest": "sha256:e2b29957b63c35ee38dc1a87d2be5ed1cc1413c89c923577722735b26a8a95bb",
       "disposition": "add",
       "kind": "add",
       "path": "contrib/roots/replay-29.4-proposal/lineage-row-29.4.json",
@@ -2452,59 +2480,17 @@
     },
     {
       "adaptation": "roots-release-history-v1",
-      "dependencies": "n",
-      "digest": "sha256:eeb1ca62622be902a456f888f56c756a4ce20dbaadb875dc16bfc6102e7744ce",
-      "disposition": "add",
+      "dependencies": "none",
+      "digest": "sha256:3b93b225c64e1e429512a7d90c585e7b7a8b4559bbb0d6a633aab8348169e9d5",
+      "disposition": "update",
       "kind": "add",
-      "path": "doc/maintainers/adaptation-manifest.md",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
+      "path": "contrib/roots/validate-local-integration-baseline.py",
+      "provenance": "reviewed",
+      "rationale": "specific G3 reconstruction atom",
+      "replay_impact": "replay",
       "risk": "low",
-      "scope": "doc/maintainers/adaptation-manifest.md",
-      "tests": "doc"
-    },
-    {
-      "adaptation": "roots-release-history-v1",
-      "dependencies": "n",
-      "digest": "sha256:dbe05c7554637864acff9a1c3f9e4e5cecb92850913a3d2c205b2d589399f5e4",
-      "disposition": "add",
-      "kind": "add",
-      "path": "doc/maintainers/core-29.4-migration-fixture.md",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
-      "risk": "low",
-      "scope": "doc/maintainers/core-29.4-migration-fixture.md",
-      "tests": "doc"
-    },
-    {
-      "adaptation": "roots-release-history-v1",
-      "dependencies": "n",
-      "digest": "sha256:e6460ccba444505c1d1d121e5f3ce3c0f2a881140a92e4c5bfce02bf19906ed5",
-      "disposition": "add",
-      "kind": "add",
-      "path": "doc/maintainers/delta-atlas.md",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
-      "risk": "low",
-      "scope": "doc/maintainers/delta-atlas.md",
-      "tests": "doc"
-    },
-    {
-      "adaptation": "roots-release-history-v1",
-      "dependencies": "n",
-      "digest": "sha256:1d95015f047b126d3c8744bfd9388eaf26fe5b1f4b7d98d5f1958274b4e8dc53",
-      "disposition": "add",
-      "kind": "add",
-      "path": "doc/maintainers/lineage-ledger.md",
-      "provenance": "n",
-      "rationale": "n",
-      "replay_impact": "n",
-      "risk": "low",
-      "scope": "doc/maintainers/lineage-ledger.md",
-      "tests": "doc"
+      "scope": "contrib/roots/validate-local-integration-baseline.py",
+      "tests": "ci/test/test_roots_pr_gate.py"
     },
     {
       "adaptation": "roots-release-history-v1",
@@ -2902,6 +2888,20 @@
       "adaptation": "roots-roots-tests-test-coverage",
       "dependencies": "n",
       "digest": "sha256:fb00bcd820c3cb01beebed153e6423ea537c0234b6bd31e5ec8d6ac20f006c99",
+      "disposition": "update",
+      "kind": "modify",
+      "path": "test/lint/test_runner/src/main.rs",
+      "provenance": "n",
+      "rationale": "n",
+      "replay_impact": "n",
+      "risk": "high",
+      "scope": "test/lint/test_runner/src/main.rs",
+      "tests": "test"
+    },
+    {
+      "adaptation": "roots-roots-tests-test-coverage",
+      "dependencies": "n",
+      "digest": "sha256:fe09113b74eef0e1f18ff3e772f91a0bc7ec68567949dcd767e38c04944d342c",
       "disposition": "update",
       "kind": "modify",
       "path": "test/lint/test_runner/src/main.rs",
