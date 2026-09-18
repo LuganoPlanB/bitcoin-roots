@@ -1,0 +1,26 @@
+{
+  "base": {
+    "commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+  },
+  "candidate_record": {
+    "atom_count": 208,
+    "atom_digest": "sha256:63e6a3c068223dca9f730b23649b0e3df6cc68457ec20401de226f6ce1666652",
+    "sha256": "sha256:2e360d5cb489d41002f1d803ba68a73aba526e2786300ceafcdce750d6abc0c0"
+  },
+  "production_commits": [
+    {
+      "commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+      "parent": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+      "state": "published-rejected-portability",
+      "tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde"
+    },
+    {
+      "commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+      "parent": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+      "state": "private-g3",
+      "tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9"
+    }
+  ],
+  "schema_version": 1
+}

@@ -223,6 +223,12 @@ class MaintainerRunbookTest(unittest.TestCase):
             "contrib/roots/commit-topology.schema.json",
             "contrib/roots/frozen-production-29.4.json",
             "contrib/roots/production-accounting-29.4.json",
+            "contrib/roots/frozen-production-29.4-g3.json",
+            "contrib/roots/post-candidate-replay-29.4-g3.json",
+            "contrib/roots/post-candidate-invariants-29.4-g3.json",
+            "contrib/roots/production-accounting-29.4-g3.json",
+            "contrib/roots/review-export-29.4-g3.json",
+            "contrib/roots/acceptance-evidence-29.4-g3.json",
         )
         for relative in schema_paths:
             with self.subTest(path=relative):
@@ -236,6 +242,8 @@ class MaintainerRunbookTest(unittest.TestCase):
 
         promotion = json.loads((ROOT / "contrib/roots/promotion-29.4.json").read_text(encoding="utf-8"))
         accounting = json.loads((ROOT / "contrib/roots/production-accounting-29.4.json").read_text(encoding="utf-8"))
+        g3_acceptance = json.loads((ROOT / "contrib/roots/acceptance-evidence-29.4-g3.json").read_text(encoding="utf-8"))
+        g3_freeze = json.loads((ROOT / "contrib/roots/frozen-production-29.4-g3.json").read_text(encoding="utf-8"))
         frozen = accounting["releases"][1]["frozen"]
         immutable_values = (
             promotion["core"]["tag"],
@@ -248,6 +256,11 @@ class MaintainerRunbookTest(unittest.TestCase):
             frozen["tree"].removeprefix("sha1:"),
             accounting["releases"][0]["source_commit"].removeprefix("sha1:"),
             accounting["releases"][0]["source_tree"].removeprefix("sha1:"),
+            g3_acceptance["g3_commit"].removeprefix("sha1:"),
+            g3_acceptance["g3_tree"].removeprefix("sha1:"),
+            g3_acceptance["accepted_bootstrap"].removeprefix("sha1:"),
+            g3_freeze["g3_ref"],
+            str(g3_acceptance["g2_failure"]["run_id"]),
         )
         for value in immutable_values:
             with self.subTest(immutable_value=value):

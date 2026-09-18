@@ -37,6 +37,10 @@ class TrustedReplayCiTest(unittest.TestCase):
             self.assertIn(required, text)
         for required in ("promotion-inputs:", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:", "test \"$CONTROL_SHA\" = \"$EVENT_SHA\"", "refs/heads/integration/roots-29.4", "Validate and build the immutable candidate once"):
             self.assertIn(required, text)
+        self.assertIn("test \"$CANDIDATE_COMMIT\" = c8dc2e70bc145930855cf615ba9caffaccdcdcb9", text)
+        self.assertIn("test \"$CANDIDATE_TREE\" = 70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9", text)
+        self.assertNotIn("test \"$CANDIDATE_COMMIT\" = dfc74d403585f7c23815ef80d2e206b85c33919a", text)
+        self.assertNotIn("test \"$CANDIDATE_TREE\" = 477eb9b3f50098b0b8548a9ff35efaa29fd7ecde", text)
         self.assertFalse((ROOT / ".github/workflows/roots-trusted-promotion.yml").exists())
         build_text = BUILD_SCRIPT.read_text()
         self.assertIn('"cmake", "--build"', build_text)

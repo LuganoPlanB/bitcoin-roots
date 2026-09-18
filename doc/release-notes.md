@@ -4,8 +4,10 @@ Bitcoin Roots 29.4
 Bitcoin Roots 29.4 is based on the annotated Bitcoin Core `v29.4` release,
 commit `3fc0865963a38b871e9f7d94e6151c4953563516`. The Roots canonical replay
 is recorded at `cbc88cff9b35b95a549c0313e424e13093fcd6a1`; the private local
-frozen production source is `dfc74d403585f7c23815ef80d2e206b85c33919a`.
-These are provenance records, not a public release or tag authorization.
+frozen G3 production source is `c8dc2e70bc145930855cf615ba9caffaccdcdcb9`.
+The published G2 source `dfc74d403585f7c23815ef80d2e206b85c33919a`
+remains preserved as portability-rejected evidence. These are provenance
+records, not a public release or tag authorization.
 
 Roots retains its conservative, configurable transaction relay and mempool
 policy. It remains compatible with Bitcoin Core consensus: a transaction that

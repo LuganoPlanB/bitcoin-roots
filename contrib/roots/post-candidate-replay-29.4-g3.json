@@ -1,0 +1,42 @@
+{
+  "canonical_base": {
+    "commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+  },
+  "correction": {
+    "behavioral_paths": [
+      ".github/workflows/roots-portability.yml"
+    ],
+    "evidence_paths": [
+      "contrib/roots/continuous-accounting-pr.json",
+      "contrib/roots/post-methodology-adaptations.json"
+    ],
+    "new_bootstrap": "sha1:bb977bbd7742650ea1e9d93aa0b6573ee5b14985",
+    "old_bootstrap": "sha1:6f85dfb728ca0976658e0fbd26101e7df5e35a14",
+    "workflow_after_sha256": "sha256:58355c3005887204ceb2a797dda44c92386c7d9cd6713dc38ad510685944dcb6",
+    "workflow_before_sha256": "sha256:597d7a55605d3db02a504daa7962647bee2d0ce677fd7afcc1fac41cfbc63863"
+  },
+  "g2": {
+    "commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+    "tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde"
+  },
+  "g3": {
+    "commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+    "parent": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+    "tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9"
+  },
+  "metadata": {
+    "author": "Bitcoin Roots <release@bitcoin-roots.invalid>",
+    "author_date": "2026-09-18T00:00:00Z",
+    "committer": "Bitcoin Roots <release@bitcoin-roots.invalid>",
+    "committer_date": "2026-09-18T00:00:00Z",
+    "message": "fix(ci): use accepted portability bootstrap"
+  },
+  "regenerated_evidence": {
+    "accounting_after_sha256": "sha256:2e360d5cb489d41002f1d803ba68a73aba526e2786300ceafcdce750d6abc0c0",
+    "accounting_before_sha256": "sha256:11de30b450817cae862826f03e205e24e63af5acdcac29970843106edf17c694",
+    "registry_after_sha256": "sha256:c062aac3a58f58a62552eab9c5f17526a636b6be0c53742a59dd1b1557c90b5f",
+    "registry_before_sha256": "sha256:26fc1e8d696512188ce3aced02bbe1a46436285d15ee993957e45ad1617ced46"
+  },
+  "schema_version": 1
+}

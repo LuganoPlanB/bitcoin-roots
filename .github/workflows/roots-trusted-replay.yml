@@ -186,8 +186,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$CONTROL_SHA" = "$EVENT_SHA"
-          test "$CANDIDATE_COMMIT" = dfc74d403585f7c23815ef80d2e206b85c33919a
-          test "$CANDIDATE_TREE" = 477eb9b3f50098b0b8548a9ff35efaa29fd7ecde
+          test "$CANDIDATE_COMMIT" = c8dc2e70bc145930855cf615ba9caffaccdcdcb9
+          test "$CANDIDATE_TREE" = 70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9
           mkdir "$RUNNER_TEMP/candidate"
           git -C "$RUNNER_TEMP/candidate" init
           git -C "$RUNNER_TEMP/candidate" config credential.helper ''

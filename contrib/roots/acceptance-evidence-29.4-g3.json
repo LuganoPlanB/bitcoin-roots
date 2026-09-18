@@ -1,0 +1,27 @@
+{
+  "accepted_bootstrap": "sha1:bb977bbd7742650ea1e9d93aa0b6573ee5b14985",
+  "artifacts": {
+    "contrib/roots/frozen-production-29.4-g3.json": "sha256:7fd093093c84d0b6ead4d677cce06a3837b4995cc054ddb43255a1d9e0931b3f",
+    "contrib/roots/post-candidate-invariants-29.4-g3.json": "sha256:0f148978b71820ef929540ce11d3d66a26c3eed35619465c944f7aa3e1fe2e7a",
+    "contrib/roots/post-candidate-replay-29.4-g3.json": "sha256:7bbbcb7cb93a1782c1fb843a96d9e15f062fcb4abdcc850e31543cfb4f7adcae",
+    "contrib/roots/production-accounting-29.4-g3.json": "sha256:40065ee05b7c67a28ad53ba113c31f82fecbb6fca0680c843ac72d48c9dd6fc6",
+    "contrib/roots/review-export-29.4-g3.json": "sha256:4cfe2038408d8be2acb789129e83ca34f9ef309f0728f542be1e4533a05f3aed"
+  },
+  "decision": "accepted-private-freeze",
+  "g2_failure": {
+    "bootstrap": "sha1:6f85dfb728ca0976658e0fbd26101e7df5e35a14",
+    "reason": "methodology bundle digest is invalid",
+    "run_id": 35340807632
+  },
+  "g3_commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+  "g3_tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9",
+  "historical_g2_run_ids": [
+    35340615938,
+    35340807557,
+    35340807632,
+    35340822312,
+    35340826867
+  ],
+  "remote_mutation_authorized": false,
+  "schema_version": 1
+}

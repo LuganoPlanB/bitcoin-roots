@@ -140,7 +140,8 @@ class RootsPrGateTest(unittest.TestCase):
 
     def test_workflow_is_pinned_read_only_and_offline(self):
         workflow = WORKFLOW.read_text()
-        for required in ("pull_request:", "contents: read", "path: trusted-base", "path: candidate", "fetch-depth: 0", "path: bootstrap-validator", "ref: 6f85dfb728ca0976658e0fbd26101e7df5e35a14", "validator_root=trusted-base", "validator_root=bootstrap-validator", "bundle create", "--record candidate/contrib/roots/continuous-accounting-pr.json", 'test "$(wc -c < roots-portability-pr-report.json)" -le 131072'): self.assertIn(required, workflow)
+        for required in ("pull_request:", "contents: read", "path: trusted-base", "path: candidate", "fetch-depth: 0", "path: bootstrap-validator", "ref: bb977bbd7742650ea1e9d93aa0b6573ee5b14985", "validator_root=trusted-base", "validator_root=bootstrap-validator", "bundle create", "--record candidate/contrib/roots/continuous-accounting-pr.json", 'test "$(wc -c < roots-portability-pr-report.json)" -le 131072'): self.assertIn(required, workflow)
+        self.assertNotIn("ref: 6f85dfb728ca0976658e0fbd26101e7df5e35a14", workflow)
         for forbidden in ("pull_request_target", "contents: write", "actions/cache", "save-caches", "secrets.", "github.token", "fetch --no-tags origin", "python3 candidate/"): self.assertNotIn(forbidden, workflow)
         actions = re.findall(r"^\s*uses:\s*([^\s#]+)", workflow, re.MULTILINE)
         self.assertTrue(actions and all(re.fullmatch(r"actions/checkout@[0-9a-f]{40}", action) for action in actions))

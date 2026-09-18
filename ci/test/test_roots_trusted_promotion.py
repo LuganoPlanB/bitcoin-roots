@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -37,6 +38,9 @@ class TrustedPromotionTest(unittest.TestCase):
             self.assertNotIn(forbidden, workflow)
         for script in re.findall(r"run: \|\n(.*?)(?=      - |\Z)", workflow, re.DOTALL):
             self.assertNotIn("${{ inputs.", script)
+        promotion = workflow.split("\n  promotion:\n", 1)[1]
+        self.assertEqual(promotion.count("python3 ci/roots-trusted-promotion.py"), 1)
+        self.assertEqual(promotion.count("python3 ci/roots-trusted-candidate-build.py"), 1)
 
     def test_exact_current_frozen_candidate_is_accepted_twice_without_writes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -53,13 +57,24 @@ class TrustedPromotionTest(unittest.TestCase):
                 result = self.invoke(candidate, output / "trusted-promotion-report.json")
                 self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((first / "trusted-promotion-report.json").read_bytes(), (second / "trusted-promotion-report.json").read_bytes())
+            report = json.loads((first / "trusted-promotion-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["candidate_commit"], PROMOTION.CANDIDATE_COMMIT)
+            self.assertEqual(report["candidate_tree"], PROMOTION.CANDIDATE_TREE)
+            self.assertEqual(report["control_commit"], subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
+            self.assertEqual(report["control_tree"], subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip())
             self.assertEqual(before, subprocess.check_output(["git", "status", "--porcelain=v1"], cwd=ROOT, text=True))
 
     def test_untrusted_inputs_and_unsafe_paths_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = root / "trusted-promotion-report.json"
-            cases = ({"candidate_commit": "0" * 40}, {"candidate_tree": "0" * 40}, {"candidate_commit": "not-an-oid"})
+            cases = (
+                {"candidate_commit": "0" * 40},
+                {"candidate_tree": "0" * 40},
+                {"candidate_commit": "not-an-oid"},
+                {"candidate_commit": PROMOTION.G2_COMMIT},
+                {"candidate_tree": PROMOTION.G2_TREE},
+            )
             for changed in cases:
                 with self.subTest(changed=changed):
                     values = {"candidate_commit": PROMOTION.CANDIDATE_COMMIT, "candidate_tree": PROMOTION.CANDIDATE_TREE, "control_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}
@@ -75,6 +90,44 @@ class TrustedPromotionTest(unittest.TestCase):
             link = root / "link"
             link.symlink_to(ROOT, target_is_directory=True)
             self.assertNotEqual(self.invoke(link, output).returncode, 0)
+
+    def test_exact_g3_evidence_and_rejected_g2_history_are_immutable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trusted = Path(directory) / "trusted"
+            for relative in (
+                PROMOTION.PORTABILITY_WORKFLOW,
+                PROMOTION.G2_FREEZE,
+                *PROMOTION.G3_EVIDENCE_DIGESTS,
+            ):
+                source, target = ROOT / relative, trusted / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            PROMOTION.verify_g3_evidence(trusted)
+
+            mutations = (
+                (PROMOTION.PORTABILITY_WORKFLOW, lambda value: value.replace(PROMOTION.ACCEPTED_BOOTSTRAP, PROMOTION.REJECTED_BOOTSTRAP)),
+                ("contrib/roots/frozen-production-29.4-g3.json", lambda value: value.replace(PROMOTION.CANDIDATE_TREE, PROMOTION.G2_TREE)),
+                ("contrib/roots/post-candidate-replay-29.4-g3.json", lambda value: value.replace(PROMOTION.G2_COMMIT, "0" * 40, 1)),
+                ("contrib/roots/production-accounting-29.4-g3.json", lambda value: value.replace("published-rejected-portability", "accepted", 1)),
+                ("contrib/roots/acceptance-evidence-29.4-g3.json", lambda value: value.replace("35340807632", "35340807633", 1)),
+            )
+            for relative, mutate in mutations:
+                with self.subTest(relative=relative):
+                    path = trusted / relative
+                    saved = path.read_text(encoding="utf-8")
+                    path.write_text(mutate(saved), encoding="utf-8")
+                    with self.assertRaises(PROMOTION.PromotionError):
+                        PROMOTION.verify_g3_evidence(trusted)
+                    path.write_text(saved, encoding="utf-8")
+
+            evidence = trusted / "contrib/roots/acceptance-evidence-29.4-g3.json"
+            saved = evidence.read_bytes()
+            evidence.unlink()
+            evidence.symlink_to(ROOT / "contrib/roots/acceptance-evidence-29.4-g3.json")
+            with self.assertRaises(PROMOTION.PromotionError):
+                PROMOTION.verify_g3_evidence(trusted)
+            evidence.unlink()
+            evidence.write_bytes(saved)
 
     def test_malformed_candidate_syntax_is_rejected_before_git(self):
         with mock.patch.object(PROMOTION, "git") as mocked_git:

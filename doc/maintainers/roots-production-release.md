@@ -245,6 +245,16 @@ result and tree. Only after review may `roots-freeze-production.py anchor`
 create its new, owned private ref. It refuses overwrite; never delete or move an
 existing private freeze to make a rerun pass.
 
+The unversioned freeze, replay, invariant, and accounting records above preserve
+the published G2 boundary and its rejected portability result. The accepted G3
+forward correction has separate immutable records and an absent-only private
+ref. Verify the complete G3 set without relabeling or overwriting G2:
+
+```bash
+python3 "$ROOTS_CONTROL/contrib/devtools/roots-freeze-portability-g3.py" \
+  verify --repository "$ROOTS_CONTROL" --root "$ROOTS_CONTROL"
+```
+
 Production accounting is a separate final gate. It binds the canonical base,
 every later production commit and atom, the frozen source tree, and platform
 build evidence:
@@ -512,9 +522,15 @@ machine-readable records remain authoritative.
 | Core tree | `38ad59b187f59647eb90ad1347bc481485ef4d01` |
 | Accepted replay tree | `39a5e30207a09962e78ae81c24cc65b1e478ef90` |
 | Canonical sixteen-commit head | `cbc88cff9b35b95a549c0313e424e13093fcd6a1` |
-| Frozen production commit | `dfc74d403585f7c23815ef80d2e206b85c33919a` |
-| Frozen production tree | `477eb9b3f50098b0b8548a9ff35efaa29fd7ecde` |
-| Accepted private frozen ref | `refs/roots/29.4/frozen-production-g2` |
+| Frozen G3 production commit | `c8dc2e70bc145930855cf615ba9caffaccdcdcb9` |
+| Frozen G3 production tree | `70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9` |
+| Accepted private G3 ref | `refs/roots/29.4/frozen-production-g3` |
+| Published, portability-rejected G2 commit | `dfc74d403585f7c23815ef80d2e206b85c33919a` |
+| Published, portability-rejected G2 tree | `477eb9b3f50098b0b8548a9ff35efaa29fd7ecde` |
+| Preserved private G2 ref | `refs/roots/29.4/frozen-production-g2` |
+| Accepted immutable bootstrap | `bb977bbd7742650ea1e9d93aa0b6573ee5b14985` |
+| Rejected G2 bootstrap | `6f85dfb728ca0976658e0fbd26101e7df5e35a14` |
+| Deterministic G2 portability failure run | `35340807632` |
 | Rejected legacy private ref | `refs/roots/29.4/frozen-production` at `ad3126495925c93e1b1341146be9cc9512d3d448` |
 | Review ref | `refs/heads/integration/roots-29.4` |
 | Production ref | `refs/heads/roots/29.4` |
@@ -536,11 +552,18 @@ Relevant schemas and records are:
 - `contrib/roots/post-candidate-inventory-29.4.json`,
   `contrib/roots/post-candidate-replay-29.4.json`, and
   `contrib/roots/post-candidate-invariants-29.4.json`;
-- `contrib/roots/frozen-production-29.4.json`; and
-- `contrib/roots/production-accounting-29.4.json`.
+- `contrib/roots/frozen-production-29.4.json` and
+  `contrib/roots/production-accounting-29.4.json`, which preserve G2; and
+- `contrib/roots/frozen-production-29.4-g3.json`,
+  `contrib/roots/post-candidate-replay-29.4-g3.json`,
+  `contrib/roots/post-candidate-invariants-29.4-g3.json`,
+  `contrib/roots/production-accounting-29.4-g3.json`,
+  `contrib/roots/review-export-29.4-g3.json`, and
+  `contrib/roots/acceptance-evidence-29.4-g3.json`.
 
 For 29.4, both `authorization` in `promotion-29.4.json` and authorization in
 `production-accounting-29.4.json` remain false until the later reviewed
-promotion/release boundaries update them. The frozen record itself says
-`publication_authorized: false`. None of these records presently authorizes a
-push, tag, signature, draft, or publication.
+promotion/release boundaries update them. Both frozen records say
+`publication_authorized: false`, and the G3 acceptance record says
+`remote_mutation_authorized: false`. None of these records presently authorizes
+a push, tag, signature, draft, or publication.
