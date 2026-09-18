@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "l7.3-fresh-replay-recreation",
+  "inputs": {
+    "core_29_4_tag_object": "sha1:4e70eab99b60f7718b78e2158de9fb82726f3cec",
+    "core_29_4_commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "core_29_4_tree": "sha1:38ad59b187f59647eb90ad1347bc481485ef4d01",
+    "manifest": "adaptation-manifest-29.3.json",
+    "materials": "replay-materials.json"
+  },
+  "procedure": [
+    "Create a clean disposable repository and fetch only the authoritative Core v29.4 tag.",
+    "Verify the annotated tag object, peeled commit, and tree against the locked inputs.",
+    "Invoke roots-replay.py replay with the exact commit/tree, manifest, materials, materials root, a new state directory, and --apply.",
+    "Require five ordered, content-addressed boundaries and no manual engine boundary.",
+    "Require owned-candidate write-tree to equal the locked candidate tree.",
+    "Generate replay-review.json and replay-review.txt from replay-state-0005.json.",
+    "Repeat from a second clean repository and compare all three evidence files byte-for-byte."
+  ],
+  "expected": {
+    "candidate_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+    "candidate_tree_digest": "sha256:d00f365911e719b10acdfee816d98c62ab69e42962bc523a7ca214b5abb9fdb1",
+    "scoped_tree_digest": "sha256:ec3162cc49e049025eb8d6b16246f1f03229830216e2e3e6d1c6c49e0fc579d1",
+    "ordered_boundaries": 5,
+    "final_state_sha256": "sha256:862bb1b491519668137aea04bb802d56860c592c655f70ceed2a432ba844d14b",
+    "review_json_sha256": "sha256:c025cb7e8d9e99f35ec5d7706a3a6d8a666602c9c5f3c38946fb356b335da072",
+    "review_text_sha256": "sha256:a6fcc045984af7ba3fc72de4613ce5d1a644e814e160d70191b581135f6b7508"
+  },
+  "negative_gates": [
+    "Reject omission of each of the five material records before candidate creation.",
+    "Reject tampered data through its SHA-256 lock.",
+    "Reject a digest-valid newly conflicting patch through Git verification."
+  ],
+  "limitations": [
+    "The validation ref supplies the Core object to offline tests and is never accepted lineage.",
+    "The five engine boundaries are deterministic materialization groups; downstream-unit semantic accounting remains the separate 16-unit L3 inventory."
+  ]
+}

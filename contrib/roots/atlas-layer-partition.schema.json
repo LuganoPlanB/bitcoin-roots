@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "comparison": {"type": "string"},
+    "direct_core_to_roots": {"type": "object"},
+    "first_roots_later_relations": {"type": "array"},
+    "inputs": {"type": "object"},
+    "layers": {"type": "array"},
+    "overlapping_ownership": {"type": "array"},
+    "schema_version": {"const": 1},
+    "unexplained_direct_paths": {"type": "array"}
+  },
+  "required": ["schema_version", "comparison", "inputs", "layers", "direct_core_to_roots", "overlapping_ownership", "first_roots_later_relations", "unexplained_direct_paths"],
+  "type": "object"
+}

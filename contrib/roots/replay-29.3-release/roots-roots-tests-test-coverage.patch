@@ -1,0 +1,191 @@
+diff --git a/test/functional/feature_config_args.py b/test/functional/feature_config_args.py
+index 4736474beec33cb06d4edd1fd6be31bab89935ce..e8800482e6e2fdb79ef3564f159b0f8ab835e380 100755
+--- a/test/functional/feature_config_args.py
++++ b/test/functional/feature_config_args.py
+@@ -463,7 +463,6 @@ class ConfArgsTest(BitcoinTestFramework):
+         conf_file = self.nodes[0].datadir_path / "bitcoin.conf"
+         for chain, chain_name in {("main", ""), ("test", "testnet3"), ("signet", "signet"), ("testnet4", "testnet4")}:
+             util.write_config(conf_file, n=0, chain=chain_name, extra_config='acceptstalefeeestimates=1\n')
+-            self.nodes[0].expected_stderr_prefix = self.MAINNET_NORMAL_STDERR if (chain_name == '') else ''
+             self.nodes[0].assert_start_raises_init_error(expected_msg=f'Error: acceptstalefeeestimates is not supported on {chain} chain.')
+         util.write_config(conf_file, n=0, chain="regtest")  # Reset to regtest
+ 
+diff --git a/test/functional/feature_softwareexpiry.py b/test/functional/feature_softwareexpiry.py
+index 20a1471884fcf92093c574d187a371dd88787fbd..7233f6cfb11f5b2ffd78b8691675612731595ba0 100755
+--- a/test/functional/feature_softwareexpiry.py
++++ b/test/functional/feature_softwareexpiry.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-# Copyright (c) 2025 The Bitcoin Knots developers
++# Copyright (c) 2025 The Bitcoin Roots developers
+ # Distributed under the MIT software license, see the accompanying
+ # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 
+@@ -29,10 +29,6 @@ class SoftwareExpiryTest(BitcoinTestFramework):
+ 
+     def get_warnings(self, node):
+         warnings = node.getnetworkinfo()['warnings']
+-        try:
+-            warnings.remove(self.BASE_WARNING)
+-        except ValueError:
+-            pass
+         try:
+             warnings.remove(PRERELEASE_WARNING)
+         except ValueError:
+@@ -52,7 +48,6 @@ class SoftwareExpiryTest(BitcoinTestFramework):
+         assert alerts_path.exists()
+         with open(alerts_path, 'r', encoding='utf8') as f:
+             alerts_data = f.read()
+-            alerts_data = alerts_data.replace(self.alerts_base, '')
+             if platform.system() == 'Windows':
+                 # The echo command on Windows includes the quotes and space in the output
+                 assert alerts_data[0] == '"' and alerts_data[-3:] == "\" \n"
+@@ -62,7 +57,6 @@ class SoftwareExpiryTest(BitcoinTestFramework):
+         return stderr.rstrip()
+ 
+     def run_test(self):
+-        self.BASE_WARNING = f'Warning: This outdated version does not support the BIP110/RDTS upgrade, and is therefore vulnerable to displaying fake or fraudulent transactions. Please update: {self.config["environment"]["CLIENT_URL"]}'
+         nodes = self.nodes
+         addr = nodes[0].get_deterministic_priv_key().address  # what address is irrelevant
+         alerts_path = self.nodes[0].datadir_path / 'alerts'
+@@ -93,11 +87,7 @@ class SoftwareExpiryTest(BitcoinTestFramework):
+         assert_equal(self.get_warnings(nodes[0]), [])
+         nodes[0].stderr.seek(0)
+         assert_equal(nodes[0].stderr.read().decode('utf-8').strip(), '')
+-        if alerts_path.exists():
+-            with open(alerts_path, 'r', encoding='utf8') as f:
+-                alerts_data = f.read()
+-                assert not re.match('expire', alerts_data)
+-                self.alerts_base = alerts_data
++        assert not alerts_path.exists()
+ 
+         self.log.info("Once we're within 4 weeks, warnings should trigger")
+         nodes[0].mockscheduler(60)
+diff --git a/test/functional/mempool_subdust_fee_penalty.py b/test/functional/mempool_subdust_fee_penalty.py
+index a8e3d3cda97b56786dfb576921e3ee4112ab228c..c7a1131490e0fa08059eeaad90286561f4ded9a9 100755
+--- a/test/functional/mempool_subdust_fee_penalty.py
++++ b/test/functional/mempool_subdust_fee_penalty.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-# Copyright (c) 2026 The Bitcoin Knots developers
++# Copyright (c) 2026 The Bitcoin Roots developers
+ # Distributed under the MIT software license, see the accompanying
+ # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ """Test sub-dust output fee penalty (-subdustfeepenalty)."""
+diff --git a/test/functional/mining_mainnet.py b/test/functional/mining_mainnet.py
+index aaf054b5f6e864c864f083a3f32d5ee0a4c8b453..456381af55ab31a44954bcf89d6aa26d6f696769 100755
+--- a/test/functional/mining_mainnet.py
++++ b/test/functional/mining_mainnet.py
+@@ -44,7 +44,6 @@ class MiningMainnetTest(BitcoinTestFramework):
+         self.num_nodes = 1
+         self.setup_clean_chain = True
+         self.chain = "" # main
+-        self.MAINNET_NORMAL_STDERR = ''  # because we truncate the message away
+ 
+     def add_options(self, parser):
+         parser.add_argument(
+diff --git a/test/functional/test_framework/test_framework.py b/test/functional/test_framework/test_framework.py
+index fbd19984253b7b4325e608271c249696b10cb06c..38322c9be99688b936f9851c381dcfdb49ca3dc7 100755
+--- a/test/functional/test_framework/test_framework.py
++++ b/test/functional/test_framework/test_framework.py
+@@ -232,15 +232,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
+ 
+         PortSeed.n = self.options.port_seed
+ 
+-        self.MAINNET_NORMAL_STDERR = f'''Warning: Upcoming BIP110/RDTS Network Upgrade
+-
+-This version of {self.config['environment']['CLIENT_NAME']} does not support the upcoming BIP110 (RDTS) network upgrade, which fixes critical vulnerabilities in long-standing network design.
+-
+-Important: Because this upgrade already has broad community support, continuing to run older versions (such as this version) does not reject it. Running outdated software after any network upgrade only leaves your node vulnerable to displaying fake or fraudulent transactions. To effectively reject this upgrade, you need to run alternative software designed to split away from the upgraded network.
+-
+-To adopt this upgrade and remain secure, please update {self.config['environment']['CLIENT_NAME']}: {self.config['environment']['CLIENT_URL']}
+-
+-For more information, see: https://bitcoinknots.org/learn/2026-rdts'''.replace('\n', os.linesep)
++        self.MAINNET_NORMAL_STDERR = ''
+ 
+     def set_binary_paths(self):
+         """Update self.options with the paths of all binaries from environment variables or their default values"""
+diff --git a/test/lint/lint-files.py b/test/lint/lint-files.py
+index 681785acd23d56e94e4998c66e8e93031e44d3d5..7979d1b4aeae0d6e783009c799c86d2b07c8d87c 100755
+--- a/test/lint/lint-files.py
++++ b/test/lint/lint-files.py
+@@ -9,6 +9,7 @@ This checks that all files in the repository have correct filenames and permissi
+ 
+ import os
+ import re
++import stat
+ import sys
+ from subprocess import check_output
+ from typing import Optional, NoReturn
+@@ -37,11 +38,17 @@ class FileMeta(object):
+         # 100755 5a150d5f8031fcd75e80a4dd9843afa33655f579 0       ci/test/00_setup_env.sh
+         meta, self.file_path = file_spec.split('\t', 2)
+         meta = meta.split()
+-        # The octal file permission of the file. Internally, git only
+-        # keeps an 'executable' bit, so this will always be 0o644 or 0o755.
+-        self.permissions = int(meta[0], 8) & 0o7777
++        self.mode = int(meta[0], 8)
++        # For regular files, Git only keeps an executable bit, so permissions
++        # will always be 0o644 or 0o755. Symlinks have mode 0o120000 and are
++        # excluded from permission and shebang checks below.
++        self.permissions = self.mode & 0o7777
+         # We don't currently care about the other fields
+ 
++    @property
++    def is_symlink(self) -> bool:
++        return stat.S_ISLNK(self.mode)
++
+     @property
+     def extension(self) -> Optional[str]:
+         """
+@@ -125,6 +132,8 @@ def check_all_file_permissions(files) -> int:
+     """
+     failed_tests = 0
+     for filename, file_meta in files.items():
++        if file_meta.is_symlink:
++            continue
+         if file_meta.permissions == ALLOWED_PERMISSION_EXECUTABLES:
+             with open(filename, "rb") as f:
+                 shebang = f.readline().rstrip(b"\n")
+@@ -175,6 +184,8 @@ def check_shebang_file_permissions(files_meta) -> int:
+     failed_tests = 0
+     for filename in filenames:
+         file_meta = files_meta[filename]
++        if file_meta.is_symlink:
++            continue
+         if file_meta.permissions != ALLOWED_PERMISSION_EXECUTABLES:
+             # These file types are typically expected to be sourced and not executed directly
+             if file_meta.full_extension in ["bash", "init", "openrc", "sh.in"]:
+diff --git a/test/lint/test_runner/src/main.rs b/test/lint/test_runner/src/main.rs
+index e8176a047ad9182f2582b70f92d26d451304d614..2fb50c0362a8a559b3a3f68fe9e57e2eddbbf055 100644
+--- a/test/lint/test_runner/src/main.rs
++++ b/test/lint/test_runner/src/main.rs
+@@ -646,12 +646,28 @@ fn lint_markdown() -> LintResult {
+     let mut md_ignore_paths = get_subtrees();
+     md_ignore_paths.push("./doc/README_doxygen.md");
+     let md_ignore_path_str = md_ignore_paths.join(",");
++    // These are VitePress clean routes, not repository-root filesystem paths.
++    // doc/website/.vitepress/tests/site.test.mjs verifies that they are backed
++    // by published pages.
++    let vitepress_routes = ["/compare", "/documentation", "/getting-started", "/principles"];
++    for route in vitepress_routes {
++        let source_path = PathBuf::from(format!("doc/website/content{route}.md"));
++        if !source_path.is_file() {
++            return Err(format!(
++                "VitePress route {route} has no source page at {}",
++                source_path.display()
++            ));
++        }
++    }
++    let vitepress_route_str = vitepress_routes.join(",");
+ 
+     let mut cmd = Command::new(bin_name);
+     cmd.args([
+         "--offline",
+         "--ignore-path",
+         md_ignore_path_str.as_str(),
++        "--ignore-links",
++        vitepress_route_str.as_str(),
+         "--gitignore",
+         "--gituntracked",
+         "--root-dir",

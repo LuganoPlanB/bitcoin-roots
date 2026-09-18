@@ -1,0 +1,21 @@
+{
+  "materials": {
+    "coverage:roots-knots-build-ci-build-or-release": {"mechanism": "manual"},
+    "coverage:roots-knots-common-maintenance": {"mechanism": "manual"},
+    "coverage:roots-knots-consensus-validation-consensus-adjacent": {"mechanism": "manual"},
+    "coverage:roots-knots-documentation-documentation": {"mechanism": "manual"},
+    "coverage:roots-knots-gui-branding-ui": {"mechanism": "manual"},
+    "coverage:roots-knots-p2p-networking": {"mechanism": "manual"},
+    "coverage:roots-knots-policy-local-policy": {"mechanism": "manual"},
+    "coverage:roots-knots-tests-test-coverage": {"mechanism": "manual"},
+    "coverage:roots-knots-wallet-wallet": {"mechanism": "manual"},
+    "coverage:roots-roots-build-ci-build-or-release": {"mechanism": "manual"},
+    "coverage:roots-roots-common-maintenance": {"mechanism": "manual"},
+    "coverage:roots-roots-consensus-validation-consensus-adjacent": {"mechanism": "manual"},
+    "coverage:roots-roots-documentation-documentation": {"mechanism": "manual"},
+    "coverage:roots-roots-gui-branding-ui": {"mechanism": "manual"},
+    "coverage:roots-roots-release-generated-output": {"mechanism": "manual"},
+    "coverage:roots-roots-tests-test-coverage": {"mechanism": "manual"}
+  },
+  "schema_version": 1
+}

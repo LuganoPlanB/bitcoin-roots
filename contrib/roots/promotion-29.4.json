@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "core": {
+    "tag": "v29.4",
+    "tag_object": "sha1:4e70eab99b60f7718b78e2158de9fb82726f3cec",
+    "commit": "sha1:3fc0865963a38b871e9f7d94e6151c4953563516",
+    "tree": "sha1:38ad59b187f59647eb90ad1347bc481485ef4d01"
+  },
+  "candidate": {
+    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+    "canonical_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "input_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "forbidden_old_trunk_commit": "sha1:e2387f0d975121869064e55eb0afb99e7639120b"
+  },
+  "control_plane": {
+    "branch": "refs/heads/codex/roots-29-4-release",
+    "base_commit": "sha1:e2387f0d975121869064e55eb0afb99e7639120b",
+    "candidate_transfer": "exact-bundle-or-commit"
+  },
+  "production": {
+    "integration_ref": "refs/heads/integration/roots-29.4",
+    "production_ref": "refs/heads/roots/29.4",
+    "release_tag": "refs/tags/v29.4-roots.1",
+    "head": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "fast_forward_only": true
+  },
+  "authorization": false
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "kind": "roots-portability-hotspots",
+  "evidence_scope": {
+    "calibrations": ["29.3", "29.4"],
+    "replay_attempts": 2,
+    "resolution_time": "not-recorded",
+    "upstream_churn_window": "one accepted Core 29.3-to-29.4 migration fixture"
+  },
+  "sources": [
+    "contrib/roots/adaptation-manifest-29.3.json",
+    "contrib/roots/replay-29.4-proposal/downstream-unit-outcomes.json",
+    "contrib/roots/replay-29.4-proposal/manual-resolution-proposal.json",
+    "contrib/roots/method-retrospective-29.4.json"
+  ],
+  "ranking_method": {
+    "rule": "rank recorded manual conflict paths by their manifest owner; report each owner's changed-path surface independently and do not infer elapsed resolution time or multi-release churn from one migration",
+    "not_a_metric": ["line-count compression", "textual-merge cleanliness", "consensus code movement"]
+  },
+  "queue": [
+    {
+      "rank": 1,
+      "adaptation_ids": ["roots-roots-build-ci-build-or-release"],
+      "conflict_paths": [".github/actions/configure-docker/action.yml", ".github/workflows/ci.yml", "ci/README.md"],
+      "conflict_frequency": {"manual_paths": 3, "migration_samples": 1},
+      "diff_surface": {"declared_paths": 48, "changed_paths": 48, "absorbed_paths": 0},
+      "upstream_churn": {"observation": "limited-to-one-migration", "rewritten_outcomes": 1},
+      "build_impact": {"level": "direct", "reason": "workflow, action, and CI documentation control build permissions, cache boundaries, and runner topology"},
+      "resolution_time": "not-recorded",
+      "risk": {"tier": "medium", "reason": "CI privilege or cache-boundary regression; keep Core runner semantics authoritative"},
+      "cohesion_ownership_stability": {"level": "high", "reason": "the three manual paths share the Roots CI/build-release owner"},
+      "recommendation": "evaluate a data-owned CI identity/configuration seam before the next Core workflow topology change",
+      "traceability": "29.4 manual outcomes with ci-security-review, ci-platform-review, and ci-documentation-review markers"
+    },
+    {
+      "rank": 2,
+      "adaptation_ids": ["roots-knots-p2p-networking"],
+      "conflict_paths": ["src/node/miner.h"],
+      "conflict_frequency": {"manual_paths": 1, "migration_samples": 1},
+      "diff_surface": {"declared_paths": 42, "changed_paths": 41, "absorbed_paths": 1},
+      "upstream_churn": {"observation": "limited-to-one-migration", "rewritten_outcomes": 1},
+      "build_impact": {"level": "compile-and-test", "reason": "P2P/node headers and request tracking affect dependent compilation and network characterization"},
+      "resolution_time": "not-recorded",
+      "risk": {"tier": "medium", "reason": "networking and mining-adjacent ownership is not evidence for a policy abstraction"},
+      "cohesion_ownership_stability": {"level": "medium", "reason": "the remaining manual path has a stable P2P owner, while txrequest was separately absorbed"},
+      "recommendation": "retain inline P2P ownership; characterize src/node/miner.h separately from policy declarations",
+      "traceability": "29.4 actual manual outcome for src/node/miner.h; src/txrequest.cpp has a separate accepted Core absorption"
+    },
+    {
+      "rank": 3,
+      "adaptation_ids": ["roots-roots-common-maintenance"],
+      "conflict_paths": ["src/clientversion.cpp"],
+      "conflict_frequency": {"manual_paths": 1, "migration_samples": 1},
+      "diff_surface": {"declared_paths": 18, "changed_paths": 18, "absorbed_paths": 0},
+      "upstream_churn": {"observation": "limited-to-one-migration", "rewritten_outcomes": 1},
+      "build_impact": {"level": "compile-and-test", "reason": "client version identity reaches build and runtime presentation surfaces"},
+      "resolution_time": "not-recorded",
+      "risk": {"tier": "medium", "reason": "the broad maintenance owner is not a safe universal abstraction boundary"},
+      "cohesion_ownership_stability": {"level": "low", "reason": "one manual path does not make the heterogeneous maintenance unit cohesive"},
+      "recommendation": "retain inline ownership and require a narrower behavior-specific proposal before extraction",
+      "traceability": "29.4 manual outcome for src/clientversion.cpp"
+    },
+    {
+      "rank": 4,
+      "adaptation_ids": ["roots-knots-policy-local-policy"],
+      "conflict_paths": ["src/txmempool.h"],
+      "conflict_frequency": {"manual_paths": 1, "migration_samples": 1},
+      "diff_surface": {"declared_paths": 16, "changed_paths": 16, "absorbed_paths": 0},
+      "upstream_churn": {"observation": "limited-to-one-migration", "rewritten_outcomes": 1},
+      "build_impact": {"level": "compile-and-test", "reason": "mempool policy declarations affect dependent compilation and policy characterization tests"},
+      "resolution_time": "not-recorded",
+      "risk": {"tier": "medium", "reason": "policy-to-consensus leakage or changed mempool resource behavior"},
+      "cohesion_ownership_stability": {"level": "high", "reason": "src/txmempool.h is a stable local-policy ownership boundary"},
+      "recommendation": "keep policy declarations inline pending characterization proving local policy cannot affect block acceptance",
+      "traceability": "29.4 manual outcome with policy-consensus-review marker"
+    }
+  ],
+  "leave_inline": [
+    {"adaptation_ids": ["roots-knots-consensus-validation-consensus-adjacent", "roots-roots-consensus-validation-consensus-adjacent"], "reason": "A smaller diff is not a justification to move consensus-adjacent code; no recorded ownership seam outweighs characterization and compatibility risk."},
+    {"adaptation_ids": ["roots-knots-build-ci-build-or-release"], "reason": "The Knots-origin build unit has no manual path in this window; do not borrow the Roots CI unit's conflict count or surface."},
+    {"adaptation_ids": ["roots-knots-wallet-wallet"], "reason": "Wallet/database ownership is cross-cutting and has no recorded manual hotspot; extraction would expand compatibility and persistence risk."},
+    {"adaptation_ids": ["roots-knots-common-maintenance"], "reason": "The 275-path surface is heterogeneous, so it is an accounting hotspot rather than evidence of one cohesive module."},
+    {"adaptation_ids": ["roots-roots-release-generated-output", "roots-roots-documentation-documentation"], "reason": "Generated outputs and archive identity must remain derived from candidate inputs; moving them into runtime abstractions would obscure provenance."},
+    {"adaptation_ids": ["roots-knots-documentation-documentation"], "reason": "Documentation is reviewed with its owning behavior or interface; its 13-path surface does not establish an independent runtime seam."},
+    {"adaptation_ids": ["roots-knots-tests-test-coverage", "roots-roots-tests-test-coverage"], "reason": "Test coverage follows the behavior owner and is not a production module; preserve it as characterization evidence."},
+    {"adaptation_ids": ["roots-knots-gui-branding-ui", "roots-roots-gui-branding-ui"], "reason": "The GUI presentation concern is a future design candidate, but neither unit has a recorded manual path; their surfaces remain distinct in the seam record."}
+  ]
+}

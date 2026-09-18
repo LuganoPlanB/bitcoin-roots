@@ -1,0 +1,75 @@
+{
+  "materials": {
+    "l7:roots-knots-build-ci-build-or-release": {
+      "expected_after_tree": "a246992d0897d316bf5a6d695001c92919be9712",
+      "expected_before_tree": "d7910bd5e9335128932f1f848a767d773895c4a4",
+      "expected_patch_sha256": "sha256:b36698548247a19ce037c3189a2db64c6966ec78199c0642120c64993186157e",
+      "mechanism": "patch",
+      "patch": "roots-knots-build-ci-build-or-release.patch"
+    },
+    "l7:roots-knots-common-maintenance": {
+      "expected_after_tree": "7b95d0c64507d0dc00d3f96d7d697d573d29f8b0",
+      "expected_before_tree": "a246992d0897d316bf5a6d695001c92919be9712",
+      "expected_patch_sha256": "sha256:758febd9dcf9c281bd8d2f2bfe55e999749eb47929ea2299b1b74fdf5b9a9f83",
+      "mechanism": "patch",
+      "patch": "roots-knots-common-maintenance.patch"
+    },
+    "l7:roots-knots-consensus-validation-consensus-adjacent": {
+      "expected_after_tree": "20f791eeb0f31ef4c7b785a1048aebcdda11f48b",
+      "expected_before_tree": "7b95d0c64507d0dc00d3f96d7d697d573d29f8b0",
+      "expected_patch_sha256": "sha256:edbdbc678bacb3fd2ed654efdb28a980ca01f4f18b8edc64ef5a2975ae4a4b16",
+      "mechanism": "patch",
+      "patch": "roots-knots-consensus-validation-consensus-adjacent.patch"
+    },
+    "l7:roots-knots-documentation-documentation": {
+      "expected_after_tree": "d5101fcfeb01a64107fd1c9fd6865121b0a89fb5",
+      "expected_before_tree": "20f791eeb0f31ef4c7b785a1048aebcdda11f48b",
+      "expected_patch_sha256": "sha256:4b8da462690c644ff373479637078429dcbbb04a8576e30b57a6ac4f8bcbdbc1",
+      "mechanism": "patch",
+      "patch": "roots-knots-documentation-documentation.patch"
+    },
+    "l7:roots-knots-gui-branding-ui": {
+      "expected_after_tree": "40dd3ba19e1e0657f7afd7cd8efad799e0a860a1",
+      "expected_before_tree": "d5101fcfeb01a64107fd1c9fd6865121b0a89fb5",
+      "expected_patch_sha256": "sha256:d74620c89b5b80284b5d39291179ea665261b97f5878f573e52f87282bfc6010",
+      "mechanism": "patch",
+      "patch": "roots-knots-gui-branding-ui.patch"
+    },
+    "l7:roots-knots-p2p-networking": {
+      "expected_after_tree": "668ac255451293f3d759cf37a95081a2d5a75a4b",
+      "expected_before_tree": "40dd3ba19e1e0657f7afd7cd8efad799e0a860a1",
+      "expected_patch_sha256": "sha256:b120517cf73699d180934cd203431209fd1febf889a9d1d40379e7c96bf1379c",
+      "mechanism": "patch",
+      "patch": "roots-knots-p2p-networking.patch"
+    },
+    "l7:roots-knots-policy-local-policy": {
+      "expected_after_tree": "d05aaa160a358e9c5840ce0b94d05fd06b1b0422",
+      "expected_before_tree": "668ac255451293f3d759cf37a95081a2d5a75a4b",
+      "expected_patch_sha256": "sha256:b175e7d8db5f9bfc272054f11fa3bfef8a260e0b00ebf605976ebe5dda867195",
+      "mechanism": "patch",
+      "patch": "roots-knots-policy-local-policy.patch"
+    },
+    "l7:roots-knots-release-29-3-gap-layer": {
+      "expected_after_tree": "88180d767b915bf07d96e2702345ce8af6146b19",
+      "expected_before_tree": "d05aaa160a358e9c5840ce0b94d05fd06b1b0422",
+      "expected_patch_sha256": "sha256:c80aab8bdc5fa2bface44a15fd197393f198d99b8a5e50e0f12d684fffba587a",
+      "mechanism": "patch",
+      "patch": "roots-knots-release-29-3-gap-layer.patch"
+    },
+    "l7:roots-knots-tests-test-coverage": {
+      "expected_after_tree": "6ed05180336f64750dfb8ac7d22160e11107e8da",
+      "expected_before_tree": "88180d767b915bf07d96e2702345ce8af6146b19",
+      "expected_patch_sha256": "sha256:695bc0bea0ac5145e7b5ab037ffc2867b244c94aeac77d96b5587953925d2d38",
+      "mechanism": "patch",
+      "patch": "roots-knots-tests-test-coverage.patch"
+    },
+    "l7:roots-knots-wallet-wallet": {
+      "expected_after_tree": "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6",
+      "expected_before_tree": "6ed05180336f64750dfb8ac7d22160e11107e8da",
+      "expected_patch_sha256": "sha256:13ada2057e49159c672eebce6472e292d4ec8f9badda963e5524105897db7313",
+      "mechanism": "patch",
+      "patch": "roots-knots-wallet-wallet.patch"
+    }
+  },
+  "schema_version": 1
+}

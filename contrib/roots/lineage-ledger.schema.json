@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bitcoinroots.org/schemas/lineage-ledger-1.json",
+  "title": "Bitcoin Roots immutable lineage ledger",
+  "type": "object",
+  "required": ["schema_version", "object_format", "releases", "fork_starts", "claims", "exceptions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "object_format": {"enum": ["sha1", "sha256"]},
+    "releases": {"type": "array", "items": {"$ref": "#/$defs/release"}},
+    "fork_starts": {"type": "array", "items": {"$ref": "#/$defs/fork_start"}},
+    "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}}
+  },
+  "$defs": {
+    "oid": {"type": "string", "pattern": "^(sha1:[0-9a-f]{40}|sha256:[0-9a-f]{64})$"},
+    "release": {
+      "type": "object",
+      "required": ["id", "project", "release_label", "repository", "tag", "tag_ref", "resolution_status", "retrieval", "refspec"],
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"required": ["signature"], "properties": {"signature": {"const": "not-available"}}}, "then": {"required": ["trust_status"], "properties": {"trust_status": {"const": "not-available"}}}},
+        {"if": {"required": ["trust_status"], "properties": {"trust_status": {"const": "verified"}}}, "then": {"required": ["signature"], "properties": {"signature": {"const": "verified"}}}},
+        {"if": {"required": ["signature"], "properties": {"signature": {"const": "verified"}}}, "then": {"required": ["trust_status", "trusted_key_fingerprint"], "properties": {"trust_status": {"const": "verified"}}}}
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+        "project": {"enum": ["core", "knots", "roots"]},
+        "release_label": {"type": "string", "pattern": "^[0-9][A-Za-z0-9.+_-]*$"},
+        "repository": {"type": "string", "pattern": "^https://[^/]+/.+\\.git$"},
+        "tag": {"type": "string", "pattern": "^v[0-9][A-Za-z0-9.+_-]*$"},
+        "tag_ref": {"type": "string", "pattern": "^refs/tags/v[0-9][A-Za-z0-9.+_-]*$"},
+        "resolution_status": {"enum": ["resolved", "unavailable"]},
+        "object_format": {"enum": ["sha1", "sha256"]},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "refspec": {"type": "string", "pattern": "^refs/tags/[^*^~?:\\[\\\\]+:refs/tags/[^*^~?:\\[\\\\]+$"},
+        "retrieval": {"enum": ["explicit-fetch-only", "local-fixture"]},
+        "tag_object": {"$ref": "#/$defs/oid"},
+        "peeled_commit": {"$ref": "#/$defs/oid"},
+        "tree": {"$ref": "#/$defs/oid"},
+        "signature": {"enum": ["verified", "unsigned", "unverified", "not-available"]},
+        "trust_status": {"enum": ["verified", "unverified", "revoked", "expired", "not-available"]},
+        "trusted_key_fingerprint": {"type": "string", "pattern": "^[A-F0-9]{40}$"},
+        "parents": {"type": "array", "items": {"$ref": "#/$defs/oid"}}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["id", "left", "right", "level", "status", "scope", "exclusions", "command", "evidence_digest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+        "left": {"type": "string"}, "right": {"type": "string"},
+        "level": {"enum": ["tag_object", "commit", "complete_tree", "maintained_source", "generated_release_artifact", "build_input", "reproducible_binary", "consensus", "policy", "api_config"]},
+        "status": {"enum": ["same", "different", "blocked", "manual"]},
+        "scope": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "exclusions": {"type": "array", "items": {"type": "string"}},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "evidence_digest": {"$ref": "#/$defs/oid"}
+      }
+    },
+    "fork_start": {
+      "type": "object",
+      "required": ["id", "project", "commit", "parent", "tree", "relation", "scope", "command", "path_count", "status_counts", "evidence_digest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+        "project": {"const": "roots"},
+        "commit": {"$ref": "#/$defs/oid"},
+        "parent": {"$ref": "#/$defs/oid"},
+        "tree": {"$ref": "#/$defs/oid"},
+        "relation": {"const": "direct-parent"},
+        "scope": {"const": "raw Git tree entries and blob/mode changes; no release identity or equivalence claim"},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "path_count": {"type": "integer", "minimum": 0},
+        "status_counts": {"type": "object", "required": ["added", "deleted", "modified"], "additionalProperties": false, "properties": {"added": {"type": "integer", "minimum": 0}, "deleted": {"type": "integer", "minimum": 0}, "modified": {"type": "integer", "minimum": 0}}},
+        "evidence_digest": {"$ref": "#/$defs/oid"}
+      }
+    },
+    "exception": {
+      "type": "object",
+      "required": ["id", "release", "state", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+        "release": {"type": "string"},
+        "state": {"enum": ["core_base", "knots_layer", "roots_layer", "absorbed_upstream", "obsolete", "rejected", "manual"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

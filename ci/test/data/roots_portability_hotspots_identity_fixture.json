@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "roots-portability-hotspots-identity-fixture",
+  "cases": [
+    {
+      "kind": "rename",
+      "origin_adaptation_id": "roots-roots-build-ci-build-or-release",
+      "historical_paths": ["ci/README.md"],
+      "replayed_path": "ci/maintainers/README.md",
+      "expected_adaptation_id": "roots-roots-build-ci-build-or-release"
+    },
+    {
+      "kind": "squash",
+      "origin_adaptation_id": "roots-knots-policy-local-policy",
+      "historical_paths": ["src/policy/policy.h", "src/txmempool.h"],
+      "replayed_path": "src/txmempool.h",
+      "expected_adaptation_id": "roots-knots-policy-local-policy"
+    },
+    {
+      "kind": "path-movement",
+      "origin_adaptation_id": "roots-knots-gui-branding-ui",
+      "historical_paths": ["src/qt/networkstyle.cpp"],
+      "replayed_path": "src/qt/res/src/bitcoinroots-logo.svg",
+      "expected_adaptation_id": "roots-knots-gui-branding-ui"
+    }
+  ]
+}
