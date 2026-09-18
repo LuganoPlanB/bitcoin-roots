@@ -3,9 +3,12 @@
 from __future__ import annotations
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -33,6 +36,143 @@ class TrustedReplayCiTest(unittest.TestCase):
         if match is None:
             raise AssertionError(f"workflow environment value {name!r} is missing")
         return match.group(1).strip("'\"")
+
+    @staticmethod
+    def replay_shell(text):
+        start = text.index("  replay:\n")
+        end = text.index("  review:\n", start)
+        section = text[start:end]
+        match = re.search(r"(?ms)^      - run: \|\n(?P<body>.*?)(?=^      - uses:)", section)
+        if match is None:
+            raise AssertionError("replay shell step is missing")
+        return textwrap.dedent(match.group("body"))
+
+    @staticmethod
+    def shell_function(shell, name):
+        match = re.search(rf"(?ms)^{re.escape(name)}\(\) \{{\n.*?^\}}$", shell)
+        if match is None:
+            raise AssertionError(f"replay shell function {name!r} is missing")
+        return match.group(0)
+
+    def run_replay_helpers(self, body, runner_temp):
+        shell = self.replay_shell(WORKFLOW.read_text(encoding="utf-8"))
+        helpers = "\n".join(
+            self.shell_function(shell, name)
+            for name in ("prepare_replay_paths", "find_replay_state", "verify_replay_outputs")
+        )
+        return subprocess.run(
+            ["bash", "-c", "set -Eeuo pipefail\n" + helpers + "\n" + body],
+            check=False,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "RUNNER_TEMP": str(runner_temp)},
+        )
+
+    def test_replay_paths_are_fresh_paired_and_isolated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_replay_helpers(
+                """
+                prepare_replay_paths calibration a state_a report_a
+                prepare_replay_paths calibration b state_b report_b
+                test "$state_a" != "$state_b"
+                test "$report_a" != "$report_b"
+                test "$(dirname "$state_a")" = "$(dirname "$report_a")"
+                test "$(dirname "$state_b")" = "$(dirname "$report_b")"
+                test -d "$state_a" && test -d "$report_a"
+                test -d "$state_b" && test -d "$report_b"
+                test -z "$(find "$state_a" "$report_a" "$state_b" "$report_b" -mindepth 1 -print -quit)"
+                """,
+                root,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_replay_paths_reject_reuse_and_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            duplicate = self.run_replay_helpers(
+                "prepare_replay_paths calibration a state report\n"
+                "prepare_replay_paths calibration a duplicate_state duplicate_report\n",
+                root,
+            )
+            self.assertNotEqual(duplicate.returncode, 0)
+
+        for occupied in ("state", "report"):
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                destination = root / "calibration-a-replay"
+                (destination / occupied).mkdir(parents=True)
+                marker = destination / occupied / "preserve"
+                marker.write_text("caller-owned", encoding="utf-8")
+                result = self.run_replay_helpers(
+                    "prepare_replay_paths calibration a state report\n",
+                    root,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(marker.read_text(encoding="utf-8"), "caller-owned")
+
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as escape:
+            root = Path(directory)
+            (root / "calibration-a-replay").symlink_to(escape, target_is_directory=True)
+            result = self.run_replay_helpers(
+                "prepare_replay_paths calibration a state report\n",
+                root,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(list(Path(escape).iterdir()), [])
+
+    def test_replay_outputs_reject_missing_or_empty_state_and_reports(self):
+        expected = (
+            "replay-state.json",
+            "replay-review.json",
+            "replay-review.txt",
+            "replay-generated-series.patch",
+        )
+        cases = (("missing-state", "missing-state"), ("empty-state", "state")) + tuple(
+            ("missing-" + name, name) for name in expected
+        ) + tuple(("empty-" + name, "empty:" + name) for name in expected)
+        for label, mutation in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                setup = ["prepare_replay_paths calibration a state report"]
+                if mutation != "missing-state":
+                    setup.append("printf '{}\\n' > \"$state/replay-state-0001.json\"")
+                if mutation == "state":
+                    setup[-1] = "touch \"$state/replay-state-0001.json\""
+                for name in expected:
+                    if mutation == name:
+                        continue
+                    if mutation == "empty:" + name:
+                        setup.append(f'touch "$report/{name}"')
+                    else:
+                        setup.append(f'printf "evidence\\n" > "$report/{name}"')
+                setup.append("verify_replay_outputs \"$state\" \"$report\" final_state")
+                result = self.run_replay_helpers("\n".join(setup) + "\n", root)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_replay_invokes_each_reconstruction_once(self):
+        shell = self.replay_shell(WORKFLOW.read_text(encoding="utf-8"))
+        calls = re.findall(r"(?m)^reconstruct (calibration|roots-29\.3|locked-29\.4) .* ([ab])$", shell)
+        self.assertEqual(
+            calls,
+            [
+                ("calibration", "a"),
+                ("calibration", "b"),
+                ("roots-29.3", "a"),
+                ("roots-29.3", "b"),
+                ("locked-29.4", "a"),
+                ("locked-29.4", "b"),
+            ],
+        )
+        self.assertEqual(len(calls), len(set(calls)))
+
+    def test_replay_exports_from_the_owned_candidate(self):
+        shell = self.replay_shell(WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn(
+            'export-patches --repository "$state_directory/owned-candidate"',
+            shell,
+        )
+        self.assertNotIn('export-patches --repository "$work"', shell)
 
     def test_workflow_has_only_trusted_read_only_paths(self):
         text = WORKFLOW.read_text()

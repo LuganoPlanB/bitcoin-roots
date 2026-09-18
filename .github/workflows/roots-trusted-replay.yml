@@ -104,19 +104,78 @@ jobs:
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
       - run: |
           set -Eeuo pipefail
+          prepare_replay_paths() {
+            local name="$1" run="$2" state_variable="$3" report_variable="$4"
+            local runner_root destination state_path report_path
+            [[ "$name" =~ ^(calibration|roots-29\.3|locked-29\.4)$ ]]
+            [[ "$run" =~ ^[ab]$ ]]
+            [[ "$state_variable" =~ ^[a-z_]+$ ]]
+            [[ "$report_variable" =~ ^[a-z_]+$ ]]
+            runner_root="$(realpath -e -- "$RUNNER_TEMP")"
+            test -d "$runner_root"
+            destination="$runner_root/$name-$run-replay"
+            test ! -e "$destination"
+            test ! -L "$destination"
+            mkdir -- "$destination"
+            test "$(realpath -e -- "$destination")" = "$destination"
+            state_path="$destination/state"
+            report_path="$destination/report"
+            mkdir -- "$state_path" "$report_path"
+            test -d "$state_path"
+            test ! -L "$state_path"
+            test -d "$report_path"
+            test ! -L "$report_path"
+            test -z "$(find "$state_path" "$report_path" -mindepth 1 -print -quit)"
+            printf -v "$state_variable" '%s' "$state_path"
+            printf -v "$report_variable" '%s' "$report_path"
+          }
+          find_replay_state() {
+            local state_directory="$1" output_variable="$2" candidate
+            local -a states
+            [[ "$output_variable" =~ ^[a-z_]+$ ]]
+            test -d "$state_directory"
+            test ! -L "$state_directory"
+            mapfile -t states < <(find "$state_directory" -maxdepth 1 -type f -name 'replay-state*.json' -print | LC_ALL=C sort)
+            test "${#states[@]}" -gt 0
+            for candidate in "${states[@]}"; do
+              test -s "$candidate"
+              test ! -L "$candidate"
+            done
+            printf -v "$output_variable" '%s' "${states[${#states[@]}-1]}"
+          }
+          verify_replay_outputs() {
+            local state_directory="$1" report_directory="$2" output_variable="$3"
+            local state_path name path
+            test -d "$report_directory"
+            test ! -L "$report_directory"
+            test "$(dirname "$state_directory")" = "$(dirname "$report_directory")"
+            find_replay_state "$state_directory" state_path
+            for name in replay-state.json replay-review.json replay-review.txt replay-generated-series.patch; do
+              path="$report_directory/$name"
+              test -f "$path"
+              test ! -L "$path"
+              test -s "$path"
+            done
+            test "$(find "$report_directory" -mindepth 1 -maxdepth 1 -print | wc -l)" -eq 4
+            printf -v "$output_variable" '%s' "$state_path"
+          }
           reconstruct() {
-            local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" work="$RUNNER_TEMP/$1-$7"
+            local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" run="$7"
+            local work="$RUNNER_TEMP/$name-$run" state_directory report_directory state verified_state
+            local remote=https://github.com/bitcoin/bitcoin.git
+            prepare_replay_paths "$name" "$run" state_directory report_directory
             git clone --no-checkout . "$work"
-            remote=https://github.com/bitcoin/bitcoin.git
             [[ "$name" == roots-29.3 ]] && remote="$ROOTS_REMOTE"
             git -C "$work" remote add immutable "$remote"
             git -C "$work" fetch --no-tags immutable "$revision"
             git -C "$work" checkout --detach "$revision"
-            python3 contrib/devtools/roots-replay.py replay --repository "$work" --revision "$revision" --expected-tree "$tree" --manifest "$GITHUB_WORKSPACE/$manifest" --materials "$GITHUB_WORKSPACE/$materials" --materials-root "$GITHUB_WORKSPACE/$root" --state-directory "$RUNNER_TEMP/$name-$7-state" --apply
-            state="$(find "$RUNNER_TEMP/$name-$7-state" -name 'replay-state*.json' -type f | sort | tail -n 1)"
-            python3 contrib/devtools/roots-replay.py report --state "$state" --output-directory "$RUNNER_TEMP/$name-$7-report"
-            python3 contrib/devtools/roots-replay.py export-patches --repository "$work" --state "$state" --output "$RUNNER_TEMP/$name-$7-report/replay-generated-series.patch"
-            cp "$state" "$RUNNER_TEMP/$name-$7-report/replay-state.json"
+            python3 contrib/devtools/roots-replay.py replay --repository "$work" --revision "$revision" --expected-tree "$tree" --manifest "$GITHUB_WORKSPACE/$manifest" --materials "$GITHUB_WORKSPACE/$materials" --materials-root "$GITHUB_WORKSPACE/$root" --state-directory "$state_directory" --apply
+            find_replay_state "$state_directory" state
+            python3 contrib/devtools/roots-replay.py report --state "$state" --output-directory "$report_directory"
+            python3 contrib/devtools/roots-replay.py export-patches --repository "$state_directory/owned-candidate" --state "$state" --output "$report_directory/replay-generated-series.patch"
+            cp "$state" "$report_directory/replay-state.json"
+            verify_replay_outputs "$state_directory" "$report_directory" verified_state
+            test "$state" = "$verified_state"
           }
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 a
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 b
@@ -125,7 +184,7 @@ jobs:
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal a
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal b
           mkdir "$RUNNER_TEMP/replay-artifacts"
-          for pair in "core-to-knots-29.3:calibration" "roots-29.3:roots-29.3" "core-29.4:locked-29.4"; do role="${pair%%:*}"; source="${pair##*:}"; for run in a b; do mkdir -p "$RUNNER_TEMP/replay-artifacts/$role/$run"; cp "$RUNNER_TEMP/$source-$run-report/replay-state.json" "$RUNNER_TEMP/$source-$run-report/replay-review.json" "$RUNNER_TEMP/$source-$run-report/replay-review.txt" "$RUNNER_TEMP/$source-$run-report/replay-generated-series.patch" "$RUNNER_TEMP/replay-artifacts/$role/$run/"; done; done
+          for pair in "core-to-knots-29.3:calibration" "roots-29.3:roots-29.3" "core-29.4:locked-29.4"; do role="${pair%%:*}"; source="${pair##*:}"; for run in a b; do mkdir -p "$RUNNER_TEMP/replay-artifacts/$role/$run"; cp "$RUNNER_TEMP/$source-$run-replay/report/replay-state.json" "$RUNNER_TEMP/$source-$run-replay/report/replay-review.json" "$RUNNER_TEMP/$source-$run-replay/report/replay-review.txt" "$RUNNER_TEMP/$source-$run-replay/report/replay-generated-series.patch" "$RUNNER_TEMP/replay-artifacts/$role/$run/"; done; done
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with: {name: 'roots-replay-evidence-${{ github.sha }}', path: '${{ runner.temp }}/replay-artifacts/', if-no-files-found: error, retention-days: 7}
   review:
