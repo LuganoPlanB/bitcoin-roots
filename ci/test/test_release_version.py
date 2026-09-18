@@ -3,6 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,6 +21,9 @@ INFO_PLIST = ROOT / "share/qt/Info.plist.in"
 WINDOWS_INSTALLER = ROOT / "share/setup.nsi.in"
 QT_RESOURCES = ROOT / "src/qt/res/bitcoin-qt-res.rc"
 SPLASH_SCREEN = ROOT / "src/qt/splashscreen.cpp"
+ARCHIVE_TOOL = ROOT / "ci/release/archive.py"
+RELEASE_NOTES = ROOT / "doc/release-notes.md"
+TAG_VALIDATOR = ROOT / "ci/release/validate-release-tag.sh"
 
 
 class ReleaseVersionTest(unittest.TestCase):
@@ -35,6 +39,7 @@ class ReleaseVersionTest(unittest.TestCase):
 
     def test_parses_supported_release_tags(self):
         cases = {
+            "v29.4-roots.1": "29|4|0|0|29.4-roots.1|v29.4-roots.1|29.4.0",
             "v29.3-roots.1": "29|3|0|0|29.3-roots.1|v29.3-roots.1|29.3.0",
             "v29.3.0-roots.2-rc1": "29|3|0|1|29.3.0-roots.2-rc1|v29.3.0-roots.2-rc1|29.3.0",
             "v30.0+roots.1": "30|0|0|0|30.0+roots.1|v30.0+roots.1|30.0.0",
@@ -60,16 +65,42 @@ message("RESULT=${CLIENT_VERSION_MAJOR}|${CLIENT_VERSION_MINOR}|${CLIENT_VERSION
             for source in sorted((ROOT / "doc/man").glob("*.1")):
                 output = work / source.name
                 body = f"""
-set(CLIENT_VERSION_TAG v29.3-roots.1)
-set(CLIENT_VERSION_BASE_STRING 29.3.0.roots20260507)
-set(CLIENT_VERSION_FULL v29.3-roots.1)
+                set(CLIENT_VERSION_TAG v29.4-roots.1)
+                set(CLIENT_VERSION_BASE_STRING 29.4.0.roots-dev)
+                set(CLIENT_VERSION_FULL v29.4-roots.1)
 configure_tagged_document("{source}" "{output}")
 """
                 result = self.run_cmake(body)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 content = output.read_text(encoding="utf-8")
-                self.assertIn("v29.3-roots.1", content)
-                self.assertNotIn("v29.3.0.roots20260507", content)
+                self.assertIn("v29.4-roots.1", content)
+                self.assertNotIn("v29.4.0.roots-dev", content)
+
+    def test_untagged_and_archive_identities_are_explicit(self):
+        build_config = BUILD_CONFIG.read_text(encoding="utf-8")
+        self.assertIn("set(CLIENT_VERSION_MINOR 4)", build_config)
+        self.assertIn('set(CLIENT_VERSION_SUFFIX ".roots-dev")', build_config)
+        self.assertIn('set(CLIENT_VERSION_IS_RELEASE "false")', build_config)
+        environment = {**os.environ, "RELEASE_TAG": "", "GITHUB_SHA": "ABCDEF0123456789"}
+        result = subprocess.run(["python3", ARCHIVE_TOOL, "root-name"], env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "bitcoin-roots-git-abcdef012345")
+        tagged = subprocess.run(["python3", ARCHIVE_TOOL, "root-name", "--tag", "v29.4-roots.1"], capture_output=True, text=True)
+        self.assertEqual(tagged.returncode, 0, tagged.stderr)
+        self.assertEqual(tagged.stdout.strip(), "bitcoin-roots-29.4-roots.1")
+        invalid = subprocess.run(["bash", TAG_VALIDATOR, "v29.4-roots.2"], capture_output=True, text=True)
+        self.assertNotEqual(invalid.returncode, 0)
+
+    def test_release_notes_bind_roots_policy_and_provenance(self):
+        notes = RELEASE_NOTES.read_text(encoding="utf-8")
+        for required in (
+            "Bitcoin Roots 29.4", "v29.4", "3fc0865963a38b871e9f7d94e6151c4953563516",
+            "conservative, configurable transaction relay and mempool", "Bitcoin Core consensus",
+            "does not enforce RDTS/BIP110", "How to Upgrade", "inherited", "contrib/roots/",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, notes)
+        self.assertNotIn("Bitcoin Core version 29.3 is now available", notes)
 
     def test_release_tag_is_authoritative_in_generated_metadata(self):
         config_header = CONFIG_HEADER.read_text(encoding="utf-8")

@@ -118,6 +118,7 @@ export default defineConfig({
       { text: "Features", link: "/features" },
       { text: "Compare", link: "/compare" },
       { text: "Documentation", link: "/documentation" },
+      { text: "Maintainers", link: "/maintainers" },
       { text: "Policy", link: "/doc/policy/README" },
       { text: "Contribute", link: "/CONTRIBUTING" },
     ],

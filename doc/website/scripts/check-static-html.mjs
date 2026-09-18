@@ -38,6 +38,15 @@ const pages = {
     "Network Watch",
     "Policy is not consensus",
   ],
+  "maintainers.html": [
+    "<h1",
+    "Maintainer release model",
+    "Verified Bitcoin Core tag",
+    "Reviewed Roots patch stack",
+    "Trusted CI",
+    "Signed release",
+    "authorization values are false",
+  ],
 };
 
 for (const [filename, expectedContent] of Object.entries(pages)) {
@@ -48,4 +57,4 @@ for (const [filename, expectedContent] of Object.entries(pages)) {
   }
 }
 
-console.log("Verified server-rendered content in the homepage, Principles, Compare, and Features HTML.");
+console.log("Verified server-rendered content in the primary editorial HTML pages.");
