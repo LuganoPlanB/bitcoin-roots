@@ -11,6 +11,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/roots-trusted-replay.yml"
+ATLAS_LOCK = ROOT / "contrib/roots/atlas-input-lock-29.3.json"
+LINEAGE_LEDGER = ROOT / "contrib/roots/lineage-ledger.json"
 SCRIPT = ROOT / "ci/roots-trusted-replay-gate.py"
 REVIEW_SCRIPT = ROOT / "ci/roots-trusted-replay-review.py"
 BUILD_SCRIPT = ROOT / "ci/roots-trusted-candidate-build.py"
@@ -25,6 +27,13 @@ BUILD = importlib.util.module_from_spec(build_spec)
 build_spec.loader.exec_module(BUILD)
 
 class TrustedReplayCiTest(unittest.TestCase):
+    @staticmethod
+    def workflow_env(text, name):
+        match = re.search(rf"(?m)^  {re.escape(name)}: (.+)$", text)
+        if match is None:
+            raise AssertionError(f"workflow environment value {name!r} is missing")
+        return match.group(1).strip("'\"")
+
     def test_workflow_has_only_trusted_read_only_paths(self):
         text = WORKFLOW.read_text()
         for required in ("schedule:", "workflow_dispatch:", "contents: read", "CORE_29_3_COMMIT", "CORE_29_4_COMMIT", "CORE_29_3_TREE", "CORE_29_4_TREE", "LOCKED_INPUT_DIGEST", "fetch --no-tags https://github.com/bitcoin/bitcoin.git", "timeout-minutes: 10", "timeout-minutes: 20", "timeout-minutes: 60", "cancel-in-progress: true", "needs: [gate, fetch]", "actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808"):
@@ -33,6 +42,12 @@ class TrustedReplayCiTest(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         actions = re.findall(r"^\s*-\s+uses:\s*([^\s#]+)", text, re.MULTILINE)
         self.assertTrue(actions and all(re.fullmatch(r"actions/(?:checkout|upload-artifact|download-artifact)@[0-9a-f]{40}", action) for action in actions))
+        checkout_steps = re.findall(
+            r"(?ms)^      - uses: actions/checkout@[^\n]+\n(.*?)(?=^      - |\Z)",
+            text,
+        )
+        self.assertEqual(len(checkout_steps), text.count("uses: actions/checkout@"))
+        self.assertTrue(all("persist-credentials: false" in step for step in checkout_steps))
         for required in ("roots-trusted-candidate-build.py", "core-to-knots-29.3", "roots-29.3", "core-29.4", "timeout-minutes: 180"):
             self.assertIn(required, text)
         for required in ("promotion-inputs:", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:", "test \"$CONTROL_SHA\" = \"$EVENT_SHA\"", "refs/heads/integration/roots-29.4", "Validate and build the immutable candidate once"):
@@ -52,6 +67,31 @@ class TrustedReplayCiTest(unittest.TestCase):
         self.assertIn('"CCACHE_DIR"', build_text)
         for invariant_test in ("feature_block.py", "p2p_segwit.py", "mempool_datacarrier.py"):
             self.assertIn(invariant_test, build_text)
+
+    def test_public_knots_tag_and_historical_roots_parent_are_distinct_locks(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        atlas = json.loads(ATLAS_LOCK.read_text(encoding="utf-8"))["git_inputs"]["knots-29.3.knots20260507"]
+        ledger = json.loads(LINEAGE_LEDGER.read_text(encoding="utf-8"))
+        knots = next(release for release in ledger["releases"] if release["id"] == "knots-29.3.knots20260507")
+        historical_parent = ledger["fork_starts"][0]["parent"].removeprefix("sha1:")
+
+        self.assertEqual(self.workflow_env(text, "KNOTS_29_3_TAG_REF"), knots["tag_ref"])
+        self.assertEqual(self.workflow_env(text, "KNOTS_29_3_TAG_OBJECT"), knots["tag_object"].removeprefix("sha1:"))
+        self.assertEqual(self.workflow_env(text, "KNOTS_29_3_COMMIT"), atlas["peeled_commit"].removeprefix("sha1:"))
+        self.assertEqual(self.workflow_env(text, "KNOTS_29_3_TREE"), atlas["tree"].removeprefix("sha1:"))
+        self.assertEqual(self.workflow_env(text, "ROOTS_29_3_PARENT_COMMIT"), historical_parent)
+        self.assertEqual(self.workflow_env(text, "ROOTS_29_3_PARENT_TREE"), "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6")
+        self.assertEqual(
+            self.workflow_env(text, "HEADLESS_BUILD_PACKAGES"),
+            "build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev ccache",
+        )
+        self.assertNotEqual(self.workflow_env(text, "KNOTS_29_3_COMMIT"), historical_parent)
+        self.assertIn('"$KNOTS_29_3_TAG_REF:$KNOTS_29_3_TAG_REF"', text)
+        self.assertIn('cat-file -t "$KNOTS_29_3_TAG_REF"', text)
+        self.assertIn('rev-parse "$KNOTS_29_3_TAG_REF^{commit}"', text)
+        self.assertIn('rev-parse "$KNOTS_29_3_TAG_REF^{commit}^{tree}"', text)
+        self.assertNotIn('https://github.com/bitcoinknots/bitcoin.git "$ROOTS_29_3_PARENT_COMMIT"', text)
+        self.assertIn('reconstruct roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE"', text)
 
     def test_tree_valid_candidate_still_fails_on_build_error(self):
         with tempfile.TemporaryDirectory() as directory:

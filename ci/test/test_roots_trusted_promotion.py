@@ -24,6 +24,23 @@ spec.loader.exec_module(PROMOTION)
 
 
 class TrustedPromotionTest(unittest.TestCase):
+    @staticmethod
+    def job(workflow: str, name: str) -> str:
+        match = re.search(rf"(?ms)^  {re.escape(name)}:\n(.*?)(?=^  [a-z0-9_-]+:\n|\Z)", workflow)
+        if match is None:
+            raise AssertionError(f"workflow job {name!r} is missing")
+        return match.group(1)
+
+    @staticmethod
+    def named_step_run(job: str, name: str) -> str:
+        match = re.search(rf"(?ms)^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)", job)
+        if match is None:
+            raise AssertionError(f"workflow step {name!r} is missing")
+        run = re.search(r"(?ms)^        run: (.*?)(?=^        [a-zA-Z0-9_-]+: |\Z)", match.group(1))
+        if run is None:
+            raise AssertionError(f"workflow step {name!r} has no run command")
+        return run.group(1).strip()
+
     def invoke(self, candidate: Path, output: Path, **changes: str) -> subprocess.CompletedProcess[str]:
         control_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
         values = {"candidate_commit": PROMOTION.CANDIDATE_COMMIT, "candidate_tree": PROMOTION.CANDIDATE_TREE, "control_sha": control_sha}
@@ -41,6 +58,11 @@ class TrustedPromotionTest(unittest.TestCase):
         promotion = workflow.split("\n  promotion:\n", 1)[1]
         self.assertEqual(promotion.count("python3 ci/roots-trusted-promotion.py"), 1)
         self.assertEqual(promotion.count("python3 ci/roots-trusted-candidate-build.py"), 1)
+        prerequisite_step = "Install supported headless build prerequisites"
+        build_install = self.named_step_run(self.job(workflow, "build-test"), prerequisite_step)
+        promotion_install = self.named_step_run(self.job(workflow, "promotion"), prerequisite_step)
+        self.assertEqual(build_install, promotion_install)
+        self.assertIn("HEADLESS_BUILD_PACKAGES", build_install)
 
     def test_exact_current_frozen_candidate_is_accepted_twice_without_writes(self):
         with tempfile.TemporaryDirectory() as directory:

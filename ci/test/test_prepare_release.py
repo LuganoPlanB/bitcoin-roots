@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import subprocess
 import sys
 import tarfile
@@ -128,6 +129,17 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertNotIn("gpg --", publish)
         self.assertIn("contents: write", publish)
         self.assertIn("EXPECTED_PACKAGE_COUNT + 4", publish)
+
+    def test_release_checkouts_never_persist_credentials(self):
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        checkout_steps = re.findall(
+            r"(?ms)^      - name: [^\n]+\n        uses: actions/checkout@[^\n]+\n(.*?)(?=^      - |\Z)",
+            workflow,
+        )
+        self.assertEqual(len(checkout_steps), workflow.count("uses: actions/checkout@"))
+        self.assertGreater(len(checkout_steps), 0)
+        for step in checkout_steps:
+            self.assertIn("persist-credentials: false", step)
 
     def test_guarded_publication_workflow_changes_only_draft_visibility(self):
         workflow = (ROOT / ".github/workflows/publish-release.yml").read_text()

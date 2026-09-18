@@ -16,8 +16,14 @@ env:
   CORE_29_3_TREE: d7910bd5e9335128932f1f848a767d773895c4a4
   CORE_29_4_COMMIT: 3fc0865963a38b871e9f7d94e6151c4953563516
   CORE_29_4_TREE: 38ad59b187f59647eb90ad1347bc481485ef4d01
-  KNOTS_29_3_COMMIT: 99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b
-  KNOTS_29_3_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
+  KNOTS_29_3_TAG_REF: refs/tags/v29.3.knots20260507
+  KNOTS_29_3_TAG_OBJECT: b44895edd1ab63b6bfed6ec85d8c1828d6514e9a
+  KNOTS_29_3_COMMIT: 4bb7c0e8dbde2bd9478849a18d098598d2046914
+  KNOTS_29_3_TREE: 373259b74b193235decd5d0faaace203108eb9cb
+  ROOTS_29_3_PARENT_COMMIT: 99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b
+  ROOTS_29_3_PARENT_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
+  ROOTS_REMOTE: 'https://github.com/${{ github.repository }}.git'
+  HEADLESS_BUILD_PACKAGES: build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev ccache
   LOCKED_INPUT_DIGEST: 7579c043e50213b2b70c59a6a5977bb315a48fa2efd1c1a1d316b4dab9a3c401
 jobs:
   promotion-inputs:
@@ -78,10 +84,15 @@ jobs:
           set -Eeuo pipefail
           git init "$RUNNER_TEMP/core-source"
           git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoin/bitcoin.git "$CORE_29_3_COMMIT" "$CORE_29_4_COMMIT"
-          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoinknots/bitcoin.git "$KNOTS_29_3_COMMIT"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoinknots/bitcoin.git "$KNOTS_29_3_TAG_REF:$KNOTS_29_3_TAG_REF"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags "$ROOTS_REMOTE" "$ROOTS_29_3_PARENT_COMMIT"
           test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_3_COMMIT^{tree}")" = "$CORE_29_3_TREE"
           test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_4_COMMIT^{tree}")" = "$CORE_29_4_TREE"
-          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_COMMIT^{tree}")" = "$KNOTS_29_3_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" cat-file -t "$KNOTS_29_3_TAG_REF")" = tag
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF")" = "$KNOTS_29_3_TAG_OBJECT"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF^{commit}")" = "$KNOTS_29_3_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF^{commit}^{tree}")" = "$KNOTS_29_3_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$ROOTS_29_3_PARENT_COMMIT^{tree}")" = "$ROOTS_29_3_PARENT_TREE"
   replay:
     needs: [gate, fetch]
     if: needs.gate.outputs.decision == 'replay'
@@ -97,7 +108,7 @@ jobs:
             local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" work="$RUNNER_TEMP/$1-$7"
             git clone --no-checkout . "$work"
             remote=https://github.com/bitcoin/bitcoin.git
-            [[ "$name" == roots-29.3 ]] && remote=https://github.com/bitcoinknots/bitcoin.git
+            [[ "$name" == roots-29.3 ]] && remote="$ROOTS_REMOTE"
             git -C "$work" remote add immutable "$remote"
             git -C "$work" fetch --no-tags immutable "$revision"
             git -C "$work" checkout --detach "$revision"
@@ -109,8 +120,8 @@ jobs:
           }
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 a
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 b
-          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a
-          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release b
+          reconstruct roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a
+          reconstruct roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release b
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal a
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal b
           mkdir "$RUNNER_TEMP/replay-artifacts"
@@ -142,7 +153,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
       - name: Install supported headless build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev ccache
+        run: |
+          set -Eeuo pipefail
+          read -r -a packages <<< "$HEADLESS_BUILD_PACKAGES"
+          sudo apt-get update
+          sudo apt-get install -y -- "${packages[@]}"
       - name: Reconstruct, build, and test every exact candidate
         shell: bash
         env:
@@ -155,7 +170,7 @@ jobs:
             local work="$RUNNER_TEMP/accept-$name" state="$RUNNER_TEMP/accept-$name-state" build="$RUNNER_TEMP/accept-$name-build"
             git clone --no-checkout . "$work"
             remote=https://github.com/bitcoin/bitcoin.git
-            [[ "$name" == roots-29.3 ]] && remote=https://github.com/bitcoinknots/bitcoin.git
+            [[ "$name" == roots-29.3 ]] && remote="$ROOTS_REMOTE"
             git -C "$work" remote add immutable "$remote"
             git -C "$work" fetch --no-tags immutable "$revision"
             git -C "$work" checkout --detach "$revision"
@@ -164,7 +179,7 @@ jobs:
             python3 "$ACCEPT" --repository "$state/owned-candidate" --expected-tree "$target_tree" --build-directory "$build" --jobs 2
           }
           reconstruct_and_test core-to-knots-29.3 "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
-          reconstruct_and_test roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a5708dcbf1d2611360fab68fc6a8e504db1ba95d
+          reconstruct_and_test roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a5708dcbf1d2611360fab68fc6a8e504db1ba95d
           reconstruct_and_test core-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal 39a5e30207a09962e78ae81c24cc65b1e478ef90
       - run: |
           set -Eeuo pipefail
@@ -177,6 +192,12 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - name: Install supported headless build prerequisites
+        run: |
+          set -Eeuo pipefail
+          read -r -a packages <<< "$HEADLESS_BUILD_PACKAGES"
+          sudo apt-get update
+          sudo apt-get install -y -- "${packages[@]}"
       - name: Fetch the hardcoded integration candidate as data
         env:
           CANDIDATE_COMMIT: '${{ needs.promotion-inputs.outputs.candidate_commit }}'
