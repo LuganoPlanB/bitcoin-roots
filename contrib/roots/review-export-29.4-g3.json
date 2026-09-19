@@ -1,0 +1,13 @@
+{
+  "advisory": "range-diff is review evidence, not authorization",
+  "git_version": "git version 2.47.3",
+  "patch_range": "dfc74d403585f7c23815ef80d2e206b85c33919a..c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+  "patch_series_sha256": "sha256:af1bbdec54ae712a961b23bb32c2a0e7f8068915a50e16553a48786807be0ea3",
+  "range_diff_ranges": [
+    "3fc0865963a38b871e9f7d94e6151c4953563516..dfc74d403585f7c23815ef80d2e206b85c33919a",
+    "3fc0865963a38b871e9f7d94e6151c4953563516..c8dc2e70bc145930855cf615ba9caffaccdcdcb9"
+  ],
+  "range_diff_sha256": "sha256:6151cfa14a81790822bbed444cf23a8e357d15eac5dcc8a8895eccdc7e01b444",
+  "schema_version": 1,
+  "scoped_diff_sha256": "sha256:76391cd1faea5b3aca64dfcff587bfae71857b501b12531d884b64bb060091c4"
+}

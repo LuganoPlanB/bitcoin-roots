@@ -1,0 +1,18 @@
+{
+  "configuration_digests": {
+    "contrib/roots/post-candidate-invariants-29.4-g3.json": "sha256:0f148978b71820ef929540ce11d3d66a26c3eed35619465c944f7aa3e1fe2e7a",
+    "contrib/roots/post-candidate-replay-29.4-g3.json": "sha256:7bbbcb7cb93a1782c1fb843a96d9e15f062fcb4abdcc850e31543cfb4f7adcae",
+    "contrib/roots/production-accounting-29.4-g3.json": "sha256:40065ee05b7c67a28ad53ba113c31f82fecbb6fca0680c843ac72d48c9dd6fc6",
+    "contrib/roots/review-export-29.4-g3.json": "sha256:4cfe2038408d8be2acb789129e83ca34f9ef309f0728f542be1e4533a05f3aed"
+  },
+  "g2_evidence": {
+    "path": "contrib/roots/frozen-production-29.4.json",
+    "sha256": "sha256:b03a974882d453018fae74c91315dbe03ba574e4f39498d465994683f5926518"
+  },
+  "g3_commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+  "g3_parent": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+  "g3_ref": "refs/roots/29.4/frozen-production-g3",
+  "g3_tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9",
+  "publication_authorized": false,
+  "schema_version": 1
+}

@@ -7,9 +7,9 @@ IFS=$'\n\t'
 readonly CORE_COMMIT="3fc0865963a38b871e9f7d94e6151c4953563516"
 readonly CORE_TREE="38ad59b187f59647eb90ad1347bc481485ef4d01"
 readonly CORE_TAG_OBJECT="4e70eab99b60f7718b78e2158de9fb82726f3cec"
-readonly CANDIDATE_COMMIT="f771e13259f23f02efc215327f2806d421cc7339"
+readonly CANDIDATE_COMMIT="cbc88cff9b35b95a549c0313e424e13093fcd6a1"
 readonly CANDIDATE_TREE="39a5e30207a09962e78ae81c24cc65b1e478ef90"
-readonly CANDIDATE_REF="refs/remotes/origin/ci/l7-validation/39a5e302"
+readonly CANDIDATE_REF="$CANDIDATE_COMMIT"
 readonly EXPECTED_TARGET_COMMIT="cbc88cff9b35b95a549c0313e424e13093fcd6a1"
 
 die()
@@ -32,7 +32,7 @@ readonly script_directory
 readonly manifest="$script_directory/../adaptation-manifest-29.3.json"
 readonly tag_payload="$script_directory/materials/core-v29.4.tag"
 
-[[ -d "$source_repository/.git" ]] || die "source is not a Git worktree"
+[[ "$(git -C "$source_repository" rev-parse --is-inside-work-tree 2>/dev/null || true)" == "true" ]] || die "source is not a Git worktree"
 [[ -f "$manifest" ]] || die "adaptation manifest is unavailable"
 [[ -f "$tag_payload" ]] || die "Core tag payload is unavailable"
 [[ ! -e "$destination" ]] || die "destination already exists"
@@ -44,8 +44,11 @@ actual_core_tree="$(git -C "$destination" rev-parse "$CORE_COMMIT^{tree}")"
 [[ "$actual_core_tree" == "$CORE_TREE" ]] || die "Core tree does not match its lock"
 actual_candidate_tree="$(git -C "$destination" rev-parse "$CANDIDATE_COMMIT^{tree}")"
 [[ "$actual_candidate_tree" == "$CANDIDATE_TREE" ]] || die "candidate tree does not match its lock"
-actual_candidate_parent="$(git -C "$destination" rev-parse "$CANDIDATE_COMMIT^")"
-[[ "$actual_candidate_parent" == "$CORE_COMMIT" ]] || die "validation candidate has the wrong Core parent"
+[[ "$(git -C "$destination" rev-list --first-parent --count "$CANDIDATE_COMMIT" "^$CORE_COMMIT")" == 16 ]] ||
+    die "candidate does not have the exact sixteen-commit Core-rooted topology"
+first_lineage_commit="$(git -C "$destination" rev-list --first-parent "$CANDIDATE_COMMIT" -n 16 | tail -n 1)"
+[[ "$(git -C "$destination" rev-parse "$first_lineage_commit^")" == "$CORE_COMMIT" ]] ||
+    die "candidate is not Core-rooted"
 
 actual_tag="$(git -C "$destination" hash-object -t tag -w "$tag_payload")"
 [[ "$actual_tag" == "$CORE_TAG_OBJECT" ]] || die "Core annotated tag object does not match its lock"

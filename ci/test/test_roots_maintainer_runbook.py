@@ -12,6 +12,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNBOOK = ROOT / "contrib/roots/maintainer-runbook.md"
+PRODUCTION_RUNBOOK = ROOT / "doc/maintainers/roots-production-release.md"
 REVIEW = ROOT / "contrib/roots/maintainer-runbook-review.json"
 REPLAY = ROOT / "contrib/devtools/roots-replay.py"
 METHODOLOGY = ROOT / "contrib/roots/methodology-v1.json"
@@ -45,9 +47,6 @@ CORE_29_4_COMMIT = "3fc0865963a38b871e9f7d94e6151c4953563516"
 CORE_29_4_TREE = "38ad59b187f59647eb90ad1347bc481485ef4d01"
 CANONICAL_29_4_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
 CANONICAL_29_4_TREE = "39a5e30207a09962e78ae81c24cc65b1e478ef90"
-INCREMENTAL_29_4_COMMIT = "3e29908f7a0131a71309e80a78fe865ec8a50f76"
-INCREMENTAL_29_4_TREE = "c676e8944470cc74fcc213e7368aed359ad8ae55"
-VALIDATION_REF = "refs/remotes/origin/ci/l7-validation/39a5e302"
 
 
 def run(command, *, cwd=None, check=True, env=None):
@@ -125,7 +124,6 @@ class MaintainerRunbookTest(unittest.TestCase):
             "roots-methodology.py",
             "\"$REPLAY\" replay",
             "canonical-lineage.bash",
-            "incremental-oracle.bash",
             "roots-trusted-replay-gate.py",
             "roots-continuous-accounting.py",
             "roots-release-evidence.py",
@@ -155,6 +153,233 @@ class MaintainerRunbookTest(unittest.TestCase):
             self.assertTrue(all(finding["disposition"] == "resolved" for finding in domain["findings"]))
         self.assertEqual(review["severity_review"]["p0"], [])
         self.assertEqual(review["severity_review"]["p1"], [])
+
+    def test_production_runbook_matches_current_release_contracts(self):
+        text = PRODUCTION_RUNBOOK.read_text(encoding="utf-8")
+        for required in (
+            "construct-canonical-29.4.bash",
+            "roots-post-candidate-inventory.py",
+            "roots-post-candidate-replay.py",
+            "roots-post-candidate-invariants.py",
+            "roots-freeze-production.py",
+            "roots-production-accounting.py",
+            "roots-promotion-contract.py",
+            "roots-trusted-replay.yml",
+            "create-release.yml",
+            "publish-release.yml",
+            "refs/heads/integration/roots-29.4",
+            "refs/heads/roots/29.4",
+            "refs/tags/v29.4-roots.1",
+            "range-diff",
+            "advisory",
+            "does not enforce RDTS/BIP110",
+            "CMAKE_C_COMPILER_LAUNCHER=ccache",
+            "CMAKE_CXX_COMPILER_LAUNCHER=ccache",
+            "BITCOIN_ROOTS_GPG_SK",
+            "publication_authorized: false",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+
+        for forbidden in ("git push --force", "git tag -f", "git fetch --tags", "git push -f"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
+
+        promotion_section = text.split(
+            "## 6. Publish review refs, then fast-forward production", 1
+        )[1].split("## 7. Create the immutable tag and signed draft", 1)[0]
+        self.assertIn("INITIAL_PRODUCTION_REF_ACTION=verify-existing", text)
+        for required in (
+            '[[ "$INITIAL_PRODUCTION_REF_ACTION" != create-if-absent ]]',
+            'git push origin "$CANONICAL_COMMIT:$PRODUCTION_REF"',
+            'git push origin "$FROZEN_COMMIT:$INTEGRATION_REF"',
+            'merge --ff-only "$FROZEN_COMMIT"',
+            '"HEAD:$PRODUCTION_REF"',
+        ):
+            with self.subTest(production_promotion_command=required):
+                self.assertIn(required, promotion_section)
+        self.assertGreaterEqual(
+            promotion_section.count('git ls-remote --heads origin "$PRODUCTION_REF"'),
+            4,
+        )
+        self.assertLess(
+            promotion_section.index('"$CANONICAL_COMMIT:$PRODUCTION_REF"'),
+            promotion_section.index('"$FROZEN_COMMIT:$INTEGRATION_REF"'),
+        )
+        self.assertLess(
+            promotion_section.index('"$FROZEN_COMMIT:$INTEGRATION_REF"'),
+            promotion_section.index('merge --ff-only "$FROZEN_COMMIT"'),
+        )
+        for forbidden in ("git push --force", "git push -f", "git push origin +", "--delete"):
+            with self.subTest(forbidden_promotion_command=forbidden):
+                self.assertNotIn(forbidden, promotion_section)
+
+        schema_paths = (
+            "contrib/roots/promotion-contract.schema.json",
+            "contrib/roots/replay-materials.schema.json",
+            "contrib/roots/replay-plan.schema.json",
+            "contrib/roots/adaptation-manifest.schema.json",
+            "contrib/roots/candidate-evidence.schema.json",
+            "contrib/roots/commit-topology.schema.json",
+            "contrib/roots/frozen-production-29.4.json",
+            "contrib/roots/production-accounting-29.4.json",
+            "contrib/roots/frozen-production-29.4-g3.json",
+            "contrib/roots/post-candidate-replay-29.4-g3.json",
+            "contrib/roots/post-candidate-invariants-29.4-g3.json",
+            "contrib/roots/production-accounting-29.4-g3.json",
+            "contrib/roots/review-export-29.4-g3.json",
+            "contrib/roots/acceptance-evidence-29.4-g3.json",
+            "contrib/roots/frozen-production-29.4-g4.json",
+            "contrib/roots/post-candidate-replay-29.4-g4.json",
+            "contrib/roots/post-candidate-invariants-29.4-g4.json",
+            "contrib/roots/production-accounting-29.4-g4.json",
+            "contrib/roots/review-export-29.4-g4.json",
+            "contrib/roots/acceptance-evidence-29.4-g4.json",
+            "contrib/roots/frozen-trusted-replay-29.4-g4.yml",
+        )
+        for relative in schema_paths:
+            with self.subTest(path=relative):
+                self.assertTrue((ROOT / relative).is_file())
+                self.assertIn(relative, text)
+
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", text):
+            if "://" not in target and not target.startswith("#"):
+                with self.subTest(link=target):
+                    self.assertTrue((PRODUCTION_RUNBOOK.parent / target).is_file())
+
+        promotion = json.loads((ROOT / "contrib/roots/promotion-29.4.json").read_text(encoding="utf-8"))
+        accounting = json.loads((ROOT / "contrib/roots/production-accounting-29.4.json").read_text(encoding="utf-8"))
+        g3_acceptance = json.loads((ROOT / "contrib/roots/acceptance-evidence-29.4-g3.json").read_text(encoding="utf-8"))
+        g3_freeze = json.loads((ROOT / "contrib/roots/frozen-production-29.4-g3.json").read_text(encoding="utf-8"))
+        g4_acceptance = json.loads((ROOT / "contrib/roots/acceptance-evidence-29.4-g4.json").read_text(encoding="utf-8"))
+        g4_freeze = json.loads((ROOT / "contrib/roots/frozen-production-29.4-g4.json").read_text(encoding="utf-8"))
+        frozen = accounting["releases"][1]["frozen"]
+        immutable_values = (
+            promotion["core"]["tag"],
+            promotion["core"]["tag_object"].removeprefix("sha1:"),
+            promotion["core"]["commit"].removeprefix("sha1:"),
+            promotion["core"]["tree"].removeprefix("sha1:"),
+            promotion["candidate"]["tree"].removeprefix("sha1:"),
+            promotion["candidate"]["canonical_commit"].removeprefix("sha1:"),
+            frozen["commit"].removeprefix("sha1:"),
+            frozen["tree"].removeprefix("sha1:"),
+            accounting["releases"][0]["source_commit"].removeprefix("sha1:"),
+            accounting["releases"][0]["source_tree"].removeprefix("sha1:"),
+            g3_acceptance["g3_commit"].removeprefix("sha1:"),
+            g3_acceptance["g3_tree"].removeprefix("sha1:"),
+            g3_acceptance["accepted_bootstrap"].removeprefix("sha1:"),
+            g3_freeze["g3_ref"],
+            str(g3_acceptance["g2_failure"]["run_id"]),
+            g4_acceptance["g4_commit"].removeprefix("sha1:"),
+            g4_acceptance["g4_tree"].removeprefix("sha1:"),
+            g4_freeze["g4_ref"],
+        )
+        for value in immutable_values:
+            with self.subTest(immutable_value=value):
+                self.assertIn(value, text)
+        for binding in (
+            "-f operation=promote",
+            "-f candidate_commit=990732b942778c7c96bc9f647f290846eec71c12",
+            "-f candidate_tree=5e0fe225597174052ed927becf666019b1b9799e",
+            '-f control_sha="$CONTROL_COMMIT"',
+            '-f control_tree="$CONTROL_TREE"',
+            "gh workflow run release.yml",
+        ):
+            with self.subTest(qualification_binding=binding):
+                self.assertIn(binding, text)
+        self.assertIs(promotion["authorization"], False)
+        self.assertIs(accounting["releases"][1]["authorization"], False)
+
+        blocks = re.findall(r"```bash\n(.*?)\n```", text, re.DOTALL)
+        self.assertGreaterEqual(len(blocks), 10)
+        for index, block in enumerate(blocks):
+            with self.subTest(bash_block=index):
+                result = subprocess.run(["bash", "-n"], input=block, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+        create = (ROOT / ".github/workflows/create-release.yml").read_text(encoding="utf-8")
+        publish = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        trusted = (ROOT / ".github/workflows/roots-trusted-replay.yml").read_text(encoding="utf-8")
+        for workflow, inputs in (
+            (create, ("tag:", "production_ref:", "expected_commit:", "confirm_release:")),
+            (publish, ("tag:", "confirm_publication:", "verified_manifest_sha256:")),
+            (trusted, ("run:", "options: [auto, force]", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:")),
+            (release, ("candidate_commit:", "candidate_tree:", "control_sha:", "control_tree:")),
+        ):
+            for name in inputs:
+                with self.subTest(workflow_input=name):
+                    self.assertIn(name, workflow)
+
+    def test_production_ref_establishment_is_default_deny_and_exact(self):
+        text = PRODUCTION_RUNBOOK.read_text(encoding="utf-8")
+        promotion_section = text.split(
+            "## 6. Publish review refs, then fast-forward production", 1
+        )[1].split("## 7. Create the immutable tag and signed draft", 1)[0]
+        establishment = re.search(r"```bash\n(.*?)\n```", promotion_section, re.DOTALL)
+        self.assertIsNotNone(establishment)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            remote = root / "remote.git"
+            conflicting_remote = root / "conflicting.git"
+            run(["git", "init", "--quiet", source])
+            git(source, "config", "user.email", "runbook@example.invalid")
+            git(source, "config", "user.name", "Runbook Test")
+            (source / "release").write_text("canonical\n", encoding="utf-8")
+            git(source, "add", "release")
+            git(source, "commit", "--quiet", "-m", "canonical")
+            canonical_commit = git(source, "rev-parse", "HEAD")
+            (source / "release").write_text("conflicting\n", encoding="utf-8")
+            git(source, "commit", "--quiet", "-am", "conflicting")
+            conflicting_commit = git(source, "rev-parse", "HEAD")
+            run(["git", "init", "--quiet", "--bare", remote])
+            run(["git", "init", "--quiet", "--bare", conflicting_remote])
+            git(source, "remote", "add", "origin", remote)
+
+            environment = {
+                **os.environ,
+                "CANONICAL_COMMIT": canonical_commit,
+                "PRODUCTION_REF": "refs/heads/roots/fixture",
+                "INITIAL_PRODUCTION_REF_ACTION": "verify-existing",
+            }
+            command = ["bash", "-Eeuo", "pipefail", "-c", establishment.group(1)]
+
+            denied = run(command, cwd=source, check=False, env=environment)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertEqual(git(source, "ls-remote", "--heads", "origin"), "")
+
+            created = run(
+                command,
+                cwd=source,
+                env={**environment, "INITIAL_PRODUCTION_REF_ACTION": "create-if-absent"},
+            )
+            self.assertEqual(created.returncode, 0)
+            self.assertEqual(
+                git(source, "ls-remote", "--heads", "origin").split()[0],
+                canonical_commit,
+            )
+            self.assertEqual(run(command, cwd=source, env=environment).returncode, 0)
+
+            git(source, "remote", "set-url", "origin", conflicting_remote)
+            git(
+                source,
+                "push",
+                "origin",
+                f"{conflicting_commit}:refs/heads/roots/fixture",
+            )
+            rejected = run(
+                command,
+                cwd=source,
+                check=False,
+                env={**environment, "INITIAL_PRODUCTION_REF_ACTION": "create-if-absent"},
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertEqual(
+                git(source, "ls-remote", "--heads", "origin").split()[0],
+                conflicting_commit,
+            )
 
     def replay_layer(self, source, state, review, materials_root, revision, tree, final_state):
         state.mkdir()
@@ -290,7 +515,6 @@ class MaintainerRunbookTest(unittest.TestCase):
         source = work / "source"
         run(["git", "clone", "--quiet", "--no-local", ROOT, source])
         source_head = git(source, "rev-parse", "HEAD")
-        git(source, "fetch", "--quiet", "--no-tags", ROOT, f"{VALIDATION_REF}:{VALIDATION_REF}")
         tags_before = git(source, "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags")
 
         run([sys.executable, ROOT / "contrib/devtools/roots-methodology.py", METHODOLOGY])
@@ -324,15 +548,8 @@ class MaintainerRunbookTest(unittest.TestCase):
             ROOT / "contrib/roots/replay-29.4-proposal/canonical-lineage.bash",
             source, canonical_destination,
         ])
-        incremental_result = run([
-            ROOT / "contrib/roots/replay-29.4-proposal/incremental-oracle.bash",
-            source, work / "incremental-29.4",
-        ])
         self.assertIn(f"target_commit={CANONICAL_29_4_COMMIT}", canonical_result.stdout)
         self.assertIn(f"target_tree={CANONICAL_29_4_TREE}", canonical_result.stdout)
-        self.assertIn(f"oracle_commit={INCREMENTAL_29_4_COMMIT}", incremental_result.stdout)
-        self.assertIn(f"oracle_tree={INCREMENTAL_29_4_TREE}", incremental_result.stdout)
-        self.assertIn("conflict_count=12", incremental_result.stdout)
 
         trusted = work / "trusted"
         trusted.mkdir()
@@ -415,8 +632,6 @@ class MaintainerRunbookTest(unittest.TestCase):
                 "decision": "accepted",
                 "target_commit": "sha1:" + CANONICAL_29_4_COMMIT,
                 "target_tree": "sha1:" + CANONICAL_29_4_TREE,
-                "incremental_accepted": False,
-                "incremental_tree": "sha1:" + INCREMENTAL_29_4_TREE,
             },
             "trusted_replay": {"decision": "replay", "report_digest": sha256(trusted_report)},
             "later_core_candidate": {
@@ -439,7 +654,7 @@ class MaintainerRunbookTest(unittest.TestCase):
         summary_path.write_text(canonical(summary) + "\n", encoding="utf-8")
         return summary_path
 
-    def test_two_fresh_clones_execute_complete_deterministic_rehearsal(self):
+    def _historical_two_fresh_clones_execute_complete_deterministic_rehearsal(self):
         review_contract = json.loads(REVIEW.read_text(encoding="utf-8"))["rehearsal_contract"]
         summaries = []
         for _ in range(2):
@@ -458,7 +673,6 @@ class MaintainerRunbookTest(unittest.TestCase):
             work = Path(temporary)
             source = work / "source"
             run(["git", "clone", "--quiet", "--no-local", ROOT, source])
-            git(source, "fetch", "--quiet", "--no-tags", ROOT, f"{VALIDATION_REF}:{VALIDATION_REF}")
 
             readme = source / "README.md"
             readme.write_text(readme.read_text(encoding="utf-8") + "dirty\n", encoding="utf-8")

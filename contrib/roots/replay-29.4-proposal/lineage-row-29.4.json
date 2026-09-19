@@ -31,7 +31,7 @@
     "path": "canonical-topology.json",
     "sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40",
     "constructor": "canonical-lineage.bash",
-    "constructor_sha256": "sha256:99d2e7227864fa5f1f555cf2e791c6743df1812750c79664bcdb90b5303080d5",
+    "constructor_sha256": "sha256:2cb83c65873ccb65cb0f561d2309ba2d56bdcad0f49bc801b11a1cd29015f199",
     "commit_count": 16,
     "merge_count": 0,
     "aggregate_diff_digest": "sha256:1d90add7572488689c9a8a902c19103cdc8db3967c33b97acb95bb354328a81d",

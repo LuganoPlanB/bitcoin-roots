@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       run: {description: Run accepted locks even when unchanged, required: true, default: auto, type: choice, options: [auto, force]}
+      operation: {description: Explicit trusted operation, required: true, default: replay, type: choice, options: [replay, promote]}
+      candidate_commit: {description: Frozen integration commit for explicit promotion validation, required: false, default: '', type: string}
+      candidate_tree: {description: Frozen integration tree for explicit promotion validation, required: false, default: '', type: string}
+      control_sha: {description: Accepted control commit that must equal this event SHA, required: false, default: '', type: string}
 permissions: {contents: read}
 concurrency: {group: 'roots-trusted-replay-${{ github.workflow }}', cancel-in-progress: true}
 env:
@@ -12,10 +16,41 @@ env:
   CORE_29_3_TREE: d7910bd5e9335128932f1f848a767d773895c4a4
   CORE_29_4_COMMIT: 3fc0865963a38b871e9f7d94e6151c4953563516
   CORE_29_4_TREE: 38ad59b187f59647eb90ad1347bc481485ef4d01
-  KNOTS_29_3_COMMIT: 99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b
-  KNOTS_29_3_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
-  LOCKED_INPUT_DIGEST: 7579c043e50213b2b70c59a6a5977bb315a48fa2efd1c1a1d316b4dab9a3c401
+  KNOTS_29_3_TAG_REF: refs/tags/v29.3.knots20260507
+  KNOTS_29_3_TAG_OBJECT: b44895edd1ab63b6bfed6ec85d8c1828d6514e9a
+  KNOTS_29_3_COMMIT: 4bb7c0e8dbde2bd9478849a18d098598d2046914
+  KNOTS_29_3_TREE: 373259b74b193235decd5d0faaace203108eb9cb
+  ROOTS_29_3_PARENT_COMMIT: 99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b
+  ROOTS_29_3_PARENT_TREE: 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
+  ROOTS_REMOTE: 'https://github.com/${{ github.repository }}.git'
+  HEADLESS_BUILD_PACKAGES: build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev ccache
+  LOCKED_INPUT_DIGEST: bf475368580760aa4450a67f84961852bc1dc180311b73874c31c4773b7e5f2e
 jobs:
+  promotion-inputs:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      candidate_commit: '${{ steps.inputs.outputs.candidate_commit }}'
+      candidate_tree: '${{ steps.inputs.outputs.candidate_tree }}'
+      control_sha: '${{ steps.inputs.outputs.control_sha }}'
+    steps:
+      - id: inputs
+        env:
+          CANDIDATE_COMMIT: '${{ inputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ inputs.candidate_tree }}'
+          CONTROL_SHA: '${{ inputs.control_sha }}'
+          EVENT_SHA: '${{ github.sha }}'
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$CONTROL_SHA" = "$EVENT_SHA"
+          printf 'candidate_commit=%s\n' "$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
+          printf 'candidate_tree=%s\n' "$CANDIDATE_TREE" >> "$GITHUB_OUTPUT"
+          printf 'control_sha=%s\n' "$CONTROL_SHA" >> "$GITHUB_OUTPUT"
   gate:
     permissions: {contents: read}
     runs-on: ubuntu-24.04
@@ -49,10 +84,15 @@ jobs:
           set -Eeuo pipefail
           git init "$RUNNER_TEMP/core-source"
           git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoin/bitcoin.git "$CORE_29_3_COMMIT" "$CORE_29_4_COMMIT"
-          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoinknots/bitcoin.git "$KNOTS_29_3_COMMIT"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags https://github.com/bitcoinknots/bitcoin.git "$KNOTS_29_3_TAG_REF:$KNOTS_29_3_TAG_REF"
+          git -C "$RUNNER_TEMP/core-source" fetch --no-tags "$ROOTS_REMOTE" "$ROOTS_29_3_PARENT_COMMIT"
           test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_3_COMMIT^{tree}")" = "$CORE_29_3_TREE"
           test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$CORE_29_4_COMMIT^{tree}")" = "$CORE_29_4_TREE"
-          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_COMMIT^{tree}")" = "$KNOTS_29_3_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" cat-file -t "$KNOTS_29_3_TAG_REF")" = tag
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF")" = "$KNOTS_29_3_TAG_OBJECT"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF^{commit}")" = "$KNOTS_29_3_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$KNOTS_29_3_TAG_REF^{commit}^{tree}")" = "$KNOTS_29_3_TREE"
+          test "$(git -C "$RUNNER_TEMP/core-source" rev-parse "$ROOTS_29_3_PARENT_COMMIT^{tree}")" = "$ROOTS_29_3_PARENT_TREE"
   replay:
     needs: [gate, fetch]
     if: needs.gate.outputs.decision == 'replay'
@@ -64,28 +104,87 @@ jobs:
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
       - run: |
           set -Eeuo pipefail
+          prepare_replay_paths() {
+            local name="$1" run="$2" state_variable="$3" report_variable="$4"
+            local runner_root destination state_path report_path
+            [[ "$name" =~ ^(calibration|roots-29\.3|locked-29\.4)$ ]]
+            [[ "$run" =~ ^[ab]$ ]]
+            [[ "$state_variable" =~ ^[a-z_]+$ ]]
+            [[ "$report_variable" =~ ^[a-z_]+$ ]]
+            runner_root="$(realpath -e -- "$RUNNER_TEMP")"
+            test -d "$runner_root"
+            destination="$runner_root/$name-$run-replay"
+            test ! -e "$destination"
+            test ! -L "$destination"
+            mkdir -- "$destination"
+            test "$(realpath -e -- "$destination")" = "$destination"
+            state_path="$destination/state"
+            report_path="$destination/report"
+            mkdir -- "$state_path" "$report_path"
+            test -d "$state_path"
+            test ! -L "$state_path"
+            test -d "$report_path"
+            test ! -L "$report_path"
+            test -z "$(find "$state_path" "$report_path" -mindepth 1 -print -quit)"
+            printf -v "$state_variable" '%s' "$state_path"
+            printf -v "$report_variable" '%s' "$report_path"
+          }
+          find_replay_state() {
+            local state_directory="$1" output_variable="$2" candidate
+            local -a states
+            [[ "$output_variable" =~ ^[a-z_]+$ ]]
+            test -d "$state_directory"
+            test ! -L "$state_directory"
+            mapfile -t states < <(find "$state_directory" -maxdepth 1 -type f -name 'replay-state*.json' -print | LC_ALL=C sort)
+            test "${#states[@]}" -gt 0
+            for candidate in "${states[@]}"; do
+              test -s "$candidate"
+              test ! -L "$candidate"
+            done
+            printf -v "$output_variable" '%s' "${states[${#states[@]}-1]}"
+          }
+          verify_replay_outputs() {
+            local state_directory="$1" report_directory="$2" output_variable="$3"
+            local state_path name path
+            test -d "$report_directory"
+            test ! -L "$report_directory"
+            test "$(dirname "$state_directory")" = "$(dirname "$report_directory")"
+            find_replay_state "$state_directory" state_path
+            for name in replay-state.json replay-review.json replay-review.txt replay-generated-series.patch; do
+              path="$report_directory/$name"
+              test -f "$path"
+              test ! -L "$path"
+              test -s "$path"
+            done
+            test "$(find "$report_directory" -mindepth 1 -maxdepth 1 -print | wc -l)" -eq 4
+            printf -v "$output_variable" '%s' "$state_path"
+          }
           reconstruct() {
-            local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" work="$RUNNER_TEMP/$1-$7"
+            local name="$1" revision="$2" tree="$3" manifest="$4" materials="$5" root="$6" run="$7"
+            local work="$RUNNER_TEMP/$name-$run" state_directory report_directory state verified_state
+            local remote=https://github.com/bitcoin/bitcoin.git
+            prepare_replay_paths "$name" "$run" state_directory report_directory
             git clone --no-checkout . "$work"
-            remote=https://github.com/bitcoin/bitcoin.git
-            [[ "$name" == roots-29.3 ]] && remote=https://github.com/bitcoinknots/bitcoin.git
+            [[ "$name" == roots-29.3 ]] && remote="$ROOTS_REMOTE"
             git -C "$work" remote add immutable "$remote"
             git -C "$work" fetch --no-tags immutable "$revision"
             git -C "$work" checkout --detach "$revision"
-            python3 contrib/devtools/roots-replay.py replay --repository "$work" --revision "$revision" --expected-tree "$tree" --manifest "$GITHUB_WORKSPACE/$manifest" --materials "$GITHUB_WORKSPACE/$materials" --materials-root "$GITHUB_WORKSPACE/$root" --state-directory "$RUNNER_TEMP/$name-$7-state" --apply
-            state="$(find "$RUNNER_TEMP/$name-$7-state" -name 'replay-state*.json' -type f | sort | tail -n 1)"
-            python3 contrib/devtools/roots-replay.py report --state "$state" --output-directory "$RUNNER_TEMP/$name-$7-report"
-            python3 contrib/devtools/roots-replay.py export-patches --repository "$work" --state "$state" --output "$RUNNER_TEMP/$name-$7-report/replay-generated-series.patch"
-            cp "$state" "$RUNNER_TEMP/$name-$7-report/replay-state.json"
+            python3 contrib/devtools/roots-replay.py replay --repository "$work" --revision "$revision" --expected-tree "$tree" --manifest "$GITHUB_WORKSPACE/$manifest" --materials "$GITHUB_WORKSPACE/$materials" --materials-root "$GITHUB_WORKSPACE/$root" --state-directory "$state_directory" --apply
+            find_replay_state "$state_directory" state
+            python3 contrib/devtools/roots-replay.py report --state "$state" --output-directory "$report_directory"
+            python3 contrib/devtools/roots-replay.py export-patches --repository "$state_directory/owned-candidate" --state "$state" --output "$report_directory/replay-generated-series.patch"
+            cp "$state" "$report_directory/replay-state.json"
+            verify_replay_outputs "$state_directory" "$report_directory" verified_state
+            test "$state" = "$verified_state"
           }
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 a
           reconstruct calibration "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 b
-          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a
-          reconstruct roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release b
+          reconstruct roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a
+          reconstruct roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release b
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal a
           reconstruct locked-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal b
           mkdir "$RUNNER_TEMP/replay-artifacts"
-          for pair in "core-to-knots-29.3:calibration" "roots-29.3:roots-29.3" "core-29.4:locked-29.4"; do role="${pair%%:*}"; source="${pair##*:}"; for run in a b; do mkdir -p "$RUNNER_TEMP/replay-artifacts/$role/$run"; cp "$RUNNER_TEMP/$source-$run-report/replay-state.json" "$RUNNER_TEMP/$source-$run-report/replay-review.json" "$RUNNER_TEMP/$source-$run-report/replay-review.txt" "$RUNNER_TEMP/$source-$run-report/replay-generated-series.patch" "$RUNNER_TEMP/replay-artifacts/$role/$run/"; done; done
+          for pair in "core-to-knots-29.3:calibration" "roots-29.3:roots-29.3" "core-29.4:locked-29.4"; do role="${pair%%:*}"; source="${pair##*:}"; for run in a b; do mkdir -p "$RUNNER_TEMP/replay-artifacts/$role/$run"; cp "$RUNNER_TEMP/$source-$run-replay/report/replay-state.json" "$RUNNER_TEMP/$source-$run-replay/report/replay-review.json" "$RUNNER_TEMP/$source-$run-replay/report/replay-review.txt" "$RUNNER_TEMP/$source-$run-replay/report/replay-generated-series.patch" "$RUNNER_TEMP/replay-artifacts/$role/$run/"; done; done
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with: {name: 'roots-replay-evidence-${{ github.sha }}', path: '${{ runner.temp }}/replay-artifacts/', if-no-files-found: error, retention-days: 7}
   review:
@@ -113,7 +212,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
       - name: Install supported headless build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkgconf python3 libevent-dev libboost-dev libsqlite3-dev
+        run: |
+          set -Eeuo pipefail
+          read -r -a packages <<< "$HEADLESS_BUILD_PACKAGES"
+          sudo apt-get update
+          sudo apt-get install -y -- "${packages[@]}"
       - name: Reconstruct, build, and test every exact candidate
         shell: bash
         env:
@@ -126,7 +229,7 @@ jobs:
             local work="$RUNNER_TEMP/accept-$name" state="$RUNNER_TEMP/accept-$name-state" build="$RUNNER_TEMP/accept-$name-build"
             git clone --no-checkout . "$work"
             remote=https://github.com/bitcoin/bitcoin.git
-            [[ "$name" == roots-29.3 ]] && remote=https://github.com/bitcoinknots/bitcoin.git
+            [[ "$name" == roots-29.3 ]] && remote="$ROOTS_REMOTE"
             git -C "$work" remote add immutable "$remote"
             git -C "$work" fetch --no-tags immutable "$revision"
             git -C "$work" checkout --detach "$revision"
@@ -135,8 +238,57 @@ jobs:
             python3 "$ACCEPT" --repository "$state/owned-candidate" --expected-tree "$target_tree" --build-directory "$build" --jobs 2
           }
           reconstruct_and_test core-to-knots-29.3 "$CORE_29_3_COMMIT" "$CORE_29_3_TREE" contrib/roots/replay-core-to-knots-29.3/adaptation-manifest-29.3.json contrib/roots/replay-core-to-knots-29.3/replay-materials.json contrib/roots/replay-core-to-knots-29.3 56f97d3a9199c1fb191e1b8a21f2caae3901b7f6
-          reconstruct_and_test roots-29.3 "$KNOTS_29_3_COMMIT" "$KNOTS_29_3_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a5708dcbf1d2611360fab68fc6a8e504db1ba95d
+          reconstruct_and_test roots-29.3 "$ROOTS_29_3_PARENT_COMMIT" "$ROOTS_29_3_PARENT_TREE" contrib/roots/replay-29.3-release/adaptation-manifest-29.3.json contrib/roots/replay-29.3-release/replay-materials.json contrib/roots/replay-29.3-release a5708dcbf1d2611360fab68fc6a8e504db1ba95d
           reconstruct_and_test core-29.4 "$CORE_29_4_COMMIT" "$CORE_29_4_TREE" contrib/roots/replay-29.4-proposal/adaptation-manifest-29.3.json contrib/roots/replay-29.4-proposal/replay-materials.json contrib/roots/replay-29.4-proposal 39a5e30207a09962e78ae81c24cc65b1e478ef90
       - run: |
           set -Eeuo pipefail
           python3 ci/test/test_roots_replay.py
+  promotion:
+    needs: promotion-inputs
+    permissions: {contents: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {ref: '${{ github.sha }}', fetch-depth: 1, persist-credentials: false}
+      - name: Install supported headless build prerequisites
+        run: |
+          set -Eeuo pipefail
+          read -r -a packages <<< "$HEADLESS_BUILD_PACKAGES"
+          sudo apt-get update
+          sudo apt-get install -y -- "${packages[@]}"
+      - name: Fetch the hardcoded integration candidate as data
+        env:
+          CANDIDATE_COMMIT: '${{ needs.promotion-inputs.outputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ needs.promotion-inputs.outputs.candidate_tree }}'
+          CONTROL_SHA: '${{ needs.promotion-inputs.outputs.control_sha }}'
+          EVENT_SHA: '${{ github.sha }}'
+        run: |
+          set -Eeuo pipefail
+          test "$CONTROL_SHA" = "$EVENT_SHA"
+          test "$CANDIDATE_COMMIT" = 990732b942778c7c96bc9f647f290846eec71c12
+          test "$CANDIDATE_TREE" = 5e0fe225597174052ed927becf666019b1b9799e
+          mkdir "$RUNNER_TEMP/candidate"
+          git -C "$RUNNER_TEMP/candidate" init
+          git -C "$RUNNER_TEMP/candidate" config credential.helper ''
+          git -C "$RUNNER_TEMP/candidate" remote add origin "https://github.com/${{ github.repository }}.git"
+          before="$(GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= ls-remote --refs origin refs/heads/integration/roots-29.4 | awk '{print $1}')"
+          test "$before" = "$CANDIDATE_COMMIT"
+          GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= -c core.askPass= fetch --no-tags origin "$CANDIDATE_COMMIT" "+refs/heads/integration/roots-29.4:refs/remotes/origin/integration/roots-29.4"
+          git -C "$RUNNER_TEMP/candidate" checkout --detach "$CANDIDATE_COMMIT"
+          after="$(GIT_TERMINAL_PROMPT=0 git -C "$RUNNER_TEMP/candidate" -c credential.helper= ls-remote --refs origin refs/heads/integration/roots-29.4 | awk '{print $1}')"
+          test "$after" = "$before"
+      - name: Validate and build the immutable candidate once
+        env:
+          CANDIDATE_COMMIT: '${{ needs.promotion-inputs.outputs.candidate_commit }}'
+          CANDIDATE_TREE: '${{ needs.promotion-inputs.outputs.candidate_tree }}'
+          CONTROL_SHA: '${{ needs.promotion-inputs.outputs.control_sha }}'
+        run: |
+          set -Eeuo pipefail
+          evidence="$RUNNER_TEMP/promotion-evidence"
+          mkdir "$evidence"
+          python3 ci/roots-trusted-promotion.py --candidate-commit "$CANDIDATE_COMMIT" --candidate-tree "$CANDIDATE_TREE" --control-sha "$CONTROL_SHA" --candidate-repository "$RUNNER_TEMP/candidate" --trusted-root "$GITHUB_WORKSPACE" --output "$evidence/trusted-promotion-report.json"
+          python3 ci/roots-trusted-candidate-build.py --repository "$RUNNER_TEMP/candidate" --expected-tree "$CANDIDATE_TREE" --build-directory "$RUNNER_TEMP/candidate-build" --jobs 2
+          ccache -s > "$evidence/ccache-stats.txt"
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with: {name: 'roots-promotion-evidence-${{ github.sha }}', path: '${{ runner.temp }}/promotion-evidence/', if-no-files-found: error, retention-days: 7}

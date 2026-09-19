@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import subprocess
 import sys
 import tarfile
@@ -111,14 +112,14 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertIn("prepare-release:", workflow)
         self.assertIn("sign-release:", workflow)
         self.assertIn("environment: release-signing", workflow)
-        self.assertIn("needs: prepare-release", workflow)
-        self.assertIn("needs: sign-release", workflow)
+        self.assertIn("- prepare-release", workflow)
+        self.assertIn("- sign-release", workflow)
         self.assertEqual(workflow.count("roots-build-evidence.py attest"), 3)
         self.assertIn("roots-build-evidence.py\" aggregate", workflow)
-        self.assertIn("--source-revision \"$GITHUB_SHA\"", workflow)
+        self.assertIn("--source-revision \"$SOURCE_COMMIT\"", workflow)
         self.assertIn("--release-accounting", workflow)
-        sign = workflow.split("  sign-release:", 1)[1].split("  publish-release:", 1)[0]
-        publish = workflow.split("  publish-release:", 1)[1]
+        sign = workflow.split("  sign-release:", 1)[1].split("  create-signed-draft:", 1)[0]
+        publish = workflow.split("  create-signed-draft:", 1)[1]
         self.assertNotIn("actions/checkout", sign)
         self.assertNotIn("ci/", sign)
         self.assertIn("Unexpected unsigned release asset", sign)
@@ -128,6 +129,83 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertNotIn("gpg --", publish)
         self.assertIn("contents: write", publish)
         self.assertIn("EXPECTED_PACKAGE_COUNT + 4", publish)
+
+    def test_release_checkouts_never_persist_credentials(self):
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        checkout_steps = re.findall(
+            r"(?ms)^      - name: [^\n]+\n        uses: actions/checkout@[^\n]+\n(.*?)(?=^      - |\Z)",
+            workflow,
+        )
+        self.assertEqual(len(checkout_steps), workflow.count("uses: actions/checkout@"))
+        self.assertGreater(len(checkout_steps), 0)
+        for step in checkout_steps:
+            self.assertIn("persist-credentials: false", step)
+
+    def test_release_rehearsal_is_bound_to_one_immutable_candidate(self):
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        source_lock = workflow.split("  source-lock:", 1)[1].split("  release-metadata-tests:", 1)[0]
+        self.assertIn("ci/release/resolve-release-source.py", source_lock)
+        self.assertIn("--event-sha \"$GITHUB_SHA\"", source_lock)
+        self.assertIn("--candidate-commit \"$CANDIDATE_COMMIT\"", source_lock)
+        self.assertIn("--candidate-tree \"$CANDIDATE_TREE\"", source_lock)
+        self.assertIn("--control-sha \"$CONTROL_SHA\"", source_lock)
+        self.assertIn("--control-tree \"$CONTROL_TREE\"", source_lock)
+        self.assertIn("fetch-depth: 0", source_lock)
+        self.assertNotIn("secrets.", source_lock)
+        self.assertNotIn("id-token:", workflow)
+        self.assertEqual(workflow.count("ref: ${{ needs.source-lock.outputs.source_commit }}"), 6)
+        self.assertEqual(workflow.count("Verify immutable release source"), 6)
+        build_jobs = workflow.split("  release-metadata-tests:", 1)[1].split("  sign-release:", 1)[0]
+        self.assertNotIn("${{ github.sha }}", build_jobs)
+        self.assertNotIn("secrets.", build_jobs)
+        for job in (
+            "release-metadata-tests",
+            "linux-release",
+            "linux-configuration-coverage",
+            "windows-x86_64-release",
+            "macos-native-release",
+        ):
+            self.assertRegex(
+                workflow,
+                rf"(?ms)^  {re.escape(job)}:\n(?:(?!^  \S).)*^    needs: source-lock$",
+            )
+
+    def test_guarded_publication_workflow_changes_only_draft_visibility(self):
+        workflow = (ROOT / ".github/workflows/publish-release.yml").read_text()
+        script = ROOT / "ci/release/publish-verified-draft.sh"
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("confirm_publication:", workflow)
+        self.assertIn("verified_manifest_sha256:", workflow)
+        self.assertIn("publish-verified-draft.sh", workflow)
+        self.assertIn("actions/checkout@v6", workflow)
+        self.assertIn("test -f ci/release/publish-verified-draft.sh", workflow)
+        self.assertIn("bash ci/release/publish-verified-draft.sh", workflow)
+        text = script.read_text()
+        self.assertIn("gh release edit", text)
+        for forbidden in ("git tag", "git push", "gpg", "gh release create", "actions/checkout"):
+            self.assertNotIn(forbidden, text)
+
+    def test_guarded_publication_rejects_without_confirmation_and_is_idempotent(self):
+        script = ROOT / "ci/release/publish-verified-draft.sh"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            log = root / "gh.log"
+            fake_gh = fake_bin / "gh"
+            fake_gh.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\ncase \"$*\" in *tagName*) printf '%s\\n' v29.4-roots.1 ;; *isDraft*) printf '%s\\n' \"${GH_DRAFT:-true}\" ;; *'release download'*) while [ \"$1\" != --dir ]; do shift; done; mkdir -p \"$2\"; printf manifest > \"$2/SHA512SUMS\" ;; *'release edit'*) exit 0 ;; esac\n", encoding="utf-8")
+            fake_gh.chmod(0o755)
+            environment = {"PATH": str(fake_bin) + ":/usr/bin:/bin", "GH_LOG": str(log)}
+            manifest_digest = hashlib.sha256(b"manifest").hexdigest()
+            rejected = subprocess.run(["bash", script, "v29.4-roots.1", "false", manifest_digest], env=environment, text=True, capture_output=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            published = subprocess.run(["bash", script, "v29.4-roots.1", "true", manifest_digest], env=environment, text=True, capture_output=True)
+            self.assertEqual(published.returncode, 0, published.stderr)
+            self.assertIn("release edit v29.4-roots.1 --draft=false", log.read_text())
+            log.write_text("", encoding="utf-8")
+            repeated = subprocess.run(["bash", script, "v29.4-roots.1", "true", manifest_digest], env={**environment, "GH_DRAFT": "false"}, text=True, capture_output=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertNotIn("release edit", log.read_text())
 
 
 if __name__ == "__main__":

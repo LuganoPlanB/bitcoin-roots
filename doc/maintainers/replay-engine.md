@@ -105,7 +105,13 @@ the immutable input IDs, manifest/order digests, outcomes, candidate tree,
 risk gate, and next review commands. `export-patches --repository --state
 --output` writes a new-only `replay-generated-series.patch`: a deterministic
 `git format-patch --stdout` compatible mbox, explicitly labelled generated in
-its `ROOTS-REPLAY-GENERATED` subject prefix.
+its `ROOTS-REPLAY-GENERATED` subject prefix. The canonical
+`roots-replay-generated-mbox-v1` contract fixes the author and committer date,
+uses full object indexes and binary patches, disables rename detection and
+ambient mail headers/configuration, and emits the literal
+`Bitcoin Roots canonical replay export v1` signature. The exporter also fixes
+the diff algorithm, context, prefixes, ordering, locale, and timezone; no Git
+version string or host path enters the mbox.
 Neither report nor export records host paths, timestamps, credentials, or Git
 configuration. Export first verifies that the supplied candidate tree still
 matches the recorded state.

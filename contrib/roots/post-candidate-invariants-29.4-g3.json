@@ -1,0 +1,17 @@
+{
+  "changed_paths": [
+    ".github/workflows/roots-portability.yml",
+    "contrib/roots/continuous-accounting-pr.json",
+    "contrib/roots/post-methodology-adaptations.json"
+  ],
+  "decision": "accepted",
+  "g3_commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+  "g3_tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9",
+  "invariants": {
+    "core_valid_block_acceptance": "unchanged-no-runtime-path",
+    "no_rdts_bip110_enforcement": "unchanged-no-runtime-path",
+    "policy_rejection_block_acceptance": "unchanged-no-runtime-path"
+  },
+  "runtime_zone_paths": [],
+  "schema_version": 1
+}

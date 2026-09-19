@@ -52,6 +52,7 @@ test("new editorial copy avoids prohibited claims and punctuation", async () => 
     readFile(resolve(siteRoot, "content/principles.md"), "utf8"),
     readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
     readFile(resolve(siteRoot, "content/features.md"), "utf8"),
+    readFile(resolve(siteRoot, "content/maintainers.md"), "utf8"),
     readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8"),
     readFile(resolve(siteRoot, ".vitepress/theme/components/DocumentationIndex.vue"), "utf8"),
   ]);
@@ -72,6 +73,7 @@ test("website-owned navigation only targets published pages", async () => {
     "/documentation",
     "/features",
     "/getting-started",
+    "/maintainers",
     "/principles",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
@@ -80,6 +82,7 @@ test("website-owned navigation only targets published pages", async () => {
     "content/compare.md",
     "content/features.md",
     "content/getting-started.md",
+    "content/maintainers.md",
     "content/principles.md",
   ];
 
@@ -120,7 +123,7 @@ test("explicit VitePress light mode overrides a dark system preference", async (
   assert.match(styles, /--planb-color-accent:\s*#4f97e9/);
 });
 
-test("primary navigation includes the two editorial routes", async () => {
+test("primary navigation includes the expected public routes", async () => {
   const config = await readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8");
 
   for (const [label, route] of [
@@ -129,6 +132,7 @@ test("primary navigation includes the two editorial routes", async () => {
     ["Features", "/features"],
     ["Compare", "/compare"],
     ["Documentation", "/documentation"],
+    ["Maintainers", "/maintainers"],
     ["Policy", "/doc/policy/README"],
     ["Contribute", "/CONTRIBUTING"],
   ]) {
@@ -149,6 +153,54 @@ test("the feature guide describes visible additions and their policy boundary", 
   assert.match(page, /local mempool, relay, and mining-template\s+policy/);
   assert.match(page, /does not change Bitcoin consensus/);
   assert.match(page, /Bitcoin Core 29\.3/);
+});
+
+test("the maintainer guide exposes the reviewed release model without authorization", async () => {
+  const page = await readFile(resolve(siteRoot, "content/maintainers.md"), "utf8");
+
+  assert.match(page, /Verified Bitcoin Core tag/);
+  assert.match(page, /Reviewed Roots patch stack/);
+  assert.match(page, /Trusted CI/);
+  assert.match(page, /Signed release/);
+  assert.match(page, /new disposable repository/);
+  assert.match(page, /normal Git\s+ancestry/);
+  assert.match(page, /not import Core as a submodule, vendor snapshot/);
+  assert.match(page, /Bitcoin Core-compatible consensus/);
+  assert.match(page, /does not enforce RDTS\/BIP110 consensus rules/);
+  assert.match(page, /\/doc\/maintainers\/roots-production-release/);
+  assert.match(page, /contrib\/roots\/promotion-29\.4\.json/);
+  assert.match(page, /contrib\/roots\/frozen-production-29\.4\.json/);
+  assert.match(page, /contrib\/roots\/production-accounting-29\.4\.json/);
+  assert.match(page, /authorization values are false/);
+  assert.match(page, /do not authorize a push, tag, signature/);
+
+  const runbook = documentationGroups
+    .flatMap((group) => group.documents)
+    .find((document) => document.path === "doc/maintainers/roots-production-release.md");
+  assert.equal(runbook?.link, "/doc/maintainers/roots-production-release");
+  await access(resolve(siteRoot, "content", runbook.path));
+
+  const evidencePaths = [...page.matchAll(
+    /https:\/\/github\.com\/LuganoPlanB\/bitcoin-roots\/blob\/main\/([^)]+)/g,
+  )].map((match) => match[1]);
+  assert.deepEqual(evidencePaths, [
+    "contrib/roots/promotion-29.4.json",
+    "contrib/roots/frozen-production-29.4.json",
+    "contrib/roots/production-accounting-29.4.json",
+  ]);
+  await Promise.all(evidencePaths.map((path) => access(resolve(repositoryRoot, path))));
+
+  const [promotion, frozen, accounting] = await Promise.all(
+    evidencePaths.map(async (path) => JSON.parse(
+      await readFile(resolve(repositoryRoot, path), "utf8"),
+    )),
+  );
+  assert.equal(promotion.authorization, false);
+  assert.equal(frozen.publication_authorized, false);
+  assert.equal(
+    accounting.releases.find((release) => release.id === "roots-29.4-roots.1")?.authorization,
+    false,
+  );
 });
 
 test("the comparison is versioned and linked to primary sources", async () => {

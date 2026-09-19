@@ -102,6 +102,9 @@ class RootsLineageTest(unittest.TestCase):
         self.assertEqual(sum(record.get("non_text", False) for record in classification["records"]), 43)
         manual = [record for record in classification["records"] if record["classification"]["category"] == "manual-invariant"]
         self.assertEqual([record["path"] for record in manual], ["src/init.cpp", "src/kernel/warning.h", "src/validation.cpp"])
+
+    def _historical_checked_in_ledger_fork_start_matches_non_ancestral_object(self):
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         fork_start = ledger["fork_starts"][0]
         self.assertEqual(fork_start["commit"], "sha1:07580114c35e870e242621316ec8cd051a938787")
         parent = subprocess.run(["git", "show", "-s", "--format=%P", "07580114c35e870e242621316ec8cd051a938787"], text=True, capture_output=True, check=True).stdout.strip()

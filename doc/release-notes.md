@@ -1,105 +1,47 @@
-Bitcoin Core version 29.3 is now available from:
+Bitcoin Roots 29.4
+==================
 
-  <https://bitcoincore.org/bin/bitcoin-core-29.3/>
+Bitcoin Roots 29.4 is based on the annotated Bitcoin Core `v29.4` release,
+commit `3fc0865963a38b871e9f7d94e6151c4953563516`. The Roots canonical replay
+is recorded at `cbc88cff9b35b95a549c0313e424e13093fcd6a1`; the private local
+frozen G3 production source is `c8dc2e70bc145930855cf615ba9caffaccdcdcb9`.
+The published G2 source `dfc74d403585f7c23815ef80d2e206b85c33919a`
+remains preserved as portability-rejected evidence. These are provenance
+records, not a public release or tag authorization.
 
-This release includes various bug fixes and performance
-improvements, as well as updated translations.
-
-Please report bugs using the issue tracker at GitHub:
-
-  <https://github.com/bitcoin/bitcoin/issues>
-
-To receive security and update notifications, please subscribe to:
-
-  <https://bitcoincore.org/en/list/announcements/join/>
+Roots retains its conservative, configurable transaction relay and mempool
+policy. It remains compatible with Bitcoin Core consensus: a transaction that
+local policy rejects can still be consensus-valid, and valid blocks containing
+it remain acceptable. Bitcoin Roots does not enforce RDTS/BIP110 consensus
+rules.
 
 How to Upgrade
 ==============
 
-If you are running an older version, shut it down. Wait until it has completely
-shut down (which might take a few minutes in some cases), then run the
-installer (on Windows) or just copy over `/Applications/Bitcoin-Qt` (on macOS)
-or `bitcoind`/`bitcoin-qt` (on Linux).
-
-Upgrading directly from a version of Bitcoin Core that has reached its EOL is
-possible, but it might take some time if the data directory needs to be migrated. Old
-wallet versions of Bitcoin Core are generally supported.
+Shut down the previous node cleanly and keep a verified wallet backup before
+installing the new binary. Test upgrades first with regtest and an explicit
+disposable data directory. Do not treat the policy settings as consensus rules
+or use them to decide whether an otherwise valid block is acceptable.
 
 Compatibility
-==============
+=============
 
-Bitcoin Core is supported and tested on operating systems using the
-Linux Kernel 3.17+, macOS 13+, and Windows 10+. Bitcoin
-Core should also work on most other Unix-like systems but is not as
-frequently tested on them. It is not recommended to use Bitcoin Core on
-unsupported systems.
+Bitcoin Roots inherits the supported-platform, dependency, and inherited
+upstream limitations of
+the corresponding Bitcoin Core release and its selected Knots-derived policy
+layer. See `doc/dependencies.md` and `doc/build-unix.md` for current build
+requirements.
 
-Notable changes
-===============
+Provenance and qualification
+============================
 
-### P2P
-
-- #33050 net, validation: don't punish peers for consensus-invalid txs
-- #33723 chainparams: remove dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us
-
-### Validation
-
-- #32473 Introduce per-txin sighash midstate cache for legacy/p2sh/segwitv0 scripts
-- #33105 validation: detect witness stripping without re-running Script checks
-
-### Wallet
-
-- #33268 wallet: Identify transactions spending 0-value outputs, and add tests for anchor outputs in a wallet
-- #34156 wallet: fix unnamed legacy wallet migration failure
-- #34226 wallet: test: Relative wallet failed migration cleanup
-- #34123 wallet: migration, avoid creating spendable wallet from a watch-only legacy wallet
-- #34215 wallettool: fix unnamed createfromdump failure walletsdir deletion
-- #34370 wallet: Additional cleanups for migration, and fixes for createfromdump with BDB
-
-### Mining
-
-- #33475 bugfix: miner: fix `addPackageTxs` unsigned integer overflow
-
-### Build
-
-- #34227 guix: Fix `osslsigncode` tests
-
-### Documentation
-
-- #33623 doc: document capnproto and libmultiprocess deps in 29.x
-
-### Test
-
-- #33612 test: change log rate limit version gate
-
-### Misc
-
-- #32513 ci: remove 3rd party js from windows dll gha job
-- #33508 ci: fix buildx gha cache authentication on forks
-- #33581 ci: Properly include $FILE_ENV in DEPENDS_HASH
-- #34344 ci: update GitHub Actions versions
+The canonical lineage, accounting, replay evidence, and release build
+attestations live under `contrib/roots/`. They bind the exact source and tree
+that a future authorized release workflow must qualify; they do not substitute
+for independent review, CI, or release authorization.
 
 Credits
 =======
 
-Thanks to everyone who directly contributed to this release:
-
-- Anthony Towns
-- Antoine Poinsot
-- Ava Chow
-- David Gumberg
-- Eugene Siegel
-- fanquake
-- furszy
-- Hennadii Stepanov
-- ismaelsadeeq
-- luke-jr
-- m3dwards
-- Padraic Slattery
-- Pieter Wuille
-- SatsAndSports
-- sedited
-- willcl-ark
-
-As well as to everyone that helped with translations on
-[Transifex](https://explore.transifex.com/bitcoin/bitcoin/).
+Bitcoin Roots incorporates Bitcoin Core and selected Bitcoin Knots work. See
+`COPYING` and the source history for applicable attribution.

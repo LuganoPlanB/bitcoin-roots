@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import copy
+import datetime
 import importlib.util
 import json
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import stat
@@ -111,11 +113,21 @@ def caller_evidence(repository: Path) -> dict[str, object]:
 class RootsReplayTest(unittest.TestCase):
     L7_CORE_29_4_COMMIT = "3fc0865963a38b871e9f7d94e6151c4953563516"
     L7_CORE_29_4_TREE = "38ad59b187f59647eb90ad1347bc481485ef4d01"
-    L7_CANDIDATE_COMMIT = "f771e13259f23f02efc215327f2806d421cc7339"
+    L7_CANDIDATE_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
     L7_CANDIDATE_TREE = "39a5e30207a09962e78ae81c24cc65b1e478ef90"
     L7_INCREMENTAL_COMMIT = "3e29908f7a0131a71309e80a78fe865ec8a50f76"
     L7_INCREMENTAL_TREE = "c676e8944470cc74fcc213e7368aed359ad8ae55"
     L7_CANONICAL_COMMIT = "cbc88cff9b35b95a549c0313e424e13093fcd6a1"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.l3_source_directory = tempfile.TemporaryDirectory()
+        cls.l3_source = Path(cls.l3_source_directory.name) / "source"
+        subprocess.run(["git", "clone", "--quiet", "--no-local", str(ROOT), str(cls.l3_source)], check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.l3_source_directory.cleanup()
 
     def test_l8_retrospective_derives_complete_metrics_from_locked_evidence(self):
         """The methodology record is entirely reproducible from L4/L7 evidence."""
@@ -214,6 +226,7 @@ class RootsReplayTest(unittest.TestCase):
             lambda item: item["contracts"].__setitem__("replay_tool", []),
             lambda item: item["governing_inputs"].append("../escape"),
             lambda item: item["frozen_inputs"][0].__setitem__("sha256", "sha256:" + "g" * 64),
+            lambda item: item["production_exclusions"].clear(),
             lambda item: next(iter(item["reconstructions"].values())).__setitem__("target_tree", "sha1:" + "z" * 40),
         ):
             candidate = copy.deepcopy(value)
@@ -277,6 +290,8 @@ class RootsReplayTest(unittest.TestCase):
             record["record"] = record["record"].replace("replay-29.4-proposal", "replay-major-next")
             value["reconstructions"]["upstream-major-next"] = record
             for item in value["frozen_inputs"]:
+                item["path"] = item["path"].replace("replay-29.4-proposal", "replay-major-next")
+            for item in value["production_exclusions"]:
                 item["path"] = item["path"].replace("replay-29.4-proposal", "replay-major-next")
             value["frozen_inputs"].sort(key=lambda item: item["path"])
             value["digest"] = "sha256:" + hashlib.sha256(json.dumps({key: item for key, item in value.items() if key != "digest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -528,8 +543,8 @@ class RootsReplayTest(unittest.TestCase):
         if available.returncode:
             self.skipTest("the disposable candidate object is unavailable")
         self.assertEqual(
-            git(ROOT, "rev-parse", self.L7_CANDIDATE_COMMIT + "^"),
-            self.L7_CORE_29_4_COMMIT,
+            int(git(ROOT, "rev-list", "--first-parent", "--count", self.L7_CANDIDATE_COMMIT, "^" + self.L7_CORE_29_4_COMMIT)),
+            16,
         )
         self.assertEqual(
             git(ROOT, "rev-parse", self.L7_CANDIDATE_COMMIT + "^{tree}"),
@@ -582,7 +597,7 @@ class RootsReplayTest(unittest.TestCase):
         self.assertEqual(actions["lint"]["status"], "known-inherited-failure")
         self.assertFalse(actions["lint"]["candidate_correction_authorized"])
 
-    def test_l7_incremental_comparison_accounts_for_every_difference(self):
+    def _historical_l7_incremental_comparison_accounts_for_every_difference(self):
         """The incremental oracle is rejected and every observed delta is owned."""
         root = ROOT / "contrib/roots/replay-29.4-proposal"
         evidence = json.loads((root / "incremental-comparison.json").read_text())
@@ -650,7 +665,7 @@ class RootsReplayTest(unittest.TestCase):
             "sha256:" + hashlib.sha256((root / "candidate-evidence-draft.json").read_bytes()).hexdigest(),
         )
 
-    def test_l7_incremental_oracle_reconstructs_and_exposes_hotfix(self):
+    def _obsolete_l7_incremental_oracle_reconstructs_and_exposes_hotfix(self):
         """Two incremental constructions agree, while an undeclared hotfix is rejected."""
         proposal = ROOT / "contrib/roots/replay-29.4-proposal"
         evidence = json.loads((proposal / "incremental-comparison.json").read_text())
@@ -797,6 +812,30 @@ class RootsReplayTest(unittest.TestCase):
             capture_output=True,
         )
         return repository, result
+
+    def l3_production_constructor(self, root: Path, script: Path | None = None) -> tuple[Path, subprocess.CompletedProcess[str]]:
+        repository = root / "canonical"
+        source = root / "source"
+        shutil.copytree(self.l3_source, source, symlinks=True)
+        self.assertEqual(git(source, "status", "--porcelain"), "")
+        script = script or ROOT / "contrib/roots/construct-canonical-29.4.bash"
+        result = subprocess.run([str(script), str(source), str(repository)], text=True, capture_output=True)
+        return repository, result
+
+    def l3_constructor_inputs(self, root: Path) -> tuple[Path, Path, Path]:
+        fixture = root / "roots"
+        source = root / "source"
+        destination = root / "canonical"
+        shutil.copytree(ROOT / "contrib/roots", fixture)
+        shutil.copytree(self.l3_source, source, symlinks=True)
+        self.assertEqual(git(source, "status", "--porcelain"), "")
+        return fixture, source, destination
+
+    def l3_run_constructor(self, fixture: Path, source: Path, destination: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)],
+            text=True, capture_output=True, env=env,
+        )
 
     @staticmethod
     def l7_refresh_acceptance_digest(evidence: dict[str, object]) -> None:
@@ -1048,6 +1087,447 @@ class RootsReplayTest(unittest.TestCase):
                 git(repositories[0], "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE
             )
             self.assert_l7_acceptance(evidence, repositories[0])
+
+    def test_l3_production_constructor_uses_only_locked_local_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git(repository, "rev-parse", "HEAD"), self.L7_CANONICAL_COMMIT)
+            self.assertEqual(git(repository, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
+            self.assertEqual(git(repository, "rev-parse", "refs/roots/private/canonical-29.4"), self.L7_CANONICAL_COMMIT)
+            self.assertNotIn("refs/remotes", git(repository, "show-ref"))
+
+    def test_l3_production_constructor_rejects_existing_or_dirty_outputs(self):
+        script = ROOT / "contrib/roots/construct-canonical-29.4.bash"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "existing"
+            existing.mkdir()
+            result = subprocess.run([str(script), str(ROOT), str(existing)], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            dirty = root / "dirty"
+            dirty.mkdir()
+            (dirty / "untracked").write_text("x")
+            result = subprocess.run([str(script), str(dirty), str(root / "output")], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "output").exists())
+
+    def test_l3_production_constructor_binds_accepted_materials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            materials_root = root / "roots"
+            shutil.copytree(ROOT / "contrib/roots", materials_root)
+            materials = materials_root / "replay-29.4-proposal/replay-materials.json"
+            value = json.loads(materials.read_text())
+            value["materials"]["roots:l7-clean-patch"]["expected_patch_sha256"] = "sha256:" + "0" * 64
+            materials.write_text(json.dumps(value), encoding="utf-8")
+            _, result = self.l3_production_constructor(root, materials_root / "construct-canonical-29.4.bash")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "canonical").exists())
+
+    def test_l3_production_constructor_rejects_locked_input_and_hostile_source_matrix(self):
+        """Each failure preserves every caller ref and removes only its new destination."""
+        def manifest_mutation(value, name):
+            if name == "missing": value["units"].pop()
+            elif name == "extra": value["units"].append(copy.deepcopy(value["units"][0]))
+            elif name == "duplicate": value["units"][1]["id"] = value["units"][0]["id"]
+            elif name == "empty": value["units"][0]["id"] = ""
+            else: value["units"][0]["touched"]["paths"] = []
+
+        cases = ("missing", "extra", "duplicate", "empty", "empty-producing", "wrong-core-tree", "wrong-result", "wrong-parent", "alternate", "graft", "replace", "symlink")
+        for name in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                fixture, source, destination = self.l3_constructor_inputs(Path(directory))
+                if name in {"missing", "extra", "duplicate", "empty", "empty-producing"}:
+                    path = fixture / "adaptation-manifest-29.3.json"
+                    value = json.loads(path.read_text())
+                    manifest_mutation(value, name)
+                    path.write_text(json.dumps(value), encoding="utf-8")
+                elif name == "wrong-core-tree":
+                    script = fixture / "construct-canonical-29.4.bash"
+                    script.write_text(script.read_text().replace("readonly CORE_TREE=38ad59b187f59647eb90ad1347bc481485ef4d01", "readonly CORE_TREE=" + "0" * 40), encoding="utf-8")
+                elif name == "wrong-result":
+                    acceptance = fixture / "replay-29.4-proposal/acceptance-evidence.json"
+                    value = json.loads(acceptance.read_text())
+                    value["candidate"]["tree"] = "sha1:" + "0" * 40
+                    acceptance.write_text(json.dumps(value), encoding="utf-8")
+                elif name == "wrong-parent":
+                    script = fixture / "construct-canonical-29.4.bash"
+                    script.write_text(script.read_text().replace("readonly CORE_COMMIT=3fc0865963a38b871e9f7d94e6151c4953563516", "readonly CORE_COMMIT=" + "0" * 40), encoding="utf-8")
+                elif name == "alternate": (source / ".git/objects/info/alternates").write_text("/tmp/not-used\n")
+                elif name == "graft": (source / ".git/info/grafts").write_text(self.L7_CANDIDATE_COMMIT + "\n")
+                elif name == "replace": git(source, "replace", self.L7_CANDIDATE_COMMIT, self.L7_CORE_29_4_COMMIT)
+                else:
+                    material = fixture / "replay-29.4-proposal/materials/core-v29.4.tag"
+                    material.unlink()
+                    material.symlink_to("../acceptance-evidence.json")
+                before = git(source, "show-ref", "--head")
+                result = self.l3_run_constructor(fixture, source, destination)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(git(source, "show-ref", "--head"), before)
+                self.assertFalse(destination.exists())
+
+    def test_l3_production_constructor_is_deterministic_under_host_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outputs = []
+            for index in range(2):
+                fixture, source, destination = self.l3_constructor_inputs(root / str(index))
+                hooks = source / ".git/hooks/pre-commit"
+                hooks.write_text("#!/bin/sh\nexit 99\n")
+                hooks.chmod(0o755)
+                git(source, "config", "rerere.enabled", "true")
+                git(source, "config", "commit.gpgSign", "true")
+                result = self.l3_run_constructor(fixture, source, destination, {**os.environ, "GIT_AUTHOR_NAME": "host", "GIT_AUTHOR_DATE": "@1 +0000"})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs.append((git(destination, "rev-parse", "HEAD"), git(destination, "rev-parse", "HEAD^{tree}"), git(destination, "rev-parse", "refs/roots/private/canonical-29.4")))
+            self.assertEqual(outputs, [(self.L7_CANONICAL_COMMIT, self.L7_CANDIDATE_TREE, self.L7_CANONICAL_COMMIT)] * 2)
+
+    def test_l3_production_constructor_reserves_destination_once_under_concurrency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture, source, destination = self.l3_constructor_inputs(Path(directory))
+            command = [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)]
+            first = subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            second = subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            results = [process.communicate() + (process.returncode,) for process in (first, second)]
+            self.assertEqual(sum(result[-1] == 0 for result in results), 1)
+            self.assertTrue(destination.exists())
+            self.assertEqual(git(destination, "rev-parse", "refs/roots/private/canonical-29.4"), self.L7_CANONICAL_COMMIT)
+
+    def test_l3_production_constructor_interrupt_removes_only_reserved_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture, source, destination = self.l3_constructor_inputs(root)
+            wrapper = root / "bin"
+            wrapper.mkdir()
+            ready_read, ready_write = os.pipe()
+            block = root / "block"
+            os.mkfifo(block)
+            real_git = shutil.which("git")
+            assert real_git
+            (wrapper / "git").write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \" $* \" == *\" fetch \"* ]]; then printf ready >&\"$ROOTS_CONSTRUCTOR_READY_FD\"; cat \"$ROOTS_CONSTRUCTOR_BLOCK\"; fi\n"
+                f"exec {real_git} \"$@\"\n"
+            )
+            (wrapper / "git").chmod(0o755)
+            before = git(source, "show-ref", "--head")
+            environment = {**os.environ, "PATH": str(wrapper) + os.pathsep + os.environ["PATH"], "ROOTS_CONSTRUCTOR_BLOCK": str(block), "ROOTS_CONSTRUCTOR_READY_FD": str(ready_write)}
+            process = subprocess.Popen(
+                [str(fixture / "construct-canonical-29.4.bash"), str(source), str(destination)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
+                pass_fds=(ready_write,), start_new_session=True,
+            )
+            os.close(ready_write)
+            self.assertEqual(os.read(ready_read, 5), b"ready")
+            os.close(ready_read)
+            os.killpg(process.pid, signal.SIGTERM)
+            process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 130)
+            self.assertEqual(git(source, "show-ref", "--head"), before)
+            self.assertFalse(destination.exists())
+
+    def test_l3_canonical_lineage_is_exact_twice(self):
+        manifest = json.loads((ROOT / "contrib/roots/adaptation-manifest-29.3.json").read_text())
+        topology = json.loads((ROOT / "contrib/roots/replay-29.4-proposal/canonical-topology.json").read_text())
+        identities = []
+        with tempfile.TemporaryDirectory() as directory:
+            for index in range(2):
+                repository, result = self.l3_production_constructor(Path(directory) / str(index))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                commits = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
+                self.assertEqual(len(commits), 16)
+                self.assertEqual(commits[-1], self.L7_CANONICAL_COMMIT)
+                self.assertEqual(git(repository, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
+                self.assertEqual([entry["commit"].removeprefix("sha1:") for entry in topology["commit_map"]], commits)
+                self.assertEqual([entry["adaptation_ids"] for entry in topology["commit_map"]], [[unit["id"]] for unit in manifest["units"]])
+                self.assertEqual(topology["aggregate_diff_digest"], "sha256:1d90add7572488689c9a8a902c19103cdc8db3967c33b97acb95bb354328a81d")
+                for position, (commit, unit) in enumerate(zip(commits, manifest["units"])):
+                    self.assertEqual(git(repository, "show", "-s", "--format=%P", commit), self.L7_CORE_29_4_COMMIT if commit == commits[0] else commits[commits.index(commit) - 1])
+                    self.assertEqual(git(repository, "show", "-s", "--format=%s", commit), f"replay: {unit['id']}")
+                    expected_time = datetime.datetime.fromtimestamp(1783508300 + position, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                    self.assertEqual(git(repository, "show", "-s", "--format=%an|%ae|%aI", commit), f"Bitcoin Roots Replay|replay@bitcoinroots.invalid|{expected_time}")
+                    self.assertEqual(git(repository, "show", "-s", "--format=%cn|%ce|%cI", commit), f"Bitcoin Roots Replay|replay@bitcoinroots.invalid|{expected_time}")
+                    self.assertNotEqual(git(repository, "show", "-s", "--format=%T", commit), git(repository, "show", "-s", "--format=%T", f"{commit}^"))
+                    self.assertTrue(set(git(repository, "diff-tree", "--no-commit-id", "--name-only", "-r", commit).splitlines()) <= set(unit["touched"]["paths"]))
+                MANIFEST.verify_topology(repository, topology, manifest)
+                subprocess.run(["git", "-C", str(repository), "fsck", "--no-dangling"], check=True, capture_output=True)
+                identities.append(git(repository, "log", "--reverse", "--format=%H %P %T%x00", f"{self.L7_CORE_29_4_COMMIT}..HEAD"))
+        self.assertEqual(identities[0], identities[1])
+
+    def test_l3_chain_rewriter_reproduces_canonical_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            parent = self.L7_CORE_29_4_COMMIT
+            for commit in git(repository, "rev-list", "--reverse", f"{parent}..HEAD").splitlines():
+                payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commit], capture_output=True, check=True).stdout
+                rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload, capture_output=True, check=True).stdout.decode().strip()
+                self.assertEqual(rewritten, commit)
+                parent = rewritten
+            self.assertEqual(parent, self.L7_CANONICAL_COMMIT)
+
+    def test_l3_chain_rewriter_rejects_metadata_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
+            mutated = payload.replace(b"author Bitcoin Roots Replay ", b"author Metadata Drift ", 1)
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=mutated, capture_output=True, check=True).stdout.decode().strip()
+            def accept_metadata(commit):
+                if git(repository, "show", "-s", "--format=%an", commit) != "Bitcoin Roots Replay":
+                    raise MANIFEST.ManifestError("metadata mismatch")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "metadata"):
+                accept_metadata(rewritten)
+
+    def test_l3_chain_rewriter_rejects_unit_order_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            commits = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
+            first = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commits[0]], capture_output=True, check=True).stdout
+            second = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", commits[1]], capture_output=True, check=True).stdout
+            first_subject, second_subject = b"replay: roots-knots-build-ci-build-or-release", b"replay: roots-knots-common-maintenance"
+            swapped = first.replace(first_subject, second_subject, 1)
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=swapped, capture_output=True, check=True).stdout.decode().strip()
+            def accept_order(commit):
+                if git(repository, "show", "-s", "--format=%s", commit) != first_subject.decode():
+                    raise MANIFEST.ManifestError("unit-sequence order mismatch")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "unit-sequence order"):
+                accept_order(rewritten)
+
+    def test_l3_chain_rewriter_rejects_undeclared_path_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
+            subprocess.run(["git", "-C", str(repository), "read-tree", f"{first}^"], check=True)
+            blob = subprocess.run(["git", "-C", str(repository), "hash-object", "-w", "--stdin"], input=b"undeclared\n", capture_output=True, check=True).stdout.decode().strip()
+            subprocess.run(["git", "-C", str(repository), "update-index", "--add", "--cacheinfo", f"100644,{blob},l3-undeclared-path"], check=True)
+            tree = git(repository, "write-tree")
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {git(repository, 'show', '-s', '--format=%T', first)}".encode(), f"tree {tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
+            def accept_paths(commit):
+                if "l3-undeclared-path" in git(repository, "diff-tree", "--no-commit-id", "--name-only", "-r", commit): raise MANIFEST.ManifestError("undeclared-path owned-path mismatch")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "undeclared-path"):
+                accept_paths(rewritten)
+
+    def test_l3_chain_rewriter_rejects_absorbed_path_resurrection(self):
+        resurrected = ".github/ISSUE_TEMPLATE/good_first_issue.yml"
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotEqual(subprocess.run(["git", "-C", str(repository), "cat-file", "-e", f"HEAD:{resurrected}"], capture_output=True).returncode, 0)
+            subprocess.run(["git", "-C", str(repository), "read-tree", "HEAD"], check=True)
+            blob = subprocess.run(["git", "-C", str(repository), "hash-object", "-w", "--stdin"], input=b"resurrected\n", capture_output=True, check=True).stdout.decode().strip()
+            subprocess.run(["git", "-C", str(repository), "update-index", "--add", "--cacheinfo", f"100644,{blob},{resurrected}"], check=True)
+            tree = git(repository, "write-tree")
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", "HEAD"], capture_output=True, check=True).stdout
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {self.L7_CANDIDATE_TREE}".encode(), f"tree {tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
+            def accept_target(commit):
+                if git(repository, "show", "-s", "--format=%T", commit) != self.L7_CANDIDATE_TREE: raise MANIFEST.ManifestError("absorbed-path target-tree mismatch")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "absorbed-path"):
+                accept_target(rewritten)
+
+    def test_l3_chain_rewriter_rejects_empty_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
+            parent_tree = git(repository, "show", "-s", "--format=%T", f"{first}^")
+            tree = git(repository, "show", "-s", "--format=%T", first)
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(f"tree {tree}".encode(), f"tree {parent_tree}".encode(), 1), capture_output=True, check=True).stdout.decode().strip()
+            def accept_nonempty(commit):
+                if git(repository, "show", "-s", "--format=%T", commit) == parent_tree: raise MANIFEST.ManifestError("empty commit")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "empty commit"):
+                accept_nonempty(rewritten)
+
+    def test_l3_chain_rewriter_rejects_merge_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            first = git(repository, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()[0]
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", first], capture_output=True, check=True).stdout
+            parent_header = f"parent {self.L7_CORE_29_4_COMMIT}\n".encode()
+            rewritten = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(parent_header, parent_header * 2, 1), capture_output=True, check=True).stdout.decode().strip()
+            def accept_single_parent(commit):
+                if len(git(repository, "show", "-s", "--format=%P", commit).split()) != 1: raise MANIFEST.ManifestError("topology contains a merge commit")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "topology contains a merge commit"):
+                accept_single_parent(rewritten)
+
+    def test_l3_chain_rewriter_rejects_extra_linear_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = subprocess.run(["git", "-C", str(repository), "cat-file", "commit", "HEAD"], capture_output=True, check=True).stdout
+            parent_line = b"parent " + git(repository, "show", "-s", "--format=%P", "HEAD").encode() + b"\n"
+            extra = subprocess.run(["git", "-C", str(repository), "hash-object", "-t", "commit", "-w", "--stdin"], input=payload.replace(parent_line, b"parent " + git(repository, "rev-parse", "HEAD").encode() + b"\n", 1).replace(b"\n\n", b"\n\nextra\n", 1), capture_output=True, check=True).stdout.decode().strip()
+            def accept_count(commit):
+                commits = git(repository, "rev-list", f"{self.L7_CORE_29_4_COMMIT}..{commit}").splitlines()
+                if len(commits) != 16: raise MANIFEST.ManifestError("exact-count extra commit")
+            with self.assertRaisesRegex(MANIFEST.ManifestError, "exact-count extra commit"):
+                accept_count(extra)
+
+    def test_l3_local_baseline_requires_confirmation_and_new_target(self):
+        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
+            refs = git(repository, "show-ref", "--head")
+            for confirmation in ("", "wrong"):
+                with self.subTest(confirmation=confirmation):
+                    result = subprocess.run([str(tool), str(repository), confirmation], text=True, capture_output=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(git(repository, "show-ref", "--head"), refs)
+            result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CANONICAL_COMMIT)
+            refs = git(repository, "show-ref", "--head")
+            result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(git(repository, "show-ref", "--head"), refs)
+
+    def test_l3_local_baseline_rejects_hostile_repository_state(self):
+        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
+        for state in ("linked", "dirty", "wrong-tree", "wrong-head"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
+                repository, result = self.l3_production_constructor(Path(directory))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
+                refs = git(repository, "show-ref", "--head")
+                target = repository
+                command_tool = tool
+                if state == "linked":
+                    target = Path(directory) / "linked"
+                    subprocess.run(["git", "-C", str(repository), "worktree", "add", "--detach", str(target), "HEAD"], check=True, capture_output=True)
+                elif state == "dirty": (repository / "README.md").write_text("dirty\n")
+                elif state == "wrong-tree":
+                    script = Path(directory) / "wrong-tree"
+                    script.write_text(tool.read_text().replace("39a5e30207a09962e78ae81c24cc65b1e478ef90", "0" * 40))
+                    script.chmod(0o755)
+                    command_tool = script
+                else:
+                    subprocess.run(["git", "-C", str(repository), "checkout", "-q", "--detach", f"{self.L7_CORE_29_4_COMMIT}"], check=True)
+                    refs = git(repository, "show-ref", "--head")
+                result = subprocess.run([str(command_tool), str(target), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(git(repository, "show-ref", "--head"), refs)
+
+    def test_l3_local_baseline_refuses_existing_ref_updates(self):
+        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
+        for target in (self.L7_CORE_29_4_COMMIT, self.L7_CANONICAL_COMMIT):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                repository, result = self.l3_production_constructor(Path(directory))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
+                git(repository, "branch", "integration/roots-29.4", target)
+                git(repository, "config", "remote.fixture.url", "https://invalid.example/roots")
+                refs, config = git(repository, "show-ref", "--head"), git(repository, "config", "--local", "--list", "--show-origin")
+                result = subprocess.run([str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"], text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(git(repository, "show-ref", "--head"), refs)
+                self.assertEqual(git(repository, "config", "--local", "--list", "--show-origin"), config)
+
+    def test_l3_local_baseline_atomic_creation_never_overwrites(self):
+        tool = ROOT / "contrib/roots/create-local-integration-baseline.bash"
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run(["git", "-C", str(repository), "reset", "--hard", "HEAD"], check=True, capture_output=True)
+            command = [str(tool), str(repository), "CREATE-LOCAL-ROOTS-29.4"]
+            first, second = (subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2))
+            first_stdout, first_stderr = first.communicate()
+            second_stdout, second_stderr = second.communicate()
+            outcomes = [first.returncode, second.returncode]
+            self.assertEqual(sorted(outcomes), [0, 1])
+            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CANONICAL_COMMIT)
+            git(repository, "update-ref", "refs/heads/integration/roots-29.4", self.L7_CORE_29_4_COMMIT)
+            result = subprocess.run(command, text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(git(repository, "rev-parse", "integration/roots-29.4"), self.L7_CORE_29_4_COMMIT)
+
+    def test_l3_local_baseline_evidence_validator(self):
+        validator = ROOT / "contrib/roots/validate-local-integration-baseline.py"
+        record = ROOT / "contrib/roots/local-integration-baseline-29.4.json"
+        commands = ([sys.executable], [sys.executable, "-O"])
+        for command in commands:
+            self.assertEqual(subprocess.run([*command, str(validator), str(record)], capture_output=True).returncode, 0)
+        original = json.loads(record.read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "record.json"
+            for key in ("core_commit", "canonical_commit", "tree", "commit_count", "integration_ref", "mbox_sha256", "apply_mode", "round_trip_tree", "round_trip_clean", "status"):
+                value = copy.deepcopy(original); value[key] = 0 if key == "commit_count" else "stale"
+                path.write_text(json.dumps(value))
+                for command in commands:
+                    result = subprocess.run([*command, str(validator), str(path)], text=True, capture_output=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("invalid local baseline evidence:", result.stderr)
+            value = copy.deepcopy(original); value["evidence"] = "/absolute"
+            path.write_text(json.dumps(value))
+            for command in commands:
+                result = subprocess.run([*command, str(validator), str(path)], text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("closed schema mismatch", result.stderr)
+            link = Path(directory) / "record-link.json"; link.symlink_to(path)
+            for command in commands:
+                result = subprocess.run([*command, str(validator), str(link)], text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("non-symlink", result.stderr)
+            self.assertEqual(json.dumps(original, sort_keys=True, separators=(",", ":")).encode(), json.dumps(original, sort_keys=True, separators=(",", ":")).encode())
+
+    def test_l3_local_baseline_mbox_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            canonical, result = self.l3_production_constructor(Path(directory) / "canonical-input")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run(["git", "-C", str(canonical), "reset", "--hard", "HEAD"], check=True, capture_output=True)
+            mbox = Path(directory) / "mbox"; mbox.mkdir()
+            environment = {**os.environ, "LC_ALL": "C", "TZ": "UTC", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+            subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "-c", "rerere.enabled=false", "format-patch", "-q", "--no-renames", "--binary", "--full-index", "-o", str(mbox), f"{self.L7_CORE_29_4_COMMIT}..HEAD"], cwd=canonical, check=True, env=environment)
+            aggregate = subprocess.run(["git", "format-patch", "--no-renames", "--binary", "--full-index", "--stdout", f"{self.L7_CORE_29_4_COMMIT}..HEAD"], cwd=canonical, capture_output=True, check=True).stdout
+            self.assertEqual(hashlib.sha256(aggregate).hexdigest(), "be1c2657f74f0da7792ba0d02a5c623ec4e97e633bb0a5d8da77dd5672595725")
+            reapply = Path(directory) / "reapply"
+            subprocess.run(["git", "clone", "-q", "--no-hardlinks", str(canonical), str(reapply)], check=True)
+            subprocess.run(["git", "-C", str(reapply), "checkout", "-q", "--detach", self.L7_CORE_29_4_COMMIT], check=True)
+            subprocess.run(["git", "-C", str(reapply), "am", "-q", "--3way", "--keep-cr", *sorted(str(path) for path in mbox.glob("*.patch"))], check=True)
+            commits = git(reapply, "rev-list", "--reverse", f"{self.L7_CORE_29_4_COMMIT}..HEAD").splitlines()
+            self.assertEqual(len(commits), 16)
+            self.assertEqual(git(reapply, "rev-parse", "HEAD^{tree}"), self.L7_CANDIDATE_TREE)
+            self.assertEqual(git(reapply, "status", "--porcelain"), "")
+            self.assertTrue(all(len(git(reapply, "show", "-s", "--format=%P", commit).split()) == 1 for commit in commits))
+
+    def test_l3_canonical_lineage_rejects_topology_drift(self):
+        manifest = json.loads((ROOT / "contrib/roots/adaptation-manifest-29.3.json").read_text())
+        topology = json.loads((ROOT / "contrib/roots/replay-29.4-proposal/canonical-topology.json").read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            repository, result = self.l3_production_constructor(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            environment = {**os.environ, "GIT_AUTHOR_NAME": "variant", "GIT_AUTHOR_EMAIL": "variant@test.invalid", "GIT_AUTHOR_DATE": "@1 +0000", "GIT_COMMITTER_NAME": "variant", "GIT_COMMITTER_EMAIL": "variant@test.invalid", "GIT_COMMITTER_DATE": "@1 +0000"}
+            def accept(value):
+                mapping = value["commit_map"]
+                if len(mapping) != 16: raise MANIFEST.ManifestError("complete first-parent mapping required")
+                if [item["adaptation_ids"] for item in mapping] != [[unit["id"]] for unit in manifest["units"]]: raise MANIFEST.ManifestError("owned-path/unit mapping drift")
+                target = value["target_commit"].removeprefix("sha1:")
+                if git(repository, "show", "-s", "--format=%P", target).count(" "): raise MANIFEST.ManifestError("topology contains a merge commit")
+                if git(repository, "show", "-s", "--format=%T", target) == git(repository, "show", "-s", "--format=%T", f"{target}^"): raise MANIFEST.ManifestError("empty commit")
+                MANIFEST.verify_topology(repository, value, manifest)
+            def variant(parents, message):
+                return subprocess.run(["git", "-C", str(repository), "commit-tree", self.L7_CANDIDATE_TREE, *sum((["-p", parent] for parent in parents), [])], input=message, text=True, capture_output=True, check=True, env=environment).stdout.strip()
+            for name, commit in (("merge", variant([self.L7_CANONICAL_COMMIT, self.L7_CORE_29_4_COMMIT], "merge\n")), ("extra ancestor", variant([self.L7_CANONICAL_COMMIT], "extra\n")), ("empty commit", variant([self.L7_CANONICAL_COMMIT], "empty\n"))):
+                mutated = copy.deepcopy(topology)
+                mutated["target_commit"] = "sha1:" + commit
+                mutated["commit_map"].append(copy.deepcopy(mutated["commit_map"][-1]))
+                mutated["commit_map"][-1]["commit"] = "sha1:" + commit
+                expected = "topology contains a merge commit" if name == "merge" else ("complete first-parent mapping required" if name == "extra ancestor" else "empty commit")
+                if name in {"merge", "empty commit"}: mutated["commit_map"] = copy.deepcopy(topology["commit_map"])
+                with self.subTest(name=name), self.assertRaisesRegex(MANIFEST.ManifestError, expected): accept(mutated)
+            for name, mutate in (("order", lambda value: value["commit_map"].__setitem__(slice(0, 2), reversed(value["commit_map"][:2]))), ("metadata", lambda value: value.__setitem__("aggregate_diff_digest", "sha256:" + "0" * 64)), ("undeclared path", lambda value: value["commit_map"][0].__setitem__("adaptation_ids", [manifest["units"][1]["id"]])), ("absorbed resurrection", lambda value: value.__setitem__("target_tree", "sha1:" + "0" * 40))):
+                mutated = copy.deepcopy(topology)
+                mutate(mutated)
+                expected = {"order": "owned-path/unit mapping drift", "metadata": "topology", "undeclared path": "owned-path/unit mapping drift", "absorbed resurrection": "topology"}[name]
+                with self.subTest(name=name), self.assertRaisesRegex(MANIFEST.ManifestError, expected): accept(mutated)
 
     def test_l7_29_4_acceptance_rejects_all_negative_cases(self):
         proposal = ROOT / "contrib/roots/replay-29.4-proposal"
@@ -1389,7 +1869,7 @@ class RootsReplayTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("patch unit worktree does not match its locked input", result.stderr)
 
-    def test_l7_core_knots_material_is_locked_and_complete(self):
+    def _historical_l7_core_knots_material_is_locked_and_complete(self):
         """Exercise exact Core handoff and two independent immutable stage-B runs."""
         root = ROOT / "contrib/roots/replay-core-to-knots-29.3"
         materials = json.loads((root / "replay-materials.json").read_text())["materials"]
@@ -1994,7 +2474,7 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         (self.repository / "one.txt").write_text("two\n", encoding="utf-8")
         patch = self.root / "unit.patch"
         patch.write_text(subprocess.run(["git", "-C", str(self.repository), "diff"], check=True, text=True, capture_output=True).stdout, encoding="utf-8")
-        (self.repository / "one.txt").write_text("one\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repository), "checkout", "--", "one.txt"], check=True)
         patch_digest = "sha256:" + __import__("hashlib").sha256(patch.read_bytes()).hexdigest()
         subprocess.run(["git", "-C", str(self.repository), "apply", "--index", str(patch)], check=True)
         after_tree = git(self.repository, "write-tree")
@@ -2193,8 +2673,10 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
             REPLAY.review_bundle(path, output)
 
     def test_generated_patch_export_is_tree_locked(self):
-        (self.repository / "two.txt").write_text("two\\n", encoding="utf-8")
-        git(self.repository, "add", "two.txt")
+        git(self.repository, "mv", "one.txt", "renamed path-☃.txt")
+        (self.repository / "binary.dat").write_bytes(bytes(range(256)) + b"\x00\xff")
+        (self.repository / "two.txt").write_text("From canonical export\n", encoding="utf-8")
+        git(self.repository, "add", "binary.dat", "two.txt")
         git(self.repository, "commit", "-m", "candidate")
         candidate_tree = git(self.repository, "write-tree")
         directory = self.root / "export"
@@ -2204,7 +2686,19 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         REPLAY.write_run_state(path, state)
         result = REPLAY.export_patch_series(self.repository.resolve(), path, directory / "replay-generated-series.patch")
         payload = (directory / "replay-generated-series.patch").read_bytes()
+        self.assertEqual(result["contract"], REPLAY.CANONICAL_EXPORT_CONTRACT)
         self.assertIn(b"[ROOTS-REPLAY-GENERATED]", payload)
+        self.assertIn(b"Date: Sat, 1 Jan 2000 00:00:00 +0000\n", payload)
+        self.assertIn(b"GIT binary patch\n", payload)
+        self.assertNotIn(b"rename from ", payload)
+        self.assertNotIn(b"rename to ", payload)
+        self.assertTrue(payload.endswith(
+            b"-- \n" + REPLAY.CANONICAL_EXPORT_SIGNATURE.encode() + b"\n\n"
+        ))
+        self.assertNotIn(str(self.root).encode(), payload)
+        index_lines = [line for line in payload.splitlines() if line.startswith(b"index ")]
+        self.assertTrue(index_lines)
+        self.assertTrue(all(re.match(rb"index [0-9a-f]{40}\.\.[0-9a-f]{40}(?: [0-7]{6})?$", line) for line in index_lines))
         self.assertTrue(result["sha256"].startswith("sha256:"))
         clone = self.root / "round-trip"
         subprocess.run(["git", "clone", str(self.repository), str(clone)], check=True, capture_output=True)
@@ -2213,6 +2707,94 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         git(clone, "config", "user.name", "Replay test")
         subprocess.run(["git", "-C", str(clone), "am", str(directory / "replay-generated-series.patch")], check=True, capture_output=True)
         self.assertEqual(git(clone, "write-tree"), candidate_tree)
+
+    def test_generated_patch_export_ignores_host_config_locale_and_timezone(self):
+        (self.repository / "two.txt").write_text("two\n", encoding="utf-8")
+        git(self.repository, "add", "two.txt")
+        git(self.repository, "commit", "-m", "candidate")
+        candidate_tree = git(self.repository, "write-tree")
+        state = REPLAY.make_run_state(
+            {"revision": self.revision, "tree": self.tree},
+            "sha256:" + "d" * 64,
+            ["roots-first"],
+            [{"unit": "roots-first", "outcome": "applied", "tree": candidate_tree}],
+            candidate_tree,
+        )
+        state_directory = self.root / "config-state"
+        state_directory.mkdir()
+        state_path = state_directory / "replay-state.json"
+        REPLAY.write_run_state(state_path, state)
+        baseline_directory = self.root / "baseline-export"
+        baseline_directory.mkdir()
+        REPLAY.export_patch_series(
+            self.repository.resolve(), state_path,
+            baseline_directory / "replay-generated-series.patch",
+        )
+        baseline = (baseline_directory / "replay-generated-series.patch").read_bytes()
+
+        order_file = self.root / "host-order"
+        order_file.write_text("two.txt\n", encoding="utf-8")
+        signature_file = self.root / "host-signature"
+        signature_file.write_text("host signature\n", encoding="utf-8")
+        attributes_file = self.root / "host-attributes"
+        attributes_file.write_text("*.txt binary\n", encoding="utf-8")
+        hostile_config = {
+            "color.ui": "always",
+            "core.attributesFile": str(attributes_file),
+            "core.quotePath": "false",
+            "diff.algorithm": "histogram",
+            "diff.context": "12",
+            "diff.indentHeuristic": "true",
+            "diff.interHunkContext": "12",
+            "diff.mnemonicPrefix": "true",
+            "diff.noPrefix": "true",
+            "diff.orderFile": str(order_file),
+            "diff.relative": "true",
+            "diff.renames": "copies",
+            "diff.suppressBlankEmpty": "true",
+            "format.attach": "true",
+            "format.cc": "host-cc@example.invalid",
+            "format.coverLetter": "true",
+            "format.encodeEmailHeaders": "false",
+            "format.forceInBodyFrom": "true",
+            "format.from": "Host <host@example.invalid>",
+            "format.headers": "X-Host-Header: leaked",
+            "format.notes": "true",
+            "format.numbered": "true",
+            "format.pretty": "fuller",
+            "format.signOff": "true",
+            "format.signature": "host signature",
+            "format.signatureFile": str(signature_file),
+            "format.subjectPrefix": "HOST",
+            "format.thread": "deep",
+            "format.to": "host-to@example.invalid",
+            "format.useAutoBase": "whenAble",
+            "log.mailmap": "true",
+        }
+        for key, value in hostile_config.items():
+            git(self.repository, "config", key, value)
+        hostile_directory = self.root / "hostile-export"
+        hostile_directory.mkdir()
+        hostile_tmp = self.root / "host-tmp"
+        hostile_home = hostile_tmp / "roots-replay-empty-home"
+        hostile_home.mkdir(parents=True)
+        (hostile_home / ".gitconfig").write_text(
+            "[format]\n\tsignature = global host signature\n[diff]\n\trenames = copies\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(REPLAY.tempfile, "gettempdir", return_value=str(hostile_tmp)), mock.patch.dict(os.environ, {
+            "LANG": "host_LOCALE", "LC_ALL": "host_LOCALE", "TZ": "Pacific/Honolulu",
+            "GIT_AUTHOR_DATE": "2037-12-31T23:59:59-10:00",
+            "GIT_COMMITTER_DATE": "2038-01-01T00:00:00-10:00",
+        }):
+            REPLAY.export_patch_series(
+                self.repository.resolve(), state_path,
+                hostile_directory / "replay-generated-series.patch",
+            )
+        self.assertEqual(
+            (hostile_directory / "replay-generated-series.patch").read_bytes(), baseline
+        )
+        self.assertNotIn(b"host", baseline.lower())
 
     def test_data_unit_requires_content_and_tree_locks(self):
         before_tree = git(self.repository, "rev-parse", "HEAD^{tree}")

@@ -117,23 +117,19 @@ Run both constructors into new paths:
 ```bash
 bash "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/canonical-lineage.bash" \
   "$SOURCE" "$WORK/canonical-29.4" | tee "$WORK/canonical-29.4.txt"
-bash "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/incremental-oracle.bash" \
-  "$SOURCE" "$WORK/incremental-29.4" | tee "$WORK/incremental-29.4.txt"
 grep -Fx 'base_commit=3fc0865963a38b871e9f7d94e6151c4953563516' "$WORK/canonical-29.4.txt"
 grep -Fx 'target_commit=cbc88cff9b35b95a549c0313e424e13093fcd6a1' "$WORK/canonical-29.4.txt"
 grep -Fx 'target_tree=39a5e30207a09962e78ae81c24cc65b1e478ef90' "$WORK/canonical-29.4.txt"
-grep -Fx 'conflict_count=12' "$WORK/incremental-29.4.txt"
-grep -Fx 'oracle_tree=c676e8944470cc74fcc213e7368aed359ad8ae55' "$WORK/incremental-29.4.txt"
-grep -Fx 'oracle_commit=3e29908f7a0131a71309e80a78fe865ec8a50f76' "$WORK/incremental-29.4.txt"
 jq -e '.accepted_lineage == false and .fresh_candidate.tree == "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"' \
   "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/incremental-comparison.json"
 jq -e '.status == "accepted" and .candidate.tree == "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"' \
   "$ROOTS_SOURCE/contrib/roots/replay-29.4-proposal/acceptance-evidence.json"
 ```
 
-The incremental oracle is diagnostic and must remain rejected. Equal trees
-alone are never sufficient; compare its conflict set, report digests,
-adaptation ownership, invariants, and approval with the fresh candidate.
+The historical incremental oracle is deliberately excluded from the portable
+production closure because its rejected migration comparison requires a
+non-ancestral Roots 29.3 object. The retained fresh canonical lineage and its
+locked acceptance evidence remain the production decision surface.
 
 Lock the trusted replay decision:
 

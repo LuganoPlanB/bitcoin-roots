@@ -1,0 +1,65 @@
+{
+  "releases": [
+    {
+      "id": "roots-29.3-roots.1",
+      "source_commit": "sha1:42098b53c57fb6818736c7b6732fa84ffe6ad391",
+      "source_tree": "sha1:a5708dcbf1d2611360fab68fc6a8e504db1ba95d",
+      "state": "preserved"
+    },
+    {
+      "authorization": false,
+      "build_attestation": {
+        "required_platforms": [
+          "linux",
+          "macos",
+          "windows"
+        ],
+        "source_commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+        "source_tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde"
+      },
+      "canonical": {
+        "commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+        "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+      },
+      "frozen": {
+        "commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+        "parent": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+        "tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde"
+      },
+      "id": "roots-29.4-roots.1",
+      "production_commits": [
+        {
+          "atom_count": 209,
+          "atom_digest": "sha256:57c93da34885b27163fc1d7bbc246277092dcc096783f12aa6d17ffc26f85b45",
+          "commit": "sha1:dfc74d403585f7c23815ef80d2e206b85c33919a",
+          "parent": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+          "tree": "sha1:477eb9b3f50098b0b8548a9ff35efaa29fd7ecde"
+        }
+      ],
+      "replay_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
+      "sources": {
+        "frozen_record": {
+          "path": "contrib/roots/frozen-production-29.4.json",
+          "sha256": "sha256:b03a974882d453018fae74c91315dbe03ba574e4f39498d465994683f5926518"
+        },
+        "manifest": {
+          "path": "contrib/roots/adaptation-manifest-29.3.json",
+          "sha256": "sha256:04a713696ce91615fb8a28e2283b8d47b5c37df48a32afd45774954d206c2adb"
+        },
+        "promotion": {
+          "path": "contrib/roots/promotion-29.4.json",
+          "sha256": "sha256:11ba340093c8479c472d8acbd8e753ff6bf750e4e300f589d2aeba1c2c60ae38"
+        },
+        "registry": {
+          "path": "contrib/roots/post-methodology-adaptations.json",
+          "sha256": "sha256:26fc1e8d696512188ce3aced02bbe1a46436285d15ee993957e45ad1617ced46"
+        }
+      },
+      "topology": {
+        "path": "contrib/roots/replay-29.4-proposal/canonical-topology.json",
+        "sha256": "sha256:9b1f006f2ae2af06f44d12b9b1cf975c7ea4345e9019d2f06e70fa1c93908f40"
+      }
+    }
+  ],
+  "schema_version": 1
+}

@@ -31,6 +31,57 @@ MAX_JSON_BYTES = 1_000_000
 TOOL_VERSION = "1"
 SUPPORTED_CONTRACT_FEATURES = frozenset({"typed-materials"})
 REPLAY_ENVIRONMENT = {"LC_ALL": "C", "LANG": "C", "TZ": "UTC", "umask": "022"}
+CANONICAL_EXPORT_CONTRACT = "roots-replay-generated-mbox-v1"
+CANONICAL_EXPORT_SIGNATURE = "Bitcoin Roots canonical replay export v1"
+CANONICAL_FORMAT_PATCH_CONFIG = (
+    f"core.attributesFile={os.devnull}",
+    "core.quotePath=true",
+    "diff.algorithm=myers",
+    "diff.indentHeuristic=true",
+    "diff.interHunkContext=0",
+    "diff.mnemonicPrefix=false",
+    "diff.noPrefix=false",
+    "diff.relative=false",
+    "diff.renames=false",
+    "diff.submodule=short",
+    "diff.suppressBlankEmpty=false",
+    "format.encodeEmailHeaders=true",
+    "format.forceInBodyFrom=false",
+    "format.from=false",
+    "format.mboxrd=true",
+    "format.pretty=medium",
+    "format.signOff=false",
+    "log.mailmap=false",
+)
+CANONICAL_FORMAT_PATCH_OPTIONS = (
+    "--stdout",
+    "--no-stat",
+    "--zero-commit",
+    "--full-index",
+    "--binary",
+    "--no-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--diff-algorithm=myers",
+    "--indent-heuristic",
+    "--unified=3",
+    "--inter-hunk-context=0",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--no-relative",
+    "--no-color",
+    "--no-numbered",
+    "--no-cover-letter",
+    "--no-thread",
+    "--no-attach",
+    "--no-base",
+    "--no-notes",
+    "--no-to",
+    "--no-cc",
+    "--no-add-header",
+    f"--signature={CANONICAL_EXPORT_SIGNATURE}",
+    "--subject-prefix=ROOTS-REPLAY-GENERATED",
+)
 
 
 class ReplayError(ValueError):
@@ -143,7 +194,10 @@ def _git(repository: Path, *args: str) -> str:
         "LANG": "C",
         "TZ": "UTC",
         "HOME": tempfile.gettempdir() + "/roots-replay-empty-home",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_ATTR_NOSYSTEM": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_OPTIONAL_LOCKS": "0",
     }
@@ -163,7 +217,7 @@ def _git(repository: Path, *args: str) -> str:
 
 
 def _git_bytes(repository: Path, *args: str) -> bytes:
-    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LANG": "C", "TZ": "UTC", "HOME": tempfile.gettempdir() + "/roots-replay-empty-home", "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_OPTIONAL_LOCKS": "0"}
+    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LANG": "C", "TZ": "UTC", "HOME": tempfile.gettempdir() + "/roots-replay-empty-home", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_OPTIONAL_LOCKS": "0"}
     result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(repository), *args], check=False, capture_output=True, env=environment)
     if result.returncode:
         raise ReplayError("Git object lookup failed")
@@ -966,15 +1020,31 @@ def export_patch_series(worktree: Path, state_path: Path, output: Path) -> dict[
     # maintainer-visible commits. Build one deterministic unreachable commit
     # object solely to feed format-patch; no ref, branch, or HEAD changes.
     environment = {"PATH": "/usr/bin:/bin", "HOME": tempfile.gettempdir() + "/roots-replay-empty-home",
-                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1", **REPLAY_ENVIRONMENT,
+                   "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1",
+                   "GIT_NO_REPLACE_OBJECTS": "1", **REPLAY_ENVIRONMENT,
                    "GIT_AUTHOR_NAME": "Roots Replay", "GIT_AUTHOR_EMAIL": "replay@invalid",
                    "GIT_COMMITTER_NAME": "Roots Replay", "GIT_COMMITTER_EMAIL": "replay@invalid",
                    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z"}
-    commit = subprocess.run(["git", "-C", str(worktree), "commit-tree", state["candidate_tree"], "-p", base], input=b"Roots replay generated candidate\n", check=False, capture_output=True, env=environment).stdout.decode("ascii", "strict").strip()
+    result = subprocess.run(["git", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "-C", str(worktree), "commit-tree", state["candidate_tree"], "-p", base], input=b"Roots replay generated candidate\n", check=False, capture_output=True, env=environment)
+    if result.returncode:
+        raise ReplayError("cannot create generated export commit")
+    commit = result.stdout.decode("ascii", "strict").strip()
     _oid(commit, "generated export commit")
-    payload = _git_bytes(worktree, "format-patch", "--stdout", "--no-stat", "--zero-commit", "--subject-prefix=ROOTS-REPLAY-GENERATED", f"{base}..{commit}")
+    payload = _git_bytes(
+        worktree,
+        *(argument for config in CANONICAL_FORMAT_PATCH_CONFIG for argument in ("-c", config)),
+        "format-patch",
+        *CANONICAL_FORMAT_PATCH_OPTIONS,
+        "-O", os.devnull,
+        f"{base}..{commit}",
+    )
     _write_bundle_file(destination, payload)
-    return {"file": destination.name, "sha256": "sha256:" + hashlib.sha256(payload).hexdigest()}
+    return {
+        "contract": CANONICAL_EXPORT_CONTRACT,
+        "file": destination.name,
+        "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+    }
 
 
 def main() -> int:

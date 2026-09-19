@@ -100,9 +100,7 @@
     "canonical_29_4": {
       "decision": "accepted",
       "target_commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
-      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90",
-      "incremental_accepted": false,
-      "incremental_tree": "sha1:c676e8944470cc74fcc213e7368aed359ad8ae55"
+      "target_tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
     },
     "later_core_candidate": {
       "status": "prepared-not-published",

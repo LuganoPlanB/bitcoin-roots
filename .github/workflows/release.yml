@@ -7,9 +7,24 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      candidate_commit:
+        description: 'Exact integration candidate commit (control-branch rehearsal only)'
+        required: false
+        type: string
+      candidate_tree:
+        description: 'Exact integration candidate tree (control-branch rehearsal only)'
+        required: false
+        type: string
+      control_sha:
+        description: 'Exact reviewed control commit (control-branch rehearsal only)'
+        required: false
+        type: string
+      control_tree:
+        description: 'Exact reviewed control tree (control-branch rehearsal only)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,17 +38,67 @@ env:
   RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
 jobs:
+  source-lock:
+    name: 'Resolve immutable release source'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rehearsal: ${{ steps.resolve.outputs.rehearsal }}
+      source_commit: ${{ steps.resolve.outputs.source_commit }}
+      source_tree: ${{ steps.resolve.outputs.source_tree }}
+    steps:
+      - name: Checkout trusted event source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve exact release source without candidate execution
+        id: resolve
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ inputs.candidate_tree }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+          CONTROL_TREE: ${{ inputs.control_tree }}
+        run: |
+          python3 ci/release/resolve-release-source.py \
+            --trusted-repository "$GITHUB_WORKSPACE" \
+            --remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --event-ref "$GITHUB_REF" \
+            --event-sha "$GITHUB_SHA" \
+            --candidate-commit "$CANDIDATE_COMMIT" \
+            --candidate-tree "$CANDIDATE_TREE" \
+            --control-sha "$CONTROL_SHA" \
+            --control-tree "$CONTROL_TREE" \
+            --github-output "$GITHUB_OUTPUT"
+
   release-metadata-tests:
     name: 'Release metadata tests'
+    needs: source-lock
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        env:
+          SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+          SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Test release metadata preparation
         run: |
           python3 ci/test/test_prepare_release.py
+          python3 ci/test/test_release_source_lock.py
           python3 ci/test/test_gui_qrencode.py
           python3 ci/test/test_release_version.py
           python3 ci/test/test_validate_release_tag.py
@@ -41,6 +106,7 @@ jobs:
 
   linux-release:
     name: ${{ matrix.name }}
+    needs: source-lock
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     env:
@@ -49,6 +115,8 @@ jobs:
       RUN_UNIT_TESTS: 'false'
       RUN_FUNCTIONAL_TESTS: 'false'
       RUN_FUZZ_TESTS: 'false'
+      SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+      SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +132,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
@@ -115,13 +192,13 @@ jobs:
           python3 ci/release/roots-build-evidence.py attest \
             --artifact "$archive" \
             --source-repository "$GITHUB_WORKSPACE" \
-            --source-revision "$GITHUB_SHA" \
+            --source-revision "$SOURCE_COMMIT" \
             --output "${archive}.build-attestation.json"
 
       - name: Upload unsigned release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}-${{ github.sha }}
+          name: ${{ matrix.artifact-name }}-${{ needs.source-lock.outputs.source_commit }}
           path: ${{ runner.temp }}/release-packages/
           if-no-files-found: error
           retention-days: 30
@@ -131,6 +208,7 @@ jobs:
 
   linux-configuration-coverage:
     name: ${{ matrix.name }}
+    needs: source-lock
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -139,6 +217,8 @@ jobs:
       RUN_UNIT_TESTS: 'false'
       RUN_FUNCTIONAL_TESTS: 'false'
       RUN_FUZZ_TESTS: 'false'
+      SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+      SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
     strategy:
       fail-fast: false
       matrix:
@@ -150,6 +230,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
@@ -180,13 +269,26 @@ jobs:
 
   windows-x86_64-release:
     name: 'Windows x86_64 release, VS 2022'
+    needs: source-lock
     runs-on: windows-2022
     timeout-minutes: 180
     env:
       PYTHONUTF8: 1
+      SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+      SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
@@ -276,7 +378,7 @@ jobs:
           & python ci/release/roots-build-evidence.py attest `
             --artifact $archive `
             --source-repository $env:GITHUB_WORKSPACE `
-            --source-revision $env:GITHUB_SHA `
+            --source-revision $env:SOURCE_COMMIT `
             --output "${archive}.build-attestation.json"
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to create source-bound build attestation"
@@ -285,13 +387,14 @@ jobs:
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
         with:
-          name: bitcoin-roots-windows-x86_64-${{ github.sha }}
+          name: bitcoin-roots-windows-x86_64-${{ needs.source-lock.outputs.source_commit }}
           path: ${{ runner.temp }}/release-packages/
           if-no-files-found: error
           retention-days: 30
 
   macos-native-release:
     name: ${{ matrix.name }}
+    needs: source-lock
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     env:
@@ -300,6 +403,8 @@ jobs:
       RUN_UNIT_TESTS: 'false'
       RUN_FUNCTIONAL_TESTS: 'false'
       RUN_FUZZ_TESTS: 'false'
+      SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+      SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
     strategy:
       fail-fast: false
       matrix:
@@ -315,6 +420,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Verify architecture and select Xcode 16
         env:
@@ -389,13 +503,13 @@ jobs:
           python3 ci/release/roots-build-evidence.py attest \
             --artifact "$archive" \
             --source-repository "$GITHUB_WORKSPACE" \
-            --source-revision "$GITHUB_SHA" \
+            --source-revision "$SOURCE_COMMIT" \
             --output "${archive}.build-attestation.json"
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}-${{ github.sha }}
+          name: ${{ matrix.artifact-name }}-${{ needs.source-lock.outputs.source_commit }}
           path: ${{ runner.temp }}/release-packages/
           if-no-files-found: error
           retention-days: 30
@@ -404,6 +518,7 @@ jobs:
     name: 'Prepare verified release assets'
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
+      - source-lock
       - release-metadata-tests
       - linux-release
       - windows-x86_64-release
@@ -417,11 +532,20 @@ jobs:
       EXPECTED_FINGERPRINT: '5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32'
       EXPECTED_PACKAGE_COUNT: '5'
       PUBLIC_KEY_FILE: 'contrib/release/bitcoin-roots-release-key.asc'
+      SOURCE_COMMIT: ${{ needs.source-lock.outputs.source_commit }}
+      SOURCE_TREE: ${{ needs.source-lock.outputs.source_tree }}
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-lock.outputs.source_commit }}
+
+      - name: Verify immutable release source
+        run: |
+          test "$(git rev-parse HEAD^{commit})" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
 
       - name: Verify tag commit is on main
         run: |
@@ -436,7 +560,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v5
         with:
-          pattern: bitcoin-roots-*-${{ github.sha }}
+          pattern: bitcoin-roots-*-${{ needs.source-lock.outputs.source_commit }}
           path: ${{ runner.temp }}/downloaded-artifacts
 
       - name: Prepare release assets and SHA-512 manifest
@@ -449,7 +573,7 @@ jobs:
             python3 "$GITHUB_WORKSPACE/ci/release/roots-build-evidence.py" aggregate \
               --artifacts "$RUNNER_TEMP/downloaded-artifacts" \
               --source-repository "$GITHUB_WORKSPACE" \
-              --source-revision "$GITHUB_SHA" \
+              --source-revision "$SOURCE_COMMIT" \
               --expected-count "$EXPECTED_PACKAGE_COUNT" \
               --output roots-release-build-evidence.json
             python3 "$GITHUB_WORKSPACE/ci/release/roots-release-evidence.py" \
@@ -462,7 +586,7 @@ jobs:
               --release-accounting "$GITHUB_WORKSPACE/contrib/roots/release-accounting.json" \
               --build-evidence roots-release-build-evidence.json \
               --source-repository "$GITHUB_WORKSPACE" \
-              --source-revision "$GITHUB_SHA" \
+              --source-revision "$SOURCE_COMMIT" \
               --candidate-tree "sha1:$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD^{tree})" \
               --output roots-release-evidence.json
           )
@@ -475,12 +599,12 @@ jobs:
             "$evidence_dir/roots-release-evidence.json" \
             "$evidence_dir/roots-release-build-evidence.json" \
             "$GITHUB_WORKSPACE" \
-            "$GITHUB_SHA"
+            "$SOURCE_COMMIT"
 
       - name: Upload verified unsigned release assets
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
-          name: roots-unsigned-release-${{ github.sha }}
+          name: roots-unsigned-release-${{ needs.source-lock.outputs.source_commit }}
           path: ${{ runner.temp }}/release-assets/
           if-no-files-found: error
           retention-days: 1
@@ -488,7 +612,9 @@ jobs:
   sign-release:
     name: 'Sign verified release manifest'
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: prepare-release
+    needs:
+      - source-lock
+      - prepare-release
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release-signing
@@ -502,7 +628,7 @@ jobs:
       - name: Download verified unsigned assets
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: roots-unsigned-release-${{ github.sha }}
+          name: roots-unsigned-release-${{ needs.source-lock.outputs.source_commit }}
           path: release-assets
 
       - name: Sign and verify SHA-512 manifest in isolated runner
@@ -556,15 +682,17 @@ jobs:
       - name: Upload signed release assets
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
-          name: roots-signed-release-${{ github.sha }}
+          name: roots-signed-release-${{ needs.source-lock.outputs.source_commit }}
           path: release-assets/
           if-no-files-found: error
           retention-days: 1
 
-  publish-release:
-    name: 'Publish signed draft release'
+  create-signed-draft:
+    name: 'Create signed draft release'
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: sign-release
+    needs:
+      - source-lock
+      - sign-release
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -576,7 +704,7 @@ jobs:
       - name: Download signed release assets
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: roots-signed-release-${{ github.sha }}
+          name: roots-signed-release-${{ needs.source-lock.outputs.source_commit }}
           path: release-assets
 
       - name: Create draft GitHub release without signing credentials

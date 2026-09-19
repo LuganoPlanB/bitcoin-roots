@@ -1,0 +1,33 @@
+{
+  "changed_paths": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish-release.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/roots-trusted-replay.yml",
+    "ci/release/publish-verified-draft.sh",
+    "ci/release/resolve-release-source.py",
+    "ci/roots-trusted-replay-gate.py",
+    "ci/roots-trusted-replay-review.py",
+    "ci/test/test_prepare_release.py",
+    "ci/test/test_release_source_lock.py",
+    "ci/test/test_roots_replay.py",
+    "ci/test/test_roots_trusted_replay_ci.py",
+    "contrib/devtools/roots-methodology.py",
+    "contrib/devtools/roots-replay.py",
+    "contrib/roots/continuous-accounting-pr.json",
+    "contrib/roots/methodology-v1.json",
+    "contrib/roots/post-methodology-adaptations.json",
+    "contrib/roots/validate-local-integration-baseline.py",
+    "doc/maintainers/replay-engine.md"
+  ],
+  "decision": "accepted",
+  "g4_commit": "sha1:990732b942778c7c96bc9f647f290846eec71c12",
+  "g4_tree": "sha1:5e0fe225597174052ed927becf666019b1b9799e",
+  "invariants": {
+    "core_valid_block_acceptance": "unchanged-no-runtime-path",
+    "no_rdts_bip110_enforcement": "unchanged-no-runtime-path",
+    "policy_rejection_block_acceptance": "unchanged-no-runtime-path"
+  },
+  "runtime_zone_paths": [],
+  "schema_version": 1
+}

@@ -1,0 +1,23 @@
+{
+  "artifacts": {
+    "contrib/roots/frozen-production-29.4-g4.json": "sha256:4131a32650df6d3b272490b7e8d700287c1bc8dcff75c04e7976ecc4f80b78fa",
+    "contrib/roots/post-candidate-invariants-29.4-g4.json": "sha256:d3b41f020e7e597cad191b7e955588c67c0afcbc5b1f682b57bad3916b4cbabf",
+    "contrib/roots/post-candidate-replay-29.4-g4.json": "sha256:2bcfe88e6232a6782617fb6adfd4488164a8c3ecb9ab64d7fe83215a1e54a25a",
+    "contrib/roots/production-accounting-29.4-g4.json": "sha256:fe7665a039302a24f18387eb36126f7f67ecd3252b31fa28d609444afb576726",
+    "contrib/roots/review-export-29.4-g4.json": "sha256:f58d4cc6e52d4f0c4c38075c7e0a824452eca46ccd5ccc08d966f034e560ef1d"
+  },
+  "decision": "accepted-private-freeze",
+  "g3_failures": {
+    "integration_run": 35357813170,
+    "pr_run": 35357821039,
+    "reasons": [
+      "non-executable validator",
+      "BDB 5.3 requires narrow acknowledgement"
+    ]
+  },
+  "g4_commit": "sha1:990732b942778c7c96bc9f647f290846eec71c12",
+  "g4_tree": "sha1:5e0fe225597174052ed927becf666019b1b9799e",
+  "release_workflow_blob": "sha1:b923b4dd6c817a36b2807ea1a3f9ec91266101da",
+  "remote_mutation_authorized": false,
+  "schema_version": 1
+}

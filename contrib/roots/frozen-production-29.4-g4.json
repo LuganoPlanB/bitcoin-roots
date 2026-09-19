@@ -1,0 +1,22 @@
+{
+  "configuration_digests": {
+    "contrib/roots/post-candidate-invariants-29.4-g4.json": "sha256:d3b41f020e7e597cad191b7e955588c67c0afcbc5b1f682b57bad3916b4cbabf",
+    "contrib/roots/post-candidate-replay-29.4-g4.json": "sha256:2bcfe88e6232a6782617fb6adfd4488164a8c3ecb9ab64d7fe83215a1e54a25a",
+    "contrib/roots/production-accounting-29.4-g4.json": "sha256:fe7665a039302a24f18387eb36126f7f67ecd3252b31fa28d609444afb576726",
+    "contrib/roots/review-export-29.4-g4.json": "sha256:f58d4cc6e52d4f0c4c38075c7e0a824452eca46ccd5ccc08d966f034e560ef1d"
+  },
+  "g3_evidence": {
+    "contrib/roots/acceptance-evidence-29.4-g3.json": "sha256:48cb41ecbd72468409e1ddca7a9cc105da70ce6f7c76b064ae1d4419372c4d5a",
+    "contrib/roots/frozen-production-29.4-g3.json": "sha256:7fd093093c84d0b6ead4d677cce06a3837b4995cc054ddb43255a1d9e0931b3f",
+    "contrib/roots/post-candidate-invariants-29.4-g3.json": "sha256:0f148978b71820ef929540ce11d3d66a26c3eed35619465c944f7aa3e1fe2e7a",
+    "contrib/roots/post-candidate-replay-29.4-g3.json": "sha256:7bbbcb7cb93a1782c1fb843a96d9e15f062fcb4abdcc850e31543cfb4f7adcae",
+    "contrib/roots/production-accounting-29.4-g3.json": "sha256:40065ee05b7c67a28ad53ba113c31f82fecbb6fca0680c843ac72d48c9dd6fc6",
+    "contrib/roots/review-export-29.4-g3.json": "sha256:4cfe2038408d8be2acb789129e83ca34f9ef309f0728f542be1e4533a05f3aed"
+  },
+  "g4_commit": "sha1:990732b942778c7c96bc9f647f290846eec71c12",
+  "g4_parent": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+  "g4_ref": "refs/roots/29.4/frozen-production-g4",
+  "g4_tree": "sha1:5e0fe225597174052ed927becf666019b1b9799e",
+  "publication_authorized": false,
+  "schema_version": 1
+}

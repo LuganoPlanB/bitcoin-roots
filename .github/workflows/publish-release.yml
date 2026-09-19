@@ -1,0 +1,40 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Publish verified release draft
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Verified draft tag (v29.4-roots.1)'
+        required: true
+        type: string
+      confirm_publication:
+        description: 'Confirm independent verification of the signed draft'
+        required: true
+        default: false
+        type: boolean
+      verified_manifest_sha256:
+        description: 'Independently verified SHA256 of SHA512SUMS'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-verified-draft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout guarded publication script
+        uses: actions/checkout@v6
+
+      - name: Change only verified draft visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test -f ci/release/publish-verified-draft.sh
+          test ! -L ci/release/publish-verified-draft.sh
+          bash ci/release/publish-verified-draft.sh "${{ inputs.tag }}" "${{ inputs.confirm_publication }}" "${{ inputs.verified_manifest_sha256 }}"
