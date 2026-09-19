@@ -112,11 +112,11 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertIn("prepare-release:", workflow)
         self.assertIn("sign-release:", workflow)
         self.assertIn("environment: release-signing", workflow)
-        self.assertIn("needs: prepare-release", workflow)
-        self.assertIn("needs: sign-release", workflow)
+        self.assertIn("- prepare-release", workflow)
+        self.assertIn("- sign-release", workflow)
         self.assertEqual(workflow.count("roots-build-evidence.py attest"), 3)
         self.assertIn("roots-build-evidence.py\" aggregate", workflow)
-        self.assertIn("--source-revision \"$GITHUB_SHA\"", workflow)
+        self.assertIn("--source-revision \"$SOURCE_COMMIT\"", workflow)
         self.assertIn("--release-accounting", workflow)
         sign = workflow.split("  sign-release:", 1)[1].split("  create-signed-draft:", 1)[0]
         publish = workflow.split("  create-signed-draft:", 1)[1]
@@ -140,6 +140,35 @@ class PrepareReleaseTest(unittest.TestCase):
         self.assertGreater(len(checkout_steps), 0)
         for step in checkout_steps:
             self.assertIn("persist-credentials: false", step)
+
+    def test_release_rehearsal_is_bound_to_one_immutable_candidate(self):
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        source_lock = workflow.split("  source-lock:", 1)[1].split("  release-metadata-tests:", 1)[0]
+        self.assertIn("ci/release/resolve-release-source.py", source_lock)
+        self.assertIn("--event-sha \"$GITHUB_SHA\"", source_lock)
+        self.assertIn("--candidate-commit \"$CANDIDATE_COMMIT\"", source_lock)
+        self.assertIn("--candidate-tree \"$CANDIDATE_TREE\"", source_lock)
+        self.assertIn("--control-sha \"$CONTROL_SHA\"", source_lock)
+        self.assertIn("--control-tree \"$CONTROL_TREE\"", source_lock)
+        self.assertIn("fetch-depth: 0", source_lock)
+        self.assertNotIn("secrets.", source_lock)
+        self.assertNotIn("id-token:", workflow)
+        self.assertEqual(workflow.count("ref: ${{ needs.source-lock.outputs.source_commit }}"), 6)
+        self.assertEqual(workflow.count("Verify immutable release source"), 6)
+        build_jobs = workflow.split("  release-metadata-tests:", 1)[1].split("  sign-release:", 1)[0]
+        self.assertNotIn("${{ github.sha }}", build_jobs)
+        self.assertNotIn("secrets.", build_jobs)
+        for job in (
+            "release-metadata-tests",
+            "linux-release",
+            "linux-configuration-coverage",
+            "windows-x86_64-release",
+            "macos-native-release",
+        ):
+            self.assertRegex(
+                workflow,
+                rf"(?ms)^  {re.escape(job)}:\n(?:(?!^  \S).)*^    needs: source-lock$",
+            )
 
     def test_guarded_publication_workflow_changes_only_draft_visibility(self):
         workflow = (ROOT / ".github/workflows/publish-release.yml").read_text()

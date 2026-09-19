@@ -192,8 +192,10 @@ class TrustedReplayCiTest(unittest.TestCase):
             self.assertIn(required, text)
         for required in ("promotion-inputs:", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:", "test \"$CONTROL_SHA\" = \"$EVENT_SHA\"", "refs/heads/integration/roots-29.4", "Validate and build the immutable candidate once"):
             self.assertIn(required, text)
-        self.assertIn("test \"$CANDIDATE_COMMIT\" = c8dc2e70bc145930855cf615ba9caffaccdcdcb9", text)
-        self.assertIn("test \"$CANDIDATE_TREE\" = 70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9", text)
+        self.assertIn("test \"$CANDIDATE_COMMIT\" = 990732b942778c7c96bc9f647f290846eec71c12", text)
+        self.assertIn("test \"$CANDIDATE_TREE\" = 5e0fe225597174052ed927becf666019b1b9799e", text)
+        self.assertNotIn("test \"$CANDIDATE_COMMIT\" = c8dc2e70bc145930855cf615ba9caffaccdcdcb9", text)
+        self.assertNotIn("test \"$CANDIDATE_TREE\" = 70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9", text)
         self.assertNotIn("test \"$CANDIDATE_COMMIT\" = dfc74d403585f7c23815ef80d2e206b85c33919a", text)
         self.assertNotIn("test \"$CANDIDATE_TREE\" = 477eb9b3f50098b0b8548a9ff35efaa29fd7ecde", text)
         self.assertFalse((ROOT / ".github/workflows/roots-trusted-promotion.yml").exists())
@@ -313,14 +315,34 @@ class TrustedReplayCiTest(unittest.TestCase):
                     digests["outcome_set"] = "sha256:" + __import__("hashlib").sha256(json.dumps(state["completed_units"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 roles[role] = {"target_tree": "sha1:" + "a" * 40, "artifact_digests": digests}
             methodology = root / "methodology.json"
-            methodology.write_text(json.dumps({"reconstructions": roles}))
+            methodology.write_text(json.dumps({
+                "contracts": {"canonical_export": REVIEW.CANONICAL_EXPORT_CONTRACT},
+                "reconstructions": roles,
+            }))
             REVIEW.verify(methodology, artifacts)
+            methodology.write_text(json.dumps({
+                "contracts": {"canonical_export": "arbitrary-export"},
+                "reconstructions": roles,
+            }))
+            with self.assertRaises(ValueError): REVIEW.verify(methodology, artifacts)
+            methodology.write_text(json.dumps({
+                "contracts": {"canonical_export": REVIEW.CANONICAL_EXPORT_CONTRACT},
+                "reconstructions": roles,
+            }))
+            export = artifacts / "roots-29.3" / "a" / REVIEW.NAMES["generated_export"]
+            original = export.read_bytes()
+            export.write_bytes(original + b"mutated signature/header/date/path/order/binary/rename/config")
+            with self.assertRaises(ValueError): REVIEW.verify(methodology, artifacts)
+            export.write_bytes(original)
             for role in roles:
                 for run in ("a", "b"):
                     export = artifacts / role / run / REVIEW.NAMES["generated_export"]
                     export.write_bytes(b"p" * 70_000)
                     roles[role]["artifact_digests"]["generated_export"] = REVIEW.sha(export)
-            methodology.write_text(json.dumps({"reconstructions": roles}))
+            methodology.write_text(json.dumps({
+                "contracts": {"canonical_export": REVIEW.CANONICAL_EXPORT_CONTRACT},
+                "reconstructions": roles,
+            }))
             REVIEW.verify(methodology, artifacts)
             export.write_bytes(b"p" * (REVIEW.CAPS[REVIEW.NAMES["generated_export"]] + 1))
             with self.assertRaises(ValueError): REVIEW.verify(methodology, artifacts)

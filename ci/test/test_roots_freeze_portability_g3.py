@@ -34,6 +34,12 @@ class FreezePortabilityG3Test(unittest.TestCase):
         repository = directory / name
         subprocess.run(["git", "clone", "-q", "--local", str(ROOT), str(repository)], check=True)
         self.assertFalse((repository / ".git/objects/info/alternates").exists())
+        # The control branch preserves the immutable G3 records. Constructor
+        # fixtures need their own absent output paths to exercise build and
+        # overwrite rejection without mutating those preserved records.
+        git(repository, "update-index", "--skip-worktree", "--", *G3.ARTIFACTS.values())
+        for relative in G3.ARTIFACTS.values():
+            (repository / relative).unlink(missing_ok=True)
         return repository
 
     def run_tool(self, command: str, repository: Path, root: Path | None = None, reference: str | None = None, environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

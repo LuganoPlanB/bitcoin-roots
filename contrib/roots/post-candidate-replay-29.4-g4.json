@@ -1,0 +1,64 @@
+{
+  "base": {
+    "commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+    "tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9"
+  },
+  "candidate": {
+    "commit": "sha1:990732b942778c7c96bc9f647f290846eec71c12",
+    "parent": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+    "tree": "sha1:5e0fe225597174052ed927becf666019b1b9799e"
+  },
+  "canonical_export_contract": "roots-replay-generated-mbox-v1",
+  "changed_paths": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish-release.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/roots-trusted-replay.yml",
+    "ci/release/publish-verified-draft.sh",
+    "ci/release/resolve-release-source.py",
+    "ci/roots-trusted-replay-gate.py",
+    "ci/roots-trusted-replay-review.py",
+    "ci/test/test_prepare_release.py",
+    "ci/test/test_release_source_lock.py",
+    "ci/test/test_roots_replay.py",
+    "ci/test/test_roots_trusted_replay_ci.py",
+    "contrib/devtools/roots-methodology.py",
+    "contrib/devtools/roots-replay.py",
+    "contrib/roots/continuous-accounting-pr.json",
+    "contrib/roots/methodology-v1.json",
+    "contrib/roots/post-methodology-adaptations.json",
+    "contrib/roots/validate-local-integration-baseline.py",
+    "doc/maintainers/replay-engine.md"
+  ],
+  "runbook_identities": {
+    ".github/workflows/ci.yml": {
+      "mode": "100644",
+      "sha256": "sha256:6ed525a6de0dd170d720e3d40e8c771d6ae8b357532ac1866415a0c8bf14ac3b"
+    },
+    ".github/workflows/publish-release.yml": {
+      "mode": "100644",
+      "sha256": "sha256:d1a1dfd59f9a5423396f82a1987baa2e41933d805cbeb6b5a8e77e97e1e1873e"
+    },
+    ".github/workflows/release.yml": {
+      "mode": "100644",
+      "sha256": "sha256:3b5db108d7914274ce831b309f84dd3a041c2b3dcea59fa8a97222bda6eb451f"
+    },
+    "ci/release/publish-verified-draft.sh": {
+      "mode": "100755",
+      "sha256": "sha256:810c97fed97434ea34e1a2446ef54f21043e64d160c6363b4331f5902cb8c34c"
+    },
+    "ci/release/resolve-release-source.py": {
+      "mode": "100755",
+      "sha256": "sha256:70afcb1fafc3b2fd91a4a30f020f239b21c2c778c757987fb1fea22414f4b9dc"
+    },
+    "ci/test/test_release_source_lock.py": {
+      "mode": "100755",
+      "sha256": "sha256:dc22d173caf30e49ae5a1ea5569f1aba58f25445c1eb2848c01a03db887b6362"
+    },
+    "contrib/roots/validate-local-integration-baseline.py": {
+      "mode": "100755",
+      "sha256": "sha256:0d75a8e326e457417ef32b95b09675bde85d1bdb299488ab6147b26630bd5f9d"
+    }
+  },
+  "schema_version": 1
+}

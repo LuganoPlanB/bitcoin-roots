@@ -1,0 +1,25 @@
+{
+  "base": {
+    "commit": "sha1:cbc88cff9b35b95a549c0313e424e13093fcd6a1",
+    "tree": "sha1:39a5e30207a09962e78ae81c24cc65b1e478ef90"
+  },
+  "candidate_record": {
+    "atom_count": 237,
+    "atom_digest": "sha256:f782a64be8cdab4ca5fe900dec08ae183319583efaca33084641d14176010f80",
+    "sha256": "sha256:5b4c9792f030383c1dba84ec350e690711c7a5cfa90deb83b9269cde50f0761b"
+  },
+  "production_commits": [
+    {
+      "commit": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+      "state": "private-rejected-ci",
+      "tree": "sha1:70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9"
+    },
+    {
+      "commit": "sha1:990732b942778c7c96bc9f647f290846eec71c12",
+      "parent": "sha1:c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+      "state": "private-g4",
+      "tree": "sha1:5e0fe225597174052ed927becf666019b1b9799e"
+    }
+  ],
+  "schema_version": 1
+}

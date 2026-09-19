@@ -13,6 +13,7 @@ import argparse
 SHA256_PREFIX = "sha256:"
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 TREE_RE = re.compile(r"^sha1:[0-9a-f]{40}$")
+CANONICAL_EXPORT_CONTRACT = "roots-replay-generated-mbox-v1"
 
 
 def canonical(value):
@@ -33,9 +34,9 @@ def validate_runtime(value):
 
 
 def validate_contracts(value):
-    required = {"replay_tool", "replay_material_schemas", "retrospective_schema", "candidate_evidence_schema", "adaptation_manifest_schema", "delta_atlas_schema", "replay_report_schema", "risk_policy_version"}
+    required = {"replay_tool", "canonical_export", "replay_material_schemas", "retrospective_schema", "candidate_evidence_schema", "adaptation_manifest_schema", "delta_atlas_schema", "replay_report_schema", "risk_policy_version"}
     schemas = value.get("replay_material_schemas") if isinstance(value, dict) else None
-    if not isinstance(value, dict) or set(value) != required or value["replay_tool"] != "1" or not isinstance(schemas, list) or any(not exact_int(item) for item in schemas) or schemas != [1, 2] or any(not exact_int(value[key]) or value[key] < 1 for key in required - {"replay_tool", "replay_material_schemas"}): fail("methodology contracts are invalid")
+    if not isinstance(value, dict) or set(value) != required or value["replay_tool"] != "1" or value["canonical_export"] != CANONICAL_EXPORT_CONTRACT or not isinstance(schemas, list) or any(not exact_int(item) for item in schemas) or schemas != [1, 2] or any(not exact_int(value[key]) or value[key] < 1 for key in required - {"replay_tool", "canonical_export", "replay_material_schemas"}): fail("methodology contracts are invalid")
 
 
 def expected_input_paths(root, governing_inputs, reconstructions, exclusions):

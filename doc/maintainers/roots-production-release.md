@@ -255,6 +255,18 @@ python3 "$ROOTS_CONTROL/contrib/devtools/roots-freeze-portability-g3.py" \
   verify --repository "$ROOTS_CONTROL" --root "$ROOTS_CONTROL"
 ```
 
+G3 qualification exposed only the recorded CI and rehearsal defects. The G4
+forward correction has its own deterministic constructor, six immutable
+records, and absent-only private ref. Its historical trusted-replay workflow is
+pinned independently at `contrib/roots/frozen-trusted-replay-29.4-g4.yml`, so
+later control-plane bindings cannot change reconstructed G4 bytes and no G4
+ref is needed as a reconstruction input. Verify it without relabeling G2 or G3:
+
+```bash
+python3 "$ROOTS_CONTROL/contrib/devtools/roots-freeze-g4.py" \
+  verify --repository "$ROOTS_CONTROL" --root "$ROOTS_CONTROL"
+```
+
 Production accounting is a separate final gate. It binds the canonical base,
 every later production commit and atom, the frozen source tree, and platform
 build evidence:
@@ -292,20 +304,44 @@ commit before release authorization. Never edit the record merely to match an
 unexpected ref.
 
 The current trusted replay workflow is
-`.github/workflows/roots-trusted-replay.yml`; its only manual input is `run`,
-with `auto` or `force`. A forced qualification invocation is:
+`.github/workflows/roots-trusted-replay.yml`. Replay uses `run=auto` or
+`run=force`; promotion additionally requires the exact candidate commit/tree
+and a declared control commit equal to the workflow event SHA. Resolve the
+reviewed control tree independently before dispatch. For G4, the exact
+qualification and non-tag five-package rehearsal inputs are:
 
 ```bash
+CONTROL_COMMIT=0000000000000000000000000000000000000000
+CONTROL_TREE=0000000000000000000000000000000000000000
+test "$(git -C "$ROOTS_CONTROL" rev-parse HEAD)" = "$CONTROL_COMMIT"
+test "$(git -C "$ROOTS_CONTROL" rev-parse HEAD^{tree})" = "$CONTROL_TREE"
+
 gh workflow run roots-trusted-replay.yml \
-  --ref codex/roots-29-4-release -f run=force
+  --ref codex/roots-29-4-release \
+  -f run=force \
+  -f operation=promote \
+  -f candidate_commit=990732b942778c7c96bc9f647f290846eec71c12 \
+  -f candidate_tree=5e0fe225597174052ed927becf666019b1b9799e \
+  -f control_sha="$CONTROL_COMMIT"
+
+gh workflow run release.yml \
+  --ref codex/roots-29-4-release \
+  -f candidate_commit=990732b942778c7c96bc9f647f290846eec71c12 \
+  -f candidate_tree=5e0fe225597174052ed927becf666019b1b9799e \
+  -f control_sha="$CONTROL_COMMIT" \
+  -f control_tree="$CONTROL_TREE"
 ```
 
-Record the run URL, exact control commit, decision report digest, replay
-artifacts, and conclusions. Full qualification also requires the applicable PR
-and nightly-equivalent suites from `.github/workflows/ci.yml` and
-`.github/workflows/nightly.yml`, plus the five release package rehearsal. A
-workflow name alone is not evidence: bind every result to the immutable
-candidate SHA.
+The zero control placeholders are deliberate stop values: replace them only
+with the accepted control commit/tree after that commit exists. Both workflows
+reject a control SHA different from their event SHA, and the release rehearsal
+also requires its candidate `.github/workflows/release.yml` blob to equal the
+reviewed control blob. Record each run URL, exact control commit/tree, decision
+report digest, replay artifacts, and conclusions. Full qualification also
+requires the applicable PR and nightly-equivalent suites from
+`.github/workflows/ci.yml` and `.github/workflows/nightly.yml`, plus the five
+release package rehearsal. A workflow name alone is not evidence: bind every
+result to the immutable candidate SHA.
 
 ## 6. Publish review refs, then fast-forward production
 
@@ -522,6 +558,9 @@ machine-readable records remain authoritative.
 | Core tree | `38ad59b187f59647eb90ad1347bc481485ef4d01` |
 | Accepted replay tree | `39a5e30207a09962e78ae81c24cc65b1e478ef90` |
 | Canonical sixteen-commit head | `cbc88cff9b35b95a549c0313e424e13093fcd6a1` |
+| Frozen G4 production commit | `990732b942778c7c96bc9f647f290846eec71c12` |
+| Frozen G4 production tree | `5e0fe225597174052ed927becf666019b1b9799e` |
+| Accepted private G4 ref | `refs/roots/29.4/frozen-production-g4` |
 | Frozen G3 production commit | `c8dc2e70bc145930855cf615ba9caffaccdcdcb9` |
 | Frozen G3 production tree | `70cd94d5f0ca21ac61720f33ecb86ba115a3b7a9` |
 | Accepted private G3 ref | `refs/roots/29.4/frozen-production-g3` |
@@ -559,11 +598,17 @@ Relevant schemas and records are:
   `contrib/roots/post-candidate-invariants-29.4-g3.json`,
   `contrib/roots/production-accounting-29.4-g3.json`,
   `contrib/roots/review-export-29.4-g3.json`, and
-  `contrib/roots/acceptance-evidence-29.4-g3.json`.
+  `contrib/roots/acceptance-evidence-29.4-g3.json`; and
+- `contrib/roots/frozen-production-29.4-g4.json`,
+  `contrib/roots/post-candidate-replay-29.4-g4.json`,
+  `contrib/roots/post-candidate-invariants-29.4-g4.json`,
+  `contrib/roots/production-accounting-29.4-g4.json`,
+  `contrib/roots/review-export-29.4-g4.json`, and
+  `contrib/roots/acceptance-evidence-29.4-g4.json`.
 
 For 29.4, both `authorization` in `promotion-29.4.json` and authorization in
 `production-accounting-29.4.json` remain false until the later reviewed
-promotion/release boundaries update them. Both frozen records say
-`publication_authorized: false`, and the G3 acceptance record says
+promotion/release boundaries update them. The G2, G3, and G4 frozen records say
+`publication_authorized: false`, and the G4 acceptance record says
 `remote_mutation_authorized: false`. None of these records presently authorizes
 a push, tag, signature, draft, or publication.

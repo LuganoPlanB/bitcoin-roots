@@ -1,6 +1,7 @@
 {
   "contracts": {
     "adaptation_manifest_schema": 1,
+    "canonical_export": "roots-replay-generated-mbox-v1",
     "candidate_evidence_schema": 1,
     "delta_atlas_schema": 1,
     "replay_material_schemas": [
@@ -12,7 +13,7 @@
     "retrospective_schema": 1,
     "risk_policy_version": 1
   },
-  "digest": "sha256:abe507ad4a932b025af0d2fd8b6ddd9c616d2053fc025b7c6d9c03371c81dd0e",
+  "digest": "sha256:e07db3c9dd261547274e656d39a496a8f7f2ab795abde12a863b3d10a22c6431",
   "frozen_inputs": [
     {
       "path": "contrib/devtools/roots-adaptation-manifest.py",
@@ -24,11 +25,11 @@
     },
     {
       "path": "contrib/devtools/roots-methodology.py",
-      "sha256": "sha256:8d640a5794c2e99f6ec3c72e41ce1933f54ca185b940bddbf4313a4b8e38b225"
+      "sha256": "sha256:eb57e3a8e0fabc170f0d93367679de0d9f705fd8cc9f28c76d9657590680c6cf"
     },
     {
       "path": "contrib/devtools/roots-replay.py",
-      "sha256": "sha256:b23a7c2c90b36e48fe91bdb54579fa6e2d2637ed62a5789d7607d2861ac7f29c"
+      "sha256": "sha256:1aca7bcd708b7a4b84fd3d86ca09fddf0a86f7070c7692001ca33f218455f3a8"
     },
     {
       "path": "contrib/devtools/roots-retrospective.py",
@@ -329,7 +330,7 @@
   "reconstructions": {
     "core-29.4": {
       "artifact_digests": {
-        "generated_export": "sha256:0eeafd6f1dc5c030b64375267bb4fb19f5c00312fef26815bcb645449a024198",
+        "generated_export": "sha256:8faccbd1f091159cc84722833ad4ad5fcb402dc1563566c32471944b4cbd65f0",
         "outcome_set": "sha256:9a180302f503ef17919083d797fa42f9f6682850fed99a80d8298e08c4c39a82",
         "report_json": "sha256:c025cb7e8d9e99f35ec5d7706a3a6d8a666602c9c5f3c38946fb356b335da072",
         "report_text": "sha256:a6fcc045984af7ba3fc72de4613ce5d1a644e814e160d70191b581135f6b7508",
@@ -355,7 +356,7 @@
     },
     "core-to-knots-29.3": {
       "artifact_digests": {
-        "generated_export": "sha256:92eace711b2f17aeea3bab32e09565a211377af247652fe89f65bede697a408e",
+        "generated_export": "sha256:863e92adb0739b81f8a37ee93887a2a70619eeda0c6452cb1a09e4b62be1fd32",
         "outcome_set": "sha256:de21a7f10e4c8b623e7ebb4a37e82a750d3784b5678f945cad7c8ada3e3958a5",
         "report_json": "sha256:73c72099194cbe03e91ec2b3ea5e766f8f129b332fb3eb183c463b958a782d6e",
         "report_text": "sha256:4536d5d104eb91e3a5f912fa71bb65280e45ea2e626a8a835e50f79209fbeade",
@@ -381,7 +382,7 @@
     },
     "roots-29.3": {
       "artifact_digests": {
-        "generated_export": "sha256:f39dfbdd0dff19d9d81cd0bf8d272b9c14235096a41ed811d9ebe8ee6d0a48b9",
+        "generated_export": "sha256:45a350de61c8ed8e4b8e360059bea4420b9b4be586ade1f021c970e19f3b9338",
         "outcome_set": "sha256:4d3f12a86091d0e486b34664af14db6d299c4d51afa063364c60f9e12da6f21f",
         "report_json": "sha256:6cc4bf6c6fa91be585c353fd6cd82aea404692989bf3f55cea131ab6e084cf19",
         "report_text": "sha256:b3bd02274b22c7aa9855569303ce728d0fcc12b6e342d5b4058ee323c7845838",

@@ -229,6 +229,13 @@ class MaintainerRunbookTest(unittest.TestCase):
             "contrib/roots/production-accounting-29.4-g3.json",
             "contrib/roots/review-export-29.4-g3.json",
             "contrib/roots/acceptance-evidence-29.4-g3.json",
+            "contrib/roots/frozen-production-29.4-g4.json",
+            "contrib/roots/post-candidate-replay-29.4-g4.json",
+            "contrib/roots/post-candidate-invariants-29.4-g4.json",
+            "contrib/roots/production-accounting-29.4-g4.json",
+            "contrib/roots/review-export-29.4-g4.json",
+            "contrib/roots/acceptance-evidence-29.4-g4.json",
+            "contrib/roots/frozen-trusted-replay-29.4-g4.yml",
         )
         for relative in schema_paths:
             with self.subTest(path=relative):
@@ -244,6 +251,8 @@ class MaintainerRunbookTest(unittest.TestCase):
         accounting = json.loads((ROOT / "contrib/roots/production-accounting-29.4.json").read_text(encoding="utf-8"))
         g3_acceptance = json.loads((ROOT / "contrib/roots/acceptance-evidence-29.4-g3.json").read_text(encoding="utf-8"))
         g3_freeze = json.loads((ROOT / "contrib/roots/frozen-production-29.4-g3.json").read_text(encoding="utf-8"))
+        g4_acceptance = json.loads((ROOT / "contrib/roots/acceptance-evidence-29.4-g4.json").read_text(encoding="utf-8"))
+        g4_freeze = json.loads((ROOT / "contrib/roots/frozen-production-29.4-g4.json").read_text(encoding="utf-8"))
         frozen = accounting["releases"][1]["frozen"]
         immutable_values = (
             promotion["core"]["tag"],
@@ -261,10 +270,23 @@ class MaintainerRunbookTest(unittest.TestCase):
             g3_acceptance["accepted_bootstrap"].removeprefix("sha1:"),
             g3_freeze["g3_ref"],
             str(g3_acceptance["g2_failure"]["run_id"]),
+            g4_acceptance["g4_commit"].removeprefix("sha1:"),
+            g4_acceptance["g4_tree"].removeprefix("sha1:"),
+            g4_freeze["g4_ref"],
         )
         for value in immutable_values:
             with self.subTest(immutable_value=value):
                 self.assertIn(value, text)
+        for binding in (
+            "-f operation=promote",
+            "-f candidate_commit=990732b942778c7c96bc9f647f290846eec71c12",
+            "-f candidate_tree=5e0fe225597174052ed927becf666019b1b9799e",
+            '-f control_sha="$CONTROL_COMMIT"',
+            '-f control_tree="$CONTROL_TREE"',
+            "gh workflow run release.yml",
+        ):
+            with self.subTest(qualification_binding=binding):
+                self.assertIn(binding, text)
         self.assertIs(promotion["authorization"], False)
         self.assertIs(accounting["releases"][1]["authorization"], False)
 
@@ -277,11 +299,13 @@ class MaintainerRunbookTest(unittest.TestCase):
 
         create = (ROOT / ".github/workflows/create-release.yml").read_text(encoding="utf-8")
         publish = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         trusted = (ROOT / ".github/workflows/roots-trusted-replay.yml").read_text(encoding="utf-8")
         for workflow, inputs in (
             (create, ("tag:", "production_ref:", "expected_commit:", "confirm_release:")),
             (publish, ("tag:", "confirm_publication:", "verified_manifest_sha256:")),
-            (trusted, ("run:", "options: [auto, force]")),
+            (trusted, ("run:", "options: [auto, force]", "operation:", "options: [replay, promote]", "candidate_commit:", "candidate_tree:", "control_sha:")),
+            (release, ("candidate_commit:", "candidate_tree:", "control_sha:", "control_tree:")),
         ):
             for name in inputs:
                 with self.subTest(workflow_input=name):

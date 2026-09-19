@@ -1,0 +1,14 @@
+{
+  "advisory": "range-diff is review evidence, not authorization",
+  "canonical_export_contract": "roots-replay-generated-mbox-v1",
+  "patch_range": "c8dc2e70bc145930855cf615ba9caffaccdcdcb9..990732b942778c7c96bc9f647f290846eec71c12",
+  "patch_series_sha256": "sha256:f4d7e9e0cad503a61733927f59d94f853da83f5c38a297557c9f51c050d4d6d4",
+  "range_diff_ranges": [
+    "3fc0865963a38b871e9f7d94e6151c4953563516..c8dc2e70bc145930855cf615ba9caffaccdcdcb9",
+    "3fc0865963a38b871e9f7d94e6151c4953563516..990732b942778c7c96bc9f647f290846eec71c12"
+  ],
+  "range_diff_sha256": "sha256:3a0c050e5d0f0798636ca5512c2087572b326855c8fded713eb8aab57c0c4e99",
+  "release_workflow_blob": "sha1:b923b4dd6c817a36b2807ea1a3f9ec91266101da",
+  "schema_version": 1,
+  "scoped_diff_sha256": "sha256:c6c02a9b91bcf40b1b4e9390078777ba6a646d1a9c3aa687aa950e1923a79af3"
+}

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import stat
@@ -2060,7 +2061,7 @@ class RootsReplayTest(unittest.TestCase):
             {"manual"},
         )
 
-    def _historical_release_specific_29_3_calibration_reconstructs_roots_release(self):
+    def test_release_specific_29_3_calibration_reconstructs_roots_release(self):
         """L7's replacement scope is locked independently of the L3 manifest."""
         base = "99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b"
         base_tree = "56f97d3a9199c1fb191e1b8a21f2caae3901b7f6"
@@ -2672,8 +2673,10 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
             REPLAY.review_bundle(path, output)
 
     def test_generated_patch_export_is_tree_locked(self):
-        (self.repository / "two.txt").write_text("two\\n", encoding="utf-8")
-        git(self.repository, "add", "two.txt")
+        git(self.repository, "mv", "one.txt", "renamed path-☃.txt")
+        (self.repository / "binary.dat").write_bytes(bytes(range(256)) + b"\x00\xff")
+        (self.repository / "two.txt").write_text("From canonical export\n", encoding="utf-8")
+        git(self.repository, "add", "binary.dat", "two.txt")
         git(self.repository, "commit", "-m", "candidate")
         candidate_tree = git(self.repository, "write-tree")
         directory = self.root / "export"
@@ -2683,7 +2686,19 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         REPLAY.write_run_state(path, state)
         result = REPLAY.export_patch_series(self.repository.resolve(), path, directory / "replay-generated-series.patch")
         payload = (directory / "replay-generated-series.patch").read_bytes()
+        self.assertEqual(result["contract"], REPLAY.CANONICAL_EXPORT_CONTRACT)
         self.assertIn(b"[ROOTS-REPLAY-GENERATED]", payload)
+        self.assertIn(b"Date: Sat, 1 Jan 2000 00:00:00 +0000\n", payload)
+        self.assertIn(b"GIT binary patch\n", payload)
+        self.assertNotIn(b"rename from ", payload)
+        self.assertNotIn(b"rename to ", payload)
+        self.assertTrue(payload.endswith(
+            b"-- \n" + REPLAY.CANONICAL_EXPORT_SIGNATURE.encode() + b"\n\n"
+        ))
+        self.assertNotIn(str(self.root).encode(), payload)
+        index_lines = [line for line in payload.splitlines() if line.startswith(b"index ")]
+        self.assertTrue(index_lines)
+        self.assertTrue(all(re.match(rb"index [0-9a-f]{40}\.\.[0-9a-f]{40}(?: [0-7]{6})?$", line) for line in index_lines))
         self.assertTrue(result["sha256"].startswith("sha256:"))
         clone = self.root / "round-trip"
         subprocess.run(["git", "clone", str(self.repository), str(clone)], check=True, capture_output=True)
@@ -2692,6 +2707,94 @@ module.resume_owned(module.Path({str(self.repository.resolve())!r}), {self.revis
         git(clone, "config", "user.name", "Replay test")
         subprocess.run(["git", "-C", str(clone), "am", str(directory / "replay-generated-series.patch")], check=True, capture_output=True)
         self.assertEqual(git(clone, "write-tree"), candidate_tree)
+
+    def test_generated_patch_export_ignores_host_config_locale_and_timezone(self):
+        (self.repository / "two.txt").write_text("two\n", encoding="utf-8")
+        git(self.repository, "add", "two.txt")
+        git(self.repository, "commit", "-m", "candidate")
+        candidate_tree = git(self.repository, "write-tree")
+        state = REPLAY.make_run_state(
+            {"revision": self.revision, "tree": self.tree},
+            "sha256:" + "d" * 64,
+            ["roots-first"],
+            [{"unit": "roots-first", "outcome": "applied", "tree": candidate_tree}],
+            candidate_tree,
+        )
+        state_directory = self.root / "config-state"
+        state_directory.mkdir()
+        state_path = state_directory / "replay-state.json"
+        REPLAY.write_run_state(state_path, state)
+        baseline_directory = self.root / "baseline-export"
+        baseline_directory.mkdir()
+        REPLAY.export_patch_series(
+            self.repository.resolve(), state_path,
+            baseline_directory / "replay-generated-series.patch",
+        )
+        baseline = (baseline_directory / "replay-generated-series.patch").read_bytes()
+
+        order_file = self.root / "host-order"
+        order_file.write_text("two.txt\n", encoding="utf-8")
+        signature_file = self.root / "host-signature"
+        signature_file.write_text("host signature\n", encoding="utf-8")
+        attributes_file = self.root / "host-attributes"
+        attributes_file.write_text("*.txt binary\n", encoding="utf-8")
+        hostile_config = {
+            "color.ui": "always",
+            "core.attributesFile": str(attributes_file),
+            "core.quotePath": "false",
+            "diff.algorithm": "histogram",
+            "diff.context": "12",
+            "diff.indentHeuristic": "true",
+            "diff.interHunkContext": "12",
+            "diff.mnemonicPrefix": "true",
+            "diff.noPrefix": "true",
+            "diff.orderFile": str(order_file),
+            "diff.relative": "true",
+            "diff.renames": "copies",
+            "diff.suppressBlankEmpty": "true",
+            "format.attach": "true",
+            "format.cc": "host-cc@example.invalid",
+            "format.coverLetter": "true",
+            "format.encodeEmailHeaders": "false",
+            "format.forceInBodyFrom": "true",
+            "format.from": "Host <host@example.invalid>",
+            "format.headers": "X-Host-Header: leaked",
+            "format.notes": "true",
+            "format.numbered": "true",
+            "format.pretty": "fuller",
+            "format.signOff": "true",
+            "format.signature": "host signature",
+            "format.signatureFile": str(signature_file),
+            "format.subjectPrefix": "HOST",
+            "format.thread": "deep",
+            "format.to": "host-to@example.invalid",
+            "format.useAutoBase": "whenAble",
+            "log.mailmap": "true",
+        }
+        for key, value in hostile_config.items():
+            git(self.repository, "config", key, value)
+        hostile_directory = self.root / "hostile-export"
+        hostile_directory.mkdir()
+        hostile_tmp = self.root / "host-tmp"
+        hostile_home = hostile_tmp / "roots-replay-empty-home"
+        hostile_home.mkdir(parents=True)
+        (hostile_home / ".gitconfig").write_text(
+            "[format]\n\tsignature = global host signature\n[diff]\n\trenames = copies\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(REPLAY.tempfile, "gettempdir", return_value=str(hostile_tmp)), mock.patch.dict(os.environ, {
+            "LANG": "host_LOCALE", "LC_ALL": "host_LOCALE", "TZ": "Pacific/Honolulu",
+            "GIT_AUTHOR_DATE": "2037-12-31T23:59:59-10:00",
+            "GIT_COMMITTER_DATE": "2038-01-01T00:00:00-10:00",
+        }):
+            REPLAY.export_patch_series(
+                self.repository.resolve(), state_path,
+                hostile_directory / "replay-generated-series.patch",
+            )
+        self.assertEqual(
+            (hostile_directory / "replay-generated-series.patch").read_bytes(), baseline
+        )
+        self.assertNotIn(b"host", baseline.lower())
 
     def test_data_unit_requires_content_and_tree_locks(self):
         before_tree = git(self.repository, "rev-parse", "HEAD^{tree}")

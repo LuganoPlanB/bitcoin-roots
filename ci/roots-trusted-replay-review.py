@@ -8,11 +8,13 @@ from pathlib import Path
 NAMES = {"state":"replay-state.json", "report_json":"replay-review.json", "report_text":"replay-review.txt", "generated_export":"replay-generated-series.patch"}
 CAPS = {"replay-state.json": 2_000_000, "replay-review.json": 262_144, "replay-review.txt": 262_144, "replay-generated-series.patch": 10_000_000}
 MAX_TOTAL_BYTES = 36_000_000
+CANONICAL_EXPORT_CONTRACT = "roots-replay-generated-mbox-v1"
 
 def sha(path): return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 def verify(methodology, artifacts):
     method=json.loads(methodology.read_text())
+    if method.get("contracts", {}).get("canonical_export") != CANONICAL_EXPORT_CONTRACT: raise ValueError("canonical export contract differs")
     total = 0
     for role, expected in method["reconstructions"].items():
         expected_tree=expected["target_tree"].split(":",1)[1]
