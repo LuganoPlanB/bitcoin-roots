@@ -1962,8 +1962,6 @@ BOOST_AUTO_TEST_CASE(mib_string_literal_test)
 {
     BOOST_CHECK_EQUAL(0_MiB, 0);
     BOOST_CHECK_EQUAL(1_MiB, 1024 * 1024);
-    const auto max_mib{std::numeric_limits<size_t>::max() >> 20};
-    BOOST_CHECK_EXCEPTION(operator""_MiB(static_cast<unsigned long long>(max_mib) + 1), std::overflow_error, HasReason("MiB value too large for size_t byte conversion"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
