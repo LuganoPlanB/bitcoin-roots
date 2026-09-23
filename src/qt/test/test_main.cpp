@@ -49,6 +49,7 @@ int main(int argc, char* argv[])
     }());
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
+    Q_INIT_RESOURCE(bitcoin_rendered);
     gArgs.ForceSetArg("-listen", "0");
     gArgs.ForceSetArg("-listenonion", "0");
     gArgs.ForceSetArg("-discover", "0");
