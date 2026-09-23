@@ -20,10 +20,13 @@ from test_framework.wallet import (
     MiniWallet,
 )
 
+EPHEMERAL_ARGS = ["-permitephemeral=anchor,send,dust", "-subdustfeepenalty=0", "-blockprioritysize=0"]
+
 class EphemeralDustTest(BitcoinTestFramework):
     def set_test_params(self):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
+        self.extra_args = [EPHEMERAL_ARGS, EPHEMERAL_ARGS]
 
         # Don't test trickling logic
         self.noban_tx_relay = True
@@ -129,8 +132,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Node restart; doesn't allow ephemeral transaction back in due to individual submission
         # resulting in 0-fee. Supporting re-submission of CPFP packages on restart is desired but not
         # yet implemented.
-        self.restart_node(0)
-        self.restart_node(1)
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -190,8 +193,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that a single output of any satoshi amount is allowed, not checking spending")
 
         # We aren't checking spending, allow it in with no fee
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         # 330 is dust threshold for taproot outputs
@@ -201,8 +204,8 @@ class EphemeralDustTest(BitcoinTestFramework):
             test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
             assert test_res[0]["allowed"]
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -215,7 +218,9 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
         assert_equal(res["package_msg"], "transaction failed")
-        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 15")
+        # Roots accounts for the datacarrier policy weight in this package's
+        # individual relay-fee check.
+        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 147")
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -350,7 +355,7 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         # TRUC transactions restriction for ephemeral dust disallows further spends of ancestor chains
         child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=sweep_tx_2["new_utxos"], version=3)
-        assert_raises_rpc_error(-26, "TRUC-violation", self.nodes[0].sendrawtransaction, child_tx["hex"])
+        assert_raises_rpc_error(-26, "truc-ancestors-toomany", self.nodes[0].sendrawtransaction, child_tx["hex"])
 
         self.nodes[0].reconsiderblock(reconsider_block_res["hash"])
         assert_equal(self.nodes[0].getrawmempool(), [])
@@ -376,8 +381,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that ephemeral dust works in non-TRUC contexts when there's no minrelay requirement")
 
         # Note: since minrelay is 0, it is not testing 1P1C relay
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])
@@ -441,8 +446,8 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         # Other topology tests (e.g., grandparents and parents both with dust) require relaxation of submitpackage topology
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])

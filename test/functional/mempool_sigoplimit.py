@@ -53,7 +53,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # allow large datacarrier output to pad transactions
-        self.extra_args = [['-datacarriersize=100000']]
+        self.extra_args = [['-datacarriersize=100000', '-datacarriercost=0.25', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1']]
 
     def create_p2wsh_spending_tx(self, witness_script, output_script):
         """Create a 1-input-1-output P2WSH spending transaction with only the
@@ -187,8 +187,8 @@ class BytesPerSigOpTest(BitcoinTestFramework):
     def test_legacy_sigops_stdness(self):
         self.log.info("Test a transaction with too many legacy sigops in its inputs is non-standard.")
 
-        # Restart with the default settings
-        self.restart_node(0)
+        # Restart with the legacy sigop limit under test.
+        self.restart_node(0, extra_args=self.extra_args[0] + [f"-maxtxlegacysigops={MAX_STD_LEGACY_SIGOPS}"])
 
         # Create a P2SH script with 15 sigops.
         _, dummy_pubkey = generate_keypair()
@@ -210,7 +210,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         nonstd_tx = CTransaction()
         nonstd_tx.vin = [CTxIn(op, CScript([b"", packed_redeem_script])) for op in outpoints]
         nonstd_tx.vout = [CTxOut(0, CScript([OP_RETURN, b""]))]
-        assert_raises_rpc_error(-26, "bad-txns-nonstandard-inputs", self.nodes[0].sendrawtransaction, nonstd_tx.serialize().hex())
+        assert_raises_rpc_error(-26, "bad-txns-input-sigops-toomany-overall", self.nodes[0].sendrawtransaction, nonstd_tx.serialize().hex())
 
         # Spending one less accounts for 2490 legacy sigops and is standard.
         std_tx = deepcopy(nonstd_tx)

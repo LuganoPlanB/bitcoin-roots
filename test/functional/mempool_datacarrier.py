@@ -42,6 +42,7 @@ class DataCarrierTest(BitcoinTestFramework):
             assert tx.rehash() in node.getrawmempool(True), f'{tx_hex} not in mempool'
         else:
             assert_raises_rpc_error(-26, "scriptpubkey", self.wallet.sendrawtransaction, from_node=node, tx_hex=tx_hex)
+        return tx_hex
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
@@ -57,7 +58,10 @@ class DataCarrierTest(BitcoinTestFramework):
         self.test_null_data_transaction(node=self.nodes[0], data=default_size_data, success=True)
 
         self.log.info("Testing a null data transaction larger than allowed by the default -datacarriersize value.")
-        self.test_null_data_transaction(node=self.nodes[0], data=too_long_data, success=False)
+        rejected_tx = self.test_null_data_transaction(node=self.nodes[0], data=too_long_data, success=False)
+        # Datacarrier limits are local relay policy. The same consensus-valid
+        # transaction must remain valid when supplied directly in a block.
+        self.generateblock(self.nodes[0], output="raw(42)", transactions=[rejected_tx], sync_fun=self.no_op)
 
         self.log.info("Testing a null data transaction with -datacarrier=false.")
         self.test_null_data_transaction(node=self.nodes[1], data=default_size_data, success=False)
