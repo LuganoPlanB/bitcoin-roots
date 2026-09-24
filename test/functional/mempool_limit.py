@@ -7,6 +7,7 @@
 from decimal import Decimal
 
 from test_framework.mempool_util import (
+    DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
 )
 from test_framework.p2p import P2PTxInvStore
@@ -30,6 +31,7 @@ class MempoolLimitTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             "-datacarriersize=100000",
+            "-maxscriptsize=100000",
             "-maxmempool=5",
         ]]
         self.supports_cli = False
@@ -185,8 +187,8 @@ class MempoolLimitTest(BitcoinTestFramework):
         self.restart_node(0, extra_args=self.extra_args[0])
 
         # Restarting the node resets mempool minimum feerate
-        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00000100'))
-        assert_equal(node.getmempoolinfo()['mempoolminfee'], Decimal('0.00000100'))
+        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN)
+        assert_equal(node.getmempoolinfo()['mempoolminfee'], Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN)
 
         fill_mempool(self, node)
         current_info = node.getmempoolinfo()

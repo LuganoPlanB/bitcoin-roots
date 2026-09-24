@@ -58,7 +58,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            '-txindex','-permitbaremultisig=0',
+            '-txindex','-permitbaredatacarrier=1','-permitbaremultisig=0',
         ]] * self.num_nodes
         self.supports_cli = False
 
@@ -330,7 +330,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0] = output_p2sh_burn
         tx.vout[0].nValue -= 1  # Make output smaller, such that it is dust for our policy
         self.check_mempool_result(
-            result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'dust'}],
+            result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'dust-nonanchor'}],
             rawtxs=[tx.serialize().hex()],
         )
         tx = tx_from_hex(raw_tx_reference)
@@ -403,7 +403,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         anchor_nonempty_wit_spend.rehash()
 
         self.check_mempool_result(
-            result_expected=[{'txid': anchor_nonempty_wit_spend.rehash(), 'allowed': False, 'reject-reason': 'bad-witness-nonstandard'}],
+            result_expected=[{'txid': anchor_nonempty_wit_spend.rehash(), 'allowed': False, 'reject-reason': 'bad-witness-anchor-not-empty'}],
             rawtxs=[anchor_nonempty_wit_spend.serialize().hex()],
             maxfeerate=0,
         )

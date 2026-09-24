@@ -31,6 +31,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 3
+        self.extra_args = [["-maxscriptsize=100000"]] * self.num_nodes
         self.supports_cli = False
         self.enable_wallet_if_possible()
 

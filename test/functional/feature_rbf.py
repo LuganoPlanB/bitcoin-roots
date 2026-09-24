@@ -34,9 +34,11 @@ class ReplaceByFeeTest(BitcoinTestFramework):
                 "-limitancestorsize=101",
                 "-limitdescendantcount=200",
                 "-limitdescendantsize=101",
+                "-maxscriptsize=100000",
             ],
             # second node has default mempool parameters
             [
+                "-maxscriptsize=100000",
             ],
         ]
         self.supports_cli = False
@@ -599,7 +601,7 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         for incremental_setting in (0, 5, 10, 50, 100, 234, 1000, 5000, 21000):
             incremental_setting_decimal = incremental_setting / Decimal(COIN)
             self.log.info(f"-> Test -incrementalrelayfee={incremental_setting_decimal:.8f}sat/kvB...")
-            self.restart_node(0, extra_args=[f"-incrementalrelayfee={incremental_setting_decimal:.8f}", "-datacarriersize=5000", "-persistmempool=0"])
+            self.restart_node(0, extra_args=[f"-incrementalrelayfee={incremental_setting_decimal:.8f}", "-datacarriersize=5000", "-maxscriptsize=100000", "-persistmempool=0"])
 
             # When incremental relay feerate is higher than min relay feerate, min relay feerate is automatically increased.
             min_relay_feerate = node.getmempoolinfo()["minrelaytxfee"]

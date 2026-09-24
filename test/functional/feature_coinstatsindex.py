@@ -42,8 +42,8 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.supports_cli = False
         self.extra_args = [
-            [],
-            ["-coinstatsindex"]
+            ["-permitbaredatacarrier=1"],
+            ["-coinstatsindex", "-permitbaredatacarrier=1"],
         ]
 
     def run_test(self):
