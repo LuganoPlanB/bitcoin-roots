@@ -60,12 +60,30 @@ for package_path in "${package_paths[@]}"; do
     package_names[$package_name]=1
 done
 
+mapfile -d '' patch_paths < <(find "$download_dir" -type f -name '*.patch' -print0 | sort -z)
+if [[ "${#patch_paths[@]}" -ne 1 ]]; then
+    printf 'Expected one release patch series, found %s\n' "${#patch_paths[@]}" >&2
+    exit 1
+fi
+patch_path=${patch_paths[0]}
+patch_name=${patch_path##*/}
+if [[ "$patch_name" == *$'\n'* || -n "${package_names[$patch_name]:-}" ]]; then
+    printf 'Invalid or duplicate release patch name: %s\n' "$patch_name" >&2
+    exit 1
+fi
+if [[ ! -s "$patch_path" ]]; then
+    printf 'Release patch series is empty: %s\n' "$patch_path" >&2
+    exit 1
+fi
+package_names[$patch_name]=1
+
 archive_root="$(RELEASE_TAG="$release_name" python3 "$archive_tool" root-name)"
 for package_path in "${package_paths[@]}"; do
     package_name=${package_path##*/}
     python3 "$archive_tool" validate "$package_path" "$archive_root"
     cp -- "$package_path" "$output_dir/$package_name"
 done
+cp -- "$patch_path" "$output_dir/$patch_name"
 
 mapfile -d '' package_names_sorted < <(printf '%s\0' "${!package_names[@]}" | sort -z)
 manifest="$output_dir/SHA512SUMS"

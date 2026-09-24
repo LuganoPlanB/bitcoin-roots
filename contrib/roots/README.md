@@ -232,6 +232,8 @@ Run the retained release metadata tests before pushing:
 
 ```sh
 python3 ci/test/test_prepare_release.py
+python3 ci/test/test_create_patch_series.py
+python3 ci/test/test_sign_manifest.py
 python3 ci/test/test_validate_release_tag.py
 python3 ci/test/test_validate_release_source.py
 python3 ci/test/test_release_version.py
@@ -243,3 +245,18 @@ target to match its canonical `roots/<core-version>` branch. The release patch
 is generated from the Core tag and canonical commits at release time and is not
 checked into the repository. Do not create nightly, promotion, or
 generated-evidence control planes around this workflow.
+
+Before pushing a tag, the patch artifact can be generated and replay-verified
+locally without adding it to Git:
+
+```sh
+ci/release/create-patch-series.sh "$release_tag" \
+    "/tmp/bitcoin-roots-${release_tag#v}.patch"
+```
+
+Pushing the annotated tag builds Linux x86_64, Linux aarch64, macOS x86_64,
+macOS arm64, and Windows x86_64 archives. The draft release also contains the
+Git-am-compatible patch series and `SHA512SUMS`; `SHA512SUMS.asc` is included
+when the release environment has a matching signing key configured. The
+workflow can be dispatched manually with an existing tag to build and validate
+the same artifacts without creating or updating a GitHub release.

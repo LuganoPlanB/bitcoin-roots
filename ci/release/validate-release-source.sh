@@ -26,12 +26,32 @@ if [[ "$head_commit" != "$tag_commit" ]]; then
     exit 1
 fi
 
-main_ref="${RELEASE_MAIN_REF:-origin/main}"
-if ! git rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null; then
-    printf 'Release branch reference is unavailable: %s\n' "$main_ref" >&2
+version=${release_tag#v}
+core_version=${version%%-roots.*}
+canonical_ref="${RELEASE_CANONICAL_REF:-origin/roots/${core_version}}"
+core_ref="${RELEASE_CORE_REF:-refs/tags/v${core_version}}"
+
+if ! canonical_commit="$(git rev-parse --verify --quiet "${canonical_ref}^{commit}")"; then
+    printf 'Canonical release branch reference is unavailable: %s\n' "$canonical_ref" >&2
     exit 1
 fi
-if ! git merge-base --is-ancestor "$tag_commit" "$main_ref"; then
-    printf 'Release tag %s is not reachable from %s\n' "$release_tag" "$main_ref" >&2
+if [[ "$tag_commit" != "$canonical_commit" ]]; then
+    printf 'Release tag %s does not match canonical branch tip %s\n' "$release_tag" "$canonical_ref" >&2
+    exit 1
+fi
+if ! core_commit="$(git rev-parse --verify --quiet "${core_ref}^{commit}")"; then
+    printf 'Bitcoin Core base reference is unavailable: %s\n' "$core_ref" >&2
+    exit 1
+fi
+if ! git merge-base --is-ancestor "$core_commit" "$tag_commit"; then
+    printf 'Release tag %s is not based on %s\n' "$release_tag" "$core_ref" >&2
+    exit 1
+fi
+if [[ "$core_commit" == "$tag_commit" ]]; then
+    printf 'Release tag %s has no Roots commits after %s\n' "$release_tag" "$core_ref" >&2
+    exit 1
+fi
+if git rev-list --min-parents=2 "${core_commit}..${tag_commit}" | grep -q .; then
+    printf 'Release patch stack must be linear between %s and %s\n' "$core_ref" "$release_tag" >&2
     exit 1
 fi

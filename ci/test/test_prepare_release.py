@@ -45,6 +45,8 @@ class PrepareReleaseTest(unittest.TestCase):
             archive_root = "bitcoin-roots-29.4-roots.1"
             for path, content in packages.items():
                 self.write_package(path, archive_root, content)
+            patch = downloads / "bitcoin-roots-29.4-roots.1.patch"
+            patch.write_text("From patch-series\n", encoding="utf-8")
 
             subprocess.run([SCRIPT, downloads, output, PUBLIC_KEY, "v29.4-roots.1", "2"], check=True)
 
@@ -53,7 +55,7 @@ class PrepareReleaseTest(unittest.TestCase):
             checksum_lines = [line for line in manifest.splitlines() if not line.startswith("#")]
             expected = [
                 f"{hashlib.sha512(path.read_bytes()).hexdigest()}  {path.name}"
-                for path in sorted(packages)
+                for path in sorted([*packages, patch])
             ]
             self.assertEqual(checksum_lines, expected)
             subprocess.run(["sha512sum", "--check", "SHA512SUMS"], cwd=output, check=True)
@@ -73,6 +75,40 @@ class PrepareReleaseTest(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Duplicate release package name: package.zip", result.stderr)
+
+    def test_requires_exactly_one_nonempty_patch_series(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            downloads = work / "downloads"
+            output = work / "output"
+            downloads.mkdir()
+            archive_root = "bitcoin-roots-29.4-roots.1"
+            self.write_package(downloads / "package.tar.gz", archive_root, b"package")
+
+            missing = subprocess.run(
+                [SCRIPT, downloads, output, PUBLIC_KEY, "v29.4-roots.1", "1"],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Expected one release patch series, found 0", missing.stderr)
+
+            (downloads / "one.patch").write_text("one\n", encoding="utf-8")
+            (downloads / "two.patch").write_text("two\n", encoding="utf-8")
+            duplicate = subprocess.run(
+                [SCRIPT, downloads, output, PUBLIC_KEY, "v29.4-roots.1", "1"],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(duplicate.returncode, 0)
+            self.assertIn("Expected one release patch series, found 2", duplicate.stderr)
+
+            (downloads / "two.patch").unlink()
+            (downloads / "one.patch").write_bytes(b"")
+            empty = subprocess.run(
+                [SCRIPT, downloads, output, PUBLIC_KEY, "v29.4-roots.1", "1"],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(empty.returncode, 0)
+            self.assertIn("Release patch series is empty", empty.stderr)
 
     def test_archive_root_uses_roots_tag_or_commit(self):
         cases = [
