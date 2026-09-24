@@ -434,6 +434,13 @@ https://github.com/bitcoin/bitcoin/pull/16189).
 Also see the [backport.py script](
 https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
 
+Bitcoin Roots release lines use the additional Git-native workflow documented
+in [`contrib/roots/README.md`](/contrib/roots/README.md). Canonical
+`roots/<core-version>` branches start directly at the matching Bitcoin Core tag;
+`main` records promoted product history. Fix the oldest supported Roots line
+that needs a change, then cherry-pick it with provenance into newer affected
+lines. Exported patch files are release artifacts, not a second source tree.
+
 Copyright
 ---------
 

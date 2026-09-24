@@ -10,6 +10,35 @@ replay frameworks, patch manifests, generated evidence, frozen candidate state,
 or promotion metadata alongside it. The archived replay branch is historical
 evidence only; do not rewrite or depend on it.
 
+## Branch roles
+
+Keep the source patch series, product integration history, and generated
+release artifacts separate:
+
+- `roots/<core-version>` is the canonical release line. It starts at the exact
+  matching Bitcoin Core tag and contains a linear series of semantic Roots
+  commits. Released tips are immutable.
+- `topic/<core-version>/<area>` holds work for one reviewable area. Accepted
+  commits are applied to the canonical release line.
+- `integration/<core-version>` is disposable combined-CI state. It may be
+  rebuilt and must not be used as the base for durable work.
+- `main` is the currently promoted product history. An explicit promotion merge
+  connects it to a reviewed canonical release line; the merge result must have
+  exactly the same tree as that canonical tip.
+- `archive/*` preserves superseded candidates and retired maintenance systems.
+  Archive branches are evidence, not dependencies or release inputs.
+
+For example, `roots/29.4` starts directly at `v29.4`, while `roots/30.0`
+starts directly at `v30.0`. Do not merge the complete 29.4 branch into the 30.0
+branch. Port the semantic Roots commits to the new Core base, dropping behavior
+that Core has adopted and adapting or splitting commits when its APIs changed.
+
+Pull requests that promote a release into `main` and pull requests that review
+the canonical patch series have different bases. Never rebase or squash the
+canonical series merely to make a promotion pull request appear linear. Build
+the promotion from `main`, retain the canonical tip as a merge parent, and
+verify tree equality before publishing it.
+
 ## Inspecting a maintenance branch
 
 Start from a clean worktree and name the Core base explicitly. For the v29.4
@@ -70,29 +99,64 @@ ordinary Git operations:
 
 ```sh
 core_remote=<configured-bitcoin-core-remote>
-core_tag=v29.5
+core_tag=v30.0
 git remote get-url "$core_remote"
 git fetch "$core_remote" --tags
 core_commit=$(git rev-parse "$core_tag^{commit}")
 git show --no-patch --decorate "$core_commit"
-git switch --create roots/v29.5 "$core_commit"
-git cherry-pick <first-roots-commit>^..<last-roots-commit>
+git switch --create roots/30.0 "$core_commit"
+git cherry-pick -x <semantic-roots-commit>
 ```
 
-For a linear Roots series, rebasing is often clearer than replaying individual
-commits:
+Repeat the cherry-pick for each semantic commit after deciding whether that
+change is still needed. `-x` records the source commit when the new commit is a
+true cherry-pick. When a conflict requires a material rewrite, explain the old
+commit and the deviation in the new commit message rather than retaining a
+misleading cherry-pick identity.
+
+Compare the old and new generations as patch series:
 
 ```sh
-old_core_base=<old-core-peeled-commit>
-git rebase --onto "$core_commit" "$old_core_base"
+git range-diff v29.4..roots/29.4 v30.0..roots/30.0
 ```
 
-Both commands stop on conflicts. Resolve only the identified files, inspect the
-result with `git diff` and targeted tests, then use `git cherry-pick --continue`
-or `git rebase --continue`. If the port premise is wrong, stop with
-`git cherry-pick --abort` or `git rebase --abort`; do not hide a conflict with a
-bulk overwrite. Compare the proposed result to the prior reviewed series using
-`git range-diff` before requesting review.
+Resolve only identified conflicts, inspect the result with `git diff` and
+targeted tests, then use `git cherry-pick --continue`. If the port premise is
+wrong, stop with `git cherry-pick --abort`; do not hide a conflict with a bulk
+overwrite. The range-diff must explain commits that were added, dropped, split,
+or materially changed before requesting review.
+
+## Maintaining supported release lines
+
+Apply a security or correctness fix first to the oldest supported Roots line
+that needs it. After review and testing, cherry-pick it with `-x` into each newer
+affected line. Document deviations required by newer Core code. Do not rewrite
+published release commits or tags.
+
+A maintenance release therefore advances its own canonical branch, for example
+from `v29.4-roots.1` to `v29.4-roots.2`; it does not require merging a newer
+Core line into the older one.
+
+## Promoting a canonical line into `main`
+
+Create the promotion in a separate worktree so that the canonical branch stays
+clean:
+
+```sh
+canonical_ref=origin/roots/29.4
+git switch --create promote/29.4 origin/main
+git merge --no-ff --no-commit "$canonical_ref"
+# Resolve deliberately, then verify the proposed index and worktree.
+git diff --cached --name-status
+git commit
+git diff --exit-code "$canonical_ref"..HEAD
+test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$canonical_ref^{tree}")"
+```
+
+The last two commands are the defining promotion check: the merge records both
+histories, but its product tree is identical to the canonical release tip. A
+promotion branch is review state and may be rebuilt with a force-with-lease;
+the canonical release branch is not rewritten after publication.
 
 ## Editing policy safely
 
@@ -159,7 +223,8 @@ release_tag=v29.4-roots.1
 git check-ref-format "refs/tags/$release_tag"
 git tag --annotate "$release_tag" -m "Bitcoin Roots $release_tag"
 git rev-parse "$release_tag^{commit}"
-git merge-base --is-ancestor "$release_tag^{commit}" origin/main
+test "$(git rev-parse "$release_tag^{commit}")" = \
+    "$(git rev-parse origin/roots/29.4^{commit})"
 ci/release/validate-release-source.sh "$release_tag"
 ```
 
@@ -172,7 +237,9 @@ python3 ci/test/test_validate_release_source.py
 python3 ci/test/test_release_version.py
 ```
 
-The tag-triggered workflow builds the minimal Linux artifact, validates
-archives, produces a SHA512 manifest, and creates a draft release only in the
-protected release environment. Do not create nightly, promotion, or
+GitHub Actions tag workflows check out the tagged commit; a release tag does not
+need to be reachable from `main`. Release validation instead requires the tag
+target to match its canonical `roots/<core-version>` branch. The release patch
+is generated from the Core tag and canonical commits at release time and is not
+checked into the repository. Do not create nightly, promotion, or
 generated-evidence control planes around this workflow.
