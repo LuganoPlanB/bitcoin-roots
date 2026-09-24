@@ -19,12 +19,11 @@ using node::NodeContext;
 
 CTxMemPool::Options MemPoolOptionsForTest(const NodeContext& node)
 {
-    CTxMemPool::Options mempool_opts{
-        // Default to always checking mempool regardless of
-        // chainparams.DefaultConsistencyChecks for tests
-        .check_ratio = 1,
-        .signals = node.validation_signals.get(),
-    };
+    CTxMemPool::Options mempool_opts;
+    // Default to always checking mempool regardless of
+    // chainparams.DefaultConsistencyChecks for tests.
+    mempool_opts.check_ratio = 1;
+    mempool_opts.signals = node.validation_signals.get();
     const auto result{ApplyArgsManOptions(*node.args, ::Params(), mempool_opts)};
     Assert(result);
     return mempool_opts;

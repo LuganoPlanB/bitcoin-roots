@@ -4,6 +4,7 @@
 
 #include <qt/test/apptests.h>
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <chainparams.h>
 #include <key.h>
 #include <logging.h>

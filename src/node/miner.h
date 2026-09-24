@@ -201,7 +201,7 @@ private:
       *
       * @pre BlockAssembler::m_mempool must not be nullptr
     */
-    void addPackageTxs(int& nPackagesSelected, int& nDescendantsUpdated) EXCLUSIVE_LOCKS_REQUIRED(!m_mempool->cs);
+    void addPackageTxs(const CTxMemPool& mempool, int& nPackagesSelected, int& nDescendantsUpdated) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
 
     void addPriorityTxs(const CTxMemPool& mempool, int& nPackagesSelected) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
     bool TestForBlock(CTxMemPool::txiter iter);
