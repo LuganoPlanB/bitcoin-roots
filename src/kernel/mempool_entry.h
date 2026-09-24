@@ -152,8 +152,7 @@ public:
           nSizeWithAncestors{GetTxSize()},
           nModFeesWithAncestors{nFee},
           nSigOpCostWithAncestors{sigOpCost} {
-            CAmount nValueIn = tx->GetValueOut() + nFee;
-            assert(inChainInputValue <= nValueIn);
+            assert(inChainInputValue == 0 || inChainInputValue <= tx->GetValueOut() + nFee);
         }
 
     CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,

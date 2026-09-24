@@ -172,6 +172,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   policy/coin_age_priority.cpp
   policy/feerate.cpp
   policy/policy.cpp
+  policy/settings.cpp
   pow.cpp
   protocol.cpp
   psbt.cpp
@@ -290,7 +291,6 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   policy/fees_args.cpp
   policy/packages.cpp
   policy/rbf.cpp
-  policy/settings.cpp
   policy/truc_policy.cpp
   rest.cpp
   rpc/blockchain.cpp
