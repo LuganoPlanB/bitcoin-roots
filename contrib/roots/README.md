@@ -243,8 +243,12 @@ GitHub Actions tag workflows check out the tagged commit; a release tag does not
 need to be reachable from `main`. Release validation instead requires the tag
 target to match its canonical `roots/<core-version>` branch. The release patch
 is generated from the Core tag and canonical commits at release time and is not
-checked into the repository. Do not create nightly, promotion, or
-generated-evidence control planes around this workflow.
+checked into the repository. It deliberately excludes `.github/**`: Roots'
+GitHub Actions and repository-management files remain in the canonical branch
+and release tag, while the portable patch contains the product code, build
+support, documentation, and source tests. Replay verification requires every
+path outside `.github/**` to match the release tag and confirms that the patch
+leaves Core's own `.github/**` tree unchanged.
 
 Before pushing a tag, the patch artifact can be generated and replay-verified
 locally without adding it to Git:

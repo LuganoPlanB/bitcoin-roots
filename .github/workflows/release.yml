@@ -194,11 +194,15 @@ jobs:
           printf '%s\n' 'set(VCPKG_BUILD_TYPE release)' >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
           sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
 
+      - name: Set up GUI asset tools
+        uses: ./.github/actions/setup-windows-gui-tools
+
       - name: Generate build system
         shell: pwsh
         run: |
           cmake -B build --preset vs2022-static `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DRSVG_CONVERT="$env:RSVG_CONVERT" -DIMAGEMAGICK_CONVERT="$env:IMAGEMAGICK_CONVERT" `
             -DCLIENT_VERSION_TAG="$env:RELEASE_TAG" -DBUILD_GUI=ON -DWITH_QRENCODE=ON `
             -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=OFF `
             -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON `

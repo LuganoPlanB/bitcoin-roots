@@ -77,6 +77,7 @@ class ReleaseVersionTest(unittest.TestCase):
                 "actions/upload-artifact@v4",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",
+                "./.github/actions/setup-windows-gui-tools",
             },
         )
 

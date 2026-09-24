@@ -49,30 +49,53 @@ env -i HOME="$HOME" PATH="$PATH" USER="$USER" bash -c 'MAKEJOBS="-j1" FILE_ENV="
 The files starting with `0n` (`n` greater than 0) are the scripts that are run
 in order.
 
-## Cache
+## GitHub Actions policy
 
-In order to avoid rebuilding all dependencies for each build, the binaries are
-cached and reused when possible. Changes in the dependency-generator will
-trigger cache-invalidation and rebuilds as necessary.
+Bitcoin Roots uses a smaller, risk-selected pull-request matrix rather than
+running every Bitcoin Core CI configuration on every change:
 
-## Configuring a repository for CI
+| Workflow | Events | Purpose |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | pull request | Required lint plus path-selected build and test coverage. |
+| `.github/workflows/nightly.yml` | schedule, manual dispatch, reusable call | Expensive sanitizer, fuzz, compatibility, and platform assurance. |
+| `.github/workflows/release.yml` | Roots release tags, manual dispatch | Validate a canonical release tag and produce the five release packages and portable patch. |
 
-### Primary repository
+These repository workflows are kept in every canonical Roots branch and release
+tag so a PR tests the code it proposes. They are hosting automation, however,
+so `ci/release/create-patch-series.sh` excludes `.github/**` from the
+downloadable patch applied on top of Bitcoin Core. Source tests and CI support
+under `test/**`, `src/**/test/**`, and `ci/**` remain in that patch.
 
-To configure the primary repository, follow these steps:
+### Pull-request selection
 
-1. Register with [WarpBuild](https://www.warpbuild.com/) and purchase runners.
-2. Install the WarpBuild GitHub app against the GitHub organization.
-3. Enable organisation-level runners to be used in public repositories:
-   1. `Org settings -> Actions -> Runner Groups -> Default -> Allow public repos`
-4. Permit the following actions to run:
-   1. docker/setup-buildx-action@\*
-   1. actions/github-script@\*
+`ci/change-classifier.py` reads the complete PR file list using
+`ci/change-classifier-policy.json`. Mixed changes receive the union of their
+coverage. Incomplete, truncated, empty, ambiguous, and unknown inputs fail open
+to broad coverage.
 
-### Forked repositories
+| Change | Automatic coverage in addition to lint |
+| --- | --- |
+| Documentation only | No build job. |
+| Branding or GUI | GUI/resource build and Qt tests. |
+| Wallet | Compatibility, sanitizers, fuzz, and platform smoke tests. |
+| General C/C++ | Sanitizers, native Linux fuzz, ARM32, Windows, and both native macOS architectures. |
+| Critical, build, CI, or unknown | Broad coverage, including GUI and previous-release compatibility. |
 
-When used in a fork the CI will run on GitHub's free hosted runners by default.
-In this case, due to GitHub's 10GB-per-repo cache size limitations caches will be frequently evicted and missed, but the workflows will run (slowly).
+The stable `required result` job is the branch-protection check to require. It
+fails if classification, lint, or any selected job fails.
 
-It is also possible to use your own WarpBuild Runners in your own fork with an appropriate patch to the `REPO_USE_WARP_RUNNERS` variable in ../.github/workflows/ci.yml
-NB that WarpBuild Runners only work at an organisation level, therefore in order to use your own WarpBuild Runners, *the fork must be within your own organisation*.
+Maintainers can add coverage with `ci:sanitizers`, `ci:fuzz`,
+`ci:compat`, `ci:platforms`, or `ci:full` PR labels. Labels add tests;
+they never suppress automatic coverage.
+
+### Nightly assurance and caches
+
+Nightly assurance retains TSan, MSan, clang-tidy/dependency checks, i686 Debug,
+extended functional tests, previous-release compatibility, and native macOS
+and Windows fuzz corpora. A scheduled run skips expensive jobs only after the
+same commit has already completed successfully; failures retry and unavailable
+history fails open.
+
+GitHub-hosted compiler and dependency caches are read by PRs and updated only
+from the repository's default branch. Cache misses make jobs slower but do not
+change which tests run.
