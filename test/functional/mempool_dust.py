@@ -35,12 +35,13 @@ from test_framework.wallet_util import generate_keypair
 
 
 DUST_RELAY_TX_FEE = 3000  # default setting [sat/kvB]
+DUST_POLICY_ARGS = ["-permitbaremultisig=1", "-permitbarepubkey=1"]
 
 
 class DustRelayFeeTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-permitbaremultisig']]
+        self.extra_args = [DUST_POLICY_ARGS]
 
     def test_dust_output(self, node: TestNode, dust_relay_fee: Decimal,
                          output_script: CScript, type_desc: str) -> None:
@@ -66,7 +67,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
             tx.vout[1].nValue -= 1
             res = node.testmempoolaccept([tx.serialize().hex()])[0]
             assert_equal(res['allowed'], False)
-            assert_equal(res['reject-reason'], 'dust')
+            assert_equal(res['reject-reason'], 'dust-nonanchor')
 
         # finally send the transaction to avoid running out of MiniWallet UTXOs
         self.wallet.sendrawtransaction(from_node=node, tx_hex=tx_good_hex)
@@ -74,7 +75,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
     def test_dustrelay(self):
         self.log.info("Test that small outputs are acceptable when dust relay rate is set to 0 that would otherwise trigger ephemeral dust rules")
 
-        self.restart_node(0, extra_args=["-dustrelayfee=0"])
+        self.restart_node(0, extra_args=[*DUST_POLICY_ARGS, "-dustrelayfee=0"])
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -95,7 +96,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
         assert_equal(len(mempool_entries), 2)
 
         # Wipe extra arg to reset dust relay
-        self.restart_node(0, extra_args=[])
+        self.restart_node(0, extra_args=DUST_POLICY_ARGS)
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -132,7 +133,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
             else:
                 dust_parameter = f"-dustrelayfee={dustfee_btc_kvb:.8f}"
                 self.log.info(f"Test dust limit setting {dust_parameter} ({dustfee_sat_kvb} sat/kvB)...")
-                self.restart_node(0, extra_args=[dust_parameter, "-permitbaremultisig"])
+                self.restart_node(0, extra_args=[*DUST_POLICY_ARGS, dust_parameter])
 
             for output_script, description in output_scripts:
                 self.test_dust_output(self.nodes[0], dustfee_btc_kvb, output_script, description)
