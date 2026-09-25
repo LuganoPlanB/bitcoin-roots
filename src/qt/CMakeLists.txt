@@ -11,19 +11,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   string(APPEND CMAKE_OBJCXX_COMPILE_OBJECT " ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}")
 endif()
 
-get_target_property(qt_lib_type Qt6::Core TYPE)
+get_target_property(qt_lib_type Qt${WITH_QT_VERSION}::Core TYPE)
 
 function(import_plugins target)
   if(qt_lib_type STREQUAL "STATIC_LIBRARY")
-    set(plugins Qt6::QMinimalIntegrationPlugin)
+    set(plugins Qt${WITH_QT_VERSION}::QMinimalIntegrationPlugin)
     if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|FreeBSD)$")
-      list(APPEND plugins Qt6::QXcbIntegrationPlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QXcbIntegrationPlugin)
     elseif(WIN32)
-      list(APPEND plugins Qt6::QWindowsIntegrationPlugin Qt6::QModernWindowsStylePlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QWindowsIntegrationPlugin)
+      if(WITH_QT_VERSION STREQUAL "6")
+        list(APPEND plugins Qt6::QModernWindowsStylePlugin)
+      else()
+        list(APPEND plugins Qt5::QWindowsVistaStylePlugin)
+      endif()
     elseif(APPLE)
-      list(APPEND plugins Qt6::QCocoaIntegrationPlugin Qt6::QMacStylePlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QCocoaIntegrationPlugin Qt${WITH_QT_VERSION}::QMacStylePlugin)
     endif()
-    qt6_import_plugins(${target}
+    cmake_language(CALL "qt${WITH_QT_VERSION}_import_plugins" ${target}
       INCLUDE ${plugins}
       EXCLUDE_BY_TYPE
         accessiblebridge
@@ -54,7 +59,67 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
+set(ICON_PATH "res/rendered_icons")
+set(ICO_SPECS
+  256 64 48 32 24 20 16
+)
+set(ICNS_SPECS
+  1024
+)
+set(bitcoin_svg "res/src/bitcoinroots-logo.svg")
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${ICON_PATH}")
+foreach(size IN LISTS ICO_SPECS ICNS_SPECS)
+  set(png "${ICON_PATH}/bitcoin${size}.png")
+  add_custom_command(
+    OUTPUT "${png}"
+    COMMAND "${RSVG_CONVERT}" -f png -d ${size} -p ${size} --output "${png}" "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
+    COMMENT "Generating ${png} from ${bitcoin_svg}"
+    VERBATIM
+  )
+endforeach()
+
+set(bitcoin_icns "${ICON_PATH}/bitcoin.icns")
+add_custom_command(
+  OUTPUT "${bitcoin_icns}"
+  COMMAND "${PNG2ICNS}" "${bitcoin_icns}" "${ICON_PATH}/bitcoin1024.png"
+  DEPENDS "${ICON_PATH}/bitcoin1024.png"
+  COMMENT "Generating ${bitcoin_icns} from the Roots icon"
+  VERBATIM
+)
+add_custom_target(generate_icns DEPENDS "${bitcoin_icns}")
+
+set(bitcoin_ico "${ICON_PATH}/bitcoin.ico")
+set(testnet_ico "${ICON_PATH}/bitcoin_testnet.ico")
+add_custom_command(
+  OUTPUT "${bitcoin_ico}"
+  COMMAND "${IMAGEMAGICK_CONVERT}" ${ICON_PATH}/bitcoin256.png ${ICON_PATH}/bitcoin64.png ${ICON_PATH}/bitcoin48.png ${ICON_PATH}/bitcoin32.png ${ICON_PATH}/bitcoin24.png ${ICON_PATH}/bitcoin20.png ${ICON_PATH}/bitcoin16.png "${bitcoin_ico}"
+  DEPENDS ${ICON_PATH}/bitcoin256.png ${ICON_PATH}/bitcoin64.png ${ICON_PATH}/bitcoin48.png ${ICON_PATH}/bitcoin32.png ${ICON_PATH}/bitcoin24.png ${ICON_PATH}/bitcoin20.png ${ICON_PATH}/bitcoin16.png
+  COMMENT "Generating ${bitcoin_ico} from Roots icon sizes"
+  VERBATIM
+)
+add_custom_command(
+  OUTPUT "${testnet_ico}"
+  COMMAND "${IMAGEMAGICK_CONVERT}" "${bitcoin_ico}" -modulate 100,100,138.9 -colorspace HSL -channel G -evaluate subtract "11.76%" +channel -colorspace sRGB "${testnet_ico}"
+  DEPENDS "${bitcoin_ico}"
+  COMMENT "Generating ${testnet_ico} from ${bitcoin_ico}"
+  VERBATIM
+)
+add_custom_target(generate_ico DEPENDS "${bitcoin_ico}" "${testnet_ico}")
+
+set(roots_logo_png "${ICON_PATH}/bitcoinroots-logo.png")
+add_custom_command(
+  OUTPUT "${roots_logo_png}"
+  COMMAND "${RSVG_CONVERT}" -f png -d 960 -p 960 --output "${roots_logo_png}" "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
+  COMMENT "Generating ${roots_logo_png} from ${bitcoin_svg}"
+  VERBATIM
+)
+add_custom_target(generate_roots_splash DEPENDS "${roots_logo_png}")
+
 configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
+configure_file(bitcoin_rendered.qrc bitcoin_rendered.qrc USE_SOURCE_PERMISSIONS COPYONLY)
 
 # The bitcoinqt sources have to include headers in
 # order to parse them to collect translatable strings.
@@ -121,6 +186,7 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   $<$<PLATFORM_ID:Windows>:winshutdownmonitor.h>
   bitcoin.qrc
   ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc
+  ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_rendered.qrc
 )
 target_compile_definitions(bitcoinqt
   PUBLIC
@@ -137,7 +203,7 @@ set_property(SOURCE macnotificationhandler.mm
 )
 target_link_libraries(bitcoinqt
   PUBLIC
-    Qt6::Widgets
+    Qt${WITH_QT_VERSION}::Widgets
   PRIVATE
     core_interface
     bitcoin_cli
@@ -147,6 +213,7 @@ target_link_libraries(bitcoinqt
     $<$<PLATFORM_ID:Darwin>:-framework\ AppKit>
     $<$<CXX_COMPILER_ID:MSVC>:shlwapi>
 )
+add_dependencies(bitcoinqt generate_roots_splash)
 
 if(ENABLE_WALLET)
   target_sources(bitcoinqt
@@ -215,18 +282,30 @@ if(ENABLE_WALLET)
   target_link_libraries(bitcoinqt
     PRIVATE
       bitcoin_wallet
-      Qt6::Network
+      Qt${WITH_QT_VERSION}::Network
   )
 endif()
 
 if(WITH_DBUS)
-  target_link_libraries(bitcoinqt PRIVATE Qt6::DBus)
+  target_link_libraries(bitcoinqt PRIVATE Qt${WITH_QT_VERSION}::DBus)
+endif()
+
+if(WITH_TASKBAR_PROGRESS)
+  target_sources(bitcoinqt
+    PRIVATE
+      $<$<PLATFORM_ID:Windows>:wintaskbarprogress.cpp>
+      $<$<PLATFORM_ID:Windows>:wintaskbarprogress.h>
+  )
+  target_link_libraries(bitcoinqt
+    PRIVATE
+      $<$<PLATFORM_ID:Windows>:ole32>
+  )
 endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   # We want to define static plugins to link ourselves, thus preventing
   # automatic linking against a "sane" set of default static plugins.
-  qt6_import_plugins(bitcoinqt
+  cmake_language(CALL "qt${WITH_QT_VERSION}_import_plugins" bitcoinqt
     EXCLUDE_BY_TYPE
       accessiblebridge
       platforms
@@ -252,7 +331,14 @@ add_executable(bitcoin-qt
   ../init/bitcoin-qt.cpp
 )
 
-add_windows_resources(bitcoin-qt res/bitcoin-qt-res.rc)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  add_dependencies(bitcoin-qt generate_ico)
+endif()
+
+if(WIN32)
+  configure_file(res/bitcoin-qt-res.rc res/bitcoin-qt-res.rc USE_SOURCE_PERMISSIONS @ONLY)
+  add_windows_resources(bitcoin-qt ${CMAKE_CURRENT_BINARY_DIR}/res/bitcoin-qt-res.rc)
+endif()
 add_windows_application_manifest(bitcoin-qt)
 
 target_link_libraries(bitcoin-qt
@@ -298,8 +384,8 @@ else()
   add_custom_target(translate COMMAND ${CMAKE_COMMAND}
     -D "PROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     -D "COPYRIGHT_HOLDERS=${COPYRIGHT_HOLDERS}"
-    -D "LCONVERT_EXECUTABLE=$<TARGET_FILE:Qt6::lconvert>"
-    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt6::lupdate>"
+    -D "LCONVERT_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lconvert>"
+    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lupdate>"
     -D "XGETTEXT_EXECUTABLE=${XGETTEXT_EXECUTABLE}"
     -P ${PROJECT_SOURCE_DIR}/share/qt/translate.cmake
   )

@@ -49,6 +49,7 @@ int main(int argc, char* argv[])
     }());
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
+    Q_INIT_RESOURCE(bitcoin_rendered);
     gArgs.ForceSetArg("-listen", "0");
     gArgs.ForceSetArg("-listenonion", "0");
     gArgs.ForceSetArg("-discover", "0");
@@ -68,6 +69,11 @@ int main(int argc, char* argv[])
         setenv("QT_QPA_PLATFORM", "minimal", 0 /* overwrite */);
     #endif
 
+
+    // Keep GUI settings inside the disposable test data directory.
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                       QString::fromStdString(fs::PathToString(gArgs.GetDataDirBase())));
 
     QCoreApplication::setOrganizationName(QAPP_ORG_NAME);
     QCoreApplication::setApplicationName(QAPP_APP_NAME_DEFAULT "-test");

@@ -7,11 +7,14 @@
 #include <common/args.h>
 #include <init.h>
 #include <qt/bitcoin.h>
+#include <qt/bitcoinunits.h>
 #include <qt/guiutil.h>
 #include <qt/test/optiontests.h>
 #include <test/util/setup_common.h>
 
+#include <QFile>
 #include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <univalue.h>
@@ -145,4 +148,24 @@ void OptionTests::extractFilter()
 
     filter = QString("Image (*.png *.jpg)");
     QCOMPARE(GUIUtil::ExtractFirstSuffixFromFilter(filter), "png");
+}
+
+void OptionTests::displayUnitPersistence()
+{
+    OptionsModel options{m_node};
+    QTemporaryDir settings_dir;
+    QVERIFY(settings_dir.isValid());
+    QSettings output{settings_dir.filePath("units.ini"), QSettings::IniFormat};
+    for (const BitcoinUnit unit : BitcoinUnits::availableUnits()) {
+        output.setValue("display-unit", QVariant::fromValue(unit));
+        output.sync();
+        QCOMPARE(output.status(), QSettings::NoError);
+        // A different filename forces a disk read rather than QSettings' cache.
+        const QString copy_path{settings_dir.filePath(QString::number(static_cast<int>(unit)) + ".ini")};
+        QVERIFY(QFile::copy(output.fileName(), copy_path));
+        QSettings input{copy_path, QSettings::IniFormat};
+        const QVariant restored{input.value("display-unit")};
+        QCOMPARE(restored.userType(), qMetaTypeId<BitcoinUnit>());
+        QCOMPARE(restored.value<BitcoinUnit>(), unit);
+    }
 }

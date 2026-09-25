@@ -8,6 +8,8 @@
 #include <QImage>
 #include <QLabel>
 
+class QFont;
+
 /* Maximum allowed URI length */
 static const int MAX_URI_LENGTH = 255;
 
@@ -30,6 +32,7 @@ class QRImageWidget : public QLabel
 public:
     explicit QRImageWidget(QWidget *parent = nullptr);
     bool setQR(const QString& data, const QString& text = "");
+    bool setQR(const QString& data, const QString& text, const QFont& font);
     QImage exportImage();
 
 public Q_SLOTS:
