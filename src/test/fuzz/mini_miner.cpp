@@ -37,6 +37,14 @@ void initialize_miner()
     }
 }
 
+void initialize_miner_selection()
+{
+    initialize_miner();
+    // MiniMiner models fee-based package selection, so disable the
+    // BlockAssembler's independent coin-age-priority region for comparison.
+    gArgs.ForceSetArg("-blockprioritysize", 0);
+}
+
 // Test that the MiniMiner can run with various outpoints and feerates.
 FUZZ_TARGET(mini_miner, .init = initialize_miner)
 {
@@ -118,7 +126,7 @@ FUZZ_TARGET(mini_miner, .init = initialize_miner)
 }
 
 // Test that MiniMiner and BlockAssembler build the same block given the same transactions and constraints.
-FUZZ_TARGET(mini_miner_selection, .init = initialize_miner)
+FUZZ_TARGET(mini_miner_selection, .init = initialize_miner_selection)
 {
     SeedRandomStateForTest(SeedRand::ZEROS);
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};

@@ -121,7 +121,9 @@ class PeerTxRelayer(P2PTxInvStore):
 class OrphanHandlingTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [[]]
+        self.extra_args = [[
+            '-permitbarepubkey=1',  # Permit the RAW_P2PK orphan-handling fixtures.
+        ]]
 
     def create_parent_and_child(self):
         """Create package with 1 parent and 1 child, normal fees (no cpfp)."""

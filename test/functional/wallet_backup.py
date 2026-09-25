@@ -53,11 +53,11 @@ class WalletBackupTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
-        # nodes 1, 2, 3 are spenders, let's give them a keypool=100
+        # Nodes 0, 1, and 2 are spenders. Keep same-round change reusable; RBF behavior is tested elsewhere.
         self.extra_args = [
-            ["-keypool=100"],
-            ["-keypool=100"],
-            ["-keypool=100"],
+            ["-keypool=100", "-walletrbf=0"],
+            ["-keypool=100", "-walletrbf=0"],
+            ["-keypool=100", "-walletrbf=0"],
             [],
         ]
         self.rpc_timeout = 120
@@ -77,6 +77,7 @@ class WalletBackupTest(BitcoinTestFramework):
         if (randint(1,2) == 1):
             amount = Decimal(randint(1,10)) / Decimal(10)
             self.nodes[from_node].sendtoaddress(to_address, amount)
+            self.nodes[from_node].syncwithvalidationinterfacequeue()
 
     def do_one_round(self):
         a0 = self.nodes[0].getnewaddress()

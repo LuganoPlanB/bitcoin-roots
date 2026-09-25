@@ -2,202 +2,305 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-name: CI
+name: PR Tests
 on:
-  # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request.
   pull_request:
-  # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
-  push:
-    branches:
-      - '**'
-    tags-ignore:
-      - '**'
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
 
 concurrency:
-  group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
+  group: pr-tests-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
-  CI_FAILFAST_TEST_LEAVE_DANGLING: 1  # GHA does not care about dangling processes and setting this variable avoids killing the CI script itself on error
-  REPO_USE_WARP_RUNNERS: 'bitcoin/bitcoin' # Use warp runners for this repo, instead of falling back to the slow GHA runners
+  CI_FAILFAST_TEST_LEAVE_DANGLING: 1
 
 jobs:
-  runners:
-    name: 'determine runners'
-    runs-on: ubuntu-latest
+  classify:
+    name: classify changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
-      use-warp-runners: ${{ steps.runners.outputs.use-warp-runners }}
+      docs: ${{ steps.classify.outputs.docs }}
+      gui: ${{ steps.classify.outputs.gui }}
+      wallet: ${{ steps.classify.outputs.wallet }}
+      sanitizers: ${{ steps.classify.outputs.sanitizers }}
+      fuzz: ${{ steps.classify.outputs.fuzz }}
+      compat: ${{ steps.classify.outputs.compat }}
+      platforms: ${{ steps.classify.outputs.platforms }}
+      nightly_sanitizers: ${{ steps.classify.outputs.nightly_sanitizers }}
+      nightly_fuzz: ${{ steps.classify.outputs.nightly_fuzz }}
+      nightly_platforms: ${{ steps.classify.outputs.nightly_platforms }}
+      nightly_full: ${{ steps.classify.outputs.nightly_full }}
     steps:
-      - id: runners
-        run: |
-          if [[ "${REPO_USE_WARP_RUNNERS}" == "${{ github.repository }}" ]]; then
-            echo "provider=warp" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Runner Selection::Using Warp Runners"
-          else
-            echo "use-warp-runners=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Runner Selection::Using GitHub-hosted runners"
-          fi
-
-  test-each-commit:
-    name: 'test each commit'
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && 'warp-ubuntu-latest-x64-8x' || 'ubuntu-latest' }}
-    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
-    timeout-minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
-    env:
-      MAX_COUNT: 6
-    steps:
-      - name: Determine fetch depth
-        run: echo "FETCH_DEPTH=$((${{ github.event.pull_request.commits }} + 2))" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: ${{ env.FETCH_DEPTH }}
-      - name: Determine commit range
-        run: |
-          # Checkout HEAD~ and find the test base commit
-          # Checkout HEAD~ because it would be wasteful to rerun tests on the PR
-          # head commit that are already run by other jobs.
-          git checkout HEAD~
-          # Figure out test base commit by listing ancestors of HEAD, excluding
-          # ancestors of the most recent merge commit, limiting the list to the
-          # newest MAX_COUNT ancestors, ordering it from oldest to newest, and
-          # taking the first one.
-          #
-          # If the branch contains up to MAX_COUNT ancestor commits after the
-          # most recent merge commit, all of those commits will be tested. If it
-          # contains more, only the most recent MAX_COUNT commits will be
-          # tested.
-          #
-          # In the command below, the ^@ suffix is used to refer to all parents
-          # of the merge commit as described in:
-          # https://git-scm.com/docs/git-rev-parse#_other_rev_parent_shorthand_notations
-          # and the ^ prefix is used to exclude these parents and all their
-          # ancestors from the rev-list output as described in:
-          # https://git-scm.com/docs/git-rev-list
-          MERGE_BASE=$(git rev-list -n1 --merges HEAD)
-          EXCLUDE_MERGE_BASE_ANCESTORS=
-          # MERGE_BASE can be empty due to limited fetch-depth
-          if test -n "$MERGE_BASE"; then
-            EXCLUDE_MERGE_BASE_ANCESTORS=^${MERGE_BASE}^@
-          fi
-          echo "TEST_BASE=$(git rev-list -n$((${{ env.MAX_COUNT }} + 1)) --reverse HEAD $EXCLUDE_MERGE_BASE_ANCESTORS | head -1)" >> "$GITHUB_ENV"
-      - run: |
-          sudo apt-get update
-          sudo apt-get install clang ccache build-essential cmake pkgconf python3-zmq libevent-dev libboost-dev libsqlite3-dev libdb++-dev systemtap-sdt-dev libzmq3-dev qtbase5-dev qttools5-dev qttools5-dev-tools qtwayland5 libqrencode-dev -y
-      - name: Compile and run tests
-        run: |
-          # Run tests on commits after the last merge commit and before the PR head commit
-          # Use clang++, because it is a bit faster and uses less memory than g++
-          git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' && cmake --build build -j $(nproc) && ctest --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
-
-  macos-native-arm64:
-    name: ${{ matrix.job-name }}
-    # Use any image to support the xcode-select below, but hardcode version to avoid silent upgrades (and breaks).
-    # See: https://github.com/actions/runner-images#available-images.
-    runs-on: macos-14
-
-    # When a contributor maintains a fork of the repo, any pull request they make
-    # to their own fork, or to the main repository, will trigger two CI runs:
-    # one for the branch push and one for the pull request.
-    # This can be avoided by setting SKIP_BRANCH_PUSH=true as a custom env variable
-    # in Github repository settings.
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-
-    timeout-minutes: 120
-
-    strategy:
-      fail-fast: false
-      matrix:
-        job-type: [standard, fuzz]
-        include:
-          - job-type: standard
-            file-env: './ci/test/00_setup_env_mac_native.sh'
-            job-name: 'macOS 14 native, arm64, no depends, sqlite only, gui'
-          - job-type: fuzz
-            file-env: './ci/test/00_setup_env_mac_native_fuzz.sh'
-            job-name: 'macOS 14 native, arm64, fuzz'
-
-    env:
-      DANGER_RUN_CI_ON_HOST: 1
-      BASE_ROOT_DIR: ${{ github.workspace }}
-
-    steps:
-      - &CHECKOUT
-        name: Checkout
+      # This read-only workflow does not expose secrets to PR code.
+      - name: Checkout PR head
         uses: actions/checkout@v6
         with:
-          # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: &CHECKOUT_REF_TMPL ${{ github.event_name == 'pull_request' && github.ref || '' }}
-
-      - name: Clang version
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run classifier regression tests
         run: |
-          # Use the earliest Xcode supported by the version of macOS denoted in
-          # doc/release-notes-empty-template.md and providing at least the
-          # minimum clang version denoted in doc/dependencies.md.
-          # See: https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes
-          sudo xcode-select --switch /Applications/Xcode_15.0.app
-          clang --version
-
-      - name: Install Homebrew packages
+          python3 ci/test/test_change_classifier.py
+          python3 ci/test/test_gui_qrencode.py
+          python3 ci/test/test_release_version.py
+          python3 ci/test/test_windows_gui_workflows.py
+      - name: Retrieve changed files
+        id: files
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const files = new Set();
+            let recordCount = 0;
+            const maxFiles = 3000;
+            let error = false;
+            try {
+              for (let page = 1; page <= 30; page++) {
+                const response = await github.rest.pulls.listFiles({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  per_page: 100,
+                  page,
+                });
+                recordCount += response.data.length;
+                for (const file of response.data) {
+                  files.add(file.filename);
+                  if (file.status === 'renamed' && typeof file.previous_filename === 'string') {
+                    files.add(file.previous_filename);
+                  }
+                }
+                if (response.data.length < 100) break;
+                if (page === 30) error = true;
+              }
+              const expectedCount = context.payload.pull_request.changed_files;
+              if (!Number.isInteger(expectedCount) || expectedCount >= maxFiles ||
+                  expectedCount !== recordCount) error = true;
+            } catch (exception) {
+              core.warning(`Unable to retrieve a complete changed-file list: ${exception.message}`);
+              error = true;
+            }
+            fs.writeFileSync('changed-files.json', JSON.stringify([...files]));
+            core.setOutput('error', error ? 'true' : 'false');
+      - name: Select CI groups
+        id: classify
         env:
-          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          FILES_ERROR: ${{ steps.files.outputs.error }}
         run: |
-          # A workaround for "The `brew link` step did not complete successfully" error.
-          brew install --quiet python@3 || brew link --overwrite python@3
-          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode
+          set -Eeuo pipefail
+          args=()
+          if [[ "${FILES_ERROR}" == "true" ]]; then
+            args+=(--error --truncated)
+          fi
+          python3 ci/change-classifier.py \
+            --files-json "$(<changed-files.json)" \
+            --labels-json "${LABELS_JSON}" \
+            --github-output "$GITHUB_OUTPUT" \
+            "${args[@]}"
 
-      - name: Set Ccache directory
-        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
-
-      - name: Restore Ccache cache
-        id: ccache-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ github.job }}-${{ matrix.job-type }}-ccache-${{ github.run_id }}
-          restore-keys: ${{ github.job }}-${{ matrix.job-type }}-ccache-
-
-      - name: CI script
-        run: ./ci/test_run_all.sh
-        env:
-          FILE_ENV: ${{ matrix.file-env }}
-
-      - name: Save Ccache cache
-        uses: actions/cache/save@v5
-        if: github.event_name != 'pull_request' && steps.ccache-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#update-a-cache
-          key: ${{ github.job }}-${{ matrix.job-type }}-ccache-${{ github.run_id }}
-
-  win64-native:
-    name: ${{ matrix.job-name }}
-    # Use latest image, but hardcode version to avoid silent upgrades (and breaks).
-    # See: https://github.com/actions/runner-images#available-images.
-    runs-on: windows-2022
-
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
-      PYTHONUTF8: 1
-      TEST_RUNNER_TIMEOUT_FACTOR: 40
-
-    strategy:
-      fail-fast: false
-      matrix:
-        job-type: [standard, fuzz]
-        include:
-          - job-type: standard
-            generate-options: '-DBUILD_GUI=ON -DWITH_BDB=ON -DWITH_ZMQ=ON -DBUILD_BENCH=ON -DWERROR=ON'
-            job-name: 'Win64 native, VS 2022'
-          - job-type: fuzz
-            generate-options: '-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON'
-            job-name: 'Win64 native fuzz, VS 2022'
-
+      CONTAINER_NAME: bitcoin-linter
     steps:
-      - *CHECKOUT
+      - name: Checkout synthetic PR merge
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run lint
+        run: |
+          set -Eeuo pipefail
+          cache_args=()
+          if [[ -n "${DOCKER_BUILD_CACHE_ARG:-}" ]]; then
+            read -r -a cache_args <<< "${DOCKER_BUILD_CACHE_ARG}"
+          fi
+          docker buildx build -t "$CONTAINER_NAME" "${cache_args[@]}" --file ./ci/lint_imagefile .
+          docker run --rm -e CI_PULL_REQUEST=1 -e "CI_REPOSITORY=${{ github.repository }}" -v "$(pwd)":/bitcoin "$CONTAINER_NAME"
 
+  gui:
+    name: GUI and resources
+    needs: classify
+    if: needs.classify.outputs.gui == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_gui.sh
+    steps:
+      - &checkout-pr
+        name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Build and test GUI resources
+        run: ./ci/test_run_all.sh
+
+  sanitizers:
+    name: ASan, LSan, UBSan, integer, wallet, GUI, and USDT
+    needs: classify
+    if: needs.classify.outputs.sanitizers == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_asan.sh
+    steps:
+      - *checkout-pr
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Enable USDT coverage
+        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+      - name: Run sanitizer coverage
+        run: ./ci/test_run_all.sh
+
+  fuzz:
+    name: native Linux libFuzzer corpus
+    needs: classify
+    if: needs.classify.outputs.fuzz == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_fuzz.sh
+    steps:
+      - *checkout-pr
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run native fuzz corpus
+        run: ./ci/test_run_all.sh
+
+  compat:
+    name: previous releases compatibility
+    needs: classify
+    if: needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_previous_releases.sh
+    steps:
+      - *checkout-pr
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run compatibility coverage
+        run: ./ci/test_run_all.sh
+
+  arm32:
+    name: 32-bit ARM unit tests
+    needs: classify
+    if: needs.classify.outputs.platforms == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_arm.sh
+    steps:
+      - *checkout-pr
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run ARM32 unit tests
+        run: ./ci/test_run_all.sh
+
+  windows-smoke:
+    name: Windows x86_64 production-like smoke
+    needs: classify
+    if: needs.classify.outputs.platforms == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - *checkout-pr
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
         run: |
@@ -207,233 +310,175 @@ jobs:
             $name, $value = $_ -split '=', 2
             echo "$name=$value" >> $env:GITHUB_ENV
           }
-
-      - name: Get tool information
+      - name: Set up GUI asset tools
+        uses: ./.github/actions/setup-windows-gui-tools
+      - name: Record tool versions
+        shell: pwsh
         run: |
-          cmake -version | Tee-Object -FilePath "cmake_version"
-          Write-Output "---"
-          msbuild -version | Tee-Object -FilePath "msbuild_version"
-          $env:VCToolsVersion | Tee-Object -FilePath "toolset_version"
-          py -3 --version
-          Write-Host "PowerShell version $($PSVersionTable.PSVersion.ToString())"
-
-      - name: Using vcpkg with MSBuild
+          cmake -version | Tee-Object -FilePath cmake_version
+          msbuild -version | Tee-Object -FilePath msbuild_version
+          $env:VCToolsVersion | Tee-Object -FilePath toolset_version
+      - name: Configure vcpkg
         shell: bash
         run: |
+          set -Eeuo pipefail
           echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
           echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
-          # Workaround for libevent, which requires CMake 3.1 but is incompatible with CMake >= 4.0.
           sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
-
-      - name: vcpkg tools cache
-        uses: actions/cache@v5
+      - name: Restore vcpkg tools cache
+        uses: actions/cache/restore@v5
         with:
           path: C:/vcpkg/downloads/tools
           key: ${{ github.job }}-vcpkg-tools
-
       - name: Restore vcpkg binary cache
-        uses: actions/cache/restore@v5
         id: vcpkg-binary-cache
+        uses: actions/cache/restore@v5
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
-
-      - name: Generate build system
+      - name: Configure, build, and smoke test
+        shell: pwsh
         run: |
-          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" ${{ matrix.generate-options }}
-
-      - name: Save vcpkg binary cache
-        uses: actions/cache/save@v5
-        if: github.event_name != 'pull_request' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true' && matrix.job-type == 'standard'
-        with:
-          path: ~/AppData/Local/vcpkg/archives
-          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
-
-      - name: Build
-        working-directory: build
-        run: |
-          cmake --build . -j $env:NUMBER_OF_PROCESSORS --config Release
-
-      - name: Run test suite
-        if: matrix.job-type == 'standard'
-        working-directory: build
-        run: |
-          ctest --output-on-failure --stop-on-failure -j $env:NUMBER_OF_PROCESSORS -C Release
-
-      - name: Run functional tests
-        if: matrix.job-type == 'standard'
-        working-directory: build
-        env:
-          BITCOIND: '${{ github.workspace }}\build\bin\Release\bitcoind.exe'
-          BITCOINCLI: '${{ github.workspace }}\build\bin\Release\bitcoin-cli.exe'
-          BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\bitcoin-util.exe'
-          BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
-          TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
-        shell: cmd
-        run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 --timeout-factor=%TEST_RUNNER_TIMEOUT_FACTOR% %TEST_RUNNER_EXTRA%
-
-      - name: Clone corpora
-        if: matrix.job-type == 'fuzz'
-        run: |
-          git clone --depth=1 https://github.com/bitcoin-core/qa-assets "$env:RUNNER_TEMP\qa-assets"
-          Set-Location "$env:RUNNER_TEMP\qa-assets"
-          Write-Host "Using qa-assets repo from commit ..."
-          git log -1
-
-      - name: Run fuzz tests
-        if: matrix.job-type == 'fuzz'
-        working-directory: build
-        env:
-          BITCOINFUZZ: '${{ github.workspace }}\build\bin\Release\fuzz.exe'
-        shell: cmd
-        run: |
-          py -3 test\fuzz\test_runner.py --par %NUMBER_OF_PROCESSORS% --loglevel DEBUG %RUNNER_TEMP%\qa-assets\fuzz_corpora
-
-  ci-matrix:
-    name: ${{ matrix.name }}
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && matrix.warp-runner || matrix.fallback-runner }}
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-    timeout-minutes: ${{ matrix.timeout-minutes }}
-
-    env:
-      DANGER_CI_ON_HOST_FOLDERS: 1
-      FILE_ENV: ${{ matrix.file-env }}
-
+          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DRSVG_CONVERT="$env:RSVG_CONVERT" -DIMAGEMAGICK_CONVERT="$env:IMAGEMAGICK_CONVERT" -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DWERROR=ON
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+  macos-smoke:
+    name: macOS ${{ matrix.expected-arch }} native production-like smoke
+    needs: classify
+    if: needs.classify.outputs.platforms == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: '32 bit ARM, unit tests, no functional tests'
-            warp-runner: 'ubuntu-24.04-arm' # Warp's Arm runners don't support 32-bit mode currently
-            fallback-runner: 'ubuntu-24.04-arm'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_arm.sh'
-
-          - name: 'win64 Cross'
-            warp-runner: 'warp-ubuntu-latest-x64-4x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_win64.sh'
-
-          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
-            warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_asan.sh'
-
-          - name: 'macOS-cross, gui, no tests'
-            warp-runner: 'warp-ubuntu-latest-x64-4x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_mac_cross.sh'
-
-          - name: 'No wallet, libbitcoinkernel'
-            warp-runner: 'warp-ubuntu-latest-x64-4x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_nowallet_libbitcoinkernel.sh'
-
-          - name: 'i686, multiprocess, DEBUG'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_i686_multiprocess.sh'
-
-          - name: 'fuzzer,address,undefined,integer, no depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 240
-            file-env: './ci/test/00_setup_env_native_fuzz.sh'
-
-          - name: 'previous releases, depends DEBUG'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_previous_releases.sh'
-
-          - name: 'CentOS, depends, gui'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_centos.sh'
-
-          - name: 'tidy'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_tidy.sh'
-
-          - name: 'TSan, depends, no gui'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_tsan.sh'
-
-          - name: 'MSan, depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_msan.sh'
-
+          - runner: macos-15-intel
+            expected-arch: x86_64
+          - runner: macos-15
+            expected-arch: arm64
     steps:
-      - *CHECKOUT
-
-      - name: Configure environment
-        uses: ./.github/actions/configure-environment
-
-      - name: Restore caches
-        id: restore-cache
-        uses: ./.github/actions/restore-caches
-
-      - name: Configure Docker
-        uses: ./.github/actions/configure-docker
-        with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
-
-      - name: Enable bpfcc script
-        if: ${{ env.CONTAINER_NAME == 'ci_native_asan' }}
-        # In the image build step, no external environment variables are available,
-        # so any settings will need to be written to the settings env file:
-        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
-
-      - name: Set mmap_rnd_bits
-        if: ${{ env.CONTAINER_NAME == 'ci_native_tsan' || env.CONTAINER_NAME == 'ci_native_msan' }}
-        # Prevents crashes due to high ASLR entropy
-        run: sudo sysctl -w vm.mmap_rnd_bits=28
-
-      - name: CI script
-        run: ./ci/test_run_all.sh
-
-      - name: Save caches
-        uses: ./.github/actions/save-caches
-
-  lint:
-    name: 'lint'
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && 'warp-ubuntu-latest-x64-2x' || 'ubuntu-latest' }}
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-    timeout-minutes: 20
-    env:
-      CONTAINER_NAME: "bitcoin-linter"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: *CHECKOUT_REF_TMPL
-          fetch-depth: 0
-
-      - name: Configure Docker
-        uses: ./.github/actions/configure-docker
-        with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
-
-      - name: CI script
+      - *checkout-pr
+      - name: Verify native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.expected-arch }}
         run: |
-          set -o xtrace
-          docker buildx build -t "$CONTAINER_NAME" $DOCKER_BUILD_CACHE_ARG --file "./ci/lint_imagefile" .
-          CIRRUS_PR_FLAG=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CIRRUS_PR_FLAG="-e CIRRUS_PR=1"
+          set -Eeuo pipefail
+          actual_arch="$(uname -m)"
+          if [[ "${actual_arch}" != "${EXPECTED_ARCH}" ]]; then
+            echo "Expected ${EXPECTED_ARCH}, but runner reported ${actual_arch}" >&2
+            exit 1
           fi
-          docker run --rm $CIRRUS_PR_FLAG -v "$(pwd)":/bitcoin "$CONTAINER_NAME"
+      - name: Install build dependencies
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          set -Eeuo pipefail
+          brew install --quiet python@3 || brew link --overwrite python@3
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode imagemagick libicns librsvg
+      - name: Set compiler cache directory
+        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: no
+          key: macos-${{ matrix.expected-arch }}-appleclang-release-gui
+          restore-keys: macos-${{ matrix.expected-arch }}-appleclang-release-gui
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Configure, build, and smoke test
+        run: |
+          set -Eeuo pipefail
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+
+  nightly-sanitizers:
+    name: nightly sanitizers (ci:sanitizers)
+    needs: classify
+    if: needs.classify.outputs.nightly_sanitizers == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: sanitizers
+
+  nightly-fuzz:
+    name: nightly platform fuzz (ci:fuzz)
+    needs: classify
+    if: needs.classify.outputs.nightly_fuzz == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: fuzz
+
+  nightly-platforms:
+    name: nightly i686 Debug (ci:platforms)
+    needs: classify
+    if: needs.classify.outputs.nightly_platforms == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: platforms
+
+  nightly-full:
+    name: full nightly assurance (ci:full)
+    needs: classify
+    if: needs.classify.outputs.nightly_full == 'true'
+    uses: ./.github/workflows/nightly.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      suite: all
+
+  required-result:
+    name: required result
+    if: always()
+    needs: [classify, lint, gui, sanitizers, fuzz, compat, arm32, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Enforce selected required results
+        env:
+          CLASSIFY: ${{ needs.classify.result }}
+          LINT: ${{ needs.lint.result }}
+          GUI: ${{ needs.gui.result }}
+          SANITIZERS: ${{ needs.sanitizers.result }}
+          FUZZ: ${{ needs.fuzz.result }}
+          COMPAT: ${{ needs.compat.result }}
+          ARM32: ${{ needs.arm32.result }}
+          WINDOWS: ${{ needs.windows-smoke.result }}
+          MACOS: ${{ needs.macos-smoke.result }}
+          NIGHTLY_SANITIZERS: ${{ needs.nightly-sanitizers.result }}
+          NIGHTLY_FUZZ: ${{ needs.nightly-fuzz.result }}
+          NIGHTLY_PLATFORMS: ${{ needs.nightly-platforms.result }}
+          NIGHTLY_FULL: ${{ needs.nightly-full.result }}
+          GUI_SELECTED: ${{ needs.classify.outputs.gui }}
+          SANITIZERS_SELECTED: ${{ needs.classify.outputs.sanitizers }}
+          FUZZ_SELECTED: ${{ needs.classify.outputs.fuzz }}
+          COMPAT_SELECTED: ${{ needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true' }}
+          PLATFORMS_SELECTED: ${{ needs.classify.outputs.platforms }}
+          NIGHTLY_SANITIZERS_SELECTED: ${{ needs.classify.outputs.nightly_sanitizers }}
+          NIGHTLY_FUZZ_SELECTED: ${{ needs.classify.outputs.nightly_fuzz }}
+          NIGHTLY_PLATFORMS_SELECTED: ${{ needs.classify.outputs.nightly_platforms }}
+          NIGHTLY_FULL_SELECTED: ${{ needs.classify.outputs.nightly_full }}
+        run: |
+          set -Eeuo pipefail
+          check_selected() {
+            local selected="$1" result="$2" name="$3"
+            if [[ "${selected}" == true && "${result}" != success ]]; then
+              echo "Selected required job ${name} finished as ${result}" >&2
+              return 1
+            fi
+          }
+          check_selected true "$CLASSIFY" classify
+          check_selected true "$LINT" lint
+          check_selected "$GUI_SELECTED" "$GUI" gui
+          check_selected "$SANITIZERS_SELECTED" "$SANITIZERS" sanitizers
+          check_selected "$FUZZ_SELECTED" "$FUZZ" fuzz
+          check_selected "$COMPAT_SELECTED" "$COMPAT" compat
+          check_selected "$PLATFORMS_SELECTED" "$ARM32" arm32
+          check_selected "$PLATFORMS_SELECTED" "$WINDOWS" windows-smoke
+          check_selected "$PLATFORMS_SELECTED" "$MACOS" macos-smoke
+          check_selected "$NIGHTLY_SANITIZERS_SELECTED" "$NIGHTLY_SANITIZERS" nightly-sanitizers
+          check_selected "$NIGHTLY_FUZZ_SELECTED" "$NIGHTLY_FUZZ" nightly-fuzz
+          check_selected "$NIGHTLY_PLATFORMS_SELECTED" "$NIGHTLY_PLATFORMS" nightly-platforms
+          check_selected "$NIGHTLY_FULL_SELECTED" "$NIGHTLY_FULL" nightly-full

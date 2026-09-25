@@ -9,12 +9,10 @@ Test opportunistic 1p1c package submission logic.
 from decimal import Decimal
 import time
 from test_framework.mempool_util import (
-    DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
 )
 from test_framework.messages import (
     CInv,
-    COIN,
     CTxInWitness,
     MAX_BIP125_RBF_SEQUENCE,
     MSG_WTX,
@@ -62,18 +60,27 @@ class PackageRelayTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             "-datacarriersize=100000",
+            "-maxscriptsize=100000",  # Permit synthetic mempool-filling data carriers.
             "-maxmempool=5",
+            "-permitbarepubkey=1",  # Exercise the legacy txid == wtxid relay path.
         ]]
         self.supports_cli = False
 
     def create_tx_below_mempoolminfee(self, wallet):
-        """Create a 1-input 0.1sat/vB transaction using a confirmed UTXO. Decrement and use
-        self.sequence so that subsequent calls to this function result in unique transactions."""
+        """Create a confirmed 1-input transaction at the node's minimum relay fee.
+
+        Decrement and use self.sequence so subsequent calls create unique transactions.
+        """
 
         self.sequence -= 1
-        assert_greater_than(self.nodes[0].getmempoolinfo()["mempoolminfee"], Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN)
+        min_relay_fee = self.nodes[0].getnetworkinfo()["relayfee"]
+        assert_greater_than(self.nodes[0].getmempoolinfo()["mempoolminfee"], min_relay_fee)
 
-        return wallet.create_self_transfer(fee_rate=Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN, sequence=self.sequence, confirmed_only=True)
+        return wallet.create_self_transfer(
+            fee_rate=min_relay_fee,
+            sequence=self.sequence,
+            confirmed_only=True,
+        )
 
     @cleanup
     def test_basic_child_then_parent(self):
