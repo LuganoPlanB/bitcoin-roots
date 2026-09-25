@@ -867,7 +867,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     // Test rejectparasites
     t.vout[0].scriptPubKey = CScript() << OP_RETURN;
     t.vout.emplace_back(674, GetScriptForDestination(PKHash(key.GetPubKey())));
-    t.nLockTime = 21;
+    t.nLockTime = PARASITE_CAT21_LOCKTIME;
     g_mempool_opts.reject_parasites = false;
     CheckIsStandard(t);
     g_mempool_opts.reject_parasites = true;

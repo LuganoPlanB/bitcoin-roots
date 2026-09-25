@@ -59,15 +59,18 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         addrs = addr1 + addr2
 
         # Send 1 + 0.5 coin to each address
-        [self.nodes[0].sendtoaddress(addr, 1.0) for addr in addrs]
-        [self.nodes[0].sendtoaddress(addr, 0.5) for addr in addrs]
+        for amount in (1.0, 0.5):
+            for addr in addrs:
+                self.nodes[0].sendtoaddress(addr, amount)
+                self.nodes[0].syncwithvalidationinterfacequeue()
         self.generate(self.nodes[0], 1)
 
         for i in range(20):
             for n in [1, 2]:
                 self.log.debug(f"Send transaction from node {n}: expected change index {i}")
                 txid = self.nodes[n].sendtoaddress(self.nodes[0].getnewaddress(), 0.2)
-                tx = self.nodes[n].getrawtransaction(txid, True)
+                self.nodes[n].syncwithvalidationinterfacequeue()
+                tx = self.nodes[n].decoderawtransaction(self.nodes[n].gettransaction(txid)["hex"])
                 # find the change output and ensure that expected change index was used
                 self.assert_change_index(self.nodes[n], tx, i)
 
@@ -78,10 +81,9 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         w2 = self.nodes[2].get_wallet_rpc("w2")
         addr1 = w1.getnewaddress()
         addr2 = w2.getnewaddress()
-        self.nodes[0].sendtoaddress(addr1, 3.0)
-        self.nodes[0].sendtoaddress(addr1, 0.1)
-        self.nodes[0].sendtoaddress(addr2, 3.0)
-        self.nodes[0].sendtoaddress(addr2, 0.1)
+        for addr, amount in ((addr1, 3.0), (addr1, 0.1), (addr2, 3.0), (addr2, 0.1)):
+            self.nodes[0].sendtoaddress(addr, amount)
+            self.nodes[0].syncwithvalidationinterfacequeue()
         self.generate(self.nodes[0], 1)
 
         sendTo1 = self.nodes[0].getnewaddress()
@@ -91,7 +93,7 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         # The avoid partial spends wallet will always create a change output
         node = self.nodes[2]
         res = w2.send({sendTo1: "1.0", sendTo2: "1.0", sendTo3: "0.9999"}, options={"change_position": 0})
-        tx = node.getrawtransaction(res["txid"], True)
+        tx = node.decoderawtransaction(w2.gettransaction(res["txid"])["hex"])
         self.assert_change_pos(w2, tx, 0)
 
         # The default wallet will internally create a tx without change first,
@@ -99,7 +101,7 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         # Ensure that the user-configured change position is kept
         node = self.nodes[1]
         res = w1.send({sendTo1: "1.0", sendTo2: "1.0", sendTo3: "0.9999"}, options={"change_position": 0})
-        tx = node.getrawtransaction(res["txid"], True)
+        tx = node.decoderawtransaction(w1.gettransaction(res["txid"])["hex"])
         # If the wallet ignores the user's change_position there is still a 25%
         # that the random change position passes the test
         self.assert_change_pos(w1, tx, 0)

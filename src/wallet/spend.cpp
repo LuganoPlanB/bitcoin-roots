@@ -937,6 +937,16 @@ static bool IsCurrentForAntiFeeSniping(interfaces::Chain& chain, const uint256& 
     return true;
 }
 
+uint32_t GetAntiFeeSnipingLockTime(int block_height, FastRandomContext& rng_fast)
+{
+    uint32_t lock_time{static_cast<uint32_t>(block_height)};
+    if (rng_fast.randrange(10) == 0) {
+        lock_time = std::max(0, int(lock_time) - int(rng_fast.randrange(100)));
+    }
+    if (lock_time == PARASITE_CAT21_LOCKTIME) --lock_time;
+    return lock_time;
+}
+
 /**
  * Set a height-based locktime for new transactions (uses the height of the
  * current chain tip unless we are not synced with the current chain
@@ -967,15 +977,9 @@ static void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng
     // now we ensure code won't be written that makes assumptions about
     // nLockTime that preclude a fix later.
     if (IsCurrentForAntiFeeSniping(chain, block_hash)) {
-        tx.nLockTime = block_height;
-
-        // Secondly occasionally randomly pick a nLockTime even further back, so
-        // that transactions that are delayed after signing for whatever reason,
-        // e.g. high-latency mix networks and some CoinJoin implementations, have
-        // better privacy.
-        if (rng_fast.randrange(10) == 0) {
-            tx.nLockTime = std::max(0, int(tx.nLockTime) - int(rng_fast.randrange(100)));
-        }
+        // Occasionally pick a nLockTime further back so delayed transactions do
+        // not reveal a unique fingerprint. Avoid values reserved by local policy.
+        tx.nLockTime = GetAntiFeeSnipingLockTime(block_height, rng_fast);
     } else {
         // If our chain is lagging behind, we can't discourage fee sniping nor help
         // the privacy of high-latency transactions. To avoid leaking a potentially

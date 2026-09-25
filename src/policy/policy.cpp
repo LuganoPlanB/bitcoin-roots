@@ -223,7 +223,7 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
         MaybeReject("tx-size");
     }
 
-    if (tx.nLockTime == 21 && opts.reject_parasites) {
+    if (tx.nLockTime == PARASITE_CAT21_LOCKTIME && opts.reject_parasites) {
         MaybeReject("parasite-cat21");
     }
 

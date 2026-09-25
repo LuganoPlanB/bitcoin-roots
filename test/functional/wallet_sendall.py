@@ -57,6 +57,7 @@ class SendallTest(BitcoinTestFramework):
         for a in amounts:
             self.def_wallet.sendtoaddress(self.wallet.getnewaddress(), a)
         self.generate(self.nodes[0], 1)
+        self.nodes[0].syncwithvalidationinterfacequeue()
         assert_greater_than(self.wallet.getbalances()["mine"]["trusted"], 0)
         return self.wallet.getbalances()["mine"]["trusted"]
 

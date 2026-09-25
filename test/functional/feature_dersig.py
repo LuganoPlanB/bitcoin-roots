@@ -51,6 +51,7 @@ class BIP66Test(BitcoinTestFramework):
         self.noban_tx_relay = True
         self.extra_args = [[
             f'-testactivationheight=dersig@{DERSIG_HEIGHT}',
+            '-permitbarepubkey=1',  # reach DER validation for the synthetic P2PK spends
         ]]
         self.setup_clean_chain = True
         self.rpc_timeout = 240

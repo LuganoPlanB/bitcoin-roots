@@ -20,7 +20,7 @@ from .wallet import (
 
 ORPHAN_TX_EXPIRE_TIME = 1200
 # Default for -minrelaytxfee in sat/kvB
-DEFAULT_MIN_RELAY_TX_FEE = 100
+DEFAULT_MIN_RELAY_TX_FEE = 1000
 # Default for -incrementalrelayfee in sat/kvB
 DEFAULT_INCREMENTAL_RELAY_FEE = 100
 

@@ -76,6 +76,8 @@ static constexpr bool DEFAULT_PERMIT_BAREPUBKEY{false};
 static constexpr bool DEFAULT_PERMIT_BAREMULTISIG{false};
 /** Default for -rejectparasites */
 static constexpr bool DEFAULT_REJECT_PARASITES{true};
+/** Locktime marker used by the CAT21 parasitic overlay protocol. */
+static constexpr uint32_t PARASITE_CAT21_LOCKTIME{21};
 /** Default for -acceptunknownwitness */
 static constexpr bool DEFAULT_ACCEPTUNKNOWNWITNESS{true};
 /** The maximum number of witness stack items in a standard P2WSH script */
