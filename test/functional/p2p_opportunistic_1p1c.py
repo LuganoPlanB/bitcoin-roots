@@ -13,7 +13,6 @@ import time
 from test_framework.blocktools import MAX_STANDARD_TX_WEIGHT
 from test_framework.mempool_util import (
     create_large_orphan,
-    DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
 )
 from test_framework.messages import (
@@ -77,17 +76,22 @@ class PackageRelayTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.extra_args = [[
+            "-permitbaredatacarrier=1",  # Native large orphan fixtures have only an OP_RETURN output.
+            "-datacarriersize=100000",
+            "-maxscriptsize=100000",  # Permit synthetic mempool-filling data carriers.
             "-maxmempool=5",
+            "-permitbarepubkey=1",  # Exercise the legacy txid == wtxid relay path.
         ]]
 
     def create_tx_below_mempoolminfee(self, wallet, utxo_to_spend=None):
-        """Create a 1-input 0.1sat/vB transaction using a confirmed UTXO. Decrement and use
+        """Create a 1-input transaction at the node relay fee using a confirmed UTXO. Decrement and use
         self.sequence so that subsequent calls to this function result in unique transactions."""
 
         self.sequence -= 1
-        assert_greater_than(self.nodes[0].getmempoolinfo()["mempoolminfee"], Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN)
+        min_relay_fee = self.nodes[0].getnetworkinfo()["relayfee"]
+        assert_greater_than(self.nodes[0].getmempoolinfo()["mempoolminfee"], min_relay_fee)
 
-        return wallet.create_self_transfer(fee_rate=Decimal(DEFAULT_MIN_RELAY_TX_FEE) / COIN, sequence=self.sequence, utxo_to_spend=utxo_to_spend, confirmed_only=True)
+        return wallet.create_self_transfer(fee_rate=min_relay_fee, sequence=self.sequence, utxo_to_spend=utxo_to_spend, confirmed_only=True)
 
     @cleanup
     def test_basic_child_then_parent(self):
