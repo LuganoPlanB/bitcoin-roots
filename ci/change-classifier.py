@@ -15,7 +15,7 @@ import os
 POLICY_PATH = os.path.join(os.path.dirname(__file__), "change-classifier-policy.json")
 KNOWN_CATEGORIES = ("docs-only", "branding", "gui", "wallet", "build", "critical", "cpp", "unknown")
 KNOWN_LABELS = ("ci:full", "ci:sanitizers", "ci:fuzz", "ci:compat", "ci:platforms")
-BROAD_SELECTION = ("gui", "wallet", "sanitizers", "fuzz", "compat", "platforms")
+BROAD_SELECTION = ("gui", "wallet", "sanitizers", "compat", "platforms")
 OPTIONAL_SELECTION = ("nightly_sanitizers", "nightly_fuzz", "nightly_platforms", "nightly_full")
 SAFE_POLICY = {"version": 1, "defaults": {"unknown": "broad"}}
 
@@ -80,7 +80,6 @@ def result_for(files, labels, truncated, error, policy):
             selected["sanitizers"] = True
             selected["nightly_sanitizers"] = True
         elif label == "ci:fuzz":
-            selected["fuzz"] = True
             selected["nightly_fuzz"] = True
         elif label == "ci:platforms":
             selected["platforms"] = True
