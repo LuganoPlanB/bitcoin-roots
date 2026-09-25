@@ -11,6 +11,8 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <limits>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
@@ -22,6 +24,21 @@ class MemPoolTest final : public CTxMemPool
 public:
     using CTxMemPool::GetMinFee;
 };
+
+BOOST_AUTO_TEST_CASE(MempoolEntryMaxHeightTest)
+{
+    CMutableTransaction mtx;
+    mtx.vin.resize(1);
+    mtx.vout.emplace_back(1, CScript{});
+    const auto tx{MakeTransactionRef(mtx)};
+    const auto max_height{std::numeric_limits<unsigned int>::max()};
+    const CoinAgeCache coin_age_cache{.inputs_coin_age = 100.0, .in_chain_input_value = 1};
+    const CTxMemPoolEntry entry{tx, /*fee=*/0, /*time=*/0, max_height, /*entry_sequence=*/0,
+                                coin_age_cache, /*spends_coinbase=*/false, /*extra_weight=*/0,
+                                /*sigops_cost=*/0, {}};
+
+    BOOST_CHECK_EQUAL(entry.GetPriority(max_height), entry.GetStartingPriority());
+}
 
 BOOST_AUTO_TEST_CASE(MempoolRemoveTest)
 {
