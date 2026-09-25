@@ -22,6 +22,10 @@ transaction relay and mempool policy is local and configurable: a transaction
 rejected by policy can still be consensus-valid, and valid blocks containing it
 remain acceptable. Bitcoin Roots does not enforce RDTS/BIP110 consensus rules.
 
+For the selected Roots behavior available in this release, the follow-on work
+that is not yet shipped, and explicit non-features, see the
+[Roots feature catalog](doc/roots-features.md).
+
 Further information is available in the [doc folder](/doc).
 
 License

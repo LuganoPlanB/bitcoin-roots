@@ -30,9 +30,9 @@
 #include <algorithm>
 #include <cassert>
 #include <map>
-#include <vector>
-#include <utility>
 #include <numeric>
+#include <utility>
+#include <vector>
 
 namespace node {
 

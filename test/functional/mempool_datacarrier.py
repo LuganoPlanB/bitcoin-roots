@@ -3,6 +3,8 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test datacarrier functionality"""
+from random import randbytes
+
 from test_framework.blocktools import MAX_STANDARD_TX_WEIGHT
 from test_framework.messages import (
     CTxOut,
@@ -19,7 +21,6 @@ from test_framework.util import (
 )
 from test_framework.wallet import MiniWallet
 
-from random import randbytes
 
 # The historical maximum, now used to test coverage
 CUSTOM_DATACARRIER_ARG = 83
@@ -104,6 +105,24 @@ class DataCarrierTest(BitcoinTestFramework):
         self.log.info("Testing an explicit large data-carrier limit below the standard transaction weight boundary.")
         self.restart_node(0, extra_args=["-datacarriersize=100000", "-maxscriptsize=100000", "-datacarriercost=1"])
         self.test_null_data_transaction(node=self.nodes[0], data=randbytes(MAX_STANDARD_TX_WEIGHT // 4 - 200), success=True)
+
+        self.log.info("Testing the maximum carrier-cost setting without overflowing virtual size.")
+        self.restart_node(0, extra_args=["-datacarriercost=1073741823.75"])
+        tx = self.wallet.create_self_transfer(fee_rate=0)["tx"]
+        tx.vout.append(CTxOut(0, CScript([OP_RETURN, b"x" * 80])))
+        tx.vout[0].nValue -= tx.get_vsize()
+        tx_hex = tx.serialize().hex()
+        result = self.nodes[0].testmempoolaccept([tx_hex])[0]
+        assert_equal(result["allowed"], False)
+        assert_equal(result["reject-reason"], "min relay fee not met")
+        # An extreme local fee policy still cannot invalidate a valid block.
+        self.generateblock(self.nodes[0], output="raw(42)", transactions=[tx_hex], sync_fun=self.no_op)
+
+        self.stop_node(0)
+        for cost in ["-1", "1073741823.76", "1e999", "invalid"]:
+            self.nodes[0].assert_start_raises_init_error(
+                [f"-datacarriercost={cost}"], f"Error: Invalid -datacarriercost value: '{cost}'")
+        self.start_node(0)
 
 if __name__ == '__main__':
     DataCarrierTest(__file__).main()

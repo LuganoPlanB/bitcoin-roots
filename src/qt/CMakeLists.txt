@@ -59,67 +59,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
-set(ICON_PATH "res/rendered_icons")
-set(ICO_SPECS
-  256 64 48 32 24 20 16
-)
-set(ICNS_SPECS
-  1024
-)
-set(bitcoin_svg "res/src/bitcoinroots-logo.svg")
-
-file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${ICON_PATH}")
-foreach(size IN LISTS ICO_SPECS ICNS_SPECS)
-  set(png "${ICON_PATH}/bitcoin${size}.png")
-  add_custom_command(
-    OUTPUT "${png}"
-    COMMAND "${RSVG_CONVERT}" -f png -d ${size} -p ${size} --output "${png}" "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
-    COMMENT "Generating ${png} from ${bitcoin_svg}"
-    VERBATIM
-  )
-endforeach()
-
-set(bitcoin_icns "${ICON_PATH}/bitcoin.icns")
-add_custom_command(
-  OUTPUT "${bitcoin_icns}"
-  COMMAND "${PNG2ICNS}" "${bitcoin_icns}" "${ICON_PATH}/bitcoin1024.png"
-  DEPENDS "${ICON_PATH}/bitcoin1024.png"
-  COMMENT "Generating ${bitcoin_icns} from the Roots icon"
-  VERBATIM
-)
-add_custom_target(generate_icns DEPENDS "${bitcoin_icns}")
-
-set(bitcoin_ico "${ICON_PATH}/bitcoin.ico")
-set(testnet_ico "${ICON_PATH}/bitcoin_testnet.ico")
-add_custom_command(
-  OUTPUT "${bitcoin_ico}"
-  COMMAND "${IMAGEMAGICK_CONVERT}" ${ICON_PATH}/bitcoin256.png ${ICON_PATH}/bitcoin64.png ${ICON_PATH}/bitcoin48.png ${ICON_PATH}/bitcoin32.png ${ICON_PATH}/bitcoin24.png ${ICON_PATH}/bitcoin20.png ${ICON_PATH}/bitcoin16.png "${bitcoin_ico}"
-  DEPENDS ${ICON_PATH}/bitcoin256.png ${ICON_PATH}/bitcoin64.png ${ICON_PATH}/bitcoin48.png ${ICON_PATH}/bitcoin32.png ${ICON_PATH}/bitcoin24.png ${ICON_PATH}/bitcoin20.png ${ICON_PATH}/bitcoin16.png
-  COMMENT "Generating ${bitcoin_ico} from Roots icon sizes"
-  VERBATIM
-)
-add_custom_command(
-  OUTPUT "${testnet_ico}"
-  COMMAND "${IMAGEMAGICK_CONVERT}" "${bitcoin_ico}" -modulate 100,100,138.9 -colorspace HSL -channel G -evaluate subtract "11.76%" +channel -colorspace sRGB "${testnet_ico}"
-  DEPENDS "${bitcoin_ico}"
-  COMMENT "Generating ${testnet_ico} from ${bitcoin_ico}"
-  VERBATIM
-)
-add_custom_target(generate_ico DEPENDS "${bitcoin_ico}" "${testnet_ico}")
-
-set(roots_logo_png "${ICON_PATH}/bitcoinroots-logo.png")
-add_custom_command(
-  OUTPUT "${roots_logo_png}"
-  COMMAND "${RSVG_CONVERT}" -f png -d 960 -p 960 --output "${roots_logo_png}" "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${bitcoin_svg}"
-  COMMENT "Generating ${roots_logo_png} from ${bitcoin_svg}"
-  VERBATIM
-)
-add_custom_target(generate_roots_splash DEPENDS "${roots_logo_png}")
 
 configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
-configure_file(bitcoin_rendered.qrc bitcoin_rendered.qrc USE_SOURCE_PERMISSIONS COPYONLY)
 
 # The bitcoinqt sources have to include headers in
 # order to parse them to collect translatable strings.
@@ -186,7 +127,6 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   $<$<PLATFORM_ID:Windows>:winshutdownmonitor.h>
   bitcoin.qrc
   ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc
-  ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_rendered.qrc
 )
 target_compile_definitions(bitcoinqt
   PUBLIC
@@ -213,8 +153,6 @@ target_link_libraries(bitcoinqt
     $<$<PLATFORM_ID:Darwin>:-framework\ AppKit>
     $<$<CXX_COMPILER_ID:MSVC>:shlwapi>
 )
-add_dependencies(bitcoinqt generate_roots_splash)
-
 if(ENABLE_WALLET)
   target_sources(bitcoinqt
     PRIVATE
@@ -330,10 +268,6 @@ add_executable(bitcoin-qt
   main.cpp
   ../init/bitcoin-qt.cpp
 )
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  add_dependencies(bitcoin-qt generate_ico)
-endif()
 
 if(WIN32)
   configure_file(res/bitcoin-qt-res.rc res/bitcoin-qt-res.rc USE_SOURCE_PERMISSIONS @ONLY)

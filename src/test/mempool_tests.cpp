@@ -11,11 +11,35 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+#include <array>
+#include <limits>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
 
 static constexpr auto REMOVAL_REASON_DUMMY = MemPoolRemovalReason::REPLACED;
+
+BOOST_AUTO_TEST_CASE(MempoolExtraWeightBoundary)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(0, CScript{} << OP_RETURN << std::vector<unsigned char>(100, 0));
+    const CTransactionRef txref{MakeTransactionRef(tx)};
+    CCoinsView view;
+    CCoinsViewCache cache{&view};
+    const int32_t max_extra_weight{CalculateExtraTxWeight(*txref, cache, std::numeric_limits<unsigned int>::max())};
+    BOOST_REQUIRE_EQUAL(max_extra_weight, std::numeric_limits<int32_t>::max());
+    const int32_t tx_weight{GetTransactionWeight(*txref)};
+    for (const int32_t extra_weight : std::array<int32_t, 4>{0, 4, max_extra_weight - tx_weight, max_extra_weight}) {
+        const CTxMemPoolEntry entry{txref, 0, 0, 1, 0, COIN_AGE_CACHE_ZERO, false, extra_weight, 0, {}};
+        // Configured carrier cost can reach the clamp; its virtual size must
+        // remain positive and charge every weight unit across INT32_MAX.
+        BOOST_CHECK_EQUAL(entry.GetTxSize(), (int64_t{tx_weight} + extra_weight + 3) / 4);
+        BOOST_CHECK_GT(entry.GetTxSize(), 0);
+        BOOST_CHECK_EQUAL(entry.GetSizeWithAncestors(), entry.GetTxSize());
+        BOOST_CHECK_EQUAL(entry.GetSizeWithDescendants(), entry.GetTxSize());
+    }
+}
 
 class MemPoolTest final : public CTxMemPool
 {

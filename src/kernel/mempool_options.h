@@ -11,7 +11,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
 
 class CBlockPolicyEstimator;
 class CScheduler;
@@ -40,9 +39,6 @@ static constexpr bool DEFAULT_PERSIST_V1_DAT{false};
 static constexpr bool DEFAULT_ACCEPT_NON_STD_DATACARRIER{false};
 /** Default for -acceptnonstdtxn */
 static constexpr bool DEFAULT_ACCEPT_NON_STD_TXN{false};
-/** Default for -acceptunknownwitness */
-static constexpr bool DEFAULT_ACCEPTUNKNOWNWITNESS{true};
-
 namespace kernel {
 /**
  * Options struct containing options for constructing a CTxMemPool. Default
@@ -51,7 +47,7 @@ namespace kernel {
  *
  * Most of the time, this struct should be referenced as CTxMemPool::Options.
  */
-struct MemPoolOptions {
+struct MemPoolOptions : StandardnessOptions {
     /* Used to estimate appropriate transaction fees. */
     CBlockPolicyEstimator* estimator{nullptr};
     CScheduler* scheduler{nullptr};
@@ -64,37 +60,17 @@ struct MemPoolOptions {
     CFeeRate incremental_relay_feerate{CORE_INCREMENTAL_RELAY_FEE};
     /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
     CFeeRate min_relay_feerate{DEFAULT_MIN_RELAY_TX_FEE};
-    CFeeRate dust_relay_feerate{DUST_RELAY_TX_FEE};
     CFeeRate dust_relay_feerate_floor{DUST_RELAY_TX_FEE};
     /** Negative for a target number of blocks, positive for target kB into current mempool. */
     int32_t dust_relay_target{0};
     /** Multiplier for dustdynamic assignments, in thousandths. */
     int dust_relay_multiplier{DEFAULT_DUST_RELAY_MULTIPLIER};
-    unsigned int maxtxlegacysigops{MAX_TX_LEGACY_SIGOPS};
-    /**
-     * A data carrying output is an unspendable output containing data. The script
-     * type is designated as TxoutType::NULL_DATA.
-     *
-     * Maximum size of TxoutType::NULL_DATA scripts that this node considers standard.
-     * If nullopt, any size is nonstandard.
-     */
-    std::optional<unsigned> max_datacarrier_bytes{DEFAULT_ACCEPT_DATACARRIER ? std::optional{MAX_OP_RETURN_RELAY} : std::nullopt};
     bool datacarrier_fullcount{DEFAULT_DATACARRIER_FULLCOUNT};
-    bool permitbaredatacarrier{DEFAULT_PERMITBAREDATACARRIER};
-    bool permitbareanchor{DEFAULT_PERMITBAREANCHOR};
-    bool permit_bare_pubkey{DEFAULT_PERMIT_BAREPUBKEY};
-    bool permit_bare_multisig{DEFAULT_PERMIT_BAREMULTISIG};
-    bool reject_parasites{DEFAULT_REJECT_PARASITES};
-    bool reject_tokens{DEFAULT_REJECT_TOKENS};
     bool subdustfeepenalty{DEFAULT_SUBDUSTFEEPENALTY};
     bool accept_non_std_datacarrier{DEFAULT_ACCEPT_NON_STD_DATACARRIER};
     bool require_standard{true};
-    bool acceptunknownwitness{DEFAULT_ACCEPTUNKNOWNWITNESS};
     RBFPolicy rbf_policy{DEFAULT_MEMPOOL_RBF_POLICY};
     TRUCPolicy truc_policy{DEFAULT_MEMPOOL_TRUC_POLICY};
-    bool permitephemeral_anchor{DEFAULT_PERMITEPHEMERAL_ANCHOR};
-    bool permitephemeral_send{DEFAULT_PERMITEPHEMERAL_SEND};
-    bool permitephemeral_dust{DEFAULT_PERMITEPHEMERAL_DUST};
     bool persist_v1_dat{DEFAULT_PERSIST_V1_DAT};
     MemPoolLimits limits{};
 
