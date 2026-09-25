@@ -77,8 +77,8 @@ to broad coverage.
 | --- | --- |
 | Documentation only | No build job. |
 | Branding or GUI | GUI/resource build and Qt tests. |
-| Wallet | Compatibility, sanitizers, fuzz, and platform smoke tests. |
-| General C/C++ | Sanitizers, native Linux fuzz, ARM32, Windows, and both native macOS architectures. |
+| Wallet | Compatibility, sanitizers, and platform smoke tests. |
+| General C/C++ | Sanitizers, ARM32, Windows, and both native macOS architectures. |
 | Critical, build, CI, or unknown | Broad coverage, including GUI and previous-release compatibility. |
 
 The stable `required result` job is the branch-protection check to require. It
@@ -91,10 +91,10 @@ they never suppress automatic coverage.
 ### Nightly assurance and caches
 
 Nightly assurance retains TSan, MSan, clang-tidy/dependency checks, i686 Debug,
-extended functional tests, previous-release compatibility, and native macOS
-and Windows fuzz corpora. A scheduled run skips expensive jobs only after the
-same commit has already completed successfully; failures retry and unavailable
-history fails open.
+extended functional tests, previous-release compatibility, and native Linux,
+macOS, and Windows fuzz corpora. A scheduled run skips expensive jobs only
+after the same commit has already completed successfully; failures retry and
+unavailable history fails open.
 
 GitHub-hosted compiler and dependency caches are read by PRs and updated only
 from the repository's default branch. Cache misses make jobs slower but do not
