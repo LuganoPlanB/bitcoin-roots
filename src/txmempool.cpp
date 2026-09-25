@@ -42,6 +42,49 @@
 TRACEPOINT_SEMAPHORE(mempool, added);
 TRACEPOINT_SEMAPHORE(mempool, removed);
 
+void CTxMemPoolEntry::UpdateCachedPriority(unsigned int current_height, CAmount value_in_current_block)
+{
+    const int height_diff{int(current_height) - int(cachedHeight)};
+    cachedPriority += (double(height_diff) * inChainInputValue) / nModSize;
+    cachedHeight = current_height;
+    inChainInputValue += value_in_current_block;
+    assert(MoneyRange(inChainInputValue));
+}
+
+double CTxMemPoolEntry::GetPriority(unsigned int current_height) const
+{
+    // This is accurate when the height range does not cross a block containing
+    // one of the transaction's inputs.
+    const int height_diff{int(current_height) - int(cachedHeight)};
+    const double priority{cachedPriority + (double(height_diff) * inChainInputValue) / nModSize};
+    return std::max(priority, 0.0);
+}
+
+namespace {
+struct UpdatePriority {
+    unsigned int height;
+    CAmount value;
+
+    void operator()(CTxMemPoolEntry& entry) const
+    {
+        entry.UpdateCachedPriority(height, value);
+    }
+};
+} // namespace
+
+void CTxMemPool::UpdateDependentPriorities(const CTransaction& tx, unsigned int block_height, bool add_to_chain)
+{
+    LOCK(cs);
+    for (unsigned int i{0}; i < tx.vout.size(); ++i) {
+        const auto next_tx{mapNextTx.find(COutPoint{tx.GetHash(), i})};
+        if (next_tx == mapNextTx.end()) continue;
+
+        const txiter entry{mapTx.find(next_tx->second->GetHash())};
+        const CAmount value{add_to_chain ? tx.vout[i].nValue : -tx.vout[i].nValue};
+        mapTx.modify(entry, UpdatePriority{block_height, value});
+    }
+}
+
 bool TestLockPointValidity(CChain& active_chain, const LockPoints& lp)
 {
     AssertLockHeld(cs_main);

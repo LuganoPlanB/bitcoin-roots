@@ -1,0 +1,406 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+name: Release artifacts
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*-roots.[0-9]*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing annotated Roots tag to build without publishing
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  CI_FAILFAST_TEST_LEAVE_DANGLING: 1
+  RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+
+jobs:
+  release-metadata-tests:
+    name: Release metadata and patch series
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch and validate canonical release refs
+        run: |
+          set -Eeuo pipefail
+          core_version="${RELEASE_TAG#v}"
+          core_version="${core_version%%-roots.*}"
+          git fetch --no-tags origin \
+            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
+            "refs/tags/v${core_version}:refs/tags/v${core_version}"
+          ci/release/validate-release-source.sh "$RELEASE_TAG"
+
+      - name: Run release metadata tests
+        run: |
+          set -Eeuo pipefail
+          python3 ci/test/test_create_patch_series.py
+          python3 ci/test/test_prepare_release.py
+          python3 ci/test/test_sign_manifest.py
+          python3 ci/test/test_validate_release_tag.py
+          python3 ci/test/test_validate_release_source.py
+          python3 ci/test/test_release_version.py
+
+      - name: Generate verified patch series
+        run: |
+          set -Eeuo pipefail
+          version="${RELEASE_TAG#v}"
+          mkdir -p "${RUNNER_TEMP}/release-patch"
+          ci/release/create-patch-series.sh "$RELEASE_TAG" \
+            "${RUNNER_TEMP}/release-patch/bitcoin-roots-${version}.patch"
+
+      - name: Upload patch series
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitcoin-roots-patch-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/release-patch/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-release:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    needs: release-metadata-tests
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ${{ matrix.file-env }}
+      RUN_UNIT_TESTS: 'false'
+      RUN_FUNCTIONAL_TESTS: 'false'
+      RUN_FUZZ_TESTS: 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 release
+            file-env: ./ci/test/00_setup_env_linux_x86_64_release.sh
+            artifact-name: bitcoin-roots-linux-x86_64
+          - name: Linux aarch64 release
+            file-env: ./ci/test/00_setup_env_linux_aarch64_release.sh
+            artifact-name: bitcoin-roots-linux-aarch64
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch and validate canonical release refs
+        run: |
+          set -Eeuo pipefail
+          core_version="${RELEASE_TAG#v}"
+          core_version="${core_version%%-roots.*}"
+          git fetch --no-tags origin \
+            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
+            "refs/tags/v${core_version}:refs/tags/v${core_version}"
+          ci/release/validate-release-source.sh "$RELEASE_TAG"
+
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+
+      - name: Configure persistent release output
+        run: printf 'BASE_OUTDIR=%s/out\n' "$BASE_BUILD_DIR" >> "$GITHUB_ENV"
+
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+
+      - name: Build release artifacts
+        run: ./ci/test_run_all.sh
+
+      - name: Package release artifacts
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact-name }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! -d "$BASE_OUTDIR" ]]; then
+            printf 'Release output directory does not exist: %s\n' "$BASE_OUTDIR" >&2
+            exit 1
+          fi
+          archive_root="$(python3 ci/release/archive.py root-name)"
+          package_dir="${RUNNER_TEMP}/release-packages"
+          archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
+          mkdir -p "$package_dir"
+          tar -C "$BASE_OUTDIR" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
+          python3 ci/release/archive.py validate "$archive" "$archive_root"
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+  windows-release:
+    name: Windows x86_64 release
+    runs-on: windows-2022
+    timeout-minutes: 180
+    needs: release-metadata-tests
+    env:
+      PYTHONUTF8: 1
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch and validate canonical release refs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          core_version="${RELEASE_TAG#v}"
+          core_version="${core_version%%-roots.*}"
+          git fetch --no-tags origin \
+            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
+            "refs/tags/v${core_version}:refs/tags/v${core_version}"
+          ci/release/validate-release-source.sh "$RELEASE_TAG"
+
+      - name: Set up VS Developer Prompt
+        shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
+        run: |
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswherePath -latest -property installationPath
+          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" | foreach-object {
+            $name, $value = $_ -split '=', 2
+            echo "$name=$value" >> $env:GITHUB_ENV
+          }
+
+      - name: Configure vcpkg
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf '%s\n' 'set(VCPKG_BUILD_TYPE release)' >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
+          printf '%s\n' 'set(VCPKG_BUILD_TYPE release)' >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
+          sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+
+      - name: Generate build system
+        shell: pwsh
+        run: |
+          cmake -B build --preset vs2022-static `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DCLIENT_VERSION_TAG="$env:RELEASE_TAG" -DBUILD_GUI=ON -DWITH_QRENCODE=ON `
+            -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=OFF `
+            -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON `
+            -DBUILD_WALLET_TOOL=ON -DREDUCE_EXPORTS=ON -DWERROR=ON
+
+      - name: Build and package
+        shell: pwsh
+        run: |
+          cmake --build build -j $env:NUMBER_OF_PROCESSORS --config Release
+          $archiveRoot = (& python ci/release/archive.py root-name).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Failed to determine archive root" }
+          $installParent = Join-Path $env:RUNNER_TEMP "release-install"
+          $installDir = Join-Path $installParent $archiveRoot
+          $packageDir = Join-Path $env:RUNNER_TEMP "release-packages"
+          $archive = Join-Path $packageDir "bitcoin-roots-windows-x86_64.zip"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          cmake --install build --config Release --prefix $installDir
+          if (-not (Test-Path -PathType Leaf (Join-Path $installDir "bin\bitcoin-qt.exe"))) {
+            throw "Installed Windows GUI does not exist"
+          }
+          Compress-Archive -Path $installDir -DestinationPath $archive
+          & python ci/release/archive.py validate $archive $archiveRoot
+          if ($LASTEXITCODE -ne 0) { throw "Invalid Windows release archive" }
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitcoin-roots-windows-x86_64-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-release:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    needs: release-metadata-tests
+    env:
+      DANGER_RUN_CI_ON_HOST: 1
+      BASE_ROOT_DIR: ${{ github.workspace }}
+      FILE_ENV: ./ci/test/00_setup_env_mac_native.sh
+      RUN_UNIT_TESTS: 'false'
+      RUN_FUNCTIONAL_TESTS: 'false'
+      RUN_FUZZ_TESTS: 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS x86_64 release
+            runner: macos-15-intel
+            expected-arch: x86_64
+            artifact-name: bitcoin-roots-darwin-x86_64
+          - name: macOS arm64 release
+            runner: macos-15
+            expected-arch: arm64
+            artifact-name: bitcoin-roots-darwin-arm64
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch and validate canonical release refs
+        run: |
+          set -Eeuo pipefail
+          core_version="${RELEASE_TAG#v}"
+          core_version="${core_version%%-roots.*}"
+          git fetch --no-tags origin \
+            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
+            "refs/tags/v${core_version}:refs/tags/v${core_version}"
+          ci/release/validate-release-source.sh "$RELEASE_TAG"
+
+      - name: Verify architecture and select Xcode
+        env:
+          EXPECTED_ARCH: ${{ matrix.expected-arch }}
+        run: |
+          set -Eeuo pipefail
+          actual_arch="$(uname -m)"
+          if [[ "$actual_arch" != "$EXPECTED_ARCH" ]]; then
+            printf 'Expected %s, runner reported %s\n' "$EXPECTED_ARCH" "$actual_arch" >&2
+            exit 1
+          fi
+          sudo xcode-select --switch /Applications/Xcode_16.0.app
+
+      - name: Install Homebrew packages
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          set -Eeuo pipefail
+          brew install --quiet python@3 || brew link --overwrite python@3
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode
+
+      - name: Build release package
+        run: ./ci/test_run_all.sh
+
+      - name: Stage release package
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact-name }}
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          packages=("${GITHUB_WORKSPACE}"/ci/scratch/build-*/*.zip)
+          if (( ${#packages[@]} != 1 )); then
+            printf 'Expected one macOS package, found %s\n' "${#packages[@]}" >&2
+            exit 1
+          fi
+          archive_root="$(python3 ci/release/archive.py root-name)"
+          package_dir="${RUNNER_TEMP}/release-packages"
+          staging_parent="$(mktemp -d "${RUNNER_TEMP}/release-package.XXXXXX")"
+          trap 'rm -rf -- "$staging_parent"' EXIT
+          mkdir -p "${staging_parent}/${archive_root}" "$package_dir"
+          unzip -q "${packages[0]}" -d "${staging_parent}/${archive_root}"
+          archive="${package_dir}/${ARTIFACT_NAME}.zip"
+          (cd "$staging_parent" && zip -qry "$archive" "$archive_root")
+          python3 ci/release/archive.py validate "$archive" "$archive_root"
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Create draft release
+    if: github.event_name == 'push'
+    needs:
+      - release-metadata-tests
+      - linux-release
+      - windows-release
+      - macos-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    env:
+      EXPECTED_FINGERPRINT: 5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32
+      EXPECTED_PACKAGE_COUNT: 5
+      PUBLIC_KEY_FILE: contrib/release/bitcoin-roots-release-key.asc
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch and validate canonical release refs
+        run: |
+          set -Eeuo pipefail
+          core_version="${RELEASE_TAG#v}"
+          core_version="${core_version%%-roots.*}"
+          git fetch --no-tags origin \
+            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
+            "refs/tags/v${core_version}:refs/tags/v${core_version}"
+          ci/release/validate-release-source.sh "$RELEASE_TAG"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: bitcoin-roots-*-${{ env.RELEASE_TAG }}
+          path: downloaded-artifacts
+
+      - name: Prepare release assets and manifest
+        run: |
+          set -Eeuo pipefail
+          ci/release/prepare-release.sh downloaded-artifacts release-assets \
+            "$PUBLIC_KEY_FILE" "$RELEASE_TAG" "$EXPECTED_PACKAGE_COUNT"
+
+      - name: Optionally sign and verify manifest
+        env:
+          BITCOIN_ROOTS_GPG_SK: ${{ secrets.BITCOIN_ROOTS_GPG_SK }}
+        run: |
+          set -Eeuo pipefail
+          ci/release/sign-manifest.sh release-assets/SHA512SUMS \
+            "$PUBLIC_KEY_FILE" "$EXPECTED_FINGERPRINT"
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          release_assets=(release-assets/*)
+          expected_unsigned="$((EXPECTED_PACKAGE_COUNT + 2))"
+          if (( ${#release_assets[@]} < expected_unsigned || ${#release_assets[@]} > expected_unsigned + 1 )); then
+            printf 'Expected %s or %s release assets, found %s\n' \
+              "$expected_unsigned" "$((expected_unsigned + 1))" "${#release_assets[@]}" >&2
+            exit 1
+          fi
+          release_options=(--draft --title "Bitcoin Roots ${RELEASE_TAG}" --verify-tag)
+          if [[ "$RELEASE_TAG" == *rc[0-9]*-roots.* ]]; then
+            release_options+=(--prerelease)
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --clobber "${release_assets[@]}"
+          else
+            gh release create "$RELEASE_TAG" --generate-notes \
+              "${release_options[@]}" "${release_assets[@]}"
+          fi

@@ -1,1 +1,2 @@
 src/clientversion.cpp export-subst
+depends/patches/miniupnpc/dont_leak_info.patch whitespace=-space-before-tab

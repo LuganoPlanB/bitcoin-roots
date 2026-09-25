@@ -35,6 +35,7 @@ add_library(bitcoinkernel
   ../node/blockstorage.cpp
   ../node/chainstate.cpp
   ../node/utxo_snapshot.cpp
+  ../policy/coin_age_priority.cpp
   ../policy/ephemeral_policy.cpp
   ../policy/feerate.cpp
   ../policy/packages.cpp
@@ -80,9 +81,14 @@ add_library(bitcoinkernel
   ../validationinterface.cpp
   ../versionbits.cpp
 )
+target_compile_definitions(bitcoinkernel
+  PRIVATE
+    BUILDING_FOR_LIBBITCOINKERNEL
+)
 target_link_libraries(bitcoinkernel
   PRIVATE
     core_interface
+    external_lib_interface
     bitcoin_clientversion
     bitcoin_crypto
     leveldb
