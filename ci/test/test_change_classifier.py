@@ -38,18 +38,18 @@ class ChangeClassifierTest(unittest.TestCase):
     def test_github_output_is_stable(self):
         result = MODULE.result_for(["README.md"], ["ci:fuzz"], False, False, self.policy)
         self.assertEqual(result["labels"], ["ci:fuzz"])
-        self.assertTrue(result["selected"]["fuzz"])
+        self.assertNotIn("fuzz", result["selected"])
         with tempfile.TemporaryDirectory() as temporary_directory:
             output = pathlib.Path(temporary_directory) / "github-output"
             MODULE.write_github_output(result, output)
             self.assertEqual(
                 output.read_text(encoding="utf-8"),
-                "baseline=true\ncompat=false\ndocs=true\nfuzz=true\ngui=false\n"
+                "baseline=true\ncompat=false\ndocs=true\ngui=false\n"
                 "nightly_full=false\nnightly_fuzz=true\nnightly_platforms=false\nnightly_sanitizers=false\nplatforms=false\nsanitizers=false\nwallet=false\nbroad=false\n"
                 "complete=true\ncategories=[\"docs-only\"]\nlabels=[\"ci:fuzz\"]\n"
                 "result={\"broad\":false,\"categories\":[\"docs-only\"],\"complete\":true,"
                 "\"labels\":[\"ci:fuzz\"],\"selected\":{\"baseline\":true,\"compat\":false,"
-                "\"docs\":true,\"fuzz\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
+                "\"docs\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
                 "\"sanitizers\":false,\"wallet\":false},\"version\":1}\n")
 
     def test_full_label_selects_reusable_nightly_assurance(self):
