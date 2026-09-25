@@ -100,6 +100,7 @@ class WalletTest(BitcoinTestFramework):
 
         # Send 21 BTC from 0 to 2 using sendtoaddress call.
         self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 11)
+        self.nodes[0].syncwithvalidationinterfacequeue()
         mempool_txid = self.nodes[0].sendtoaddress(self.nodes[2].getnewaddress(), 10)
 
         self.log.info("Test gettxout (second part)")
