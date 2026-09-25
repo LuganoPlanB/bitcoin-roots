@@ -117,8 +117,7 @@ static void BlockEncodingNoExtra(benchmark::Bench& bench)
 
 static void BlockEncodingStdExtra(benchmark::Bench& bench)
 {
-    static_assert(DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN == 100);
-    BlockEncodingBench(bench, 50000, 100);
+    BlockEncodingBench(bench, 50000, DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN);
 }
 
 static void BlockEncodingLargeExtra(benchmark::Bench& bench)

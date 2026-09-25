@@ -38,8 +38,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# GitHub workflow and repository-management files belong to the canonical
+# branch and tag, but they are not part of the portable Roots product patch.
 git format-patch --stdout --binary --full-index --base="$core_commit" \
-    "${core_commit}..${tag_commit}" > "$patch_tmp"
+    "${core_commit}..${tag_commit}" -- . ':(exclude).github/**' > "$patch_tmp"
 if [[ ! -s "$patch_tmp" ]]; then
     printf 'Generated patch series is empty for %s\n' "$release_tag" >&2
     exit 1
@@ -52,10 +54,14 @@ git -C "$replay_dir/repository" \
     -c user.email='release-verification@invalid' \
     am -3 "$patch_tmp" >/dev/null
 
-expected_tree="$(git rev-parse --verify "${tag_commit}^{tree}")"
-replayed_tree="$(git -C "$replay_dir/repository" rev-parse --verify 'HEAD^{tree}')"
-if [[ "$replayed_tree" != "$expected_tree" ]]; then
-    printf 'Patch replay tree does not match release tag %s\n' "$release_tag" >&2
+if ! git -C "$replay_dir/repository" diff --quiet \
+    "$tag_commit" HEAD -- . ':(exclude).github/**'; then
+    printf 'Patch replay differs from release tag %s outside .github\n' "$release_tag" >&2
+    exit 1
+fi
+if ! git -C "$replay_dir/repository" diff --quiet \
+    "$core_commit" HEAD -- .github; then
+    printf 'Patch replay unexpectedly changes .github for %s\n' "$release_tag" >&2
     exit 1
 fi
 

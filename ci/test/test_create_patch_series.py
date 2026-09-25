@@ -27,7 +27,10 @@ class CreatePatchSeriesTest(unittest.TestCase):
         self.git(repository, "config", "user.name", "Patch test")
         self.git(repository, "config", "user.email", "patch@example.invalid")
         (repository / "source").write_text("core\n", encoding="utf-8")
-        self.git(repository, "add", "source")
+        workflow = repository / ".github/workflows/ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("name: Core CI\n", encoding="utf-8")
+        self.git(repository, "add", "source", ".github")
         self.git(repository, "commit", "-m", "core", capture_output=True)
         core_commit = self.git(repository, "rev-parse", "HEAD", capture_output=True, text=True).stdout.strip()
         self.git(repository, "tag", "-a", "v29.4", "-m", "Core v29.4")
@@ -37,13 +40,14 @@ class CreatePatchSeriesTest(unittest.TestCase):
         (repository / "binary.dat").write_bytes(bytes(range(256)))
         self.git(repository, "add", "binary.dat")
         self.git(repository, "commit", "-m", "roots binary", capture_output=True)
+        workflow.write_text("name: Roots CI\n", encoding="utf-8")
+        self.git(repository, "commit", "-am", "ci: use Roots tests", capture_output=True)
         self.git(repository, "tag", "-a", RELEASE_TAG, "-m", RELEASE_TAG)
-        release_tree = self.git(repository, "rev-parse", "HEAD^{tree}", capture_output=True, text=True).stdout.strip()
         self.git(repository, "checkout", "--detach", RELEASE_TAG, capture_output=True)
-        return repository, core_commit, release_tree
+        return repository, core_commit
 
-    def test_generates_binary_full_index_series_that_replays_identically(self):
-        repository, core_commit, release_tree = self.make_release_repository()
+    def test_generates_product_series_and_omits_github_automation(self):
+        repository, core_commit = self.make_release_repository()
         output = repository / "artifacts/bitcoin-roots-29.4-roots.1.patch"
         environment = {**os.environ, "RELEASE_CANONICAL_REF": "refs/heads/roots/29.4"}
         subprocess.run([SCRIPT, RELEASE_TAG, output], cwd=repository, env=environment, check=True)
@@ -52,6 +56,8 @@ class CreatePatchSeriesTest(unittest.TestCase):
         self.assertIn("GIT binary patch", patch)
         self.assertIn(f"base-commit: {core_commit}", patch)
         self.assertGreaterEqual(patch.count("Subject: [PATCH"), 2)
+        self.assertNotIn("diff --git a/.github/", patch)
+        self.assertNotIn("ci: use Roots tests", patch)
 
         with tempfile.TemporaryDirectory() as replay_dir:
             replay = Path(replay_dir) / "repository"
@@ -61,11 +67,15 @@ class CreatePatchSeriesTest(unittest.TestCase):
                 replay, "-c", "user.name=Patch replay", "-c", "user.email=replay@example.invalid",
                 "am", "-3", output, capture_output=True,
             )
-            replayed_tree = self.git(replay, "rev-parse", "HEAD^{tree}", capture_output=True, text=True).stdout.strip()
-        self.assertEqual(replayed_tree, release_tree)
+            self.git(
+                replay, "diff", "--quiet", RELEASE_TAG, "HEAD", "--",
+                ".", ":(exclude).github/**",
+            )
+            self.git(replay, "diff", "--quiet", core_commit, "HEAD", "--", ".github")
+            self.assertEqual((replay / ".github/workflows/ci.yml").read_text(encoding="utf-8"), "name: Core CI\n")
 
     def test_rejects_noncanonical_release(self):
-        repository, _, _ = self.make_release_repository()
+        repository, _ = self.make_release_repository()
         self.git(repository, "branch", "--force", "roots/29.4", "v29.4")
         output = repository / "release.patch"
         result = subprocess.run(
