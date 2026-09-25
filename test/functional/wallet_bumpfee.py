@@ -406,13 +406,13 @@ def test_notmine_bumpfee(self, rbf_node, peer_node, dest_address):
         psbt = rbf_node.walletprocesspsbt(psbt)
         psbt = peer_node.walletprocesspsbt(psbt["psbt"])
         res = rbf_node.testmempoolaccept([psbt["hex"]])
-        assert res[0]["allowed"]
+        assert res[0]["allowed"], res[0]
         assert_greater_than(res[0]["fees"]["base"], old_fee)
 
     self.log.info("Test that psbtbumpfee works for non-owned inputs")
-    psbt = rbf_node.psbtbumpfee(txid=rbfid)
-    finish_psbtbumpfee(psbt["psbt"])
-
+    # The default-feerate path is covered by test_simple_bumpfee_succeeds(). Use
+    # an explicit margin here because the external input's final ECDSA signature
+    # size is unknown until the other wallet signs the replacement.
     psbt = rbf_node.psbtbumpfee(txid=rbfid, fee_rate=old_feerate + 10)
     finish_psbtbumpfee(psbt["psbt"])
 
