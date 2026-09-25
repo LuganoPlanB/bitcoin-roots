@@ -21,7 +21,6 @@ public:
     }
 };
 
-[[nodiscard]] bool SanityCheckForConsumeTxMemPoolEntry(const CTransaction& tx) noexcept;
 [[nodiscard]] CTxMemPoolEntry ConsumeTxMemPoolEntry(FuzzedDataProvider& fuzzed_data_provider, const CTransaction& tx) noexcept;
 
 #endif // BITCOIN_TEST_FUZZ_UTIL_MEMPOOL_H

@@ -51,7 +51,9 @@ class MaxUploadTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             f"-maxuploadtarget={UPLOAD_TARGET_MB}M",
+            "-blockmaxsize=1000000",  # Produce the large blocks assumed by the upload accounting below.
             "-datacarriersize=100000",
+            "-maxscriptsize=100000",  # Permit the synthetic 67 kB data carriers used to build large blocks.
         ]]
         self.supports_cli = False
 

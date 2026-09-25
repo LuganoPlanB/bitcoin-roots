@@ -24,6 +24,8 @@ class Warnings;
 
 /** Whether transaction reconciliation protocol should be enabled by default. */
 static constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
+/** Whether to announce a fee filter to compatible transaction-relay peers. */
+static constexpr bool DEFAULT_FEEFILTER{true};
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const uint32_t DEFAULT_MAX_ORPHAN_TRANSACTIONS{100};
 static constexpr size_t BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT{100000};
@@ -106,8 +108,6 @@ public:
 
     /** Get statistics from node state */
     virtual bool GetNodeStateStats(NodeId nodeid, CNodeStateStats& stats) const = 0;
-    virtual void LimitOrphanTxSize(uint32_t nMaxOrphans) = 0;
-
     virtual std::vector<TxOrphanage::OrphanTxBase> GetOrphanTransactions() = 0;
 
     /** Get peer manager info. */
@@ -161,8 +161,6 @@ public:
     */
     virtual ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const = 0;
 
-    /** Get number of peers from which we're downloading blocks */
-    virtual int GetNumberOfPeersWithValidatedDownloads() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) = 0;
 };
 
 #endif // BITCOIN_NET_PROCESSING_H

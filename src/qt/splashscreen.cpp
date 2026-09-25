@@ -62,64 +62,47 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
 {
     const qreal device_pixel_ratio{
         static_cast<QGuiApplication*>(QCoreApplication::instance())->devicePixelRatio()};
-
-    // define text to place
     const QString title_text{CLIENT_NAME};
     const QString version_text{QString("Version %1").arg(QString::fromStdString(FormatFullVersion()))};
-    const QString copyright_text{QString::fromUtf8((strprintf("\xc2\xA9 %u %s\n", COPYRIGHT_YEAR, COPYRIGHT_FOUNDATION) +
-                                                    CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR))).c_str())};
+    const QString copyright_text{QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str())};
     const QString& title_add_text{networkStyle->getTitleAddText()};
 
-    // create a bitmap according to device pixelratio
     const QSize splash_size{qRound(480 * device_pixel_ratio), qRound(320 * device_pixel_ratio)};
     pixmap = QPixmap{splash_size};
-
-    // change to HiDPI if it makes sense
     pixmap.setDevicePixelRatio(device_pixel_ratio);
 
     QPainter pixPaint(&pixmap);
     pixPaint.fillRect(QRect{QPoint{}, QSize{480, 320}}, Qt::white);
     pixPaint.setPen(SPLASH_TEXT_COLOR);
 
-    // draw the bitcoin icon, expected size of PNG: 1024x1024
     constexpr int icon_size{172};
     const QRect icon_rect{QPoint{24, 55}, QSize{icon_size, icon_size}};
     QPixmap icon{":/icons/splash"};
     icon = icon.scaledToWidth(qRound(icon_size * device_pixel_ratio), Qt::SmoothTransformation);
     pixPaint.drawPixmap(icon_rect, icon);
 
-    const QStringList title_parts{title_text.split(' ')};
-    assert(title_parts.size() == 2);
+    const QStringList title_parts{title_text.split(' ', Qt::SkipEmptyParts)};
+    const QString bitcoin_title{title_parts.value(0, title_text)};
+    const QString roots_title{title_parts.size() > 1 ? title_parts.mid(1).join(' ') : QString{}};
     constexpr int text_left{218};
     constexpr int text_width{236};
-
     auto fit_font = [](QFont font, const QString& text, int max_width) {
         const int width{GUIUtil::TextWidth(QFontMetrics{font}, text)};
         if (width > max_width) font.setPointSizeF(font.pointSizeF() * max_width / width);
         return font;
     };
 
-    QFont bitcoin_font{fit_font(SplashFont(30, QFont::Medium), title_parts[0], text_width)};
-    pixPaint.setFont(bitcoin_font);
-    pixPaint.drawText(text_left, 105, title_parts[0]);
-
-    QFont roots_font{fit_font(SplashFont(43, QFont::DemiBold), title_parts[1], text_width)};
-    pixPaint.setFont(roots_font);
-    pixPaint.drawText(text_left, 151, title_parts[1]);
-
-    QFont version_font{fit_font(SplashFont(11, QFont::Medium), version_text, text_width)};
-    pixPaint.setFont(version_font);
+    pixPaint.setFont(fit_font(SplashFont(30, QFont::Medium), bitcoin_title, text_width));
+    pixPaint.drawText(text_left, 105, bitcoin_title);
+    pixPaint.setFont(fit_font(SplashFont(43, QFont::DemiBold), roots_title, text_width));
+    pixPaint.drawText(text_left, 151, roots_title);
+    pixPaint.setFont(fit_font(SplashFont(11, QFont::Medium), version_text, text_width));
     pixPaint.setPen(SPLASH_MUTED_TEXT_COLOR);
     pixPaint.drawText(text_left, 181, version_text);
 
-    // draw copyright stuff
-    {
-        pixPaint.setFont(SplashFont(8));
-        const QRect copyright_rect{text_left, 210, text_width, 54};
-        pixPaint.drawText(copyright_rect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyright_text);
-    }
+    pixPaint.setFont(SplashFont(8));
+    pixPaint.drawText(QRect{text_left, 210, text_width, 70}, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyright_text);
 
-    // draw additional text if special network
     if (!title_add_text.isEmpty()) {
         pixPaint.setFont(SplashFont(9, QFont::DemiBold));
         const int title_add_text_width{GUIUtil::TextWidth(pixPaint.fontMetrics(), title_add_text)};
@@ -132,9 +115,7 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
     setWindowTitle(title_text + " " + title_add_text);
 
     // Resize window and move to center of desktop, disallow resizing
-    QRect r{QPoint{},
-            QSize{qRound(pixmap.size().width() / device_pixel_ratio),
-                  qRound(pixmap.size().height() / device_pixel_ratio)}};
+    QRect r{QPoint{}, QSize{qRound(pixmap.size().width() / device_pixel_ratio), qRound(pixmap.size().height() / device_pixel_ratio)}};
     resize(r.size());
     setFixedSize(r.size());
     move(QGuiApplication::primaryScreen()->geometry().center() - r.center());
@@ -179,7 +160,7 @@ static void InitMessage(SplashScreen *splash, const std::string &message)
         Qt::QueuedConnection,
         Q_ARG(QString, QString::fromStdString(message)),
         Q_ARG(int, Qt::AlignBottom|Qt::AlignHCenter),
-        Q_ARG(QColor, SPLASH_TEXT_COLOR));
+        Q_ARG(QColor, QColor(55,55,55)));
     assert(invoked);
 }
 
@@ -232,14 +213,9 @@ void SplashScreen::showMessage(const QString &message, int alignment, const QCol
 
 void SplashScreen::paintEvent(QPaintEvent *event)
 {
-    Q_UNUSED(event);
     QPainter painter(this);
     painter.drawPixmap(0, 0, pixmap);
-    const QFont font{SplashFont(9, QFont::Medium)};
-    painter.setFont(font);
-    const int line_count{curMessage.count('\n') + 1};
-    const int message_height{QFontMetrics{font}.lineSpacing() * line_count};
-    const QRect r{16, height() - message_height - 10, width() - 32, message_height};
+    QRect r = rect().adjusted(5, 5, -5, -5);
     painter.setPen(curColor);
     painter.drawText(r, curAlignment, curMessage);
 }

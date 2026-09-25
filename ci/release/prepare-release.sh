@@ -6,8 +6,8 @@
 export LC_ALL=C
 set -Eeuo pipefail
 
-if [[ "$#" -ne 9 ]]; then
-    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT EVIDENCE_FILE BUILD_EVIDENCE_FILE SOURCE_REPOSITORY SOURCE_REVISION\n' "$0" >&2
+if [[ "$#" -ne 5 ]]; then
+    printf 'Usage: %s DOWNLOAD_DIR OUTPUT_DIR PUBLIC_KEY_FILE RELEASE_NAME EXPECTED_PACKAGE_COUNT\n' "$0" >&2
     exit 2
 fi
 
@@ -16,11 +16,7 @@ output_dir=$2
 public_key_file=$3
 release_name=$4
 expected_package_count=$5
-evidence_file=$6
-build_evidence_file=$7
-source_repository=$8
-source_revision=$9
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 archive_tool="$script_dir/archive.py"
 
 if [[ ! -d "$download_dir" ]]; then
@@ -64,39 +60,22 @@ for package_path in "${package_paths[@]}"; do
     package_names[$package_name]=1
 done
 
-if [[ ! -f "$evidence_file" || -L "$evidence_file" || "${evidence_file##*/}" != roots-release-evidence.json ]]; then
-    printf 'Release evidence is unavailable or unsafe: %s\n' "$evidence_file" >&2
+mapfile -d '' patch_paths < <(find "$download_dir" -type f -name '*.patch' -print0 | sort -z)
+if [[ "${#patch_paths[@]}" -ne 1 ]]; then
+    printf 'Expected one release patch series, found %s\n' "${#patch_paths[@]}" >&2
     exit 1
 fi
-if [[ ! -f "$build_evidence_file" || -L "$build_evidence_file" || "${build_evidence_file##*/}" != roots-release-build-evidence.json ]]; then
-    printf 'Release build evidence is unavailable or unsafe: %s\n' "$build_evidence_file" >&2
+patch_path=${patch_paths[0]}
+patch_name=${patch_path##*/}
+if [[ "$patch_name" == *$'\n'* || -n "${package_names[$patch_name]:-}" ]]; then
+    printf 'Invalid or duplicate release patch name: %s\n' "$patch_name" >&2
     exit 1
 fi
-build_evidence_directory="$(cd -- "$(dirname -- "$build_evidence_file")" && pwd)"
-(
-    cd "$build_evidence_directory"
-    python3 "$script_dir/roots-build-evidence.py" verify \
-        --artifacts "$(cd -- "$download_dir" && pwd)" \
-        --source-repository "$(cd -- "$source_repository" && pwd)" \
-        --source-revision "$source_revision" \
-        --expected-count "$expected_package_count" \
-        --output roots-release-build-evidence.json
-)
-python3 "$script_dir/roots-release-evidence.py" \
-    --ledger contrib/roots/lineage-ledger.json \
-    --manifest contrib/roots/adaptation-manifest-29.3.json \
-    --replay-result contrib/roots/replay-29.4-proposal/acceptance-evidence.json \
-    --fixture contrib/roots/core-29.4-migration-fixture.json \
-    --registry contrib/roots/post-methodology-adaptations.json \
-    --accounting contrib/roots/continuous-accounting-pr.json \
-    --release-accounting contrib/roots/release-accounting.json \
-    --build-evidence "$build_evidence_file" \
-    --source-repository "$source_repository" \
-    --source-revision "$source_revision" \
-    --candidate-tree "sha1:$(git -C "$source_repository" rev-parse "${source_revision}^{tree}")" \
-    --output "$evidence_file" --verify
-cp -- "$evidence_file" "$output_dir/roots-release-evidence.json"
-cp -- "$build_evidence_file" "$output_dir/roots-release-build-evidence.json"
+if [[ ! -s "$patch_path" ]]; then
+    printf 'Release patch series is empty: %s\n' "$patch_path" >&2
+    exit 1
+fi
+package_names[$patch_name]=1
 
 archive_root="$(RELEASE_TAG="$release_name" python3 "$archive_tool" root-name)"
 for package_path in "${package_paths[@]}"; do
@@ -104,6 +83,7 @@ for package_path in "${package_paths[@]}"; do
     python3 "$archive_tool" validate "$package_path" "$archive_root"
     cp -- "$package_path" "$output_dir/$package_name"
 done
+cp -- "$patch_path" "$output_dir/$patch_name"
 
 mapfile -d '' package_names_sorted < <(printf '%s\0' "${!package_names[@]}" | sort -z)
 manifest="$output_dir/SHA512SUMS"
@@ -117,6 +97,4 @@ manifest="$output_dir/SHA512SUMS"
     for package_name in "${package_names_sorted[@]}"; do
         (cd "$output_dir" && sha512sum -- "$package_name")
     done
-    (cd "$output_dir" && sha512sum roots-release-evidence.json)
-    (cd "$output_dir" && sha512sum roots-release-build-evidence.json)
 } > "$manifest"

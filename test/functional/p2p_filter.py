@@ -12,6 +12,7 @@ from test_framework.messages import (
     MAX_BLOOM_FILTER_SIZE,
     MAX_BLOOM_HASH_FUNCS,
     MSG_WTX,
+    MSG_WITNESS_FLAG,
     MSG_BLOCK,
     MSG_FILTERED_BLOCK,
     msg_filteradd,
@@ -47,6 +48,7 @@ class P2PBloomFilter(P2PInterface):
         nTweak=0,
         nFlags=1,
     )
+    filtered_block_type = MSG_FILTERED_BLOCK
 
     def __init__(self):
         super().__init__()
@@ -58,7 +60,7 @@ class P2PBloomFilter(P2PInterface):
         for i in message.inv:
             # inv messages can only contain TX or BLOCK, so translate BLOCK to FILTERED_BLOCK
             if i.type == MSG_BLOCK:
-                want.inv.append(CInv(MSG_FILTERED_BLOCK, i.hash))
+                want.inv.append(CInv(self.filtered_block_type, i.hash))
             else:
                 want.inv.append(i)
         if len(want.inv):
@@ -222,6 +224,28 @@ class FilterTest(BitcoinTestFramework):
         filter_peer.send_and_ping(msg_filteradd(data=b'letstrytocrashthisnode'))
         self.nodes[0].disconnect_p2ps()
 
+    def test_filtered_witness_block(self, filter_peer):
+        self.log.info("Check filtered witness-block requests preserve matched transaction witnesses")
+        assert "BLOOM" in self.nodes[0].getnetworkinfo()["localservicesnames"]
+        filter_peer.send_and_ping(filter_peer.watch_filter_init)
+
+        txid = self.wallet.send_to(
+            from_node=self.nodes[0],
+            scriptPubKey=filter_peer.watch_script_pubkey,
+            amount=1 * COIN,
+        )["txid"]
+        block_hash = self.generate(self.nodes[0], 1)[0]
+        filter_peer.wait_for_merkleblock(block_hash)
+        filter_peer.wait_for_tx(txid)
+        assert filter_peer.last_message["tx"].tx.wit.is_null()
+
+        with p2p_lock:
+            filter_peer.last_message.pop("tx", None)
+        filter_peer.send_and_ping(msg_getdata([CInv(MSG_FILTERED_BLOCK | MSG_WITNESS_FLAG, int(block_hash, 16))]))
+        filter_peer.wait_for_tx(txid)
+        assert not filter_peer.last_message["tx"].tx.wit.is_null()
+        self.nodes[0].disconnect_p2ps()
+
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
 
@@ -247,6 +271,9 @@ class FilterTest(BitcoinTestFramework):
         assert not self.nodes[0].getpeerinfo()[0]['relaytxes']
         self.test_frelay_false(filter_peer_without_nrelay)
         self.test_filter(filter_peer_without_nrelay)
+
+        filter_peer = self.nodes[0].add_p2p_connection(P2PBloomFilter())
+        self.test_filtered_witness_block(filter_peer)
 
         self.test_msg_mempool()
 

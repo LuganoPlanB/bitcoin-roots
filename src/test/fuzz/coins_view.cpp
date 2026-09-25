@@ -14,7 +14,6 @@
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
 #include <test/util/setup_common.h>
-#include <test/util/transaction_utils.h>
 #include <util/hasher.h>
 
 #include <cassert>

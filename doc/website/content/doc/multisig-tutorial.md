@@ -1,1 +1,0 @@
-../../../multisig-tutorial.md

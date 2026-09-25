@@ -15,7 +15,6 @@ from test_framework.script import (
     OP_TRUE,
 )
 from test_framework.script_util import (
-    key_to_p2pk_script,
     key_to_p2pkh_script,
     key_to_p2wpkh_script,
     keys_to_multisig_script,
@@ -40,7 +39,7 @@ DUST_RELAY_TX_FEE = 3000  # default setting [sat/kvB]
 class DustRelayFeeTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-permitbaremultisig']]
+        self.extra_args = [['-permitbaremultisig=1']]
 
     def test_dust_output(self, node: TestNode, dust_relay_fee: Decimal,
                          output_script: CScript, type_desc: str) -> None:
@@ -66,7 +65,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
             tx.vout[1].nValue -= 1
             res = node.testmempoolaccept([tx.serialize().hex()])[0]
             assert_equal(res['allowed'], False)
-            assert_equal(res['reject-reason'], 'dust')
+            assert_equal(res['reject-reason'], 'dust-nonanchor')
 
         # finally send the transaction to avoid running out of MiniWallet UTXOs
         self.wallet.sendrawtransaction(from_node=node, tx_hex=tx_good_hex)
@@ -95,7 +94,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
         assert_equal(len(mempool_entries), 2)
 
         # Wipe extra arg to reset dust relay
-        self.restart_node(0, extra_args=[])
+        self.restart_node(0, extra_args=["-permitbaremultisig=1"])
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -109,8 +108,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
         _, pubkey = generate_keypair(compressed=True)
 
         output_scripts = (
-            (key_to_p2pk_script(uncompressed_pubkey),          "P2PK (uncompressed)"),
-            (key_to_p2pk_script(pubkey),                       "P2PK (compressed)"),
+            # Roots rejects bare P2PK before dust policy is evaluated.
             (key_to_p2pkh_script(pubkey),                      "P2PKH"),
             (script_to_p2sh_script(CScript([OP_TRUE])),        "P2SH"),
             (key_to_p2wpkh_script(pubkey),                     "P2WPKH"),
@@ -132,7 +130,7 @@ class DustRelayFeeTest(BitcoinTestFramework):
             else:
                 dust_parameter = f"-dustrelayfee={dustfee_btc_kvb:.8f}"
                 self.log.info(f"Test dust limit setting {dust_parameter} ({dustfee_sat_kvb} sat/kvB)...")
-                self.restart_node(0, extra_args=[dust_parameter, "-permitbaremultisig"])
+                self.restart_node(0, extra_args=[dust_parameter, "-permitbaremultisig=1"])
 
             for output_script, description in output_scripts:
                 self.test_dust_output(self.nodes[0], dustfee_btc_kvb, output_script, description)

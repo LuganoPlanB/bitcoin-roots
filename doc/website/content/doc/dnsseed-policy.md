@@ -1,1 +1,0 @@
-../../../dnsseed-policy.md

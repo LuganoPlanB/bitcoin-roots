@@ -8,9 +8,7 @@
 #include <qt/sendcoinsrecipient.h>
 
 #include <QDialog>
-#include <QList>
-#include <QTextEdit>
-#include <QWidget>
+#include <QMetaObject>
 
 class WalletModel;
 
@@ -36,11 +34,9 @@ private Q_SLOTS:
 
 private:
     Ui::ReceiveRequestDialog *ui;
-    void updateInfoWidget();
-    QTextEdit *m_info_widget;
-    QList<QWidget*> m_info_grid;
     WalletModel* model{nullptr};
     SendCoinsRecipient info;
+    QMetaObject::Connection m_font_for_money_connection;
 };
 
 #endif // BITCOIN_QT_RECEIVEREQUESTDIALOG_H

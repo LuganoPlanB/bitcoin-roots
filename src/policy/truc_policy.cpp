@@ -172,6 +172,14 @@ std::optional<std::string> PackageTRUCChecks(const CTransactionRef& ptx, int64_t
     return std::nullopt;
 }
 
+std::optional<std::string> PackageTRUCChecks(const CTransactionRef& ptx, int64_t vsize,
+                                             const Package& package,
+                                             const CTxMemPool::setEntries& mempool_ancestors)
+{
+    std::string out_reason;
+    return PackageTRUCChecks(ptx, vsize, "", out_reason, empty_ignore_rejects, package, mempool_ancestors);
+}
+
 std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CTransactionRef& ptx,
                                           const std::string& reason_prefix, std::string& out_reason,
                                           const ignore_rejects_type& ignore_rejects,
@@ -259,4 +267,13 @@ std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CT
         }
     }
     return std::nullopt;
+}
+
+std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CTransactionRef& ptx,
+                                                                         const CTxMemPool::setEntries& mempool_ancestors,
+                                                                         const std::set<Txid>& direct_conflicts,
+                                                                         int64_t vsize)
+{
+    std::string out_reason;
+    return SingleTRUCChecks(ptx, "", out_reason, empty_ignore_rejects, mempool_ancestors, direct_conflicts, vsize);
 }

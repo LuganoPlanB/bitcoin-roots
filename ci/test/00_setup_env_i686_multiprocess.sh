@@ -10,6 +10,7 @@ export HOST=i686-pc-linux-gnu
 export CONTAINER_NAME=ci_i686_debug
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"
 export CI_IMAGE_PLATFORM="linux/amd64"
+export CI_CONTAINER_CAP="--security-opt seccomp=unconfined"
 export PACKAGES="llvm clang g++-multilib"
 # This legacy filename is retained for CI references. Multiprocess is disabled
 # at the top level by CMake, so this is an i686 Debug configuration only.

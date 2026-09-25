@@ -172,13 +172,10 @@ class RPCInterfaceTest(BitcoinTestFramework):
         self.log.info("Testing nonstandard jsonrpc 1.0 version number is accepted...")
         self.test_batch_request(lambda idx: BatchOptions(request_fields={"jsonrpc": "1.0"}))
 
-        self.log.info("Testing nonstandard jsonrpc 1.0 version number is accepted as a Number...")
-        self.test_batch_request(lambda idx: BatchOptions(request_fields={"jsonrpc": 1.0}))
-
-        self.log.info("Testing unrecognized jsonrpc version number is accepted as if 1.0...")
+        self.log.info("Testing unrecognized jsonrpc version number is rejected...")
         self.test_batch_request(lambda idx: BatchOptions(
             request_fields={"jsonrpc": "2.1"},
-            ))
+            response_fields={"result": None, "error": {"code": RPC_INVALID_REQUEST, "message": "JSON-RPC version not supported"}}))
 
     def test_http_status_codes(self):
         self.log.info("Testing HTTP status codes for JSON-RPC 1.1 requests...")
@@ -204,11 +201,11 @@ class RPCInterfaceTest(BitcoinTestFramework):
         expect_http_rpc_status(200, RPC_INVALID_PARAMETER,  self.nodes[0], "getblockhash", [42], 2, False)
         # force-send invalidly formatted requests
         response, status = send_json_rpc(self.nodes[0], {"jsonrpc": 2, "method": "getblockcount"})
-        assert_equal(response, {"result": 0, "error": None})
-        assert_equal(status, 200)
+        assert_equal(response, {"result": None, "error": {"code": RPC_INVALID_REQUEST, "message": "jsonrpc field must be a string"}})
+        assert_equal(status, 400)
         response, status = send_json_rpc(self.nodes[0], {"jsonrpc": "3.0", "method": "getblockcount"})
-        assert_equal(response, {"result": 0, "error": None})
-        assert_equal(status, 200)
+        assert_equal(response, {"result": None, "error": {"code": RPC_INVALID_REQUEST, "message": "JSON-RPC version not supported"}})
+        assert_equal(status, 400)
 
         self.log.info("Testing HTTP status codes for JSON-RPC 2.0 notifications...")
         # Not notification: id exists

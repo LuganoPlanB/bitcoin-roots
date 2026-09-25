@@ -241,7 +241,6 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .chainparams = chainparams,
             .datadir = m_args.GetDataDirNet(),
             .check_block_index = 1,
-            .checkpoints_enabled = false,
             .notifications = *m_node.notifications,
             .signals = m_node.validation_signals.get(),
             .worker_threads_num = 2,
@@ -380,7 +379,7 @@ CBlock TestChain100Setup::CreateBlock(
 {
     BlockAssembler::Options options;
     options.coinbase_output_script = scriptPubKey;
-    CBlock block = BlockAssembler{chainstate, nullptr, options, m_node}.CreateNewBlock()->block;
+    CBlock block = BlockAssembler{chainstate, nullptr, options}.CreateNewBlock()->block;
 
     Assert(block.vtx.size() == 1);
     for (const CMutableTransaction& tx : txns) {
@@ -552,7 +551,7 @@ std::vector<CTransactionRef> TestChain100Setup::PopulateMempool(FastRandomContex
             LockPoints lp;
             auto changeset = m_node.mempool->GetChangeSet();
             changeset->StageAddition(ptx, /*fee=*/(total_in - num_outputs * amount_per_output),
-                    /*time=*/0, /*entry_height=*/ height, /*entry_sequence=*/0,
+                    /*time=*/0, /*entry_height=*/height, /*entry_sequence=*/0,
                     coin_age,
                     /*spends_coinbase=*/false, /*extra_weight=*/0, /*sigops_cost=*/4, lp);
             changeset->Apply();

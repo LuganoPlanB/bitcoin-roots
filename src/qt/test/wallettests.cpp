@@ -15,7 +15,6 @@
 #include <qt/optionsmodel.h>
 #include <qt/overviewpage.h>
 #include <qt/platformstyle.h>
-#include <qt/psbtoperationsdialog.h>
 #include <qt/qvalidatedlineedit.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/receiverequestdialog.h>
@@ -59,46 +58,19 @@ using wallet::WalletRescanReserver;
 
 namespace
 {
-void ConfirmSendAttempt(QString* text, QMessageBox::StandardButton confirm_type)
+//! Press "Yes" or "Cancel" buttons in modal send confirmation dialog.
+void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_type = QMessageBox::Yes)
 {
+    QTimer::singleShot(0, [text, confirm_type]() {
         for (QWidget* widget : QApplication::topLevelWidgets()) {
             if (widget->inherits("SendConfirmationDialog")) {
                 SendConfirmationDialog* dialog = qobject_cast<SendConfirmationDialog*>(widget);
                 if (text) *text = dialog->text();
                 QAbstractButton* button = dialog->button(confirm_type);
-                const QMessageBox::ButtonRole confirm_role = [confirm_type, button](){
-                    if (button) return QMessageBox::InvalidRole;
-                    switch (confirm_type) {
-                        case QMessageBox::Yes: return QMessageBox::YesRole;
-                        case QMessageBox::Cancel: return QMessageBox::NoRole;
-                        default: return QMessageBox::InvalidRole;
-                    }
-                }();
-                for (QAbstractButton* maybe_button : dialog->buttons()) {
-                    if (dialog->buttonRole(maybe_button) == confirm_role) {
-                        button = maybe_button;
-                    } else if (maybe_button->text().startsWith("Override")) {
-                        button = maybe_button;
-                        break;
-                    }
-                }
                 button->setEnabled(true);
                 button->click();
-                if (!button->text().startsWith("Override")) return;
             }
         }
-
-    // Try again
-    QTimer::singleShot(0, [text, confirm_type]{
-        ConfirmSendAttempt(text, confirm_type);
-    });
-}
-
-//! Press "Yes" or "Cancel" buttons in modal send confirmation dialog.
-void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_type = QMessageBox::Yes)
-{
-    QTimer::singleShot(0, [text, confirm_type]{
-        ConfirmSendAttempt(text, confirm_type);
     });
 }
 
@@ -164,16 +136,10 @@ void BumpFee(TransactionView& view, const uint256& txid, bool expectDisabled, st
     QVERIFY(text.indexOf(QString::fromStdString(expectError)) != -1);
 }
 
-void CompareBalance(WalletModel& walletModel, CAmount expected_balance, QLabel* balance_label_to_check, bool privacy = false)
+void CompareBalance(WalletModel& walletModel, CAmount expected_balance, QLabel* balance_label_to_check)
 {
     BitcoinUnit unit = walletModel.getOptionsModel()->getDisplayUnit();
-    QString balanceComparison;
-    if (privacy) {
-        balanceComparison = BitcoinUnits::formatWithPrivacy(unit, expected_balance, BitcoinUnits::SeparatorStyle::ALWAYS, false);
-    } else {
-        const QFont font_for_money = walletModel.getOptionsModel()->getFontForMoney(unit);
-        balanceComparison = BitcoinUnits::formatHtmlWithUnit(font_for_money, unit, expected_balance, false, BitcoinUnits::SeparatorStyle::ALWAYS);
-    }
+    QString balanceComparison = BitcoinUnits::formatWithUnit(unit, expected_balance, false, BitcoinUnits::SeparatorStyle::ALWAYS);
     QCOMPARE(balance_label_to_check->text().trimmed(), balanceComparison);
 }
 
@@ -277,7 +243,7 @@ public:
     MiniGUI(interfaces::Node& node, const PlatformStyle* platformStyle) : sendCoinsDialog(platformStyle), transactionView(platformStyle), optionsModel(node) {
         bilingual_str error;
         QVERIFY(optionsModel.Init(error));
-        clientModel = std::make_unique<ClientModel>(node, &optionsModel, *platformStyle);
+        clientModel = std::make_unique<ClientModel>(node, &optionsModel);
     }
 
     void initModelForWallet(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet, const PlatformStyle* platformStyle)
@@ -286,7 +252,6 @@ public:
         AddWallet(context, wallet);
         walletModel = std::make_unique<WalletModel>(interfaces::MakeWallet(context, wallet), *clientModel, platformStyle);
         RemoveWallet(context, wallet, /* load_on_start= */ std::nullopt);
-        sendCoinsDialog.setClientModel(clientModel.get());
         sendCoinsDialog.setModel(walletModel.get());
         transactionView.setModel(walletModel.get());
     }
@@ -335,8 +300,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(FindTx(*transactionTableModel, txid1).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
 
-    // Call bumpfee. Test canceled fullrbf bump, canceled bip-125-rbf bump, passing bump, and then failing bump.
-    BumpFee(transactionView, txid1, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
+    // Call bumpfee. Test disabled, canceled, enabled, then failing cases.
+    BumpFee(transactionView, txid1, /*expectDisabled=*/true, /*expectError=*/"not BIP 125 replaceable", /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/true, /*expectError=*/"already bumped", /*cancel=*/false);
@@ -345,7 +310,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     OverviewPage overviewPage(platformStyle.get());
     overviewPage.setWalletModel(&walletModel);
     walletModel.pollBalanceChanged(); // Manual balance polling update
-    CompareBalance(walletModel, walletModel.wallet().getBalance(), overviewPage.findChild<QLabel*>("labelBalance"), /*privacy=*/true);
+    CompareBalance(walletModel, walletModel.wallet().getBalance(), overviewPage.findChild<QLabel*>("labelBalance"));
 
     // Check Request Payment button
     ReceiveCoinsDialog receiveCoinsDialog(platformStyle.get());
@@ -381,7 +346,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 
             QCOMPARE(uri.count("amount=0.00000001"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("amount_tag")->text(), QString("Amount:"));
-            CompareBalance(walletModel, 1, receiveRequestDialog->QObject::findChild<QLabel*>("amount_content"));
+            QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("amount_content")->text(), QString::fromStdString("0.00000001 " + CURRENCY_UNIT));
 
             QCOMPARE(uri.count("label=TEST_LABEL_1"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("label_tag")->text(), QString("Label:"));
@@ -469,17 +434,6 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
 
     // Send tx and verify PSBT copied to the clipboard.
     SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Save);
-    auto psbt_dlg = []() -> PSBTOperationsDialog * {
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->inherits("PSBTOperationsDialog")) {
-                return qobject_cast<PSBTOperationsDialog*>(widget);
-            }
-        }
-        return nullptr;
-    }();
-    QVERIFY(psbt_dlg);
-    psbt_dlg->copyToClipboard();
-    psbt_dlg->close();
     const std::string& psbt_string = QApplication::clipboard()->text().toStdString();
     QVERIFY(!psbt_string.empty());
 

@@ -87,10 +87,6 @@ private:
 
     QWidget *createDateRangeWidget();
 
-    GUIUtil::TableViewLastColumnResizingFixer *columnResizingFixer{nullptr};
-
-    virtual void resizeEvent(QResizeEvent* event) override;
-
     bool eventFilter(QObject *obj, QEvent *event) override;
 
     const PlatformStyle* m_platform_style;

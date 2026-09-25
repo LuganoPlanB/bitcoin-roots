@@ -11,7 +11,6 @@
 #include <streams.h>
 #include <util/check.h>
 #include <util/fs.h>
-#include <util/result.h>
 
 #include <cstddef>
 #include <exception>
@@ -21,20 +20,14 @@
 #include <string>
 #include <vector>
 
-util::Result<void> dbwrapper_SanityCheck();
-
 static const size_t DBWRAPPER_PREALLOC_KEY_SIZE = 64;
 static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
 static const size_t DBWRAPPER_MAX_FILE_SIZE = 32 << 20; // 32 MiB
-
-static constexpr size_t DEFAULT_DB_FILE_SIZE{64};
 
 //! User-controlled performance and debug options.
 struct DBOptions {
     //! Compact database on startup.
     bool force_compact = false;
-    //! Target size of files.
-    size_t max_file_size{DEFAULT_DB_FILE_SIZE << 20};
 };
 
 //! Application-specific storage settings.
@@ -70,7 +63,7 @@ namespace dbwrapper_private {
  * Database obfuscation should be considered an implementation detail of the
  * specific database.
  */
-const Obfuscation& GetObfuscateKey(const CDBWrapper&);
+const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w);
 
 }; // namespace dbwrapper_private
 
@@ -82,8 +75,6 @@ class CDBBatch
     friend class CDBWrapper;
 
 private:
-    static constexpr size_t kHeader{12}; // See: src/leveldb/db/write_batch.cc#L27
-
     const CDBWrapper &parent;
 
     struct WriteBatchImpl;
@@ -190,7 +181,7 @@ struct LevelDBContext;
 
 class CDBWrapper
 {
-    friend const Obfuscation& dbwrapper_private::GetObfuscateKey(const CDBWrapper&);
+    friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
 private:
     //! holds all leveldb-specific fields of this class
     std::unique_ptr<LevelDBContext> m_db_context;
@@ -198,11 +189,14 @@ private:
     //! the name of this database
     std::string m_name;
 
-    //! optional XOR-obfuscation of the database
-    Obfuscation obfuscate_key;
+    //! a key used for optional XOR-obfuscation of the database
+    std::vector<unsigned char> obfuscate_key;
 
     //! the key under which the obfuscation key is stored
     static const std::string OBFUSCATE_KEY_KEY;
+
+    //! the length of the obfuscate key in number of bytes
+    static const unsigned int OBFUSCATE_KEY_NUM_BYTES;
 
     std::vector<unsigned char> CreateObfuscateKey() const;
 
@@ -278,6 +272,12 @@ public:
     }
 
     bool WriteBatch(CDBBatch& batch, bool fSync = false);
+
+    //! Perform a blocking full compaction of the underlying LevelDB.
+    void CompactFull();
+
+    //! Return a LevelDB property value, if available.
+    std::optional<std::string> GetProperty(const std::string& property) const;
 
     // Get an estimate of LevelDB memory usage (in bytes).
     size_t DynamicMemoryUsage() const;

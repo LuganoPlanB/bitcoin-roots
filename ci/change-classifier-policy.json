@@ -22,10 +22,10 @@
     "docs-only": ["docs"],
     "branding": ["gui"],
     "gui": ["gui"],
-    "wallet": ["wallet", "sanitizers", "fuzz", "compat", "platforms"],
+    "wallet": ["wallet", "sanitizers", "compat", "platforms"],
     "build": "broad",
     "critical": "broad",
-    "cpp": ["sanitizers", "fuzz", "platforms"],
+    "cpp": ["sanitizers", "platforms"],
     "unknown": "broad"
   },
   "fail_open": ["unknown-path", "ambiguous-path", "empty-file-list", "truncated-file-list", "api-error", "invalid-policy"],

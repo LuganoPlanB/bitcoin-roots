@@ -16,9 +16,7 @@
 
 #include <common/args.h>
 #include <interfaces/node.h>
-#include <node/interface_ui.h>
 #include <util/fs_helpers.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <QFileDialog>
@@ -26,7 +24,6 @@
 #include <QMessageBox>
 
 #include <cmath>
-#include <cstdlib>
 
 /* Check free space asynchronously to prevent hanging the UI thread.
 
@@ -114,11 +111,11 @@ void FreespaceChecker::check()
 
 namespace {
 //! Return pruning size that will be used if automatic pruning is enabled.
-int GetPruneTargetMiB()
+int GetPruneTargetGB()
 {
     int64_t prune_target_mib = gArgs.GetIntArg("-prune", 0);
     // >1 means automatic pruning is enabled by config, 1 means manual pruning, 0 means no pruning.
-    return prune_target_mib > 1 ? prune_target_mib : DEFAULT_PRUNE_TARGET_MiB;
+    return prune_target_mib > 1 ? PruneMiBtoGB(prune_target_mib) : DEFAULT_PRUNE_TARGET_GB;
 }
 } // namespace
 
@@ -127,7 +124,7 @@ Intro::Intro(QWidget *parent, int64_t blockchain_size_gb, int64_t chain_state_si
     ui(new Ui::Intro),
     m_blockchain_size_gb(blockchain_size_gb),
     m_chain_state_size_gb(chain_state_size_gb),
-    m_prune_target_mib{GetPruneTargetMiB()}
+    m_prune_target_gb{GetPruneTargetGB()}
 {
     ui->setupUi(this);
     ui->welcomeLabel->setText(ui->welcomeLabel->text().arg(CLIENT_NAME));
@@ -141,73 +138,28 @@ Intro::Intro(QWidget *parent, int64_t blockchain_size_gb, int64_t chain_state_si
     );
     ui->lblExplanation2->setText(ui->lblExplanation2->text().arg(CLIENT_NAME));
 
-    const int min_prune_target_MiB = (MIN_DISK_SPACE_FOR_BLOCK_FILES + MiB_BYTES - 1) / MiB_BYTES;
-    ui->pruneMiB->setRange(min_prune_target_MiB, std::numeric_limits<int>::max());
+    const int min_prune_target_GB = std::ceil(MIN_DISK_SPACE_FOR_BLOCK_FILES / 1e9);
+    ui->pruneGB->setRange(min_prune_target_GB, std::numeric_limits<int>::max());
     if (gArgs.IsArgSet("-prune")) {
         m_prune_checkbox_is_default = false;
-        switch (gArgs.GetIntArg("-prune", 0)) {
-        case 0:
-            ui->prune->setChecked(false);
-            break;
-        case 1:
-            ui->prune->setTristate();
-            ui->prune->setCheckState(Qt::PartiallyChecked);
-            break;
-        default:
-            ui->prune->setChecked(true);
-        }
+        ui->prune->setChecked(gArgs.GetIntArg("-prune", 0) >= 1);
+        ui->prune->setEnabled(false);
     }
-    ui->pruneMiB->setValue(m_prune_target_mib);
-    ui->pruneMiB->setToolTip(ui->prune->toolTip());
+    ui->pruneGB->setValue(m_prune_target_gb);
+    ui->pruneGB->setToolTip(ui->prune->toolTip());
     ui->lblPruneSuffix->setToolTip(ui->prune->toolTip());
-    UpdatePruneLabels(ui->prune->checkState() == Qt::Checked);
+    UpdatePruneLabels(ui->prune->isChecked());
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 7, 0))
-    connect(ui->prune, &QCheckBox::checkStateChanged, [this](const Qt::CheckState prune_state) {
-#else
-    connect(ui->prune, &QCheckBox::stateChanged, [this](const int prune_state) {
-#endif
+    connect(ui->prune, &QCheckBox::toggled, [this](bool prune_checked) {
         m_prune_checkbox_is_default = false;
-        UpdatePruneLabels(prune_state == Qt::Checked);
+        UpdatePruneLabels(prune_checked);
         UpdateFreeSpaceLabel();
     });
-    connect(ui->pruneMiB, qOverload<int>(&QSpinBox::valueChanged), [this](int prune_MiB) {
-        m_prune_target_mib = prune_MiB;
-        UpdatePruneLabels(ui->prune->checkState() == Qt::Checked);
+    connect(ui->pruneGB, qOverload<int>(&QSpinBox::valueChanged), [this](int prune_GB) {
+        m_prune_target_gb = prune_GB;
+        UpdatePruneLabels(ui->prune->isChecked());
         UpdateFreeSpaceLabel();
     });
-
-    bool have_user_assumevalid = false;
-    if (gArgs.IsArgSet("-assumevalid")) {
-        const auto user_assumevalid = gArgs.GetArg("-assumevalid", /* ignored default; determines return type */ "");
-        const auto block_hash{uint256::FromUserHex(user_assumevalid)};
-        if (block_hash && !block_hash->IsNull()) {
-            // -assumevalid=blockhash: initialise with the user-specified value, enabled
-            ui->assumevalid->setChecked(true);
-            ui->assumevalidBlock->setText(QString::fromStdString(user_assumevalid));
-            have_user_assumevalid = true;
-        } else {
-            // -assumevalid=0: default checkbox to off, and initialise with chainparams later
-            ui->assumevalid->setChecked(false);
-        }
-    }
-    if (!have_user_assumevalid) {
-        const auto chainparams = CreateChainParams(gArgs, gArgs.GetChainType());
-        const uint256 default_assumevalid = chainparams ? chainparams->GetConsensus().defaultAssumeValid : uint256();
-        if (default_assumevalid.IsNull()) {
-            // no chainparams assumevalid (nor user-provided), so hide the options entirely
-            ui->groupAssumeValid->setVisible(false);
-        } else {
-            // assumevalid from chainparams only (normal case): disable editing of blockhash
-            ui->assumevalidBlock->setText(QString::fromStdString(default_assumevalid.GetHex()));
-            ui->assumevalidBlock->setReadOnly(true);
-        }
-    }
-    {
-        // TODO: Ideally, we would include actual margins here (instead of extra digits), but this seems non-trivial
-        const int text_width = ui->assumevalidBlock->fontMetrics().horizontalAdvance(QStringLiteral("4")) * (64 + 4);
-        ui->assumevalidBlock->setFixedWidth(text_width);
-    }
 
     startThread();
 }
@@ -244,25 +196,15 @@ int64_t Intro::getPruneMiB() const
 {
     switch (ui->prune->checkState()) {
     case Qt::Checked:
-        return m_prune_target_mib;
-    case Qt::PartiallyChecked:
-        return 1;
+        return PruneGBtoMiB(m_prune_target_gb);
     case Qt::Unchecked: default:
         return 0;
     }
 }
 
-QString Intro::getAssumeValid() const
+bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB)
 {
-    if (!ui->assumevalid->isChecked()) {
-        return QStringLiteral("0");
-    }
-    return ui->assumevalidBlock->text();
-}
-
-bool Intro::showIfNeeded(std::unique_ptr<Intro>& intro)
-{
-    intro.reset();
+    did_show_intro = false;
 
     QSettings settings;
     /* If data directory provided on command line, no need to look at settings
@@ -279,25 +221,24 @@ bool Intro::showIfNeeded(std::unique_ptr<Intro>& intro)
         /* Use selectParams here to guarantee Params() can be used by node interface */
         try {
             SelectParams(gArgs.GetChainType());
-        } catch (const std::exception& e) {
-            InitError(Untranslated(e.what()));
-            QMessageBox::critical(nullptr, CLIENT_NAME, QObject::tr("Error: %1").arg(QString(e.what())));
-            std::exit(EXIT_FAILURE);
+        } catch (const std::exception&) {
+            return false;
         }
 
         /* If current default data directory does not exist, let the user choose one */
-        intro = std::make_unique<Intro>(nullptr, Params().AssumedBlockchainSize(), Params().AssumedChainStateSize());
-        intro->setDataDirectory(dataDir);
-        intro->setWindowIcon(QIcon(QStringLiteral(":icons/bitcoin")));
+        Intro intro(nullptr, Params().AssumedBlockchainSize(), Params().AssumedChainStateSize());
+        intro.setDataDirectory(dataDir);
+        intro.setWindowIcon(QIcon(":icons/bitcoin"));
+        did_show_intro = true;
 
         while(true)
         {
-            if(!intro->exec())
+            if(!intro.exec())
             {
                 /* Cancel clicked */
                 return false;
             }
-            dataDir = intro->getDataDirectory();
+            dataDir = intro.getDataDirectory();
             try {
                 if (TryCreateDirectories(GUIUtil::QStringToPath(dataDir))) {
                     // If a new data directory has been created, make wallets subdirectory too
@@ -310,6 +251,9 @@ bool Intro::showIfNeeded(std::unique_ptr<Intro>& intro)
                 /* fall through, back to choosing screen */
             }
         }
+
+        // Additional preferences:
+        prune_MiB = intro.getPruneMiB();
 
         settings.setValue("strDataDir", dataDir);
         settings.setValue("fReset", false);
@@ -359,7 +303,7 @@ void Intro::UpdateFreeSpaceLabel()
         freeString += " " + tr("(of %n GB needed)", "", m_required_space_gb);
         ui->freeSpace->setStyleSheet("QLabel { color: #800000 }");
     } else if (m_bytes_available / GB_BYTES - m_required_space_gb < 10) {
-        freeString += " " + tr("(%n GB needed)", "", m_required_space_gb);
+        freeString += " " + tr("(%n GB needed for full chain)", "", m_required_space_gb);
         ui->freeSpace->setStyleSheet("QLabel { color: #999900 }");
     } else {
         ui->freeSpace->setStyleSheet("");
@@ -432,15 +376,15 @@ void Intro::UpdatePruneLabels(bool prune_checked)
 {
     m_required_space_gb = m_blockchain_size_gb + m_chain_state_size_gb;
     QString storageRequiresMsg = tr("At least %1 GB of data will be stored in this directory, and it will grow over time.");
-    const int64_t prune_target_gb = (m_prune_target_mib * MiB_BYTES + GB_BYTES - 1) / GB_BYTES;
-    if (prune_checked && prune_target_gb <= m_blockchain_size_gb) {
-        m_required_space_gb = prune_target_gb + m_chain_state_size_gb;
+    if (prune_checked && m_prune_target_gb <= m_blockchain_size_gb) {
+        m_required_space_gb = m_prune_target_gb + m_chain_state_size_gb;
         storageRequiresMsg = tr("Approximately %1 GB of data will be stored in this directory.");
     }
-    ui->pruneMiB->setEnabled(prune_checked);
+    ui->lblExplanation3->setVisible(prune_checked);
+    ui->pruneGB->setEnabled(prune_checked);
     static constexpr uint64_t nPowTargetSpacing = 10 * 60;  // from chainparams, which we don't have at this stage
     static constexpr uint32_t expected_block_data_size = 2250000;  // includes undo data
-    const uint64_t expected_backup_days = m_prune_target_mib * MiB_BYTES / (uint64_t(expected_block_data_size) * 86400 / nPowTargetSpacing);
+    const uint64_t expected_backup_days = m_prune_target_gb * 1e9 / (uint64_t(expected_block_data_size) * 86400 / nPowTargetSpacing);
     ui->lblPruneSuffix->setText(
         //: Explanatory text on the capability of the current prune target.
         tr("(sufficient to restore backups %n day(s) old)", "", expected_backup_days));

@@ -198,16 +198,12 @@ fn commit_range() -> String {
     })
 }
 
-fn pull_request_ci() -> bool {
-    matches!(env::var("CI_PULL_REQUEST").as_deref(), Ok("1"))
-}
-
 /// Return all subtree paths
 fn get_subtrees() -> Vec<&'static str> {
     vec![
         "src/crc32c",
         "src/crypto/ctaes",
-        "src/leveldb",
+        //"src/leveldb", No longer a subtree in this release branch, due to direct cherry-picks
         "src/minisketch",
         "src/secp256k1",
     ]
@@ -225,22 +221,7 @@ fn lint_subtree() -> LintResult {
     // This only checks that the trees are pure subtrees, it is not doing a full
     // check with -r to not have to fetch all the remotes.
     let mut good = true;
-    let pull_request = pull_request_ci();
-    let range = commit_range();
     for subtree in get_subtrees() {
-        // Existing subtree impurity is repository debt, not a property of an
-        // unrelated pull request. Still enforce purity whenever the PR changes
-        // the subtree, and retain the full check outside pull-request CI.
-        if pull_request
-            && Command::new("git")
-                .args(["diff", "--quiet", &range, "--", subtree])
-                .status()
-                .expect("command_error")
-                .success()
-        {
-            println!("Skipping unchanged subtree {subtree} in pull-request CI");
-            continue;
-        }
         good &= Command::new("test/lint/git-subtree-check.sh")
             .arg(subtree)
             .status()
@@ -310,13 +291,26 @@ fn lint_py_lint() -> LintResult {
         [
             "B006", // mutable-argument-default
             "B008", // function-call-in-default-argument
+            "E101", // indentation contains mixed spaces and tabs
+            "E401", // multiple imports on one line
+            "E402", // module level import not at top of file
+            "E701", // multiple statements on one line (colon)
+            "E702", // multiple statements on one line (semicolon)
+            "E703", // statement ends with a semicolon
+            "E711", // comparison to None should be 'if cond is None:'
+            "E714", // test for object identity should be "is not"
+            "E721", // do not compare types, use "isinstance()"
             "E722", // do not use bare 'except'
+            "E742", // do not define classes named "l", "O", or "I"
+            "E743", // do not define functions named "l", "O", or "I"
+            "F401", // module imported but unused
             "F402", // import module from line N shadowed by loop variable
             "F403", // 'from foo_module import *' used; unable to detect undefined names
             "F404", // future import(s) name after other statements
             "F405", // foo_function may be undefined, or defined from star imports: bar_module
             "F406", // "from module import *" only allowed at module level
             "F407", // an undefined __future__ feature name was imported
+            "F541", // f-string without any placeholders
             "F601", // dictionary key name repeated with different values
             "F602", // dictionary key variable name repeated with different values
             "F621", // too many expressions in an assignment with star-unpacking
@@ -326,7 +320,12 @@ fn lint_py_lint() -> LintResult {
             "F821", // undefined name 'Foo'
             "F822", // undefined name name in __all__
             "F823", // local variable name … referenced before assignment
+            "F841", // local variable 'foo' is assigned to but never used
             "PLE",  // Pylint errors
+            "W191", // indentation contains tabs
+            "W291", // trailing whitespace
+            "W292", // no newline at end of file
+            "W293", // blank line contains whitespace
             "W605", // invalid escape sequence "x"
         ]
         .join(",")
@@ -480,9 +479,6 @@ fn get_pathspecs_exclude_whitespace() -> Vec<String> {
             "src/univalue/include/univalue_escapes.h",
             "src/univalue/test/object.cpp",
             "test/lint/git-subtree-check.sh",
-            // Byte-preserved replay inputs from an inherited Windows release.
-            "contrib/roots/replay-29.4-proposal/legacy-readme-windows.txt",
-            "contrib/roots/replay-29.4-proposal/materials/doc_README_windows.txt",
         ]
         .iter()
         .map(|s| format!(":(exclude){}", s)),
@@ -498,7 +494,7 @@ fn lint_trailing_whitespace() -> LintResult {
         .expect("command error")
         .success();
     if trailing_space {
-        let message = r#"
+        Err(r#"
 Trailing whitespace (including Windows line endings [CR LF]) is problematic, because git may warn
 about it, or editors may remove it by default, forcing developers in the future to either undo the
 changes manually or spend time on review.
@@ -509,13 +505,7 @@ Please add any false positives, such as subtrees, Windows-related files, patch f
 sourced files to the exclude list.
             "#
         .trim()
-        .to_string();
-        if pull_request_ci() {
-            println!("Advisory pull-request lint:\n{message}");
-            Ok(())
-        } else {
-            Err(message)
-        }
+        .to_string())
     } else {
         Ok(())
     }
@@ -530,7 +520,7 @@ fn lint_tabs_whitespace() -> LintResult {
         .expect("command error")
         .success();
     if tabs {
-        let message = r#"
+        Err(r#"
 Use of tabs in this codebase is problematic, because existing code uses spaces and tabs will cause
 display issues and conflict with editor settings.
 
@@ -539,13 +529,7 @@ Please remove the tabs.
 Please add any false positives, such as subtrees, or externally sourced files to the exclude list.
             "#
         .trim()
-        .to_string();
-        if pull_request_ci() {
-            println!("Advisory pull-request lint:\n{message}");
-            Ok(())
-        } else {
-            Err(message)
-        }
+        .to_string())
     } else {
         Ok(())
     }
@@ -666,34 +650,12 @@ fn lint_markdown() -> LintResult {
     let mut md_ignore_paths = get_subtrees();
     md_ignore_paths.push("./doc/README_doxygen.md");
     let md_ignore_path_str = md_ignore_paths.join(",");
-    // These are VitePress clean routes, not repository-root filesystem paths.
-    // doc/website/.vitepress/tests/site.test.mjs verifies that they are backed
-    // by published pages.
-    let vitepress_routes = [
-        "/compare",
-        "/documentation",
-        "/features",
-        "/getting-started",
-        "/principles",
-    ];
-    for route in vitepress_routes {
-        let source_path = PathBuf::from(format!("doc/website/content{route}.md"));
-        if !source_path.is_file() {
-            return Err(format!(
-                "VitePress route {route} has no source page at {}",
-                source_path.display()
-            ));
-        }
-    }
-    let vitepress_route_str = vitepress_routes.join(",");
 
     let mut cmd = Command::new(bin_name);
     cmd.args([
         "--offline",
         "--ignore-path",
         md_ignore_path_str.as_str(),
-        "--ignore-links",
-        vitepress_route_str.as_str(),
         "--gitignore",
         "--gituntracked",
         "--root-dir",
@@ -705,7 +667,7 @@ fn lint_markdown() -> LintResult {
         Ok(output) if output.status.success() => Ok(()),
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let message = format!(
+            Err(format!(
                 r#"
 One or more markdown links are broken.
 
@@ -717,13 +679,7 @@ Markdown link errors found:
                 stderr
             )
             .trim()
-            .to_string();
-            if pull_request_ci() {
-                println!("Advisory pull-request lint:\n{message}");
-                Ok(())
-            } else {
-                Err(message)
-            }
+            .to_string())
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {
             println!("`mlc` was not found in $PATH, skipping markdown lint check.");
@@ -739,20 +695,16 @@ fn run_all_python_linters() -> LintResult {
     for entry in fs::read_dir(lint_dir).unwrap() {
         let entry = entry.unwrap();
         let entry_fn = entry.file_name().into_string().unwrap();
-        if entry_fn.starts_with("lint-") && entry_fn.ends_with(".py") {
-            let success = Command::new("python3")
+        if entry_fn.starts_with("lint-")
+            && entry_fn.ends_with(".py")
+            && !Command::new("python3")
                 .arg(entry.path())
                 .status()
                 .expect("command error")
-                .success();
-            if !success {
-                if pull_request_ci() && entry_fn == "lint-spelling.py" {
-                    println!("^---- ⚠️ Advisory generated from {}", entry_fn);
-                } else {
-                    good = false;
-                    println!("^---- ⚠️ Failure generated from {}", entry_fn);
-                }
-            }
+                .success()
+        {
+            good = false;
+            println!("^---- ⚠️ Failure generated from {}", entry_fn);
         }
     }
     if good {

@@ -4,7 +4,6 @@
 
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
-#include <test/util/setup_common.h>
 #include <test/fuzz/util.h>
 #include <test/fuzz/util/net.h>
 

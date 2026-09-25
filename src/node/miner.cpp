@@ -16,7 +16,6 @@
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <logging.h>
-#include <node/context.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <pow.h>
@@ -24,10 +23,12 @@
 #include <util/moneystr.h>
 #include <util/time.h>
 #include <validation.h>
-#include <validationinterface.h>
 
 #include <algorithm>
+#include <cassert>
+#include <map>
 #include <utility>
+#include <vector>
 
 namespace node {
 
@@ -74,47 +75,146 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman)
     block.hashMerkleRoot = BlockMerkleRoot(block);
 }
 
-BlockCreateOptions BlockCreateOptions::Clamped() const
+static BlockAssembler::Options ClampOptions(BlockAssembler::Options options)
 {
-    BlockAssembler::Options options = *this;
-    CHECK_NONFATAL(options.block_reserved_size <= MAX_BLOCK_SERIALIZED_SIZE);
-    CHECK_NONFATAL(options.block_reserved_weight <= MAX_BLOCK_WEIGHT);
-    CHECK_NONFATAL(options.block_reserved_weight >= MINIMUM_BLOCK_RESERVED_WEIGHT);
-    CHECK_NONFATAL(options.coinbase_output_max_additional_sigops <= MAX_BLOCK_SIGOPS_COST);
-    // Limit size to between block_reserved_size and MAX_BLOCK_SERIALIZED_SIZE-1K for sanity:
-    options.nBlockMaxSize = std::clamp<size_t>(options.nBlockMaxSize, options.block_reserved_size, MAX_BLOCK_SERIALIZED_SIZE);
+    Assert(options.block_reserved_weight <= MAX_BLOCK_WEIGHT);
+    Assert(options.block_reserved_weight >= MINIMUM_BLOCK_RESERVED_WEIGHT);
+    Assert(options.coinbase_output_max_additional_sigops <= MAX_BLOCK_SIGOPS_COST);
+    options.nBlockMaxSize = std::clamp<size_t>(options.nBlockMaxSize, DEFAULT_BLOCK_RESERVED_SIZE, MAX_BLOCK_SERIALIZED_SIZE);
     // Limit weight to between block_reserved_weight and MAX_BLOCK_WEIGHT for sanity:
     // block_reserved_weight can safely exceed -blockmaxweight, but the rest of the block template will be empty.
     options.nBlockMaxWeight = std::clamp<size_t>(options.nBlockMaxWeight, options.block_reserved_weight, MAX_BLOCK_WEIGHT);
     return options;
 }
 
-BlockAssembler::BlockAssembler(Chainstate& chainstate, const CTxMemPool* mempool, const Options& options, const NodeContext& node)
+BlockAssembler::BlockAssembler(Chainstate& chainstate, const CTxMemPool* mempool, const Options& options)
     : chainparams{chainstate.m_chainman.GetParams()},
       m_mempool{options.use_mempool ? mempool : nullptr},
       m_chainstate{chainstate},
-      m_node{node},
-      m_options{options.Clamped()}
+      m_options{ClampOptions(options)}
 {
-    // Whether we need to account for byte usage (in addition to weight usage)
-    fNeedSizeAccounting = (options.nBlockMaxSize < MAX_BLOCK_SERIALIZED_SIZE);
+    fNeedSizeAccounting = m_options.nBlockMaxSize < MAX_BLOCK_SERIALIZED_SIZE;
+}
+
+namespace {
+using TxCoinAgePriority = std::pair<double, CTxMemPool::txiter>;
+
+struct TxCoinAgePriorityCompare {
+    bool operator()(const TxCoinAgePriority& a, const TxCoinAgePriority& b) const
+    {
+        if (a.first == b.first) {
+            return CompareTxMemPoolEntryByScore{}(*b.second, *a.second);
+        }
+        return a.first < b.first;
+    }
+};
+} // namespace
+
+bool BlockAssembler::isStillDependent(const CTxMemPool& mempool, CTxMemPool::txiter iter)
+{
+    assert(iter != mempool.mapTx.end());
+    for (const auto& parent : iter->GetMemPoolParentsConst()) {
+        const auto parent_it{mempool.mapTx.iterator_to(parent)};
+        if (!inBlock.count(parent_it)) return true;
+    }
+    return false;
+}
+
+bool BlockAssembler::TestForBlock(CTxMemPool::txiter iter)
+{
+    const auto package_size{iter->GetSizeWithAncestors()};
+    const int64_t package_sigops{iter->GetSigOpCostWithAncestors()};
+    if (!TestPackage(package_size, package_sigops)) {
+        if (nBlockWeight > m_options.nBlockMaxWeight - 400 || nBlockSigOpsCost > MAX_BLOCK_SIGOPS_COST - 8 || lastFewTxs > 50) {
+            blockFinished = true;
+            return false;
+        }
+        if (nBlockWeight > m_options.nBlockMaxWeight - 4000) ++lastFewTxs;
+        return false;
+    }
+
+    CTxMemPool::setEntries package;
+    package.insert(iter);
+    if (!TestPackageTransactions(package)) {
+        if (nBlockSize > m_options.nBlockMaxSize - 100 || lastFewTxs > 50) {
+            blockFinished = true;
+            return false;
+        }
+        if (nBlockSize > m_options.nBlockMaxSize - 1000) ++lastFewTxs;
+        return false;
+    }
+    return true;
+}
+
+void BlockAssembler::addPriorityTxs(const CTxMemPool& mempool, int& packages_selected)
+{
+    AssertLockHeld(mempool.cs);
+
+    uint64_t priority_size{static_cast<uint64_t>(gArgs.GetIntArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE))};
+    priority_size = std::min<uint64_t>(priority_size, m_options.nBlockMaxSize);
+    if (priority_size == 0) return;
+
+    const bool previous_size_accounting{fNeedSizeAccounting};
+    fNeedSizeAccounting = true;
+
+    std::vector<TxCoinAgePriority> priorities;
+    std::map<CTxMemPool::txiter, double, CompareIteratorByHash> waiting;
+    priorities.reserve(mempool.mapTx.size());
+    for (auto iter{mempool.mapTx.begin()}; iter != mempool.mapTx.end(); ++iter) {
+        double priority{iter->GetPriority(nHeight)};
+        CAmount fee_delta{0};
+        mempool.ApplyDeltas(iter->GetTx().GetHash(), priority, fee_delta);
+        priorities.emplace_back(priority, iter);
+    }
+
+    TxCoinAgePriorityCompare compare;
+    std::make_heap(priorities.begin(), priorities.end(), compare);
+    while (!priorities.empty() && !blockFinished) {
+        const CTxMemPool::txiter iter{priorities.front().second};
+        const double priority{priorities.front().first};
+        std::pop_heap(priorities.begin(), priorities.end(), compare);
+        priorities.pop_back();
+
+        if (inBlock.count(iter)) {
+            assert(false);
+            continue;
+        }
+        if (isStillDependent(mempool, iter)) {
+            waiting.emplace(iter, priority);
+            continue;
+        }
+        if (!TestForBlock(iter)) continue;
+
+        AddToBlock(iter);
+        ++packages_selected;
+        if (nBlockSize >= priority_size || priority <= MINIMUM_TX_PRIORITY) break;
+
+        for (const auto& child : iter->GetMemPoolChildrenConst()) {
+            const auto child_iter{mempool.mapTx.iterator_to(child)};
+            const auto waiting_iter{waiting.find(child_iter)};
+            if (waiting_iter == waiting.end()) continue;
+            priorities.emplace_back(waiting_iter->second, child_iter);
+            std::push_heap(priorities.begin(), priorities.end(), compare);
+            waiting.erase(waiting_iter);
+        }
+    }
+    fNeedSizeAccounting = previous_size_accounting;
 }
 
 void ApplyArgsManOptions(const ArgsManager& args, BlockAssembler::Options& options)
 {
     // Block resource limits
-    // If neither -blockmaxsize or -blockmaxweight is given, limit to DEFAULT_BLOCK_MAX_*
-    // If only one is given, only restrict the specified resource.
-    // If both are given, restrict both.
-    bool fWeightSet = false;
+    // If only one resource limit is set, leave the other unrestricted. If
+    // neither is set, retain the conservative default weight limit.
+    bool weight_set{false};
     if (args.IsArgSet("-blockmaxweight")) {
         options.nBlockMaxWeight = args.GetIntArg("-blockmaxweight", DEFAULT_BLOCK_MAX_WEIGHT);
         options.nBlockMaxSize = MAX_BLOCK_SERIALIZED_SIZE;
-        fWeightSet = true;
+        weight_set = true;
     }
     if (args.IsArgSet("-blockmaxsize")) {
         options.nBlockMaxSize = args.GetIntArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
-        if (!fWeightSet) {
+        if (!weight_set) {
             options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
         }
     }
@@ -130,19 +230,16 @@ void BlockAssembler::resetBlock()
     inBlock.clear();
 
     // Reserve space for fixed-size block header, txs count, and coinbase tx.
-    nBlockSize = m_options.block_reserved_size;
+    nBlockSize = 1000;
     nBlockWeight = m_options.block_reserved_weight;
     nBlockSigOpsCost = m_options.coinbase_output_max_additional_sigops;
 
     // These counters do not include coinbase tx
     nBlockTx = 0;
     nFees = 0;
-
-    lastFewTxs = 0;
-    blockFinished = false;
 }
 
-std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 {
     const auto time_start{SteadyClock::now()};
 
@@ -155,9 +252,6 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->vtx.emplace_back();
     pblocktemplate->vTxFees.push_back(-1); // updated at end
     pblocktemplate->vTxSigOpsCost.push_back(-1); // updated at end
-    if (m_options.print_modified_fee) {
-        pblocktemplate->vTxPriorities.push_back(-1);  // n/a
-    }
 
     LOCK(::cs_main);
     CBlockIndex* pindexPrev = m_chainstate.m_chain.Tip();
@@ -186,11 +280,6 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     m_last_block_num_txs = nBlockTx;
     m_last_block_weight = nBlockWeight;
-    if (fNeedSizeAccounting) {
-        m_last_block_size = nBlockSize;
-    } else {
-        m_last_block_size = std::nullopt;
-    }
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
@@ -204,8 +293,7 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblocktemplate->vchCoinbaseCommitment = m_chainstate.m_chainman.GenerateCoinbaseCommitment(*pblock, pindexPrev);
     pblocktemplate->vTxFees[0] = -nFees;
 
-    uint64_t nSerializeSize = GetSerializeSize(TX_WITH_WITNESS(*pblock));
-    LogPrintf("CreateNewBlock(): total size: %u block weight: %u txs: %u fees: %ld sigops %d\n", nSerializeSize, GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost);
+    LogPrintf("CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d\n", GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost);
 
     // Fill in header
     pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
@@ -225,8 +313,6 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
              Ticks<MillisecondsDouble>(time_1 - time_start), nPackagesSelected, nDescendantsUpdated,
              Ticks<MillisecondsDouble>(time_2 - time_1),
              Ticks<MillisecondsDouble>(time_2 - time_start));
-
-    if (m_node.validation_signals) m_node.validation_signals->NewBlockTemplate(pblocktemplate);
 
     return std::move(pblocktemplate);
 }
@@ -257,48 +343,41 @@ bool BlockAssembler::TestPackage(uint64_t packageSize, int64_t packageSigOpsCost
 
 // Perform transaction-level checks before adding to block:
 // - transaction finality (locktime)
-// - serialized size (in case -blockmaxsize is in use)
+// - serialized size when -blockmaxsize is in use
 bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& package) const
 {
-    uint64_t nPotentialBlockSize = nBlockSize; // only used with fNeedSizeAccounting
+    uint64_t potential_block_size{nBlockSize};
     for (CTxMemPool::txiter it : package) {
         if (!IsFinalTx(it->GetTx(), nHeight, m_lock_time_cutoff)) {
             return false;
         }
         if (fNeedSizeAccounting) {
-            uint64_t nTxSize = ::GetSerializeSize(TX_WITH_WITNESS(it->GetTx()));
-            if (nPotentialBlockSize + nTxSize >= m_options.nBlockMaxSize) {
+            const uint64_t tx_size{::GetSerializeSize(TX_WITH_WITNESS(it->GetTx()))};
+            if (potential_block_size + tx_size >= m_options.nBlockMaxSize) {
                 return false;
             }
-            nPotentialBlockSize += nTxSize;
+            potential_block_size += tx_size;
         }
     }
     return true;
 }
 
-void BlockAssembler::AddToBlock(const CTxMemPool& mempool, CTxMemPool::txiter iter)
+void BlockAssembler::AddToBlock(CTxMemPool::txiter iter)
 {
     pblocktemplate->block.vtx.emplace_back(iter->GetSharedTx());
     pblocktemplate->vTxFees.push_back(iter->GetFee());
     pblocktemplate->vTxSigOpsCost.push_back(iter->GetSigOpCost());
-    if (fNeedSizeAccounting) {
-        nBlockSize += ::GetSerializeSize(TX_WITH_WITNESS(iter->GetTx()));
-    }
     nBlockWeight += iter->GetTxWeight();
+    nBlockSize += GetSerializeSize(TX_WITH_WITNESS(iter->GetTx()));
     ++nBlockTx;
     nBlockSigOpsCost += iter->GetSigOpCost();
     nFees += iter->GetFee();
     inBlock.insert(iter);
 
     if (m_options.print_modified_fee) {
-        double dPriority = iter->GetPriority(nHeight);
-        CAmount dummy;
-        mempool.ApplyDeltas(iter->GetTx().GetHash(), dPriority, dummy);
-        LogPrintf("priority %.1f fee rate %s txid %s\n",
-                  dPriority,
+        LogPrintf("fee rate %s txid %s\n",
                   CFeeRate(iter->GetModifiedFee(), iter->GetTxSize()).ToString(),
                   iter->GetTx().GetHash().ToString());
-        pblocktemplate->vTxPriorities.push_back(dPriority);
     }
 }
 
@@ -361,11 +440,8 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
     // because some of their txs are already in the block
     indexed_modified_transaction_set mapModifiedTx;
     // Keep track of entries that failed inclusion, to avoid duplicate work
-    CTxMemPool::setEntries failedTx;
+    std::set<Txid> failedTx;
 
-    // Start by adding all descendants of previously added txs to mapModifiedTx
-    // and modifying them for their already included ancestors
-    nDescendantsUpdated += UpdatePackagesForAdded(mempool, inBlock, mapModifiedTx);
     CTxMemPool::indexed_transaction_set::index<ancestor_score>::type::iterator mi = mempool.mapTx.get<ancestor_score>().begin();
     CTxMemPool::txiter iter;
 
@@ -373,8 +449,6 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
     // close to full; this is just a simple heuristic to finish quickly if the
     // mempool has a lot of entries.
     const int64_t MAX_CONSECUTIVE_FAILURES = 1000;
-    constexpr int32_t BLOCK_FULL_ENOUGH_SIZE_DELTA = 1000;
-    constexpr int32_t BLOCK_FULL_ENOUGH_WEIGHT_DELTA = 4000;
     int64_t nConsecutiveFailed = 0;
 
     while (mi != mempool.mapTx.get<ancestor_score>().end() || !mapModifiedTx.empty()) {
@@ -394,7 +468,7 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
         if (mi != mempool.mapTx.get<ancestor_score>().end()) {
             auto it = mempool.mapTx.project<0>(mi);
             assert(it != mempool.mapTx.end());
-            if (mapModifiedTx.count(it) || inBlock.count(it) || failedTx.count(it)) {
+            if (mapModifiedTx.count(it) || inBlock.count(it) || failedTx.count(it->GetSharedTx()->GetHash())) {
                 ++mi;
                 continue;
             }
@@ -450,13 +524,13 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
                 // we must erase failed entries so that we can consider the
                 // next best entry on the next loop iteration
                 mapModifiedTx.get<ancestor_score>().erase(modit);
-                failedTx.insert(iter);
+                failedTx.insert(iter->GetSharedTx()->GetHash());
             }
 
             ++nConsecutiveFailed;
 
             if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight +
-                    BLOCK_FULL_ENOUGH_WEIGHT_DELTA > m_options.nBlockMaxWeight) {
+                    m_options.block_reserved_weight > m_options.nBlockMaxWeight) {
                 // Give up if we're close to full and haven't succeeded in a while
                 break;
             }
@@ -472,16 +546,7 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
         if (!TestPackageTransactions(ancestors)) {
             if (fUsingModified) {
                 mapModifiedTx.get<ancestor_score>().erase(modit);
-                failedTx.insert(iter);
-            }
-
-            if (fNeedSizeAccounting) {
-                ++nConsecutiveFailed;
-
-                if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockSize > m_options.nBlockMaxSize - BLOCK_FULL_ENOUGH_SIZE_DELTA) {
-                    // Give up if we're close to full and haven't succeeded in a while
-                    break;
-                }
+                failedTx.insert(iter->GetSharedTx()->GetHash());
             }
             continue;
         }
@@ -494,7 +559,7 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
         SortForBlock(ancestors, sortedEntries);
 
         for (size_t i = 0; i < sortedEntries.size(); ++i) {
-            AddToBlock(mempool, sortedEntries[i]);
+            AddToBlock(sortedEntries[i]);
             // Erase from the modified set, if present
             mapModifiedTx.erase(sortedEntries[i]);
         }

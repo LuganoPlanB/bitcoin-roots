@@ -20,10 +20,13 @@ from test_framework.wallet import (
     MiniWallet,
 )
 
+EPHEMERAL_ARGS = ["-permitephemeral=anchor,send,dust", "-subdustfeepenalty=0", "-blockprioritysize=0"]
+
 class EphemeralDustTest(BitcoinTestFramework):
     def set_test_params(self):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
+        self.extra_args = [EPHEMERAL_ARGS, EPHEMERAL_ARGS]
 
         # Don't test trickling logic
         self.noban_tx_relay = True
@@ -94,12 +97,12 @@ class EphemeralDustTest(BitcoinTestFramework):
         assert_raises_rpc_error(-26, "min relay fee not met", self.nodes[0].sendrawtransaction, dusty_tx["hex"])
 
         # If we add modified fees, it is still not allowed due to dust check
-        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=COIN)
+        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=COIN)
         test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
         assert not test_res[0]["allowed"]
         assert_equal(test_res[0]["reject-reason"], "dust")
         # Reset priority
-        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=-COIN)
+        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=-COIN)
         assert_equal(self.nodes[0].getprioritisedtransactions(), {})
 
         # Package evaluation succeeds
@@ -129,8 +132,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Node restart; doesn't allow ephemeral transaction back in due to individual submission
         # resulting in 0-fee. Supporting re-submission of CPFP packages on restart is desired but not
         # yet implemented.
-        self.restart_node(0)
-        self.restart_node(1)
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -151,8 +154,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "dust, tx with dust output must be 0-fee")
 
         # Priority is ignored: rejected even if modified fee is 0
-        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=-sats_fee)
-        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=-sats_fee)
+        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=-sats_fee)
+        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=-sats_fee)
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
         assert_equal(res["package_msg"], "transaction failed")
         assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "dust, tx with dust output must be 0-fee")
@@ -160,8 +163,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Will not be accepted if base fee is 0 with modified fee of non-0
         dusty_tx, sweep_tx = self.create_ephemeral_dust_package(tx_version=3)
 
-        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=1000)
-        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], fee_delta=1000)
+        self.nodes[0].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=1000)
+        self.nodes[1].prioritisetransaction(txid=dusty_tx["txid"], dummy=0, fee_delta=1000)
 
         # It's rejected submitted alone
         test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
@@ -190,8 +193,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that a single output of any satoshi amount is allowed, not checking spending")
 
         # We aren't checking spending, allow it in with no fee
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         # 330 is dust threshold for taproot outputs
@@ -201,8 +204,8 @@ class EphemeralDustTest(BitcoinTestFramework):
             test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
             assert test_res[0]["allowed"]
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -215,7 +218,9 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
         assert_equal(res["package_msg"], "transaction failed")
-        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 15")
+        # Roots accounts for the datacarrier policy weight in this package's
+        # individual relay-fee check.
+        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 147")
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -376,8 +381,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that ephemeral dust works in non-TRUC contexts when there's no minrelay requirement")
 
         # Note: since minrelay is 0, it is not testing 1P1C relay
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])
@@ -441,8 +446,8 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         # Other topology tests (e.g., grandparents and parents both with dust) require relaxation of submitpackage topology
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])

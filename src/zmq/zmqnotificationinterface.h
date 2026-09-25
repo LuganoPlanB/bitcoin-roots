@@ -14,8 +14,6 @@
 #include <memory>
 #include <vector>
 
-#include <boost/signals2/connection.hpp>
-
 class CBlock;
 class CBlockIndex;
 class CZMQAbstractNotifier;
@@ -34,8 +32,6 @@ protected:
     bool Initialize();
     void Shutdown();
 
-    void TransactionAddedToWallet(const CTransactionRef& tx, const uint256 &hashBlock);
-
     // CValidationInterface
     void TransactionAddedToMempool(const NewMempoolTransactionInfo& tx, uint64_t mempool_sequence) override;
     void TransactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason, uint64_t mempool_sequence) override;
@@ -48,7 +44,6 @@ private:
 
     void* pcontext{nullptr};
     std::list<std::unique_ptr<CZMQAbstractNotifier>> notifiers;
-    boost::signals2::connection m_wtx_added_connection;
 };
 
 extern std::unique_ptr<CZMQNotificationInterface> g_zmq_notification_interface;

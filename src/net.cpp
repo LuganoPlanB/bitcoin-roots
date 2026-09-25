@@ -290,20 +290,14 @@ bool AddLocal(const CService& addr_, int nScore)
 
     LogPrintf("AddLocal(%s,%i)\n", addr.ToStringAddrPort(), nScore);
 
-    bool fAlready;
     {
         LOCK(g_maplocalhost_mutex);
         const auto [it, is_newly_added] = mapLocalHost.emplace(addr, LocalServiceInfo());
-        fAlready = !is_newly_added;
         LocalServiceInfo &info = it->second;
         if (is_newly_added || nScore >= info.nScore) {
             info.nScore = nScore + (is_newly_added ? 0 : 1);
             info.nPort = addr.GetPort();
         }
-    }
-
-    if (!fAlready) {
-        uiInterface.NotifyNetworkLocalChanged();
     }
 
     return true;
@@ -321,7 +315,6 @@ void RemoveLocal(const CService& addr)
         LogPrintf("RemoveLocal(%s)\n", addr.ToStringAddrPort());
         mapLocalHost.erase(addr);
     }
-    uiInterface.NotifyNetworkLocalChanged();
 }
 
 /** vote for a local address */
@@ -3791,13 +3784,6 @@ void CConnman::RecordBytesSent(uint64_t bytes)
     }
 
     nMaxOutboundTotalBytesSentInCycle += bytes;
-}
-
-void CConnman::SetMaxOutboundTarget(uint64_t limit)
-{
-    AssertLockNotHeld(m_total_bytes_sent_mutex);
-    LOCK(m_total_bytes_sent_mutex);
-    nMaxOutboundLimit = limit;
 }
 
 uint64_t CConnman::GetMaxOutboundTarget() const

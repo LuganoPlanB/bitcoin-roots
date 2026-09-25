@@ -6,18 +6,15 @@
 #define BITCOIN_QT_WALLETMODEL_H
 
 #include <key.h>
-#include <primitives/transaction.h>
 
 #include <qt/walletmodeltransaction.h>
 
 #include <interfaces/wallet.h>
 #include <support/allocators/secure.h>
 
-#include <string>
 #include <vector>
 
 #include <QObject>
-#include <QValidator>
 
 enum class OutputType;
 
@@ -84,8 +81,6 @@ public:
 
     // Check address for validity
     bool validateAddress(const QString& address) const;
-    bool checkAddressForUsage(const std::vector<std::string>& addresses) const;
-    bool findAddressUsage(const QStringList& addresses, std::function<void(const QString&, const interfaces::WalletTx&, uint32_t)> callback) const;
 
     // Return status record for SendCoins, contains error id + information
     struct SendCoinsReturn
@@ -241,18 +236,6 @@ public Q_SLOTS:
     void updateWatchOnlyFlag(bool fHaveWatchonly);
     /* Current, immature or unconfirmed balance might have changed - emit 'balanceChanged' if so */
     void pollBalanceChanged();
-};
-
-class BitcoinAddressUnusedInWalletValidator : public QValidator
-{
-    Q_OBJECT
-
-    const WalletModel& m_wallet_model;
-
-public:
-    explicit BitcoinAddressUnusedInWalletValidator(const WalletModel&, QObject *parent=nullptr);
-
-    State validate(QString &input, int &pos) const override;
 };
 
 #endif // BITCOIN_QT_WALLETMODEL_H

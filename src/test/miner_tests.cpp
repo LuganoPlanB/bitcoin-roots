@@ -151,8 +151,17 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     BOOST_CHECK(block.vtx[2]->GetHash() == hashHighFeeTx);
     BOOST_CHECK(block.vtx[3]->GetHash() == hashMediumFeeTx);
 
+    // The fee-selected parent/child package must also respect an explicit
+    // serialized-size cap. The default-weight template above remains free to
+    // include the same package.
+    BlockAssembler::Options size_limited_options{options};
+    size_limited_options.nBlockMaxSize = DEFAULT_BLOCK_RESERVED_SIZE + ::GetSerializeSize(TX_WITH_WITNESS(parent_tx.GetTx()));
+    const auto size_limited_block = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, size_limited_options}.CreateNewBlock();
+    BOOST_REQUIRE(size_limited_block);
+    BOOST_CHECK_EQUAL(size_limited_block->block.vtx.size(), 1U);
+
     // Test the inclusion of package feerates in the block template and ensure they are sequential.
-    const auto block_package_feerates = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options, m_node}.CreateNewBlock()->m_package_feerates;
+    const auto block_package_feerates = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock()->m_package_feerates;
     BOOST_CHECK(block_package_feerates.size() == 2);
 
     // parent_tx and high_fee_tx are added to the block as a package.

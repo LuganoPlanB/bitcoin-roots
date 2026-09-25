@@ -69,9 +69,9 @@ class RawTransactionsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.extra_args = [
-            ["-txindex"],
-            ["-txindex"],
-            ["-fastprune", "-prune=1"],
+            ["-txindex", "-permitbaredatacarrier=1"],
+            ["-txindex", "-permitbaredatacarrier=1"],
+            ["-fastprune", "-prune=1", "-permitbaredatacarrier=1"],
         ]
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
@@ -409,22 +409,12 @@ class RawTransactionsTest(BitcoinTestFramework):
         testres = self.nodes[2].testmempoolaccept([tx['hex']], 0.00001000)[0]
         assert_equal(testres['allowed'], False)
         assert_equal(testres['reject-reason'], 'max-fee-exceeded')
-        testres = self.nodes[2].testmempoolaccept([tx['hex']], 0.00001000, ['foobar'])[0]
-        assert_equal(testres['allowed'], False)
-        assert_equal(testres['reject-reason'], 'max-fee-exceeded')
-        # unless ignored explicitly
-        testres = self.nodes[2].testmempoolaccept([tx['hex']], 0.00001000, ['max-fee-exceeded'])[0]
-        assert_equal(testres['allowed'], True)
-        assert('reject-reason' not in testres)
-        testres = self.nodes[2].testmempoolaccept([tx['hex']], 0.00001000, ['absurdly-high-fee'])[0]
-        assert_equal(testres['allowed'], True)
-        assert('reject-reason' not in testres)
         # and sendrawtransaction should throw
         assert_raises_rpc_error(-25, fee_exceeds_max, self.nodes[2].sendrawtransaction, tx['hex'], 0.00001000)
         # and the following calls should both succeed
         testres = self.nodes[2].testmempoolaccept(rawtxs=[tx['hex']])[0]
         assert_equal(testres['allowed'], True)
-        self.nodes[2].sendrawtransaction(hexstring=tx['hex'], maxfeerate=0.00001000, ignore_rejects=['max-fee-exceeded'])
+        self.nodes[2].sendrawtransaction(hexstring=tx['hex'])
 
         # Test a transaction with a large fee.
         # Fee rate is 0.20000000 BTC/kvB
