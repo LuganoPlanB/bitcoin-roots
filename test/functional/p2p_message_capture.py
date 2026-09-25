@@ -62,6 +62,8 @@ class MessageCaptureTest(BitcoinTestFramework):
         # Connect a node so that the handshake occurs
         self.nodes[0].add_p2p_connection(P2PDataStore())
         self.nodes[0].disconnect_p2ps()
+        self.wait_until(lambda: glob.glob(os.path.join(capturedir, "*/msgs_recv.dat")))
+        self.wait_until(lambda: glob.glob(os.path.join(capturedir, "*/msgs_sent.dat")))
         recv_file = glob.glob(os.path.join(capturedir, "*/msgs_recv.dat"))[0]
         mini_parser(recv_file)
         sent_file = glob.glob(os.path.join(capturedir, "*/msgs_sent.dat"))[0]
