@@ -34,3 +34,8 @@ std::string CFeeRate::ToString(const FeeEstimateMode& fee_estimate_mode) const
     default:                      return strprintf("%d.%08d %s/kvB", feerate_per_kvb / COIN, feerate_per_kvb % COIN, CURRENCY_UNIT);
     }
 }
+
+std::string CFeeRate::SatsToString() const {
+    const CAmount feerate_per_kvb = GetFeePerK();
+    return strprintf("%d.%03d", feerate_per_kvb / 1000, feerate_per_kvb % 1000);
+}
