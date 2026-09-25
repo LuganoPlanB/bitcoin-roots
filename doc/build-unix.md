@@ -66,6 +66,10 @@ Cap'n Proto is needed for IPC functionality (see [multiprocess.md](multiprocess.
 
 Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
 
+Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
+
+    sudo apt install libminiupnpc-dev
+
 ZMQ-enabled binaries are compiled with `-DWITH_ZMQ=ON` and require the following dependency:
 
     sudo apt-get install libzmq3-dev
@@ -77,9 +81,10 @@ User-Space, Statically Defined Tracing (USDT) dependencies:
 GUI dependencies:
 
 Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
-the necessary parts of Qt, the libqrencode and pass `-DBUILD_GUI=ON`. Skip if you don't intend to use the GUI.
+the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
+Skip if you don't intend to use the GUI.
 
-    sudo apt-get install qt6-base-dev qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools libgl-dev
+    sudo apt-get install qt6-base-dev qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools libgl-dev librsvg2-bin imagemagick
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
@@ -90,6 +95,8 @@ The GUI will be able to encode addresses in QR codes unless this feature is expl
     sudo apt-get install libqrencode-dev
 
 Otherwise, if you don't need QR encoding support, use the `-DWITH_QRENCODE=OFF` option to disable this feature in order to compile the GUI.
+
+Note: You can also build with Qt 6 (instead of Qt 5) by passing `-DWITH_QT_VERSION=6` to cmake.
 
 
 ### Fedora
@@ -110,6 +117,10 @@ SQLite is required for the wallet:
 
 To build Bitcoin Core without the wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
 
+Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
+
+    sudo dnf install miniupnpc-devel
+
 ZMQ-enabled binaries are compiled with `-DWITH_ZMQ=ON` and require the following dependency:
 
     sudo dnf install zeromq-devel
@@ -127,9 +138,10 @@ Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
 GUI dependencies:
 
 Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
-the necessary parts of Qt, the libqrencode and pass `-DBUILD_GUI=ON`. Skip if you don't intend to use the GUI.
+the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
+Skip if you don't intend to use the GUI.
 
-    sudo dnf install qt6-qtbase-devel qt6-qttools-devel
+    sudo dnf install qt6-qtbase-devel qt6-qttools-devel librsvg2-tools ImageMagick
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
@@ -205,8 +217,8 @@ Setup and Build Example: Arch Linux
 -----------------------------------
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
-    pacman --sync --needed capnproto cmake boost gcc git libevent make python sqlite
-    git clone https://github.com/bitcoin/bitcoin.git
+    pacman --sync --needed capnproto cmake boost gcc git libevent make python sqlite librsvg imagemagick
+    git clone https://github.com/luganoplanb/bitcoin-roots.git
     cd bitcoin/
     cmake -B build
     cmake --build build

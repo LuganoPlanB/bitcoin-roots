@@ -9,11 +9,20 @@
   ],
   "default-features": [
     "qt",
+    "miniupnpc",
     "tests",
     "wallet",
     "zeromq"
   ],
   "features": {
+    "miniupnpc": {
+      "description": "Enable UPnP",
+      "dependencies": ["miniupnpc"]
+    },
+    "qt5": {
+      "description": "Build GUI, Qt 5",
+      "dependencies": ["qt5-base", "qt5-tools", "libqrencode"]
+    },
     "qt": {
       "description": "Build GUI, Qt 6",
       "dependencies": [

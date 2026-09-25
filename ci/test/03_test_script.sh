@@ -124,7 +124,14 @@ PRINT_CCACHE_STATISTICS="ccache --version | head -n 1 && ccache --show-stats"
 # Folder where the build is done.
 BASE_BUILD_DIR=${BASE_BUILD_DIR:-$BASE_SCRATCH_DIR/build-$HOST}
 
-BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR -Werror=dev"
+BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DENABLE_EXTERNAL_SIGNER=ON -DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR -Werror=dev"
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+    printf 'Invalid release tag: %s\n' "$RELEASE_TAG" >&2
+    exit 1
+  fi
+  BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCLIENT_VERSION_TAG=$RELEASE_TAG"
+fi
 
 if [[ "${RUN_TIDY}" == "true" ]]; then
   BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"

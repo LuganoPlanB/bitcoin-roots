@@ -79,6 +79,7 @@
         "ENABLE_EXTERNAL_SIGNER": "ON",
         "ENABLE_WALLET": "ON",
         "ENABLE_IPC": "ON",
+        "WITH_MINIUPNPC": "ON",
         "WITH_QRENCODE": "ON",
         "WITH_USDT": "ON",
         "WITH_ZMQ": "ON"
