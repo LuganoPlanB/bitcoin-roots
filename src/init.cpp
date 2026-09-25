@@ -682,6 +682,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-mempooltruc", "Set TRUC policy: reject, accept, or enforce (default: enforce)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaycoinblocks=<n>", strprintf("Minimum coin blocks a transaction must spend to be relayed (default: %s)", DEFAULT_MINRELAYCOINBLOCKS), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaymaturity=<n>", strprintf("Minimum input maturity before relay (default: %s)", DEFAULT_MINRELAYMATURITY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-permitbarepubkey", strprintf("Relay legacy pubkey outputs (default: %u)", DEFAULT_PERMIT_BAREPUBKEY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitbaremultisig", strprintf("Relay transactions creating non-P2SH multisig outputs (default: %u)", DEFAULT_PERMIT_BAREMULTISIG), ArgsManager::ALLOW_ANY,
                    OptionsCategory::NODE_RELAY);
     argsman.AddArg("-spkreuse=<policy>", "Set script reuse policy: allow or conflict (default: allow)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
