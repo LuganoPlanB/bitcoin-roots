@@ -143,12 +143,15 @@ private:
     // The constructed block template
     std::unique_ptr<CBlockTemplate> pblocktemplate;
 
+    bool fNeedSizeAccounting{false};
+
     // Information on the current status of the block
     uint64_t nBlockWeight;
+    uint64_t nBlockSize{0};
     uint64_t nBlockTx;
     uint64_t nBlockSigOpsCost;
     CAmount nFees;
-    std::unordered_set<Txid, SaltedTxidHasher> inBlock;
+    CTxMemPool::setEntries inBlock;
 
     // Chain context for the block
     int nHeight;
@@ -158,10 +161,14 @@ private:
     const CTxMemPool* const m_mempool;
     Chainstate& m_chainstate;
 
+    int lastFewTxs{0};
+    bool blockFinished{false};
+
 public:
     struct Options : BlockCreateOptions {
         // Configuration parameters for the block size
         size_t nBlockMaxWeight{DEFAULT_BLOCK_MAX_WEIGHT};
+        size_t nBlockMaxSize{MAX_BLOCK_SERIALIZED_SIZE};
         CFeeRate blockMinFeeRate{DEFAULT_BLOCK_MIN_TX_FEE};
         // Whether to call TestBlockValidity() at the end of CreateNewBlock().
         bool test_block_validity{true};
@@ -195,6 +202,10 @@ private:
       * @pre BlockAssembler::m_mempool must not be nullptr
     */
     void addPackageTxs(int& nPackagesSelected, int& nDescendantsUpdated) EXCLUSIVE_LOCKS_REQUIRED(!m_mempool->cs);
+
+    void addPriorityTxs(const CTxMemPool& mempool, int& nPackagesSelected) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
+    bool TestForBlock(CTxMemPool::txiter iter);
+    bool isStillDependent(const CTxMemPool& mempool, CTxMemPool::txiter iter) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
 
     // helper functions for addPackageTxs()
     /** Remove confirmed (inBlock) entries from given set */

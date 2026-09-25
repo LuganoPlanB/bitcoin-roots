@@ -143,6 +143,10 @@ static RPCHelpMan getpeerinfo()
                     {RPCResult::Type::NUM_TIME, "last_block", "The " + UNIX_EPOCH_TIME + " of the last block received from this peer"},
                     {RPCResult::Type::NUM, "bytessent", "The total bytes sent"},
                     {RPCResult::Type::NUM, "bytesrecv", "The total bytes received"},
+                    {RPCResult::Type::NUM, "cpu_load", /*optional=*/true, "Total CPU time spent processing "
+                        "messages to/from the peer, in per milles (‰) of the connection duration, if "
+                        "supported by the platform and measured. High CPU time is not necessarily a bad "
+                        "thing - new valid transactions and blocks require it be validated."},
                     {RPCResult::Type::NUM_TIME, "conntime", "The " + UNIX_EPOCH_TIME + " of the connection"},
                     {RPCResult::Type::NUM, "timeoffset", "The time offset in seconds"},
                     {RPCResult::Type::NUM, "pingtime", /*optional=*/true, "The last ping time in seconds, if any"},
@@ -157,6 +161,7 @@ static RPCHelpMan getpeerinfo()
                     {RPCResult::Type::NUM, "presynced_headers", "The current height of header pre-synchronization with this peer, or -1 if no low-work sync is in progress"},
                     {RPCResult::Type::NUM, "synced_headers", "The last header we have in common with this peer"},
                     {RPCResult::Type::NUM, "synced_blocks", "The last block we have in common with this peer"},
+                    {RPCResult::Type::NUM_TIME, "last_block_announcement", "The time of the last block announcement received from this peer, or 0 if none has been received"},
                     {RPCResult::Type::ARR, "inflight", "",
                     {
                         {RPCResult::Type::NUM, "n", "The heights of blocks we're currently asking from this peer"},
@@ -168,6 +173,7 @@ static RPCHelpMan getpeerinfo()
                     {
                         {RPCResult::Type::STR, "permission_type", Join(NET_PERMISSIONS_DOC, ",\n") + ".\n"},
                     }},
+                    {RPCResult::Type::BOOL, "forced_inbound", "Whether this peer forced a connection by evicting another."},
                     {RPCResult::Type::NUM, "minfeefilter", "The minimum fee rate for transactions this peer accepts"},
                     {RPCResult::Type::OBJ_DYN, "bytessent_per_msg", "",
                     {
@@ -187,6 +193,7 @@ static RPCHelpMan getpeerinfo()
                                                               "best capture connection behaviors."},
                     {RPCResult::Type::STR, "transport_protocol_type", "Type of transport protocol: \n" + Join(TRANSPORT_TYPE_DOC, ",\n") + ".\n"},
                     {RPCResult::Type::STR, "session_id", "The session ID for this connection, or \"\" if there is none (\"v2\" transport protocol only).\n"},
+                    {RPCResult::Type::NUM, "misbehavior_score", "The misbehavior score for this peer. Always 0, but may be 100 if the peer is about to be disconnected. (DEPRECATED)\n"},
                 }},
             }},
         },
@@ -204,6 +211,7 @@ static RPCHelpMan getpeerinfo()
     connman.GetNodeStats(vstats);
 
     UniValue ret(UniValue::VARR);
+    const auto now{GetTime<std::chrono::seconds>()};
 
     for (const CNodeStats& stats : vstats) {
         UniValue obj(UniValue::VOBJ);
@@ -239,6 +247,9 @@ static RPCHelpMan getpeerinfo()
         obj.pushKV("last_block", count_seconds(stats.m_last_block_time));
         obj.pushKV("bytessent", stats.nSendBytes);
         obj.pushKV("bytesrecv", stats.nRecvBytes);
+        if (stats.m_cpu_time > 0s && now > stats.m_connected) {
+            obj.pushKV("cpu_load", /* ‰ */1000.0 * stats.m_cpu_time / (now - stats.m_connected));
+        }
         obj.pushKV("conntime", count_seconds(stats.m_connected));
         obj.pushKV("timeoffset", Ticks<std::chrono::seconds>(statestats.time_offset));
         if (stats.m_last_ping_time > 0us) {
@@ -262,6 +273,7 @@ static RPCHelpMan getpeerinfo()
         obj.pushKV("presynced_headers", statestats.presync_height);
         obj.pushKV("synced_headers", statestats.nSyncHeight);
         obj.pushKV("synced_blocks", statestats.nCommonHeight);
+        obj.pushKV("last_block_announcement", TicksSinceEpoch<std::chrono::seconds>(statestats.m_last_block_announcement));
         UniValue heights(UniValue::VARR);
         for (const int height : statestats.vHeightInFlight) {
             heights.push_back(height);
@@ -275,6 +287,7 @@ static RPCHelpMan getpeerinfo()
             permissions.push_back(permission);
         }
         obj.pushKV("permissions", std::move(permissions));
+        obj.pushKV("forced_inbound", stats.m_forced_inbound);
         obj.pushKV("minfeefilter", ValueFromAmount(statestats.m_fee_filter_received));
 
         UniValue sendPerMsgType(UniValue::VOBJ);
@@ -293,6 +306,7 @@ static RPCHelpMan getpeerinfo()
         obj.pushKV("connection_type", ConnectionTypeAsString(stats.m_conn_type));
         obj.pushKV("transport_protocol_type", TransportTypeAsString(stats.m_transport_type));
         obj.pushKV("session_id", stats.m_session_id);
+        obj.pushKV("misbehavior_score", statestats.m_misbehavior_score);
 
         ret.push_back(std::move(obj));
     }
@@ -434,7 +448,7 @@ static RPCHelpMan disconnectnode()
                 "\nStrictly one out of 'address' and 'nodeid' can be provided to identify the node.\n"
                 "\nTo disconnect by nodeid, either set 'address' to the empty string, or call using the named 'nodeid' argument only.\n",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::DefaultHint{"fallback to nodeid"}, "The IP address/port of the node"},
+                    {"address", RPCArg::Type::STR, RPCArg::DefaultHint{"fallback to nodeid"}, "The IP address/port of the node or subnet"},
                     {"nodeid", RPCArg::Type::NUM, RPCArg::DefaultHint{"fallback to address"}, "The node ID (see getpeerinfo for node IDs)"},
                 },
                 RPCResult{RPCResult::Type::NONE, "", ""},
@@ -455,7 +469,20 @@ static RPCHelpMan disconnectnode()
 
     if (!address_arg.isNull() && id_arg.isNull()) {
         /* handle disconnect-by-address */
-        success = connman.DisconnectNode(address_arg.get_str());
+        const bool only_subnet{address_arg.get_str().find('/') != std::string::npos};
+        if (only_subnet) {
+            success = false;
+        } else {
+            success = connman.DisconnectNode(address_arg.get_str());
+        }
+        if (!success) {
+            const CSubNet subnet = LookupSubNet(address_arg.get_str());
+            if (subnet.IsValid()) {
+                success = connman.DisconnectNode(subnet);
+            } else if (only_subnet) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid subnet");
+            }
+        }
     } else if (!id_arg.isNull() && (address_arg.isNull() || (address_arg.isStr() && address_arg.get_str().empty()))) {
         /* handle disconnect-by-id */
         NodeId nodeid = (NodeId) id_arg.getInt<int64_t>();

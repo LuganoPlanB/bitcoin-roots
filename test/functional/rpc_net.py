@@ -37,7 +37,7 @@ def assert_net_servicesnames(servicesflag, servicenames):
     """
     servicesflag_generated = 0
     for servicename in servicenames:
-        servicesflag_generated |= getattr(test_framework.messages, 'NODE_' + servicename)
+        servicesflag_generated |= getattr(test_framework.messages, 'NODE_' + servicename.rstrip('?'))
     assert servicesflag_generated == servicesflag
 
 
@@ -104,7 +104,8 @@ class NetTest(BitcoinTestFramework):
         time_now = int(time.time())
         peer_info = [x.getpeerinfo() for x in self.nodes]
         # Verify last_block and last_transaction keys/values.
-        for node, peer, field in product(range(self.num_nodes), range(2), ['last_block', 'last_transaction']):
+        for node, peer, field in product(range(self.num_nodes), range(2),
+                                         ['last_block', 'last_block_announcement', 'last_transaction']):
             assert field in peer_info[node][peer].keys()
             if peer_info[node][peer][field] != 0:
                 assert_approx(peer_info[node][peer][field], time_now, vspan=60)
@@ -117,6 +118,10 @@ class NetTest(BitcoinTestFramework):
         # check the `servicesnames` field
         for info in peer_info:
             assert_net_servicesnames(int(info[0]["services"], 0x10), info[0]["servicesnames"])
+            # CPU accounting is optional, but when the platform records it, the
+            # operator-facing load value is a non-negative fraction of connection time.
+            if "cpu_load" in info[0]:
+                assert info[0]["cpu_load"] >= 0
 
         assert_equal(peer_info[0][0]['connection_type'], 'inbound')
         assert_equal(peer_info[0][1]['connection_type'], 'manual')
@@ -126,6 +131,7 @@ class NetTest(BitcoinTestFramework):
 
         # Check dynamically generated networks list in getpeerinfo help output.
         assert "(ipv4, ipv6, onion, i2p, cjdns, not_publicly_routable)" in self.nodes[0].help("getpeerinfo")
+        assert "cpu_load" in self.nodes[0].help("getpeerinfo")
 
         self.log.info("Check getpeerinfo output before a version message was sent")
         no_version_peer_id = 2
@@ -142,6 +148,7 @@ class NetTest(BitcoinTestFramework):
         # The next two fields will vary for v2 connections because we send a rng-based number of decoy messages
         peer_info.pop("bytesrecv")
         peer_info.pop("bytessent")
+        peer_info.pop("cpu_load", None)
         assert_equal(
             peer_info,
             {
@@ -158,12 +165,14 @@ class NetTest(BitcoinTestFramework):
                 "inbound": True,
                 "inflight": [],
                 "last_block": 0,
+                "last_block_announcement": 0,
                 "last_transaction": 0,
                 "lastrecv": 0 if not self.options.v2transport else no_version_peer_conntime,
                 "lastsend": 0 if not self.options.v2transport else no_version_peer_conntime,
                 "minfeefilter": Decimal("0E-8"),
                 "network": "not_publicly_routable",
-                "permissions": [],
+                "permissions": ['bloomfilter'],
+                "forced_inbound": False,
                 "presynced_headers": -1,
                 "relaytxes": False,
                 "services": "0000000000000000",
@@ -176,6 +185,7 @@ class NetTest(BitcoinTestFramework):
                 "timeoffset": 0,
                 "transport_protocol_type": "v1" if not self.options.v2transport else "v2",
                 "version": 0,
+                "misbehavior_score": 0,
             },
         )
         no_version_peer.peer_disconnect()

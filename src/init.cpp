@@ -483,6 +483,10 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
     argsman.AddArg("-blockreconstructionextratxn=<n>", strprintf("Extra transactions to keep in memory for compact block reconstructions (default: %u)", DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-blockreconstructionextratxnsize=<n>",
+                   strprintf("Upper limit of memory usage (in megabytes) for keeping extra transactions in memory for compact block reconstructions (default: %s)",
+                             DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE / 1000000),
+                   ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksonly", strprintf("Whether to reject transactions from network peers. Disables automatic broadcast and rebroadcast of transactions, unless the source peer has the 'forcerelay' permission. RPC transactions are not affected. (default: %u)", DEFAULT_BLOCKSONLY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-coinstatsindex", strprintf("Maintain coinstats index used by the gettxoutsetinfo RPC (default: %u)", DEFAULT_COINSTATSINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-conf=<file>", strprintf("Specify path to read-only configuration file. Relative paths will be prefixed by datadir location (only useable from command line, not configuration file) (default: %s)", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -548,15 +552,32 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-i2pacceptincoming", strprintf("Whether to accept inbound I2P connections (default: %i). Ignored if -i2psam is not set. Listening for inbound I2P connections is done through the SAM proxy, not by binding to a local address and port.", DEFAULT_I2P_ACCEPT_INCOMING), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-onlynet=<net>", "Make automatic outbound connections only to network <net> (" + Join(GetNetworkNames(), ", ") + "). Inbound and manual connections are not affected by this option. It can be specified multiple times to allow multiple networks.", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-v2transport", strprintf("Support v2 transport (default: %u)", DEFAULT_V2_TRANSPORT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
-    argsman.AddArg("-peerbloomfilters", strprintf("Support filtering of blocks and transaction with bloom filters (default: %u)", DEFAULT_PEERBLOOMFILTERS), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-v2onlyclearnet", strprintf("Disallow outbound v1 connections on IPV4/IPV6 (default: %u). Enable this option only if you really need it. Use -listen=0 to disable inbound connections since they can be unencrypted.", false), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-peerbloomfilters", strprintf("Support filtering of blocks and transactions with bloom filters (default: %s)", DEFAULT_PEERBLOOMFILTERS ? "1" : "localhost only"), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-peerblockfilters", strprintf("Serve compact block filters to peers per BIP 157 (default: %u)", DEFAULT_PEERBLOCKFILTERS), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-feefilter", strprintf("Tell other nodes to filter invs to us by our mempool min fee (default: %u)", DEFAULT_FEEFILTER), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-txreconciliation", strprintf("Enable transaction reconciliations per BIP 330 (default: %d)", DEFAULT_TXRECONCILIATION_ENABLE), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-port=<port>", strprintf("Listen for connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u). Not relevant for I2P (see doc/i2p.md). If set to a value x, the default onion listening port will be set to x+1.", defaultChainParams->GetDefaultPort(), testnetChainParams->GetDefaultPort(), testnet4ChainParams->GetDefaultPort(), signetChainParams->GetDefaultPort(), regtestChainParams->GetDefaultPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
+    const std::string proxy_doc_for_value =
 #ifdef HAVE_SOCKADDR_UN
-    argsman.AddArg("-proxy=<ip:port|path>", "Connect through SOCKS5 proxy, set -noproxy to disable (default: disabled). May be a local file path prefixed with 'unix:' if the proxy supports it.", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_ELISION, OptionsCategory::CONNECTION);
+        "<ip>[:<port>]|unix:<path>";
 #else
-    argsman.AddArg("-proxy=<ip:port>", "Connect through SOCKS5 proxy, set -noproxy to disable (default: disabled)", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_ELISION, OptionsCategory::CONNECTION);
+        "<ip>[:<port>]";
 #endif
+    const std::string proxy_doc_for_unix_socket =
+#ifdef HAVE_SOCKADDR_UN
+        "May be a local file path prefixed with 'unix:' if the proxy supports it. ";
+#else
+        "";
+#endif
+    argsman.AddArg("-proxy=" + proxy_doc_for_value + "[=<network>]",
+                   "Connect through SOCKS5 proxy, set -noproxy to disable. " +
+                   proxy_doc_for_unix_socket +
+                   "Could end in =network to set the proxy only for that network. " +
+                   "The network can be any of ipv4, ipv6, tor or cjdns. " +
+                   "(default: disabled)",
+                   ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_ELISION,
+                   OptionsCategory::CONNECTION);
     argsman.AddArg("-proxyrandomize", strprintf("Randomize credentials for every proxy connection. This enables Tor stream isolation (default: %u)", DEFAULT_PROXYRANDOMIZE), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-seednode=<ip>", "Connect to a node to retrieve peer addresses, and disconnect. This option can be specified multiple times to connect to multiple nodes. During startup, seednodes will be tried before dnsseeds.", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-networkactive", "Enable all P2P network activity (default: 1). Can be changed by the setnetworkactive RPC command", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
@@ -634,23 +655,38 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-dustrelayfee=<amt>", strprintf("Fee rate (in %s/kvB) used to define dust, the value of an output such that it will cost more than its value in fees at this fee rate to spend it. (default: %s)", CURRENCY_UNIT, FormatMoney(DUST_RELAY_TX_FEE)), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-acceptstalefeeestimates", strprintf("Read fee estimates even if they are stale (%sdefault: %u) fee estimates are considered stale if they are %s hours old", "regtest only; ", DEFAULT_ACCEPT_STALE_FEE_ESTIMATES, Ticks<std::chrono::hours>(MAX_FILE_AGE)), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-bytespersigop", strprintf("Equivalent bytes per sigop in transactions for relay and mining (default: %u)", DEFAULT_BYTES_PER_SIGOP), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-bytespersigopstrict", strprintf("Minimum bytes per sigop in transactions we relay and mine (default: %u)", DEFAULT_BYTES_PER_SIGOP_STRICT), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-datacarrier", strprintf("Relay and mine data carrier transactions (default: %u)", DEFAULT_ACCEPT_DATACARRIER), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-datacarriercost", strprintf("Treat data carrier bytes as at least N vbytes each (default: %s)", DEFAULT_WEIGHT_PER_DATA_BYTE / 4.0), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-datacarriersize",
                    strprintf("Relay and mine transactions whose data-carrying raw scriptPubKey "
                              "is of this size or less (default: %u)",
                              MAX_OP_RETURN_RELAY),
                    ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-permitbaredatacarrier", strprintf("Relay data carrier outputs without OP_RETURN (default: %u)", DEFAULT_PERMITBAREDATACARRIER), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-acceptnonstddatacarrier", strprintf("Relay nonstandard data carrier outputs (default: %u)", DEFAULT_ACCEPT_NON_STD_DATACARRIER), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-permitephemeral", "Permit ephemeral policy exceptions: send, dust, and anchor", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-subdustfeepenalty", strprintf("Apply the sub-dust fee penalty to relay policy (default: %u)", DEFAULT_SUBDUSTFEEPENALTY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-maxscriptsize=<n>", strprintf("Maximum size of scripts (including the witness stack) we relay and mine (default: %s)", DEFAULT_SCRIPT_SIZE_POLICY_LIMIT), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-maxtxlegacysigops", strprintf("Maximum legacy sigops in transactions we relay and mine (default: %s)", MAX_TX_LEGACY_SIGOPS), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempoolreplacement", "Set RBF policy: 0 disables, fee,optin honors signaling, and fee,-optin enables full RBF (default: fee,-optin)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempooltruc", "Set TRUC policy: reject, accept, or enforce (default: enforce)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-minrelaycoinblocks=<n>", strprintf("Minimum coin blocks a transaction must spend to be relayed (default: %s)", DEFAULT_MINRELAYCOINBLOCKS), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-minrelaymaturity=<n>", strprintf("Minimum input maturity before relay (default: %s)", DEFAULT_MINRELAYMATURITY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitbaremultisig", strprintf("Relay transactions creating non-P2SH multisig outputs (default: %u)", DEFAULT_PERMIT_BAREMULTISIG), ArgsManager::ALLOW_ANY,
                    OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-spkreuse=<policy>", "Set script reuse policy: allow or conflict (default: allow)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaytxfee=<amt>", strprintf("Fees (in %s/kvB) smaller than this are considered zero fee for relaying, mining and transaction creation (default: %s)",
         CURRENCY_UNIT, FormatMoney(DEFAULT_MIN_RELAY_TX_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-whitelistforcerelay", strprintf("Add 'forcerelay' permission to whitelisted peers with default permissions. This will relay transactions even if the transactions were already in the mempool. (default: %d)", DEFAULT_WHITELISTFORCERELAY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-whitelistrelay", strprintf("Add 'relay' permission to whitelisted peers with default permissions. This will accept relayed transactions even when not relaying transactions (default: %d)", DEFAULT_WHITELISTRELAY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
 
 
+    argsman.AddArg("-blockmaxsize=<n>", strprintf("Set maximum block size in bytes (default: %d)", DEFAULT_BLOCK_MAX_SIZE), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-blockmaxweight=<n>", strprintf("Set maximum BIP141 block weight (default: %d)", DEFAULT_BLOCK_MAX_WEIGHT), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-blockreservedweight=<n>", strprintf("Reserve space for the fixed-size block header plus the largest coinbase transaction the mining software may add to the block. (default: %d).", DEFAULT_BLOCK_RESERVED_WEIGHT), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-blockmintxfee=<amt>", strprintf("Set lowest fee rate (in %s/kvB) for transactions to be included in block creation. (default: %s)", CURRENCY_UNIT, FormatMoney(DEFAULT_BLOCK_MIN_TX_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
+    argsman.AddArg("-blockprioritysize=<n>", strprintf("Set maximum size of high-priority/low-fee transactions in bytes (default: %d)", DEFAULT_BLOCK_PRIORITY_SIZE), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-blockversion=<n>", "Override block version to test forking scenarios", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::BLOCK_CREATION);
 
     argsman.AddArg("-rest", strprintf("Accept public REST requests (default: %u)", DEFAULT_REST_ENABLE), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
@@ -953,6 +989,8 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // Signal NODE_P2P_V2 if BIP324 v2 transport is enabled.
     if (args.GetBoolArg("-v2transport", DEFAULT_V2_TRANSPORT)) {
         g_local_services = ServiceFlags(g_local_services | NODE_P2P_V2);
+    } else if (args.GetBoolArg("-v2onlyclearnet", false)) {
+        return InitError(_("Cannot set -v2onlyclearnet to true when v2transport is disabled."));
     }
 
     // Signal NODE_COMPACT_FILTERS if peerblockfilters and basic filters index are both enabled.
@@ -1045,6 +1083,13 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         }
     }
 
+    if (args.IsArgSet("-blockmaxsize")) {
+        const auto max_block_size = args.GetIntArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
+        if (max_block_size > MAX_BLOCK_SERIALIZED_SIZE) {
+            return InitError(strprintf(_("Specified -blockmaxsize (%d) exceeds consensus maximum block size (%d)"), max_block_size, MAX_BLOCK_SERIALIZED_SIZE));
+        }
+    }
+
     if (args.IsArgSet("-blockreservedweight")) {
         const auto block_reserved_weight = args.GetIntArg("-blockreservedweight", DEFAULT_BLOCK_RESERVED_WEIGHT);
         if (block_reserved_weight > MAX_BLOCK_WEIGHT) {
@@ -1055,7 +1100,12 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         }
     }
 
+    g_script_size_policy_limit = args.GetIntArg("-maxscriptsize", g_script_size_policy_limit);
     nBytesPerSigOp = args.GetIntArg("-bytespersigop", nBytesPerSigOp);
+    nBytesPerSigOpStrict = args.GetIntArg("-bytespersigopstrict", nBytesPerSigOpStrict);
+
+    const std::string spk_reuse = args.GetArg("-spkreuse", DEFAULT_SPKREUSE);
+    SpkReuseMode = (spk_reuse == "allow" || args.GetBoolArg("-spkreuse", false)) ? SRM_ALLOW : SRM_REJECT;
 
     if (!g_wallet_init_interface.ParameterInteraction()) return false;
 
@@ -1186,24 +1236,31 @@ bool CheckHostPortOptions(const ArgsManager& args) {
         }
     }
 
-    for ([[maybe_unused]] const auto& [arg, unix] : std::vector<std::pair<std::string, bool>>{
-        // arg name            UNIX socket support
-        {"-i2psam",                 false},
-        {"-onion",                  true},
-        {"-proxy",                  true},
-        {"-rpcbind",                false},
-        {"-torcontrol",             false},
-        {"-whitebind",              false},
-        {"-zmqpubhashblock",        true},
-        {"-zmqpubhashtx",           true},
-        {"-zmqpubrawblock",         true},
-        {"-zmqpubrawtx",            true},
-        {"-zmqpubsequence",         true},
+    if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
+        g_weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
+    }
+
+    for ([[maybe_unused]] const auto& [arg, unix, suffix_allowed] : std::vector<std::tuple<std::string, bool, bool>>{
+        // arg name          UNIX socket support  =suffix allowed
+        {"-i2psam",          false,               false},
+        {"-onion",           true,                false},
+        {"-proxy",           true,                true},
+        {"-bind",            false,               true},
+        {"-rpcbind",         false,               false},
+        {"-torcontrol",      false,               false},
+        {"-whitebind",       false,               false},
+        {"-zmqpubhashblock", true,                false},
+        {"-zmqpubhashtx",    true,                false},
+        {"-zmqpubrawblock",  true,                false},
+        {"-zmqpubrawtx",     true,                false},
+        {"-zmqpubsequence",  true,                false},
     }) {
         for (const std::string& socket_addr : args.GetArgs(arg)) {
+            const std::string param_value_hostport{
+                suffix_allowed ? socket_addr.substr(0, socket_addr.rfind('=')) : socket_addr};
             std::string host_out;
             uint16_t port_out{0};
-            if (!SplitHostPort(socket_addr, port_out, host_out)) {
+            if (!SplitHostPort(param_value_hostport, port_out, host_out)) {
 #ifdef HAVE_SOCKADDR_UN
                 // Allow unix domain sockets for some options e.g. unix:/some/file/path
                 if (!unix || !socket_addr.starts_with(ADDR_PREFIX_UNIX)) {
@@ -1578,30 +1635,64 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     Proxy onion_proxy;
 
     bool proxyRandomize = args.GetBoolArg("-proxyrandomize", DEFAULT_PROXYRANDOMIZE);
-    // -proxy sets a proxy for all outgoing network traffic
-    // -noproxy (or -proxy=0) as well as the empty string can be used to not set a proxy, this is the default
-    std::string proxyArg = args.GetArg("-proxy", "");
-    if (proxyArg != "" && proxyArg != "0") {
-        Proxy addrProxy;
-        if (IsUnixSocketPath(proxyArg)) {
-            addrProxy = Proxy(proxyArg, proxyRandomize);
-        } else {
-            const std::optional<CService> proxyAddr{Lookup(proxyArg, 9050, fNameLookup)};
-            if (!proxyAddr.has_value()) {
-                return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
+    // -proxy sets a proxy for outgoing network traffic, possibly per network.
+    // -noproxy, -proxy=0 or -proxy="" can be used to remove the proxy setting, this is the default.
+    Proxy ipv4_proxy;
+    Proxy ipv6_proxy;
+    Proxy name_proxy;
+    Proxy cjdns_proxy;
+    for (const std::string& param_value : args.GetArgs("-proxy")) {
+        const auto eq_pos{param_value.rfind('=')};
+        const std::string proxyArg{param_value.substr(0, eq_pos)};
+        std::string net_str;
+        if (eq_pos != std::string::npos) {
+            if (eq_pos + 1 == param_value.length()) {
+                return InitError(strprintf(_("Invalid -proxy address or hostname, ends with '=': '%s'"), param_value));
             }
-
-            addrProxy = Proxy(proxyAddr.value(), proxyRandomize);
+            net_str = ToLower(param_value.substr(eq_pos + 1));
         }
 
-        if (!addrProxy.IsValid())
-            return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
+        Proxy addrProxy;
+        if (!proxyArg.empty() && proxyArg != "0") {
+            if (IsUnixSocketPath(proxyArg)) {
+                addrProxy = Proxy(proxyArg, proxyRandomize);
+            } else {
+                const std::optional<CService> proxyAddr{Lookup(proxyArg, 9050, fNameLookup)};
+                if (!proxyAddr.has_value()) {
+                    return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
+                }
+                addrProxy = Proxy(proxyAddr.value(), proxyRandomize);
+            }
+            if (!addrProxy.IsValid()) {
+                return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxyArg));
+            }
+        }
 
-        SetProxy(NET_IPV4, addrProxy);
-        SetProxy(NET_IPV6, addrProxy);
-        SetProxy(NET_CJDNS, addrProxy);
-        SetNameProxy(addrProxy);
-        onion_proxy = addrProxy;
+        if (net_str.empty()) {
+            ipv4_proxy = ipv6_proxy = name_proxy = cjdns_proxy = onion_proxy = addrProxy;
+        } else if (net_str == "ipv4") {
+            ipv4_proxy = name_proxy = addrProxy;
+        } else if (net_str == "ipv6") {
+            ipv6_proxy = name_proxy = addrProxy;
+        } else if (net_str == "tor" || net_str == "onion") {
+            onion_proxy = addrProxy;
+        } else if (net_str == "cjdns") {
+            cjdns_proxy = addrProxy;
+        } else {
+            return InitError(strprintf(_("Unrecognized network in -proxy='%s': '%s'"), param_value, net_str));
+        }
+    }
+    if (ipv4_proxy.IsValid()) {
+        SetProxy(NET_IPV4, ipv4_proxy);
+    }
+    if (ipv6_proxy.IsValid()) {
+        SetProxy(NET_IPV6, ipv6_proxy);
+    }
+    if (name_proxy.IsValid()) {
+        SetNameProxy(name_proxy);
+    }
+    if (cjdns_proxy.IsValid()) {
+        SetProxy(NET_CJDNS, cjdns_proxy);
     }
 
     const bool onlynet_used_with_onion{!onlynets.empty() && g_reachable_nets.Contains(NET_ONION)};
@@ -1924,6 +2015,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     connOptions.m_peer_connect_timeout = peer_connect_timeout;
     connOptions.whitelist_forcerelay = args.GetBoolArg("-whitelistforcerelay", DEFAULT_WHITELISTFORCERELAY);
     connOptions.whitelist_relay = args.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY);
+    connOptions.disable_v1conn_clearnet = args.GetBoolArg("-v2onlyclearnet", false);
 
     // Port to bind to if `-bind=addr` is provided without a `:port` suffix.
     const uint16_t default_bind_port =
@@ -1965,10 +2057,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return InitError(ResolveErrMsg("bind", bind_arg));
     }
 
+    NetPermissionFlags all_permission_flags{NetPermissionFlags::None};
     for (const std::string& strBind : args.GetArgs("-whitebind")) {
         NetWhitebindPermissions whitebind;
         bilingual_str error;
         if (!NetWhitebindPermissions::TryParse(strBind, whitebind, error)) return InitError(error);
+        NetPermissions::AddFlag(all_permission_flags, whitebind.m_flags);
         connOptions.vWhiteBinds.push_back(whitebind);
     }
 
@@ -1985,17 +2079,31 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
+    connOptions.listenonion = args.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION);
+
     CService onion_service_target;
     if (!connOptions.onion_binds.empty()) {
         onion_service_target = connOptions.onion_binds.front();
     } else if (!connOptions.vBinds.empty()) {
         onion_service_target = connOptions.vBinds.front();
+        if (connOptions.listenonion) {
+            std::string alternate_connections{"clearnet"}, only_from_localhost;
+            if (onion_service_target.IsBindAny()) {
+                only_from_localhost = " from localhost";
+            } else if (onion_service_target.IsLocal()) {
+                alternate_connections = "local";
+            }
+            InitWarning(strprintf(_("You are using a common listening port (%s) for both Tor and %s connections. All connections to this port%s will be assumed to be Tor connections, and will be denied any whitelist permissions. If this is not your intent, setup a separate -bind=<addr>[:<port>]=onion configuration, or set -listenonion=0."),
+                                  onion_service_target.ToStringAddrPort(),
+                                  alternate_connections,
+                                  only_from_localhost));
+        }
     } else {
         onion_service_target = DefaultOnionServiceTarget(default_bind_port_onion);
         connOptions.onion_binds.push_back(onion_service_target);
     }
 
-    if (args.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION)) {
+    if (connOptions.listenonion) {
         if (connOptions.onion_binds.size() > 1) {
             InitWarning(strprintf(_("More than one onion bind address is provided. Using %s "
                                     "for the automatically created Tor onion service."),
@@ -2010,17 +2118,29 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         Discover();
     }
 
-    for (const auto& net : args.GetArgs("-whitelist")) {
+    std::vector<std::string> whitelist_opts = args.GetArgs("-whitelist");
+    if ((g_local_services & NODE_BLOOM) != NODE_BLOOM && args.GetBoolArg("-peerbloomfilters", true)) {
+        // If peerbloomfilters isn't specified, enable it only for localhost by default.
+        whitelist_opts.emplace_back("in,out,bloomfilter@127.0.0.0/8");
+        whitelist_opts.emplace_back("in,out,bloomfilter@[::1]/128");
+    }
+    for (const auto& net : whitelist_opts) {
         NetWhitelistPermissions subnet;
         ConnectionDirection connection_direction;
         bilingual_str error;
         if (!NetWhitelistPermissions::TryParse(net, subnet, connection_direction, error)) return InitError(error);
+        NetPermissions::AddFlag(all_permission_flags, subnet.m_flags);
         if (connection_direction & ConnectionDirection::In) {
             connOptions.vWhitelistedRangeIncoming.push_back(subnet);
         }
         if (connection_direction & ConnectionDirection::Out) {
             connOptions.vWhitelistedRangeOutgoing.push_back(subnet);
         }
+    }
+
+    if (NetPermissions::HasFlag(all_permission_flags, NetPermissionFlags::BlockFilters_Explicit) &&
+        g_enabled_filter_types.count(BlockFilterType::BASIC) != 1) {
+        return InitError(_("Cannot grant blockfilters permission without -blockfilterindex."));
     }
 
     connOptions.vSeedNodes = args.GetArgs("-seednode");

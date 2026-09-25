@@ -151,6 +151,15 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     BOOST_CHECK(block.vtx[2]->GetHash() == hashHighFeeTx);
     BOOST_CHECK(block.vtx[3]->GetHash() == hashMediumFeeTx);
 
+    // The fee-selected parent/child package must also respect an explicit
+    // serialized-size cap. The default-weight template above remains free to
+    // include the same package.
+    BlockAssembler::Options size_limited_options{options};
+    size_limited_options.nBlockMaxSize = DEFAULT_BLOCK_RESERVED_SIZE + ::GetSerializeSize(TX_WITH_WITNESS(parent_tx.GetTx()));
+    const auto size_limited_block = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, size_limited_options}.CreateNewBlock();
+    BOOST_REQUIRE(size_limited_block);
+    BOOST_CHECK_EQUAL(size_limited_block->block.vtx.size(), 1U);
+
     // Test the inclusion of package feerates in the block template and ensure they are sequential.
     const auto block_package_feerates = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock()->m_package_feerates;
     BOOST_CHECK(block_package_feerates.size() == 2);
@@ -220,7 +229,8 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     // This tx can't be mined by itself
     tx.vin[0].prevout.hash = hashFreeTx2;
     tx.vout.resize(1);
-    feeToUse = blockMinFeeRate.GetFee(freeTxSize);
+    const size_t lowFeeTx2VSize = GetVirtualTransactionSize(CTransaction{tx});
+    feeToUse = blockMinFeeRate.GetFee(lowFeeTx2VSize);
     tx.vout[0].nValue = 5000000000LL - 100000000 - feeToUse;
     Txid hashLowFeeTx2 = tx.GetHash();
     AddToMempool(tx_mempool, entry.Fee(feeToUse).SpendsCoinbase(false).FromTx(tx));
@@ -658,6 +668,8 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
+    gArgs.ForceSetArg("-blockprioritysize", "0");
+
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 

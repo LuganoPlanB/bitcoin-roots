@@ -35,7 +35,7 @@ class P2PPermissionsTests(BitcoinTestFramework):
             # default permissions (no specific permissions)
             ["-whitelist=127.0.0.1"],
             # Make sure the default values in the command line documentation match the ones here
-            ["relay", "noban", "mempool", "download"])
+            ["addr", "relay", "noban", "mempool", "download"])
 
         self.checkpermission(
             # no permission (even with forcerelay)
@@ -45,14 +45,14 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.checkpermission(
             # relay permission removed (no specific permissions)
             ["-whitelist=127.0.0.1", "-whitelistrelay=0"],
-            ["noban", "mempool", "download"])
+            ["addr", "noban", "mempool", "download"])
 
         self.checkpermission(
             # forcerelay and relay permission added
             # Legacy parameter interaction which set whitelistrelay to true
             # if whitelistforcerelay is true
             ["-whitelist=127.0.0.1", "-whitelistforcerelay"],
-            ["forcerelay", "relay", "noban", "mempool", "download"])
+            ["addr", "forcerelay", "relay", "noban", "mempool", "download"])
 
         # Let's make sure permissions are merged correctly
         # For this, we need to use whitebind instead of bind
@@ -86,9 +86,18 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.checkpermission(
             # all permission added
             ["-whitelist=all@127.0.0.1"],
-            ["forcerelay", "noban", "mempool", "bloomfilter", "relay", "download", "addr"])
+            [
+                "blockfilters",
+                "forcerelay",
+                "noban",
+                "mempool",
+                "bloomfilter",
+                "relay",
+                "download",
+                "addr",
+            ])
 
-        for flag, permissions in [(["-whitelist=noban,out@127.0.0.1"], ["noban", "download"]), (["-whitelist=noban@127.0.0.1"], [])]:
+        for flag, permissions in [(["-whitelist=noban,out@127.0.0.1"], ["bloomfilter", "noban", "download"]), (["-whitelist=noban@127.0.0.1"], ["bloomfilter"])]:
             self.restart_node(0, flag)
             self.connect_nodes(0, 1)
             peerinfo = self.nodes[0].getpeerinfo()[0]
@@ -100,6 +109,15 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.nodes[1].assert_start_raises_init_error(["-whitelist=noban@127.0.0.1:230"], "Invalid netmask specified in", match=ErrorMatch.PARTIAL_REGEX)
         self.nodes[1].assert_start_raises_init_error(["-whitebind=noban@127.0.0.1/10"], "Cannot resolve -whitebind address", match=ErrorMatch.PARTIAL_REGEX)
         self.nodes[1].assert_start_raises_init_error(["-whitebind=noban@127.0.0.1", "-bind=127.0.0.1", "-listen=0"], "Cannot set -bind or -whitebind together with -listen=0", match=ErrorMatch.PARTIAL_REGEX)
+        for permission_arg in [
+            "-whitelist=blockfilters@127.0.0.1",
+            f"-whitebind=blockfilters@127.0.0.1:{p2p_port(self.nodes[1].index)}",
+        ]:
+            self.nodes[1].assert_start_raises_init_error(
+                [permission_arg],
+                "Cannot grant blockfilters permission without -blockfilterindex.",
+                match=ErrorMatch.PARTIAL_REGEX,
+            )
 
     def check_tx_relay(self):
         self.log.debug("Create a connection from a forcerelay peer that rebroadcasts raw txs")
@@ -145,7 +163,7 @@ class P2PPermissionsTests(BitcoinTestFramework):
         )
 
     def checkpermission(self, args, expectedPermissions):
-        self.restart_node(1, args)
+        self.restart_node(1, ['-peerbloomfilters=0'] + args)
         self.connect_nodes(0, 1)
         peerinfo = self.nodes[1].getpeerinfo()[0]
         assert_equal(len(expectedPermissions), len(peerinfo['permissions']))

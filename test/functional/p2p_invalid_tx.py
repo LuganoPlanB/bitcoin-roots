@@ -33,8 +33,8 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         """Add a P2P connection to the node.
 
         Helper to connect and wait for version handshake."""
-        for _ in range(num_connections):
-            self.nodes[0].add_p2p_connection(P2PDataStore())
+        for i in range(num_connections):
+            self.nodes[0].add_outbound_p2p_connection(P2PDataStore(), p2p_idx=i)
 
     def reconnect_p2p(self, **kwargs):
         """Tear down and bootstrap the P2P connection to the node.
@@ -186,6 +186,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         self.log.info('Send the block that includes the previous orphan ... ')
         with node.assert_debug_log(["Erased 1 orphan transaction(s) included or conflicted by block"]):
             node.p2ps[0].send_blocks_and_test([block_A], node, success=True)
+            node.syncwithvalidationinterfacequeue()
 
         self.log.info('Test that a transaction in the orphan pool conflicts with a new tip block causes erase this transaction from the orphan pool')
         tx_withhold_until_block_B = CTransaction()
@@ -215,6 +216,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         self.log.info('Send the block that includes a transaction which conflicts with the previous orphan ... ')
         with node.assert_debug_log(["Erased 1 orphan transaction(s) included or conflicted by block"]):
             node.p2ps[0].send_blocks_and_test([block_B], node, success=True)
+            node.syncwithvalidationinterfacequeue()
 
 
 if __name__ == '__main__':
