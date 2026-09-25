@@ -159,6 +159,13 @@ else()
   set(ENABLE_WALLET ON CACHE BOOL "")
 endif()
 
+set(upnp_packages @upnp_packages@)
+if("${upnp_packages}" STREQUAL "")
+  set(WITH_MINIUPNPC OFF CACHE BOOL "")
+else()
+  set(WITH_MINIUPNPC ON CACHE BOOL "")
+endif()
+
 if("@usdt_packages@" MATCHES "^[ ]*$")
   set(WITH_USDT OFF CACHE BOOL "")
 else()

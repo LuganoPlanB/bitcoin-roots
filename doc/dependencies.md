@@ -23,6 +23,10 @@ Bitcoin Core requires one of the following compilers.
 | CMake | [link](https://cmake.org/) | [3.22](https://github.com/bitcoin/bitcoin/pull/30454) |
 | [libevent](../depends/packages/libevent.mk) | [link](https://github.com/libevent/libevent/releases) | [2.1.8](https://github.com/bitcoin/bitcoin/pull/24681) |
 
+MiniUPnPc is optional for UPnP (`-DWITH_MINIUPNPC=ON`), minimum 2.1.
+Qt 5.11.3 or newer can alternatively be selected with `-DWITH_QT_VERSION=5`; depends builds use Qt 6.
+GUI resource generation uses librsvg and ImageMagick (libicns on macOS).
+
 ### Runtime
 
 | Dependency | Releases | Minimum required |
@@ -43,6 +47,10 @@ Bitcoin Core requires one of the following compilers.
 | [SQLite](../depends/packages/sqlite.mk) (wallet) | [link](https://sqlite.org) | [3.7.17](https://github.com/bitcoin/bitcoin/pull/19077) |
 | [systemtap](../depends/packages/systemtap.mk) ([tracing](tracing.md)) | [link](https://sourceware.org/systemtap/) | N/A |
 | [ZeroMQ](../depends/packages/zeromq.mk) (notifications) | [link](https://github.com/zeromq/libzmq/releases) | 4.0.0 |
+
+MiniUPnPc is optional for UPnP (`-DWITH_MINIUPNPC=ON`), minimum 2.1.
+Qt 5.11.3 or newer can alternatively be selected with `-DWITH_QT_VERSION=5`; depends builds use Qt 6.
+GUI resource generation uses librsvg and ImageMagick (libicns on macOS).
 
 ### Runtime
 

@@ -102,6 +102,19 @@ Otherwise, if you don't need QR encoding support, you can pass `-DWITH_QRENCODE=
 
 ---
 
+#### Port Mapping Dependencies
+
+###### miniupnpc
+
+miniupnpc may be used for UPnP port mapping.
+Skip if you do not need this functionality.
+
+``` bash
+brew install miniupnpc
+```
+
+---
+
 #### ZMQ Dependencies
 
 Support for ZMQ notifications requires the following dependency.
@@ -131,7 +144,11 @@ brew install python
 #### Deploy Dependencies
 
 You can [deploy](#3-deploy-optional) a `.zip` containing the Bitcoin Core application.
-It is required that you have `python` and `zip` installed.
+It is required that you have `python`, `zip`, `libicns`, and `librsvg` installed.
+
+```bash
+brew install libicns librsvg
+```
 
 ## Building Bitcoin Core
 
