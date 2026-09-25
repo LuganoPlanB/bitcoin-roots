@@ -151,6 +151,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   common/settings.cpp
   common/signmessage.cpp
   common/system.cpp
+  common/system_ram.cpp
   common/url.cpp
   compressor.cpp
   core_read.cpp
@@ -304,6 +305,9 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   rpc/txoutproof.cpp
   script/sigcache.cpp
   signet.cpp
+  stats/init.cpp
+  stats/rpc_stats.cpp
+  stats/stats.cpp
   torcontrol.cpp
   txdb.cpp
   txmempool.cpp
