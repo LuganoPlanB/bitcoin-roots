@@ -10,12 +10,15 @@
 #include <qt/bitcoin.h>
 #include <qt/bitcoingui.h>
 #include <qt/networkstyle.h>
+#include <qt/qrimagewidget.h>
 #include <qt/rpcconsole.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 
 #include <QAction>
+#include <QColor>
 #include <QLineEdit>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
@@ -49,6 +52,28 @@ void TestRpcCommand(RPCConsole* console)
     const QString pattern = QStringLiteral("\"chain\": \"(\\w+)\"");
     QCOMPARE(FindInConsole(output, pattern), QString("regtest"));
 }
+
+void TestQrQuietZone()
+{
+#ifdef USE_QRCODE
+    QRImageWidget qr;
+    QVERIFY(qr.setQR(QStringLiteral("bitcoin:bc1qz0j5w6w8t8d5alw5lp4n4t3g6d7n7ld5cqqqqq")));
+    const QImage image{qr.exportImage()};
+    QCOMPARE(image.width(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
+    QCOMPARE(image.height(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
+    // The first matrix pixel remains white only when the four-module quiet zone
+    // survives the scale-to-display path.
+    QCOMPARE(image.pixelColor(QR_IMAGE_MARGIN, QR_IMAGE_MARGIN), QColor{Qt::white});
+#endif
+}
+
+void TestRootsResources()
+{
+    const QPixmap splash{QStringLiteral(":/icons/splash")};
+    QVERIFY(!splash.isNull());
+    const QSize expected_size{960, 960};
+    QCOMPARE(splash.size(), expected_size);
+}
 } // namespace
 
 //! Entry point for BitcoinApplication tests.
@@ -65,6 +90,9 @@ void AppTests::appTests()
         return;
     }
 #endif
+
+    TestQrQuietZone();
+    TestRootsResources();
 
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
     m_app.parameterSetup();
