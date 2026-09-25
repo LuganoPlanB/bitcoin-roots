@@ -7,6 +7,7 @@
 from decimal import Decimal
 
 from test_framework.mempool_util import (
+    DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
 )
 from test_framework.p2p import P2PTxInvStore
@@ -29,6 +30,8 @@ class MempoolLimitTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.extra_args = [[
+            "-datacarriersize=100000",
+            "-maxscriptsize=100000",
             "-maxmempool=5",
         ]]
 

@@ -407,7 +407,7 @@ def test_notmine_bumpfee(self, rbf_node, peer_node, dest_address):
         psbt = rbf_node.walletprocesspsbt(psbt)
         psbt = peer_node.walletprocesspsbt(psbt["psbt"])
         res = rbf_node.testmempoolaccept([psbt["hex"]])
-        assert res[0]["allowed"]
+        assert res[0]["allowed"], res[0]
         assert_greater_than(res[0]["fees"]["base"], old_fee)
 
     self.log.info("Test that psbtbumpfee works for non-owned inputs")

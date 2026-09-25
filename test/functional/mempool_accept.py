@@ -60,7 +60,8 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            '-txindex','-permitbaremultisig=0',
+            '-txindex', '-permitbaredatacarrier=1', '-permitbaremultisig=0',
+            '-datacarriersize=100000', '-maxscriptsize=100000',
         ]] * self.num_nodes
         self.supports_cli = False
 
@@ -77,6 +78,18 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
                 r.pop("reject-details")
         assert_equal(result_expected, result_test)
         assert_equal(self.nodes[0].getmempoolinfo()['size'], self.mempool_size)  # Must not change mempool state
+
+    def check_multi_op_return_result(self, result_expected, **kwargs):
+        # Roots deliberately rejects multiple OP_RETURN outputs as standard
+        # policy. Preserve Core's acceptance cases with the explicit regtest
+        # nonstandard override, and check both observable policy contracts.
+        self.check_mempool_result(
+            result_expected=[{'txid': result_expected[0]['txid'], 'allowed': False, 'reject-reason': 'multi-op-return'}],
+            **kwargs,
+        )
+        self.restart_node(0, extra_args=self.extra_args[0] + ['-acceptnonstdtxn=1'])
+        self.check_mempool_result(result_expected=result_expected, **kwargs)
+        self.restart_node(0)
 
     def run_test(self):
         node = self.nodes[0]
@@ -335,7 +348,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0] = output_p2sh_burn
         tx.vout[0].nValue -= 1  # Make output smaller, such that it is dust for our policy
         self.check_mempool_result(
-            result_expected=[{'txid': tx.txid_hex, 'allowed': False, 'reject-reason': 'dust'}],
+            result_expected=[{'txid': tx.txid_hex, 'allowed': False, 'reject-reason': 'dust-nonanchor'}],
             rawtxs=[tx.serialize().hex()],
         )
 
@@ -353,7 +366,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout.append(CTxOut(0, CScript([OP_RETURN, b'\xff'])))
         tx.vout.append(CTxOut(0, CScript([OP_RETURN, b'\xff' * 50000])))
 
-        self.check_mempool_result(
+        self.check_multi_op_return_result(
             result_expected=[{'txid': tx.txid_hex, 'allowed': True, 'vsize': tx.get_vsize(), 'fees': {'base': Decimal('0.05')}}],
             rawtxs=[tx.serialize().hex()],
             maxfeerate=0
@@ -365,7 +378,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0].nValue = int(tx.vout[0].nValue / op_return_count)
         tx.vout[0].scriptPubKey = CScript([OP_RETURN, b'\xff'])
         tx.vout = [tx.vout[0]] * op_return_count
-        self.check_mempool_result(
+        self.check_multi_op_return_result(
             result_expected=[{"txid": tx.txid_hex, "allowed": True, "vsize": tx.get_vsize(), "fees": {"base": Decimal("0.05000026")}}],
             rawtxs=[tx.serialize().hex()],
         )
@@ -448,7 +461,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         anchor_nonempty_wit_spend.wit.vtxinwit[0].scriptWitness.stack.append(b"f")
 
         self.check_mempool_result(
-            result_expected=[{'txid': anchor_nonempty_wit_spend.txid_hex, 'allowed': False, 'reject-reason': 'bad-witness-nonstandard'}],
+            result_expected=[{'txid': anchor_nonempty_wit_spend.txid_hex, 'allowed': False, 'reject-reason': 'bad-witness-anchor-not-empty'}],
             rawtxs=[anchor_nonempty_wit_spend.serialize().hex()],
             maxfeerate=0,
         )

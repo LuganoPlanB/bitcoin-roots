@@ -15,6 +15,7 @@ class GetBlocksActivityTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
+        self.extra_args = [["-permitbarepubkey=1"]]
 
     def run_test(self):
         node = self.nodes[0]

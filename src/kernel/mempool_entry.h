@@ -142,7 +142,7 @@ public:
           entryHeight{entry_height},
           cachedPriority{entryPriority},
           // Since entries arrive *after* the tip's height, their entry priority is for the height+1
-          cachedHeight{entry_height + 1},
+          cachedHeight{SaturatingAdd(entry_height, 1U)},
           inChainInputValue{coin_age_cache.in_chain_input_value},
           spendsCoinbase{spends_coinbase},
           m_modified_fee{nFee},

@@ -201,8 +201,7 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
     --combinedlogslen=99999999 \
     --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" \
     "${TEST_RUNNER_EXTRA[@]}" \
-    --quiet \
-    --failfast
+    --quiet
 fi
 
 if [ "${RUN_TIDY}" = "true" ]; then
