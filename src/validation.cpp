@@ -3392,6 +3392,9 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     }
 
     if (disconnectpool && m_mempool) {
+        for (auto it = block.vtx.rbegin(); it != block.vtx.rend(); ++it) {
+            m_mempool->UpdateDependentPriorities(*(*it), pindexDelete->nHeight, false);
+        }
         // Save transactions to re-add to mempool at end of reorg. If any entries are evicted for
         // exceeding memory limits, remove them and their descendants from the mempool.
         for (auto&& evicted_tx : disconnectpool->AddTransactionsFromBlock(block.vtx)) {
