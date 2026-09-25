@@ -28,6 +28,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 3
+        self.extra_args = [["-maxscriptsize=100000"]] * self.num_nodes
 
     def create_keys(self, num_keys):
         self.pub = []

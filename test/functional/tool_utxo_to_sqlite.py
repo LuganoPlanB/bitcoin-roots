@@ -56,7 +56,7 @@ class UtxoToSqliteTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # we want to create some UTXOs with non-standard output scripts
-        self.extra_args = [['-acceptnonstdtxn=1']]
+        self.extra_args = [['-acceptnonstdtxn=1', '-maxscriptsize=100000']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_py_sqlite3()
@@ -93,7 +93,7 @@ class UtxoToSqliteTest(BitcoinTestFramework):
 
             # create outputs and mine them in a block
             for output_script in output_scripts:
-                wallet.send_to(from_node=node, scriptPubKey=output_script, amount=i, fee=20000)
+                wallet.send_to(from_node=node, scriptPubKey=output_script, amount=i, fee=200000)
             self.generate(wallet, 1)
 
         self.log.info('Dump UTXO set via `dumptxoutset` RPC')

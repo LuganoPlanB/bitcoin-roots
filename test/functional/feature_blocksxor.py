@@ -23,6 +23,8 @@ class BlocksXORTest(BitcoinTestFramework):
         self.extra_args = [[
             '-blocksxor=1',
             '-fastprune=1',             # use smaller block files
+            '-datacarriersize=100000',  # needed to pad transaction with MiniWallet
+            '-maxscriptsize=100000',    # permit the same synthetic padding under Roots policy
         ]]
 
     def run_test(self):
