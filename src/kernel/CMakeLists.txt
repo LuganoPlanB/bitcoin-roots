@@ -35,6 +35,7 @@ add_library(bitcoinkernel
   ../node/blockstorage.cpp
   ../node/chainstate.cpp
   ../node/utxo_snapshot.cpp
+  ../policy/coin_age_priority.cpp
   ../policy/ephemeral_policy.cpp
   ../policy/feerate.cpp
   ../policy/packages.cpp
@@ -83,6 +84,10 @@ add_library(bitcoinkernel
   $<TARGET_OBJECTS:bitcoin_crypto>
   $<TARGET_OBJECTS:leveldb>
   $<TARGET_OBJECTS:crc32c>
+)
+target_compile_definitions(bitcoinkernel
+  PRIVATE
+    BUILDING_FOR_LIBBITCOINKERNEL
 )
 target_link_libraries(bitcoinkernel
   PRIVATE

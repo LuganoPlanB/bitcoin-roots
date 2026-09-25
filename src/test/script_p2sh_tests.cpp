@@ -3,7 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <consensus/tx_verify.h>
-#include <kernel/mempool_options.h>
 #include <key.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
@@ -22,7 +21,7 @@
 // Helpers:
 static bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, std::string& reason)
 {
-    const kernel::MemPoolOptions opts{
+    const StandardnessOptions opts{
         .permit_bare_pubkey = true,
         .permit_bare_multisig = permit_bare_multisig,
     };
@@ -31,7 +30,7 @@ static bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, std:
 
 static bool IsStandardTx(const CTransaction& tx, std::string& reason)
 {
-    kernel::MemPoolOptions opts{
+    StandardnessOptions opts{
         .permit_bare_pubkey = true,
         .permit_bare_multisig = true,
     };

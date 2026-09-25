@@ -118,6 +118,9 @@ import hashlib
 import os
 import random
 
+# Keep in sync with DEFAULT_SCRIPT_SIZE_POLICY_LIMIT in src/policy/policy.h.
+ROOTS_DEFAULT_MAX_SCRIPT_SIZE = 1650
+
 # Whether or not to output generated test vectors, in JSON format.
 GEN_TEST_VECTORS = False
 
@@ -1073,7 +1076,7 @@ def spenders_taproot_active():
     # Test that an input stack size of 1000 elements is permitted, but 1001 isn't.
     add_spender(spenders, "tapscript/1000inputs", leaf="t23", **common, inputs=[getter("sign")] + [b'' for _ in range(999)], failure={"leaf": "t24", "inputs": [getter("sign")] + [b'' for _ in range(1000)]}, **ERR_STACK_SIZE)
     # Test that pushing a MAX_SCRIPT_ELEMENT_SIZE byte stack element is valid, but one longer is not.
-    add_spender(spenders, "tapscript/pushmaxlimit", leaf="t25", **common, **SINGLE_SIG, failure={"leaf": "t26"}, **ERR_PUSH_SIZE)
+    add_spender(spenders, "tapscript/pushmaxlimit", standard=False, leaf="t25", **common, **SINGLE_SIG, failure={"leaf": "t26"}, **ERR_PUSH_SIZE)
     # Test that 999-of-999 multisig works (but 1000-of-1000 triggers stack size limits)
     add_spender(spenders, "tapscript/bigmulti", leaf="t33", **common, inputs=big_spend_inputs, num=999, failure={"leaf": "t34", "num": 1000}, **ERR_STACK_SIZE)
     # Test that the CLEANSTACK rule is consensus critical in tapscript
@@ -1412,6 +1415,7 @@ class TaprootTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
+        self.extra_args = [["-acceptnonstddatacarrier=1"]]
 
     def block_submit(self, node, txs, msg, err_msg, cb_pubkey=None, fees=0, sigops_weight=0, witness=False, accept=False):
 
@@ -1629,6 +1633,8 @@ class TaprootTest(BitcoinTestFramework):
                     and (all(utxo.spender.is_standard for utxo in input_utxos))  # All inputs must be standard
                     and tx.version in TX_STANDARD_VERSIONS # The tx version must be standard
                     and not (tx.version == 3 and tx.get_vsize() > TRUC_MAX_VSIZE)  # Topological standardness rules must be followed
+                    # Roots applies -maxscriptsize to each serialized witness stack.
+                    and all(len(txin_witness.serialize()) <= ROOTS_DEFAULT_MAX_SCRIPT_SIZE for txin_witness in tx.wit.vtxinwit)
                 )
                 msg = ','.join(utxo.spender.comment + ("*" if n == fail_input else "") for n, utxo in enumerate(input_utxos))
                 if is_standard_tx:

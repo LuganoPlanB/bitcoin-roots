@@ -152,8 +152,7 @@ public:
           nSizeWithAncestors{GetTxSize()},
           nModFeesWithAncestors{nFee},
           nSigOpCostWithAncestors{sigOpCost} {
-            CAmount nValueIn = tx->GetValueOut() + nFee;
-            assert(inChainInputValue <= nValueIn);
+            assert(inChainInputValue == 0 || inChainInputValue <= tx->GetValueOut() + nFee);
         }
 
     CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,
@@ -191,7 +190,7 @@ public:
     const CAmount& GetFee() const { return nFee; }
     int32_t GetTxSize() const
     {
-        return GetVirtualTransactionSize(nTxWeight + m_extra_weight, sigOpCost, ::nBytesPerSigOp);
+        return GetVirtualTransactionSize(int64_t{nTxWeight} + m_extra_weight, sigOpCost, ::nBytesPerSigOp);
     }
     int32_t GetTxWeight() const { return nTxWeight; }
     std::chrono::seconds GetTime() const { return std::chrono::seconds{nTime}; }

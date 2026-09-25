@@ -22,7 +22,7 @@ define $(package)_extract_cmds
 endef
 
 define $(package)_preprocess_cmds
-  patch -l -p1 < $($(package)_patch_dir)/dont_leak_info.patch
+  patch -p1 < $($(package)_patch_dir)/dont_leak_info.patch
 endef
 
 define $(package)_config_cmds
