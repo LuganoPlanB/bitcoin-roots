@@ -14,6 +14,7 @@ CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 GUI_TOOLS_ACTION = ROOT / ".github/actions/setup-windows-gui-tools/action.yml"
 ROOTS_LOGO = ROOT / "src/qt/res/src/bitcoinroots-logo.svg"
+WINDOWS_RESOURCES = ROOT / "src/qt/res/bitcoin-qt-res.rc"
 
 
 def job(workflow, name):
@@ -32,6 +33,13 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
 
         _, _, viewbox_width, viewbox_height = logo.attrib["viewBox"].split()
         self.assertEqual(viewbox_width, viewbox_height)
+
+    def test_windows_resources_use_source_absolute_icon_paths(self):
+        resources = WINDOWS_RESOURCES.read_text(encoding="utf-8")
+        icon_lines = [line for line in resources.splitlines() if " ICON " in line]
+        self.assertEqual(len(icon_lines), 4)
+        for line in icon_lines:
+            self.assertIn('@CMAKE_CURRENT_SOURCE_DIR@/res/icons/', line)
 
     def assert_gui_asset_tools(self, windows_job):
         self.assertIn("uses: ./.github/actions/setup-windows-gui-tools", windows_job)
