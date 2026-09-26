@@ -130,6 +130,7 @@ def main():
             for duplicate in duplicates:
                 print(duplicate)
             print("")
+            exit_code = 1
 
     # Check if code includes .cpp-files
     included_cpps = find_included_cpps()

@@ -11,8 +11,6 @@ namespace kernel {
 
 struct Context;
 
-[[nodiscard]] bool Clang_IndVarSimplify_Bug_SanityCheck();
-
 /**
  *  Ensure a usable environment with all necessary library support.
  */

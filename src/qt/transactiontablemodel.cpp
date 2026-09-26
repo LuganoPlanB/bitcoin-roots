@@ -231,9 +231,9 @@ public:
         return nullptr;
     }
 
-    QString describe(interfaces::Node& node, interfaces::Wallet& wallet, TransactionRecord* rec, BitcoinUnit unit, const QFont& font_for_money)
+    QString describe(interfaces::Node& node, interfaces::Wallet& wallet, TransactionRecord* rec, BitcoinUnit unit)
     {
-        return TransactionDesc::toHTML(node, wallet, rec, unit, font_for_money);
+        return TransactionDesc::toHTML(node, wallet, rec, unit);
     }
 
     QString getTxHex(interfaces::Wallet& wallet, TransactionRecord *rec)
@@ -259,7 +259,6 @@ TransactionTableModel::TransactionTableModel(const PlatformStyle *_platformStyle
     priv->refreshWallet(walletModel->wallet());
 
     connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &TransactionTableModel::updateDisplayUnit);
-    connect(walletModel->getOptionsModel(), &OptionsModel::fontForMoneyChanged, this, &TransactionTableModel::updateDisplayUnit);
 }
 
 TransactionTableModel::~TransactionTableModel()
@@ -321,9 +320,6 @@ QString TransactionTableModel::formatTxStatus(const TransactionRecord *wtx) cons
     case TransactionStatus::Abandoned:
         status = tr("Abandoned");
         break;
-    case TransactionStatus::AssumedConfirmed:
-        status = tr("Unconfirmed (%1 confirmations pending verification of historical blocks)").arg(wtx->status.depth);
-        break;
     case TransactionStatus::Confirming:
         status = tr("Confirming (%1 of %2 recommended confirmations)").arg(wtx->status.depth).arg(TransactionRecord::RecommendedNumConfirmations);
         break;
@@ -364,7 +360,7 @@ QString TransactionTableModel::lookupAddress(const std::string &address, bool to
     {
         description += label;
     }
-    if(label.isEmpty() || walletModel->getOptionsModel()->getDisplayAddresses() || tooltip)
+    if(label.isEmpty() || tooltip)
     {
         description += QString(" (") + QString::fromStdString(address) + QString(")");
     }
@@ -466,12 +462,11 @@ QVariant TransactionTableModel::txStatusDecoration(const TransactionRecord *wtx)
     switch(wtx->status.status)
     {
     case TransactionStatus::Unconfirmed:
-    case TransactionStatus::AssumedConfirmed:
         return QIcon(":/icons/transaction_0");
     case TransactionStatus::Abandoned:
         return QIcon(":/icons/transaction_abandoned");
     case TransactionStatus::Confirming:
-        switch (wtx->status.depth * 6 / TransactionRecord::RecommendedNumConfirmations)
+        switch(wtx->status.depth)
         {
         case 1: return QIcon(":/icons/transaction_1");
         case 2: return QIcon(":/icons/transaction_2");
@@ -571,12 +566,6 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
             return qint64(rec->credit + rec->debit);
         } // no default case, so the compiler can warn about missing cases
         assert(false);
-    case Qt::FontRole:
-        if (column == Amount) {
-            const BitcoinUnit display_unit = walletModel->getOptionsModel()->getDisplayUnit();
-            return walletModel->getOptionsModel()->getFontForMoney(display_unit);
-        }
-        break;
     case Qt::ToolTipRole:
         return formatTooltip(rec);
     case Qt::TextAlignmentRole:
@@ -610,11 +599,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case WatchonlyDecorationRole:
         return txWatchonlyDecoration(rec);
     case LongDescriptionRole:
-    {
-        const BitcoinUnit display_unit = walletModel->getOptionsModel()->getDisplayUnit();
-        const QFont font_for_money = walletModel->getOptionsModel()->getFontForMoney(display_unit);
-        return priv->describe(walletModel->node(), walletModel->wallet(), rec, display_unit, font_for_money);
-    }
+        return priv->describe(walletModel->node(), walletModel->wallet(), rec, walletModel->getOptionsModel()->getDisplayUnit());
     case AddressRole:
         return QString::fromStdString(rec->address);
     case LabelRole:

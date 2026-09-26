@@ -8,7 +8,6 @@
 #include <consensus/amount.h>
 #include <qt/bitcoinunits.h>
 
-#include <QFont>
 #include <QWidget>
 
 class AmountSpinBox;
@@ -55,8 +54,6 @@ public:
 
     /** Change unit used to display amount. */
     void setDisplayUnit(BitcoinUnit new_unit);
-
-    void setFontForMoney(const QFont& font_for_money);
 
     /** Make field empty and ready for new input. */
     void clear();

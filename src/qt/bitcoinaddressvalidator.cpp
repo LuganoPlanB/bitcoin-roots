@@ -6,8 +6,6 @@
 
 #include <key_io.h>
 
-#include <vector>
-
 /* Base58 characters are:
      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -22,8 +20,10 @@ BitcoinAddressEntryValidator::BitcoinAddressEntryValidator(QObject *parent) :
 {
 }
 
-QValidator::State BitcoinAddressEntryValidator::validate(QString &input, std::vector<int>&error_locations) const
+QValidator::State BitcoinAddressEntryValidator::validate(QString &input, int &pos) const
 {
+    Q_UNUSED(pos);
+
     // Empty address is "intermediate" input
     if (input.isEmpty())
         return QValidator::Intermediate;
@@ -73,7 +73,6 @@ QValidator::State BitcoinAddressEntryValidator::validate(QString &input, std::ve
         }
         else
         {
-            error_locations.push_back(idx);
             state = QValidator::Invalid;
         }
     }
@@ -81,25 +80,16 @@ QValidator::State BitcoinAddressEntryValidator::validate(QString &input, std::ve
     return state;
 }
 
-QValidator::State BitcoinAddressEntryValidator::validate(QString &input, int &pos) const
-{
-    std::vector<int> error_locations;
-    const auto ret = validate(input, error_locations);
-    if (!error_locations.empty()) pos = error_locations.at(0);
-    return ret;
-}
-
 BitcoinAddressCheckValidator::BitcoinAddressCheckValidator(QObject *parent) :
-    BitcoinAddressEntryValidator(parent)
+    QValidator(parent)
 {
 }
 
-QValidator::State BitcoinAddressCheckValidator::validate(QString &input, std::vector<int>&error_locations) const
+QValidator::State BitcoinAddressCheckValidator::validate(QString &input, int &pos) const
 {
+    Q_UNUSED(pos);
     // Validate the passed Bitcoin address
-    std::string error_msg;
-    CTxDestination dest = DecodeDestination(input.toStdString(), error_msg, &error_locations);
-    if (IsValidDestination(dest)) {
+    if (IsValidDestinationString(input.toStdString())) {
         return QValidator::Acceptable;
     }
 

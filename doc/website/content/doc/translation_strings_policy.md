@@ -1,1 +1,0 @@
-../../../translation_strings_policy.md

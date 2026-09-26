@@ -68,6 +68,14 @@ std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CT
                                           const std::set<Txid>& direct_conflicts,
                                           int64_t vsize);
 
+// Compatibility entry point for existing unit tests. Production admission
+// supplies a policy-specific reject reason and exceptions through the overload
+// above.
+std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CTransactionRef& ptx,
+                                          const CTxMemPool::setEntries& mempool_ancestors,
+                                          const std::set<Txid>& direct_conflicts,
+                                          int64_t vsize);
+
 /** Must be called for every transaction that is submitted within a package, even if not TRUC.
  *
  * For each transaction in a package:
@@ -92,6 +100,10 @@ std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CT
 std::optional<std::string> PackageTRUCChecks(const CTransactionRef& ptx, int64_t vsize,
                                            const std::string& reason_prefix, std::string& out_reason,
                                            const ignore_rejects_type& ignore_rejects,
+                                           const Package& package,
+                                           const CTxMemPool::setEntries& mempool_ancestors);
+
+std::optional<std::string> PackageTRUCChecks(const CTransactionRef& ptx, int64_t vsize,
                                            const Package& package,
                                            const CTxMemPool::setEntries& mempool_ancestors);
 

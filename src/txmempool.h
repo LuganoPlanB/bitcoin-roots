@@ -344,7 +344,9 @@ public:
 
     static const int ROLLING_FEE_HALFLIFE = 60 * 60 * 12; // public only for testing
 
-    using CTxMemPoolEntry_Indices_ = boost::multi_index::indexed_by<
+    using indexed_transaction_set = boost::multi_index_container<
+        CTxMemPoolEntry,
+        boost::multi_index::indexed_by<
             // sorted by txid
             boost::multi_index::hashed_unique<mempoolentry_txid, SaltedTxidHasher>,
             // sorted by wtxid
@@ -371,16 +373,8 @@ public:
                 boost::multi_index::identity<CTxMemPoolEntry>,
                 CompareTxMemPoolEntryByAncestorFee
             >
-        >;
-#if BOOST_VERSION >= 109100
-    using CTxMemPoolEntry_Indices = CTxMemPoolEntry_Indices_;
-#else
-    struct CTxMemPoolEntry_Indices final : CTxMemPoolEntry_Indices_{};
-#endif
-    typedef boost::multi_index_container<
-        CTxMemPoolEntry,
-        CTxMemPoolEntry_Indices
-    > indexed_transaction_set;
+        >
+    >;
 
     /**
      * This mutex needs to be locked when accessing `mapTx` or other members
@@ -864,6 +858,11 @@ public:
         using TxHandle = CTxMemPool::txiter;
 
         TxHandle StageAddition(const CTransactionRef& tx, const CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, CoinAgeCache coin_age_cache, bool spends_coinbase, int32_t extra_weight, int64_t sigops_cost, LockPoints lp);
+        TxHandle StageAddition(const CTransactionRef& tx, const CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp)
+        {
+            return StageAddition(tx, fee, time, entry_height, entry_sequence, COIN_AGE_CACHE_ZERO,
+                                 spends_coinbase, /*extra_weight=*/0, sigops_cost, lp);
+        }
         void StageRemoval(CTxMemPool::txiter it) { m_to_remove.insert(it); }
 
         const CTxMemPool::setEntries& GetRemovals() const { return m_to_remove; }

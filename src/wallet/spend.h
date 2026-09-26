@@ -14,7 +14,12 @@
 
 #include <optional>
 
+class FastRandomContext;
+
 namespace wallet {
+/** Pick an automatic anti-fee-sniping locktime that does not collide with reserved policy markers. */
+uint32_t GetAntiFeeSnipingLockTime(int block_height, FastRandomContext& rng_fast);
+
 /** Get the marginal bytes if spending the specified output from this transaction.
  * Use CoinControl to determine whether to expect signature grinding when calculating the size of the input spend. */
 int CalculateMaximumSignedInputSize(const CTxOut& txout, const CWallet* pwallet, const CCoinControl* coin_control);
@@ -103,9 +108,6 @@ const CTxOut& FindNonChangeParentOutput(const CWallet& wallet, const COutPoint& 
  * Return list of available coins and locked coins grouped by non-change output address.
  */
 std::map<CTxDestination, std::vector<COutput>> ListCoins(const CWallet& wallet) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-
-void MaybeDiscourageFeeSniping2(const CWallet &wallet,
-                               CMutableTransaction& tx);
 
 struct SelectionFilter {
     CoinEligibilityFilter filter;

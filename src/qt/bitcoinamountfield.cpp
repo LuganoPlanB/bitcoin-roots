@@ -94,11 +94,7 @@ public:
     {
         bool valid = false;
         CAmount val = value(&valid);
-        CAmount currentSingleStep = singleStep;
-        if (!currentSingleStep) {
-            currentSingleStep = BitcoinUnits::singlestep(currentUnit);
-        }
-        val = val + steps * currentSingleStep;
+        val = val + steps * singleStep;
         val = qBound(m_min_amount, val, m_max_amount);
         setValue(val);
     }
@@ -114,11 +110,6 @@ public:
             setValue(val);
         else
             clear();
-    }
-
-    void setFont(const QFont& font)
-    {
-        lineEdit()->setFont(font);
     }
 
     void setSingleStep(const CAmount& step)
@@ -160,7 +151,7 @@ public:
 
 private:
     BitcoinUnit currentUnit{BitcoinUnit::BTC};
-    CAmount singleStep{CAmount(0)};
+    CAmount singleStep{CAmount(100000)}; // satoshis
     mutable QSize cachedMinimumSizeHint;
     bool m_allow_empty{true};
     CAmount m_min_amount{CAmount(0)};
@@ -277,11 +268,10 @@ bool BitcoinAmountField::validate()
 
 void BitcoinAmountField::setValid(bool valid)
 {
-    const QString style = valid ? QString() : QStringLiteral(STYLE_INVALID);
-    if (amount->styleSheet() != style) {
-        // CAUTION: Some Qt styles (Breeze in particular) add event handlers in setStyleSheet, which causes the eventFilter to run infinitely; use a QueuedConnection to change it outside of the eventFilter instead
-        QMetaObject::invokeMethod(amount, "setStyleSheet", Qt::QueuedConnection, Q_ARG(QString, style));
-    }
+    if (valid)
+        amount->setStyleSheet("");
+    else
+        amount->setStyleSheet(STYLE_INVALID);
 }
 
 bool BitcoinAmountField::eventFilter(QObject *object, QEvent *event)
@@ -345,11 +335,6 @@ void BitcoinAmountField::unitChanged(int idx)
 void BitcoinAmountField::setDisplayUnit(BitcoinUnit new_unit)
 {
     unit->setValue(QVariant::fromValue(new_unit));
-}
-
-void BitcoinAmountField::setFontForMoney(const QFont& font_for_money)
-{
-    amount->setFont(font_for_money);
 }
 
 void BitcoinAmountField::setSingleStep(const CAmount& step)

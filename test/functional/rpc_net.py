@@ -118,6 +118,10 @@ class NetTest(BitcoinTestFramework):
         # check the `servicesnames` field
         for info in peer_info:
             assert_net_servicesnames(int(info[0]["services"], 0x10), info[0]["servicesnames"])
+            # CPU accounting is optional, but when the platform records it, the
+            # operator-facing load value is a non-negative fraction of connection time.
+            if "cpu_load" in info[0]:
+                assert info[0]["cpu_load"] >= 0
 
         assert_equal(peer_info[0][0]['connection_type'], 'inbound')
         assert_equal(peer_info[0][1]['connection_type'], 'manual')
@@ -127,6 +131,7 @@ class NetTest(BitcoinTestFramework):
 
         # Check dynamically generated networks list in getpeerinfo help output.
         assert "(ipv4, ipv6, onion, i2p, cjdns, not_publicly_routable)" in self.nodes[0].help("getpeerinfo")
+        assert "cpu_load" in self.nodes[0].help("getpeerinfo")
 
         self.log.info("Check getpeerinfo output before a version message was sent")
         no_version_peer_id = 2

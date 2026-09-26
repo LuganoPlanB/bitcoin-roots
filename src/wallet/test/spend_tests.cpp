@@ -3,7 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <consensus/amount.h>
+#include <key.h>
 #include <policy/fees.h>
+#include <policy/policy.h>
+#include <random.h>
 #include <script/solver.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
@@ -15,6 +18,35 @@
 
 namespace wallet {
 BOOST_FIXTURE_TEST_SUITE(spend_tests, WalletTestingSetup)
+
+BOOST_AUTO_TEST_CASE(max_signed_input_size_uses_external_outpoint)
+{
+    const CKey key{GenerateRandomKey()};
+    FillableSigningProvider provider;
+    BOOST_REQUIRE(provider.AddKey(key));
+
+    const CTxOut txout{COIN, GetScriptForDestination(PKHash{key.GetPubKey()})};
+    const COutPoint outpoint{Txid{}, 0};
+    CCoinControl coin_control;
+    coin_control.Select(outpoint).SetTxOut(txout);
+
+    const int low_r{CalculateMaximumSignedInputSize(txout, COutPoint{}, &provider, /*can_grind_r=*/true, &coin_control)};
+    const int high_r{CalculateMaximumSignedInputSize(txout, outpoint, &provider, /*can_grind_r=*/true, &coin_control)};
+    BOOST_CHECK_EQUAL(high_r, low_r + 1);
+}
+
+BOOST_AUTO_TEST_CASE(anti_fee_sniping_avoids_reserved_policy_locktime)
+{
+    FastRandomContext rng{/*fDeterministic=*/true};
+    const int first_height{static_cast<int>(PARASITE_CAT21_LOCKTIME)};
+    for (int height{first_height}; height < first_height + 100; ++height) {
+        for (int sample = 0; sample < 1000; ++sample) {
+            const uint32_t lock_time{GetAntiFeeSnipingLockTime(height, rng)};
+            BOOST_CHECK_NE(lock_time, PARASITE_CAT21_LOCKTIME);
+            BOOST_CHECK_LE(lock_time, height);
+        }
+    }
+}
 
 BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
 {

@@ -99,6 +99,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.noban_tx_relay = True
         self.extra_args = [[
             f'-testactivationheight=csv@{CSV_ACTIVATION_HEIGHT}',
+            '-permitbarepubkey=1',  # permit the synthetic CSV spend fixture
         ]]
         self.supports_cli = False
 

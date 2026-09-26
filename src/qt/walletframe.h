@@ -9,14 +9,12 @@
 #include <QMap>
 
 class ClientModel;
-class PairingPage;
 class PlatformStyle;
 class SendCoinsRecipient;
 class WalletModel;
 class WalletView;
 
 QT_BEGIN_NAMESPACE
-class QLabel;
 class QStackedWidget;
 QT_END_NAMESPACE
 
@@ -54,13 +52,9 @@ Q_SIGNALS:
     void currentWalletSet();
 
 private:
-    QStackedWidget *m_global_stack;
     QStackedWidget *walletStack;
     ClientModel *clientModel;
-    QLabel* m_label_alerts;
     QMap<WalletModel*, WalletView*> mapWalletViews;
-
-    PairingPage *m_page_pairing;
 
     bool bOutOfSync;
 
@@ -75,8 +69,6 @@ public:
 public Q_SLOTS:
     /** Switch to overview (home) page */
     void gotoOverviewPage();
-    /** Switch to pairing page */
-    void gotoPairingPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
     /** Switch to receive coins page */
@@ -88,8 +80,6 @@ public Q_SLOTS:
     void gotoSignMessageTab(QString addr = "");
     /** Show Sign/Verify Message dialog and switch to verify message tab */
     void gotoVerifyMessageTab(QString addr = "");
-
-    void gotoSweepPrivKeyDialog();
 
     /** Load Partially Signed Bitcoin Transaction */
     void gotoLoadPSBT(bool from_clipboard = false);
@@ -107,9 +97,6 @@ public Q_SLOTS:
     void usedSendingAddresses();
     /** Show used receiving addresses */
     void usedReceivingAddresses();
-
-private Q_SLOTS:
-    void updateAlerts(const QString &warnings);
 };
 
 #endif // BITCOIN_QT_WALLETFRAME_H

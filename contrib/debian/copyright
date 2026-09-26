@@ -1,12 +1,13 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Bitcoin Roots
-Upstream-Contact: Luke Dashjr <luke+knots+debian@dashjr.org>
-Source: https://github.com/luganoplanb/bitcoin-roots
+Upstream-Name: Bitcoin
+Upstream-Contact: Satoshi Nakamoto <satoshin@gmx.com>
+ irc://#bitcoin-core-dev@libera.chat
+Source: https://github.com/bitcoin/bitcoin
 
 Files: *
-Copyright: 2009-2025, Bitcoin Core & Roots Developers
+Copyright: 2009-2025, Bitcoin Core Developers
 License: Expat
-Comment: The Bitcoin Core & Roots Developers encompasses all contributors to the
+Comment: The Bitcoin Core Developers encompasses all contributors to the
          project, listed in the release notes or the git log.
 
 Files: debian/*
@@ -81,10 +82,6 @@ License: public-domain
 Files: src/qt/res/fonts/RobotoMono-Bold.ttf
 License: Apache-2.0
 Comment: Site: https://fonts.google.com/specimen/Roboto+Mono
-
-Files: src/qt/res/fonts/OCR-Bitcoin.ttf.in
-Copyright: Orange Manufacturing Group & Kurtis Stirling
-License: Expat
 
 
 License: Expat

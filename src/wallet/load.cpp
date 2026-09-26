@@ -7,7 +7,6 @@
 
 #include <common/args.h>
 #include <interfaces/chain.h>
-#include <node/interface_ui.h>
 #include <scheduler.h>
 #include <util/check.h>
 #include <util/fs.h>
@@ -25,17 +24,6 @@
 using util::Join;
 
 namespace wallet {
-
-bool HandleWalletLoadError(interfaces::Chain& chain, const std::string& wallet_file, const bilingual_str& error_string)
-{
-    if (!chain.initQuestion(error_string + Untranslated("\n\n") + _("Continue without this wallet?"), error_string, _("Error"), CClientUIInterface::MSG_ERROR | CClientUIInterface::MODAL | CClientUIInterface::BTN_OK | CClientUIInterface::BTN_ABORT)) {
-        return false;
-    }
-
-    RemoveWalletSetting(chain, wallet_file);
-    return true;
-}
-
 bool VerifyWallets(WalletContext& context)
 {
     interfaces::Chain& chain = *context.chain;
@@ -88,7 +76,6 @@ bool VerifyWallets(WalletContext& context)
     // Keep track of each wallet absolute path to detect duplicates.
     std::set<fs::path> wallet_paths;
 
-    bool modified_wallet_list = false;
     for (const auto& wallet : chain.getSettingsList("wallet")) {
         if (!wallet.isStr()) {
             chain.initError(_("Invalid value detected for '-wallet' or '-nowallet'. "
@@ -113,18 +100,10 @@ bool VerifyWallets(WalletContext& context)
             if (status == DatabaseStatus::FAILED_NOT_FOUND) {
                 chain.initWarning(Untranslated(strprintf("Skipping -wallet path that doesn't exist. %s", error_string.original)));
             } else {
-                if (HandleWalletLoadError(chain, wallet_file, error_string)) {
-                    modified_wallet_list = true;
-                } else {
-                    return false;
-                }
+                chain.initError(error_string);
+                return false;
             }
         }
-    }
-
-    if (modified_wallet_list) {
-        // Ensure new wallet list overrides commandline options
-        args.ForceSetArgV("wallet", chain.getRwSetting("wallet"));
     }
 
     return true;
@@ -160,11 +139,8 @@ bool LoadWallets(WalletContext& context)
             std::shared_ptr<CWallet> pwallet = database ? CWallet::Create(context, name, std::move(database), options.create_flags, error, warnings) : nullptr;
             if (!warnings.empty()) chain.initWarning(Join(warnings, Untranslated("\n")));
             if (!pwallet) {
-                if (HandleWalletLoadError(chain, name, error)) {
-                    continue;
-                } else {
-                    return false;
-                }
+                chain.initError(error);
+                return false;
             }
 
             NotifyWalletLoaded(context, pwallet);
@@ -194,6 +170,13 @@ void FlushWallets(WalletContext& context)
 {
     for (const std::shared_ptr<CWallet>& pwallet : GetWallets(context)) {
         pwallet->Flush();
+    }
+}
+
+void StopWallets(WalletContext& context)
+{
+    for (const std::shared_ptr<CWallet>& pwallet : GetWallets(context)) {
+        pwallet->Close();
     }
 }
 

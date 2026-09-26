@@ -300,7 +300,6 @@ class ImportRescanTest(BitcoinTestFramework):
                 add_to_wallet=False,
                 inputs=[unspent_txid_map[variant.initial_txid]],
                 outputs=[{ADDRESS_BCRT1_UNSPENDABLE : variant.initial_amount}],
-                locktime=0,
                 subtract_fee_from_outputs=[0]
             )
             variant.child_txid = child["txid"]

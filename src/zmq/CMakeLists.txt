@@ -18,5 +18,4 @@ target_link_libraries(bitcoin_zmq
     core_interface
     univalue
     zeromq
-    Boost::headers
 )

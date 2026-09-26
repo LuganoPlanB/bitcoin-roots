@@ -34,6 +34,7 @@ class PackageRBFTest(BitcoinTestFramework):
         # Required for fill_mempool()
         self.extra_args = [[
             "-datacarriersize=100000",
+            "-maxscriptsize=100000",
             "-maxmempool=5",
         ]] * self.num_nodes
 

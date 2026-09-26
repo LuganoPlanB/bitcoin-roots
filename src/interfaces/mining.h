@@ -33,23 +33,22 @@ class BlockTemplate
 public:
     virtual ~BlockTemplate() = default;
 
-    virtual const CBlockHeader& getBlockHeader() const = 0;
-    virtual const CBlock& getBlock() const = 0;
+    virtual CBlockHeader getBlockHeader() = 0;
+    virtual CBlock getBlock() = 0;
 
-    virtual const std::vector<CAmount>& getTxFees() const = 0;
-    virtual const std::vector<int64_t>& getTxSigops() const = 0;
-    virtual const std::vector<double>& getTxCoinAgePriorities() const = 0;
+    virtual std::vector<CAmount> getTxFees() = 0;
+    virtual std::vector<int64_t> getTxSigops() = 0;
 
-    virtual CTransactionRef getCoinbaseTx() const = 0;
-    virtual const std::vector<unsigned char>& getCoinbaseCommitment() const = 0;
-    virtual int getWitnessCommitmentIndex() const = 0;
+    virtual CTransactionRef getCoinbaseTx() = 0;
+    virtual std::vector<unsigned char> getCoinbaseCommitment() = 0;
+    virtual int getWitnessCommitmentIndex() = 0;
 
     /**
      * Compute merkle path to the coinbase transaction
      *
      * @return merkle path ordered from the deepest
      */
-    virtual std::vector<uint256> getCoinbaseMerklePath() const = 0;
+    virtual std::vector<uint256> getCoinbaseMerklePath() = 0;
 
     /**
      * Construct and broadcast the block.
@@ -84,16 +83,15 @@ public:
      * @param[in] timeout     how long to wait for a new tip
      * @returns               Hash and height of the current chain tip after this call.
      */
-    virtual std::optional<BlockRef> waitTipChanged(uint256 current_tip, MillisecondsDouble timeout = MillisecondsDouble::max()) = 0;
+    virtual BlockRef waitTipChanged(uint256 current_tip, MillisecondsDouble timeout = MillisecondsDouble::max()) = 0;
 
    /**
-     * Construct a new block template. For the createNewBlock variant, subclass options (if any) are silently lost and overridden by any config args. For createNewBlock2, the options are assumed to be complete.
+     * Construct a new block template
      *
      * @param[in] options options for creating the block
      * @returns a block template
      */
     virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}) = 0;
-    virtual std::unique_ptr<BlockTemplate> createNewBlock2(const node::BlockCreateOptions& assemble_options) = 0;
 
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.

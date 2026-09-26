@@ -188,7 +188,6 @@ BASE_SCRIPTS = [
     'wallet_fast_rescan.py --descriptors',
     'wallet_gethdkeys.py --descriptors',
     'wallet_createwalletdescriptor.py --descriptors',
-    'feature_fee_estimates_persist.py',
     'interface_zmq.py',
     'rpc_invalid_address_message.py',
     'rpc_validateaddress.py',
@@ -196,9 +195,7 @@ BASE_SCRIPTS = [
     'interface_bitcoin_cli.py --descriptors',
     'feature_bind_extra.py',
     'mempool_resurrect.py',
-    'wallet_sweepprivkeys.py',
     'wallet_txn_doublespend.py --mineblock',
-    'tool_cli_completion.py',
     'tool_wallet.py --legacy-wallet',
     'tool_wallet.py --legacy-wallet --bdbro',
     'tool_wallet.py --legacy-wallet --bdbro --swap-bdb-endian',
@@ -207,7 +204,6 @@ BASE_SCRIPTS = [
     'tool_signet_miner.py --descriptors',
     'wallet_txn_clone.py',
     'wallet_txn_clone.py --segwit',
-    'mining_coin_age_priority.py',
     'rpc_getchaintips.py',
     'rpc_misc.py',
     'p2p_1p1c_network.py',
@@ -235,7 +231,6 @@ BASE_SCRIPTS = [
     'interface_usdt_validation.py',
     'rpc_users.py',
     'rpc_whitelist.py',
-    'rpc_getrpcwhitelist.py',
     'feature_proxy.py',
     'wallet_signrawtransactionwithwallet.py --legacy-wallet',
     'wallet_signrawtransactionwithwallet.py --descriptors',
@@ -321,12 +316,9 @@ BASE_SCRIPTS = [
     'p2p_initial_headers_sync.py',
     'feature_nulldummy.py',
     'mempool_accept.py',
-    'mempool_fee_histogram.py',
     'mempool_expiry.py',
-    'rpc_sort_multisig.py',
     'wallet_import_with_label.py --legacy-wallet',
     'wallet_importdescriptors.py --descriptors',
-    'wallet_importseed.py --descriptors',
     'wallet_upgradewallet.py --legacy-wallet',
     'wallet_crosschain.py',
     'mining_basic.py',
@@ -345,7 +337,6 @@ BASE_SCRIPTS = [
     'wallet_encryption.py --legacy-wallet',
     'wallet_encryption.py --descriptors',
     'feature_dersig.py',
-    'feature_reindex_init.py',
     'feature_cltv.py',
     'rpc_uptime.py',
     'feature_discover.py',
@@ -354,7 +345,6 @@ BASE_SCRIPTS = [
     'wallet_fallbackfee.py --legacy-wallet',
     'wallet_fallbackfee.py --descriptors',
     'rpc_dumptxoutset.py',
-    'rpc_getblocklocations.py',
     'feature_minchainwork.py',
     'rpc_estimatefee.py',
     'rpc_getblockstats.py',
@@ -384,14 +374,11 @@ BASE_SCRIPTS = [
     'feature_bind_port_discover.py',
     'p2p_unrequested_blocks.py',
     'p2p_message_capture.py',
-    'feature_softwareexpiry.py',
     'feature_includeconf.py',
     'feature_addrman.py',
     'feature_asmap.py',
-    'feature_chain_tiebreaks.py',
     'feature_fastprune.py',
     'feature_framework_miniwallet.py',
-    'feature_sync_coins_tip_after_chain_sync.py',
     'mempool_unbroadcast.py',
     'mempool_compatibility.py',
     'mempool_accept_wtxid.py',
@@ -406,7 +393,6 @@ BASE_SCRIPTS = [
     'rpc_scanblocks.py',
     'p2p_sendtxrcncl.py',
     'rpc_scantxoutset.py',
-    'feature_torcontrol.py',
     'feature_unsupported_utxo_db.py',
     'feature_logging.py',
     'feature_anchors.py',
@@ -424,7 +410,6 @@ BASE_SCRIPTS = [
     'feature_settings.py',
     'rpc_getdescriptorinfo.py',
     'rpc_mempool_info.py',
-    'rpc_getgeneralinfo.py',
     'rpc_help.py',
     'p2p_handshake.py',
     'p2p_handshake.py --v2transport',
@@ -725,6 +710,7 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
     if not os.listdir(tmpdir):
         os.rmdir(tmpdir)
 
+    all_passed = all_passed and coverage_passed
 
     # Clean up dangling processes if any. This may only happen with --failfast option.
     # Killing the process group will also terminate the current process but that is
@@ -829,7 +815,7 @@ class TestHandler:
                         status = "Passed"
                     elif proc.returncode == TEST_EXIT_SKIPPED:
                         status = "Skipped"
-                        skip_reason = re.search(r"Test Skipped: (.*)", stdout).group(1).strip()
+                        skip_reason = re.search(r"Test Skipped: (.*)", stdout).group(1)
                     else:
                         status = "Failed"
                     self.jobs.remove(job)

@@ -22,6 +22,7 @@ class MempoolCompatibilityTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
+        self.extra_args = [[], ["-permitbarepubkey=1"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_previous_releases()
@@ -59,7 +60,7 @@ class MempoolCompatibilityTest(BitcoinTestFramework):
         old_node_mempool.rename(new_node_mempool)
 
         self.log.info("Start new node and verify mempool contains the tx")
-        self.start_node(1, extra_args=["-persistmempoolv1=1"])
+        self.start_node(1, extra_args=self.extra_args[1] + ["-persistmempoolv1=1"])
         assert old_tx_hash in new_node.getrawmempool()
 
         self.log.info("Add unbroadcasted tx to mempool on new node and shutdown")

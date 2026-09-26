@@ -1,13 +1,2 @@
 src/clientversion.cpp export-subst
-
-# Replay inputs preserve upstream bytes, including historical whitespace.
-contrib/roots/replay-29.3-release/*.patch whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-core-to-knots-29.3/*.patch whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/*.patch whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/materials/*.patch whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/legacy-completion.bash whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/legacy-readme-windows.txt whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/legacy-rpc-sort.py whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/materials/doc_README_windows.txt whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/materials/test_functional_data_completion_bitcoin-cli.header.bash-completion whitespace=-trailing-space,-space-before-tab
-contrib/roots/replay-29.4-proposal/materials/test_functional_rpc_sort_multisig.py whitespace=-trailing-space,-space-before-tab
+depends/patches/miniupnpc/dont_leak_info.patch whitespace=-space-before-tab

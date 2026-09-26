@@ -13,13 +13,13 @@ SCRIPT = ROOT / "ci/release/validate-release-tag.sh"
 
 
 class ValidateReleaseTagTest(unittest.TestCase):
-    def test_accepts_supported_version_tags(self):
-        for tag in ["v29.3-roots.1", "v29.3.0-roots.1", "v29.3.0-roots.2-rc1", "v30.0+roots.1"]:
+    def test_accepts_roots_final_and_release_candidate_tags(self):
+        for tag in ["v29.4-roots.1", "v29.4.1-roots.2", "v29.4rc1-roots.1"]:
             with self.subTest(tag=tag):
                 subprocess.run([SCRIPT, tag], check=True)
 
-    def test_rejects_unsafe_or_non_version_tags(self):
-        for tag in ["29.3.0-roots.1", "v", "v1", "v1/other", "v1..2", "v1;false", "v1\nother"]:
+    def test_rejects_unsafe_or_non_roots_tags(self):
+        for tag in ["29.4-roots.1", "v29.4", "v29.4-rc1-roots.1", "v29.4-roots.0", "v29.4-roots.1/other", "v29.4-roots.1\nother"]:
             with self.subTest(tag=tag):
                 result = subprocess.run([SCRIPT, tag], capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)

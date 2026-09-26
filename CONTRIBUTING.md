@@ -6,7 +6,7 @@ welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
 
-First, in terms of structure, there is no particular concept of "core
+First, in terms of structure, there is no particular concept of "Bitcoin Roots
 developers" in the sense of privileged people. Open source often naturally
 revolves around a meritocracy where contributors earn trust from the developer
 community over time. Nevertheless, some hierarchy is necessary for practical
@@ -24,9 +24,9 @@ as a new contributor. It also will teach you much more about the code and
 process than opening pull requests. Please refer to the [peer review](#peer-review)
 section below.
 
-Before you start contributing, familiarize yourself with the Bitcoin Core build
-system and tests. Refer to the documentation in the repository on how to build
-Bitcoin Core and how to run the unit tests, functional tests, and fuzz tests.
+Before you start contributing, familiarize yourself with the Bitcoin Roots build
+system and tests. Refer to the documentation in this repository on how to build
+Bitcoin Roots and run the unit tests, functional tests, and fuzz tests.
 
 There are many open issues of varying difficulty waiting to be fixed.
 If you're looking for somewhere to start contributing, check out the
@@ -433,6 +433,13 @@ https://github.com/bitcoin/bitcoin/pull/16189).
 
 Also see the [backport.py script](
 https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
+
+Bitcoin Roots release lines use the additional Git-native workflow documented
+in [`contrib/roots/README.md`](/contrib/roots/README.md). Canonical
+`roots/<core-version>` branches start directly at the matching Bitcoin Core tag;
+`main` records promoted product history. Fix the oldest supported Roots line
+that needs a change, then cherry-pick it with provenance into newer affected
+lines. Exported patch files are release artifacts, not a second source tree.
 
 Copyright
 ---------

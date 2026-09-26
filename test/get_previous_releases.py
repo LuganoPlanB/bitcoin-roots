@@ -17,7 +17,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 import hashlib
 
 SHA256_SUMS = {
@@ -144,12 +143,7 @@ def download_binary(tag, args) -> int:
 
     ret = subprocess.run(['curl', '--fail', '--remote-name', tarballUrl]).returncode
     if ret:
-        print("Retrying download after failure ...", file=sys.stderr)
-        time.sleep(12)
-        ret = subprocess.run(['curl', '--fail', '--remote-name', tarballUrl]).returncode
-        if ret:
-            print("\nDownload failed a second time", file=sys.stderr)
-            return ret
+        return ret
 
     hasher = hashlib.sha256()
     with open(tarball, "rb") as afile:

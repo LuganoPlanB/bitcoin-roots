@@ -10,7 +10,6 @@
 #include <primitives/transaction.h> // For CTransactionRef
 #include <util/result.h>
 
-#include <any>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -35,7 +34,6 @@ struct CBlockLocator;
 struct FeeCalculation;
 namespace node {
 struct NodeContext;
-struct PruneLockInfo;
 } // namespace node
 
 namespace interfaces {
@@ -143,10 +141,6 @@ public:
     //! Check that the block is available on disk (i.e. has not been
     //! pruned), and contains transactions.
     virtual bool haveBlockOnDisk(int height) = 0;
-
-    virtual bool pruneLockExists(const std::string& name) const = 0;
-    virtual bool updatePruneLock(const std::string& name, const node::PruneLockInfo& lock_info, bool sync=false) = 0;
-    virtual bool deletePruneLock(const std::string& name) = 0;
 
     //! Get locator for the current chain tip.
     virtual CBlockLocator getTipLocator() = 0;
@@ -316,9 +310,6 @@ public:
     //! Send init error.
     virtual void initError(const bilingual_str& message) = 0;
 
-    //! Ask init question.
-    virtual bool initQuestion(const bilingual_str& message, const bilingual_str& non_interactive_message, const bilingual_str& caption, unsigned int style) = 0;
-
     //! Send progress indicator.
     virtual void showProgress(const std::string& title, int progress, bool resume_possible) = 0;
 
@@ -336,17 +327,11 @@ public:
     };
 
     //! Register handler for notifications.
-    //! Some notifications are asynchronous and may still execute after the handler is disconnected.
-    //! Use waitForNotifications() after the handler is disconnected to ensure all pending notifications
-    //! have been processed.
     virtual std::unique_ptr<Handler> handleNotifications(std::shared_ptr<Notifications> notifications) = 0;
 
     //! Wait for pending notifications to be processed unless block hash points to the current
     //! chain tip.
     virtual void waitForNotificationsIfTipChanged(const uint256& old_tip) = 0;
-
-    //! Wait for all pending notifications up to this point to be processed
-    virtual void waitForNotifications() = 0;
 
     //! Register handler for RPC. Command is not copied, so reference
     //! needs to remain valid until Handler is disconnected.
@@ -409,8 +394,6 @@ class ChainClient
 {
 public:
     virtual ~ChainClient() = default;
-
-    virtual void assignContextHACK(std::any&) {};
 
     //! Register rpcs.
     virtual void registerRpcs() = 0;

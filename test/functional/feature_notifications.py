@@ -4,7 +4,6 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the -alertnotify, -blocknotify and -walletnotify options."""
 import os
-from pathlib import Path
 import platform
 
 from test_framework.address import ADDRESS_BCRT1_UNSPENDABLE
@@ -35,24 +34,22 @@ class NotificationsTest(BitcoinTestFramework):
 
     def setup_network(self):
         self.wallet = ''.join(chr(i) for i in range(FILE_CHAR_START, FILE_CHAR_END) if chr(i) not in FILE_CHARS_DISALLOWED)
-        self.alertnotify_file = Path(self.options.tmpdir) / "alertnotify"
+        self.alertnotify_dir = os.path.join(self.options.tmpdir, "alertnotify")
         self.blocknotify_dir = os.path.join(self.options.tmpdir, "blocknotify")
         self.walletnotify_dir = os.path.join(self.options.tmpdir, "walletnotify")
         self.shutdownnotify_dir = os.path.join(self.options.tmpdir, "shutdownnotify")
         self.shutdownnotify_file = os.path.join(self.shutdownnotify_dir, "shutdownnotify.txt")
-        self.alertnotify_file.touch()
-        assert_equal(self.alertnotify_file.stat().st_size, 0)
+        os.mkdir(self.alertnotify_dir)
         os.mkdir(self.blocknotify_dir)
         os.mkdir(self.walletnotify_dir)
         os.mkdir(self.shutdownnotify_dir)
 
         # -alertnotify and -blocknotify on node0, walletnotify on node1
         self.extra_args = [[
-            f"-alertnotify=echo %s >> {self.alertnotify_file}",
+            f"-alertnotify=echo > {os.path.join(self.alertnotify_dir, '%s')}",
             f"-blocknotify=echo > {os.path.join(self.blocknotify_dir, '%s')}",
             f"-shutdownnotify=echo > {self.shutdownnotify_file}",
         ], [
-            "-blockversion=211",
             f"-walletnotify=echo %h_%b > {os.path.join(self.walletnotify_dir, notify_outputname('%w', '%s'))}",
         ]]
         self.wallet_names = [self.default_wallet_name, self.wallet]
@@ -166,21 +163,6 @@ class NotificationsTest(BitcoinTestFramework):
             assert_equal(self.nodes[1].gettransaction(bump2)["confirmations"], 1)
 
         # TODO: add test for `-alertnotify` large fork notifications
-
-        # Mine 51 unknown-version blocks. -alertnotify should trigger on the 51st.
-        self.log.info("test -alertnotify")
-        self.generatetoaddress(self.nodes[1], 51, ADDRESS_BCRT1_UNSPENDABLE)
-
-        # Give bitcoind 10 seconds to write the alert notification
-        self.wait_until(lambda: self.alertnotify_file.stat().st_size, timeout=10)
-
-        self.alertnotify_file.open('w').close()  # truncate
-
-        # Mine more up-version blocks, should not get more alerts:
-        self.generatetoaddress(self.nodes[1], 2, ADDRESS_BCRT1_UNSPENDABLE)
-
-        self.log.info("-alertnotify should not continue notifying for more unknown version blocks")
-        assert_equal(self.alertnotify_file.stat().st_size, 0)
 
         self.log.info("test -shutdownnotify")
         self.stop_nodes()

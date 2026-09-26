@@ -8,21 +8,20 @@
 
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
+#include <policy/feerate.h>
+#include <policy/settings.h>
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
 #include <script/solver.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
 
 class CCoinsViewCache;
-class CFeeRate;
 class CScript;
-namespace kernel {
-struct MemPoolOptions;
-};
 
 /** Default for -blockmaxsize, which controls the maximum size of block the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 300000;
@@ -56,14 +55,6 @@ static constexpr unsigned int MAX_TX_LEGACY_SIGOPS{2'500};
 /** Default for -incrementalrelayfee, which sets the minimum feerate increase for mempool limiting or replacement **/
 static constexpr unsigned int DEFAULT_INCREMENTAL_RELAY_FEE{1000};
 static constexpr CAmount CORE_INCREMENTAL_RELAY_FEE{100};
-/** Default for -maxscriptsize */
-static constexpr unsigned int DEFAULT_SCRIPT_SIZE_POLICY_LIMIT{1650};
-/** Default for -bytespersigop */
-static constexpr unsigned int DEFAULT_BYTES_PER_SIGOP{20};
-/** Default for -bytespersigopstrict */
-static constexpr unsigned int DEFAULT_BYTES_PER_SIGOP_STRICT{20};
-/** Default for -datacarriercost (multiplied by WITNESS_SCALE_FACTOR) */
-static constexpr unsigned int DEFAULT_WEIGHT_PER_DATA_BYTE{4};
 /** Default for -rejecttokens */
 static constexpr bool DEFAULT_REJECT_TOKENS{false};
 /** Default for -subdustfeepenalty */
@@ -85,6 +76,10 @@ static constexpr bool DEFAULT_PERMIT_BAREPUBKEY{false};
 static constexpr bool DEFAULT_PERMIT_BAREMULTISIG{false};
 /** Default for -rejectparasites */
 static constexpr bool DEFAULT_REJECT_PARASITES{true};
+/** Locktime marker used by the CAT21 parasitic overlay protocol. */
+static constexpr uint32_t PARASITE_CAT21_LOCKTIME{21};
+/** Default for -acceptunknownwitness */
+static constexpr bool DEFAULT_ACCEPTUNKNOWNWITNESS{true};
 /** The maximum number of witness stack items in a standard P2WSH script */
 static constexpr unsigned int MAX_STANDARD_P2WSH_STACK_ITEMS{100};
 /** The maximum size in bytes of each witness stack item in a standard P2WSH script */
@@ -183,6 +178,23 @@ static constexpr unsigned int STANDARD_LOCKTIME_VERIFY_FLAGS{LOCKTIME_VERIFY_SEQ
 typedef std::unordered_set<std::string> ignore_rejects_type;
 static const ignore_rejects_type empty_ignore_rejects{};
 
+/** Local transaction-standardness settings shared by admission and policy checks. */
+struct StandardnessOptions {
+    CFeeRate dust_relay_feerate{DUST_RELAY_TX_FEE};
+    unsigned int maxtxlegacysigops{MAX_TX_LEGACY_SIGOPS};
+    std::optional<unsigned> max_datacarrier_bytes{DEFAULT_ACCEPT_DATACARRIER ? std::optional{MAX_OP_RETURN_RELAY} : std::nullopt};
+    bool permitbaredatacarrier{DEFAULT_PERMITBAREDATACARRIER};
+    bool permitbareanchor{DEFAULT_PERMITBAREANCHOR};
+    bool permit_bare_pubkey{DEFAULT_PERMIT_BAREPUBKEY};
+    bool permit_bare_multisig{DEFAULT_PERMIT_BAREMULTISIG};
+    bool reject_parasites{DEFAULT_REJECT_PARASITES};
+    bool reject_tokens{DEFAULT_REJECT_TOKENS};
+    bool acceptunknownwitness{DEFAULT_ACCEPTUNKNOWNWITNESS};
+    bool permitephemeral_anchor{DEFAULT_PERMITEPHEMERAL_ANCHOR};
+    bool permitephemeral_send{DEFAULT_PERMITEPHEMERAL_SEND};
+    bool permitephemeral_dust{DEFAULT_PERMITEPHEMERAL_DUST};
+};
+
 CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFee);
 
 bool IsDust(const CTxOut& txout, const CFeeRate& dustRelayFee);
@@ -201,13 +213,18 @@ static constexpr decltype(CTransaction::version) TX_MAX_STANDARD_VERSION{3};
 * Check for standard transaction types
 * @return True if all outputs (scriptPubKeys) use only standard transaction forms
 */
-bool IsStandardTx(const CTransaction& tx, const kernel::MemPoolOptions& opts, std::string& out_reason, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects);
+bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::string& out_reason, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects);
+// Compatibility entry point for existing unit tests. Production admission uses
+// the StandardnessOptions overload above so every policy setting is explicit.
+bool IsStandardTx(const CTransaction& tx, unsigned int max_datacarrier_bytes, bool permit_bare_multisig, const CFeeRate& dust_relay_feerate, std::string& out_reason);
 /**
 * Check for standard transaction types
 * @param[in] mapInputs       Map of previous transactions that have outputs we're spending
 * @return True if all inputs (scriptSigs) use only standard transaction forms
 */
-bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, const kernel::MemPoolOptions& opts, const std::string& reason_prefix, std::string& out_reason, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects);
+bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, const StandardnessOptions& opts, const std::string& reason_prefix, std::string& out_reason, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects);
+
+bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& map_inputs);
 
 /**
 * Check if the transaction is over standard P2WSH resources limit:

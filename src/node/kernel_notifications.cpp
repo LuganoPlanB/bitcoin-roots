@@ -30,21 +30,19 @@ using util::ReplaceAll;
 static void AlertNotify(const std::string& strMessage)
 {
 #if HAVE_SYSTEM
-    if (!gArgs.IsArgSet("-alertnotify")) return;
+    std::string strCmd = gArgs.GetArg("-alertnotify", "");
+    if (strCmd.empty()) return;
 
     // Alert text should be plain ascii coming from a trusted source, but to
     // be safe we first strip anything not in safeChars, then add single quotes around
     // the whole string before passing it to the shell:
-    std::string singleQuote("\"");
+    std::string singleQuote("'");
     std::string safeStatus = SanitizeString(strMessage);
     safeStatus = singleQuote+safeStatus+singleQuote;
+    ReplaceAll(strCmd, "%s", safeStatus);
 
-    for (std::string command : gArgs.GetArgs("-alertnotify")) {
-        ReplaceAll(command, "%s", safeStatus);
-
-        std::thread t(runCommand, command);
-        t.detach(); // thread runs free
-    }
+    std::thread t(runCommand, strCmd);
+    t.detach(); // thread runs free
 #endif
 }
 
@@ -79,9 +77,9 @@ void KernelNotifications::progress(const bilingual_str& title, int progress_perc
     uiInterface.ShowProgress(title.translated, progress_percent, resume_possible);
 }
 
-void KernelNotifications::warningSet(kernel::Warning id, const bilingual_str& message, const bool update)
+void KernelNotifications::warningSet(kernel::Warning id, const bilingual_str& message)
 {
-    if (m_warnings.Set(id, message, update)) {
+    if (m_warnings.Set(id, message)) {
         AlertNotify(message.original);
     }
 }
