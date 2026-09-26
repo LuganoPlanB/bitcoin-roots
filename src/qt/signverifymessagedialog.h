@@ -9,9 +9,6 @@
 
 class PlatformStyle;
 class WalletModel;
-class QColor;
-class QEvent;
-class QLabel;
 
 namespace Ui {
     class SignVerifyMessageDialog;
@@ -22,10 +19,6 @@ class SignVerifyMessageDialog : public QDialog
     Q_OBJECT
 
 public:
-    struct ThemeColors {
-        QColor warning;
-        QColor valid;
-    };
     explicit SignVerifyMessageDialog(const PlatformStyle *platformStyle, QWidget *parent);
     ~SignVerifyMessageDialog();
 
@@ -44,11 +37,6 @@ private:
     Ui::SignVerifyMessageDialog *ui;
     WalletModel* model{nullptr};
     const PlatformStyle *platformStyle;
-    void updateThemeColors();
-    void updateStatusLabelColor(QLabel* label);
-
-    // Theme Colors
-    const ThemeColors *m_theme_colors;
 
 private Q_SLOTS:
     /* sign message */

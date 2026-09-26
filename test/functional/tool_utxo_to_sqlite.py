@@ -3,12 +3,11 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test utxo-to-sqlite conversion tool"""
-import os
+import os.path
 try:
     import sqlite3
 except ImportError:
     pass
-import platform
 import subprocess
 import sys
 
@@ -57,7 +56,7 @@ class UtxoToSqliteTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # we want to create some UTXOs with non-standard output scripts
-        self.extra_args = [['-acceptnonstdtxn=1']]
+        self.extra_args = [['-acceptnonstdtxn=1', '-maxscriptsize=100000']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_py_sqlite3()
@@ -94,7 +93,7 @@ class UtxoToSqliteTest(BitcoinTestFramework):
 
             # create outputs and mine them in a block
             for output_script in output_scripts:
-                wallet.send_to(from_node=node, scriptPubKey=output_script, amount=i, fee=20000)
+                wallet.send_to(from_node=node, scriptPubKey=output_script, amount=i, fee=200000)
             self.generate(wallet, 1)
 
         self.log.info('Dump UTXO set via `dumptxoutset` RPC')
@@ -112,19 +111,6 @@ class UtxoToSqliteTest(BitcoinTestFramework):
         muhash_sqlite = calculate_muhash_from_sqlite_utxos(output_filename)
         muhash_compact_serialized = node.gettxoutsetinfo('muhash')['muhash']
         assert_equal(muhash_sqlite, muhash_compact_serialized)
-
-        if platform.system() != "Windows":  # FIFOs are not available on Windows
-            self.log.info('Convert UTXO set directly (without intermediate dump) via named pipe')
-            fifo_filename = os.path.join(self.options.tmpdir, "utxos.fifo")
-            os.mkfifo(fifo_filename)
-            output_direct_filename = os.path.join(self.options.tmpdir, "utxos_direct.sqlite")
-            p = subprocess.Popen([sys.executable, utxo_to_sqlite_path, fifo_filename, output_direct_filename],
-                                 stderr=subprocess.STDOUT)
-            node.dumptxoutset(fifo_filename, "latest")
-            p.wait(timeout=10)
-            muhash_direct_sqlite = calculate_muhash_from_sqlite_utxos(output_direct_filename)
-            assert_equal(muhash_sqlite, muhash_direct_sqlite)
-            os.remove(fifo_filename)
 
 
 if __name__ == "__main__":

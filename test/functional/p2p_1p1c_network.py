@@ -41,7 +41,9 @@ class PackageRelayTest(BitcoinTestFramework):
         self.noban_tx_relay = True
         self.extra_args = [[
             "-datacarriersize=100000",
+            "-maxscriptsize=100000",
             "-maxmempool=5",
+            "-permitbarepubkey=1",
         ]] * self.num_nodes
         self.supports_cli = False
 

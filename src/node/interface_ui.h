@@ -36,8 +36,6 @@ public:
          */
         ICON_MASK = (ICON_INFORMATION | ICON_WARNING | ICON_ERROR),
 
-        DEFAULT_TRUE = 0x100U,
-
         /** These values are taken from qmessagebox.h "enum StandardButton" to be directly usable */
         BTN_OK      = 0x00000400U, // QMessageBox::Ok
         BTN_YES     = 0x00004000U, // QMessageBox::Yes
@@ -92,9 +90,6 @@ public:
 
     /** Network activity state changed. */
     ADD_SIGNALS_DECL_WRAPPER(NotifyNetworkActiveChanged, void, bool networkActive);
-
-    /** Network local addresses changed. */
-    ADD_SIGNALS_DECL_WRAPPER(NotifyNetworkLocalChanged, void, );
 
     /**
      * Status bar alerts changed.

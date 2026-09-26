@@ -11,16 +11,11 @@
 
 #include <QAbstractListModel>
 #include <QFont>
-#include <QString>
 
 #include <assert.h>
-#include <map>
-#include <utility>
 #include <variant>
 
 struct bilingual_str;
-enum class OutputType;
-
 namespace interfaces {
 class Node;
 }
@@ -28,7 +23,15 @@ class Node;
 extern const char *DEFAULT_GUI_PROXY_HOST;
 static constexpr uint16_t DEFAULT_GUI_PROXY_PORT = 9050;
 
-std::pair<QString, QString> GetOutputTypeDescription(const OutputType type);
+/**
+ * Convert configured prune target MiB to displayed GB. Round up to avoid underestimating max disk usage.
+ */
+static inline int PruneMiBtoGB(int64_t mib) { return (mib * 1024 * 1024 + GB_BYTES - 1) / GB_BYTES; }
+
+/**
+ * Convert displayed prune target GB to configured MiB. Round down so roundtrip GB -> MiB -> GB conversion is stable.
+ */
+static inline int64_t PruneGBtoMiB(int gb) { return gb * GB_BYTES / 1024 / 1024; }
 
 /** Interface from Qt to configuration data structure for Bitcoin client.
    To Qt, the options are presented as a list with the different options
@@ -47,8 +50,6 @@ public:
         StartAtStartup,         // bool
         ShowTrayIcon,           // bool
         MinimizeToTray,         // bool
-        NetworkPort,            // int
-        MapPortUPnP,            // bool
         MapPortNatpmp,          // bool
         MinimizeOnClose,        // bool
         ProxyUse,               // bool
@@ -58,69 +59,21 @@ public:
         ProxyIPTor,             // QString
         ProxyPortTor,           // int
         DisplayUnit,            // BitcoinUnit
-        DisplayAddresses,       // bool
         ThirdPartyTxUrls,       // QString
         Language,               // QString
         FontForMoney,           // FontChoice
-        FontForQRCodes,         // FontChoice
-        PeersTabAlternatingRowColors, // bool
-        walletrbf,              // bool
         CoinControlFeatures,    // bool
         SubFeeFromAmount,       // bool
         ThreadsScriptVerif,     // int
-        PruneTristate,          // Qt::CheckState
-        PruneSizeMiB,           // int
+        Prune,                  // bool
+        PruneSize,              // int
         DatabaseCache,          // int
         ExternalSignerPath,     // QString
         SpendZeroConfChange,    // bool
-        addresstype,            // QString
         Listen,                 // bool
         Server,                 // bool
         EnablePSBTControls,     // bool
         MaskValues,             // bool
-        maxuploadtarget,
-        peerbloomfilters,       // bool
-        peerblockfilters,       // bool
-        mempoolreplacement,
-        mempooltruc,
-        maxorphantx,
-        maxmempool,
-        incrementalrelayfee,
-        mempoolexpiry,
-        rejectunknownscripts,   // bool
-        rejectunknownwitness,   // bool
-        rejectparasites,        // bool
-        rejecttokens,           // bool
-        subdustfeepenalty,      // bool
-        rejectspkreuse,         // bool
-        minrelaytxfee,
-        minrelaycoinblocks,
-        minrelaymaturity,
-        bytespersigop,
-        bytespersigopstrict,
-        limitancestorcount,
-        limitancestorsize,
-        limitdescendantcount,
-        limitdescendantsize,
-        rejectbarepubkey,       // bool
-        rejectbaremultisig,     // bool
-        permitephemeral,
-        rejectbareanchor,       // bool
-        rejectbaredatacarrier,  // bool
-        maxscriptsize,
-        maxtxlegacysigops,
-        datacarriercost,        // double
-        datacarriersize,
-        rejectnonstddatacarrier,  // bool
-        dustrelayfee,
-        dustdynamic,            // QString
-        blockmintxfee,
-        blockmaxsize,
-        blockprioritysize,
-        blockmaxweight,
-        blockreconstructionextratxn,
-        blockreconstructionextratxnsize,
-        corepolicy,
         OptionIDRowCount,
     };
 
@@ -148,11 +101,8 @@ public:
     bool getMinimizeToTray() const { return fMinimizeToTray; }
     bool getMinimizeOnClose() const { return fMinimizeOnClose; }
     BitcoinUnit getDisplayUnit() const { return m_display_bitcoin_unit; }
-    bool getDisplayAddresses() const { return bDisplayAddresses; }
     QString getThirdPartyTxUrls() const { return strThirdPartyTxUrls; }
-    QFont getFontForMoney(BitcoinUnit) const;
-    FontChoice getFontChoiceForQRCodes() const { return m_font_qrcodes; }
-    bool getPeersTabAlternatingRowColors() const { return m_peers_tab_alternating_row_colors; }
+    QFont getFontForMoney() const;
     bool getCoinControlFeatures() const { return fCoinControlFeatures; }
     bool getSubFeeFromAmount() const { return m_sub_fee_from_amount; }
     bool getEnablePSBTControls() const { return m_enable_psbt_controls; }
@@ -162,7 +112,7 @@ public:
     bool hasSigner();
 
     /* Explicit setters */
-    void SetPruneTargetMiB(int prune_target_mib);
+    void SetPruneTargetGB(int prune_target_gb);
 
     /* Restart flag helper */
     void setRestartRequired(bool fRequired);
@@ -178,12 +128,8 @@ private:
     bool fMinimizeOnClose;
     QString language;
     BitcoinUnit m_display_bitcoin_unit;
-    bool bDisplayAddresses;
     QString strThirdPartyTxUrls;
     FontChoice m_font_money{FontChoiceAbstract::EmbeddedFont};
-    bool m_font_money_supports_tonal;
-    FontChoice m_font_qrcodes{FontChoiceAbstract::EmbeddedFont};
-    bool m_peers_tab_alternating_row_colors;
     bool fCoinControlFeatures;
     bool m_sub_fee_from_amount;
     bool m_enable_psbt_controls;
@@ -191,14 +137,9 @@ private:
 
     /* settings that were overridden by command-line */
     QString strOverriddenByCommandLine;
-    bool m_prune_forced_by_gui{false};
 
     static QString FontChoiceToString(const OptionsModel::FontChoice&);
     static FontChoice FontChoiceFromString(const QString&);
-
-    /* rwconf settings that require a restart */
-    bool f_peerbloomfilters;
-    bool f_rejectspkreuse;
 
     // Add option to list of GUI options overridden through command line/config file
     void addOverriddenOption(const std::string &option);
@@ -209,11 +150,8 @@ private:
 Q_SIGNALS:
     void displayUnitChanged(BitcoinUnit unit);
     void coinControlFeaturesChanged(bool);
-    void addresstypeChanged(OutputType);
     void showTrayIconChanged(bool);
     void fontForMoneyChanged(const QFont&);
-    void fontForQRCodesChanged(const FontChoice&);
-    void peersTabAlternatingRowColorsChanged(bool);
 };
 
 Q_DECLARE_METATYPE(OptionsModel::FontChoice)

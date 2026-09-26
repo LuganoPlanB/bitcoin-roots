@@ -436,7 +436,7 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         self.restart_node_with_limit(memory_mb=limit_mb)
 
         test_count = 100
-        rejected_txs = self.populate_extra_pool(test_count, target_size=500)
+        rejected_txs = self.populate_extra_pool(test_count, target_size=2000)
         indices = list(range(test_count))
         result = self.send_compact_block(rejected_txs, indices)
 
@@ -446,7 +446,7 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
 
         # fill exact capacity
         self.restart_node_with_limit(memory_mb=limit_mb)
-        rejected_txs = self.populate_extra_pool(num_fit, target_size=500)
+        rejected_txs = self.populate_extra_pool(num_fit, target_size=2000)
 
         indices = list(range(num_fit))
         result = self.send_compact_block(rejected_txs, indices)
@@ -454,7 +454,7 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
 
          # Add one more transaction - should evict exactly one
         self.log.info("Adding one more transaction at the boundary...")
-        self.populate_extra_pool(1, target_size=500)
+        self.populate_extra_pool(1, target_size=2000)
 
         # Check original transactions again
         result = self.send_compact_block(rejected_txs, indices)

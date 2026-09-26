@@ -43,30 +43,10 @@ const std::vector<std::string> CONNECTION_TYPE_DOC{
         "outbound-full-relay (default automatic connections)",
         "block-relay-only (does not relay transactions or addresses)",
         "inbound (initiated by the peer)",
-        "manual (added via addnode RPC or -addnode/-connect configuration options; protected from DoS disconnection and not required to be full nodes as other outbound peers are)",
+        "manual (added via addnode RPC or -addnode/-connect configuration options)",
         "addr-fetch (short-lived automatic connection for soliciting addresses)",
         "feeler (short-lived automatic connection for testing addresses)"
 };
-
-ConnectionType ConnectionTypeFromValue(const UniValue& uv)
-{
-    const std::string& s{uv.get_str()};
-    if (s == "inbound") {
-        return ConnectionType::INBOUND;
-    } else if (s == "manual") {
-        return ConnectionType::MANUAL;
-    } else if (s == "feeler") {
-        return ConnectionType::FEELER;
-    } else if (s == "outbound-full-relay") {
-        return ConnectionType::OUTBOUND_FULL_RELAY;
-    } else if (s == "block-relay-only") {
-        return ConnectionType::BLOCK_RELAY;
-    } else if (s == "addr-fetch") {
-        return ConnectionType::ADDR_FETCH;
-    }
-
-    throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown connection type " + s);
-}
 
 const std::vector<std::string> TRANSPORT_TYPE_DOC{
     "detecting (peer could be v1 or v2)",
@@ -161,7 +141,6 @@ static RPCHelpMan getpeerinfo()
                     {RPCResult::Type::NUM_TIME, "lastrecv", "The " + UNIX_EPOCH_TIME + " of the last receive"},
                     {RPCResult::Type::NUM_TIME, "last_transaction", "The " + UNIX_EPOCH_TIME + " of the last valid transaction received from this peer"},
                     {RPCResult::Type::NUM_TIME, "last_block", "The " + UNIX_EPOCH_TIME + " of the last block received from this peer"},
-                    {RPCResult::Type::NUM_TIME, "last_block_announcement", "The " + UNIX_EPOCH_TIME + " this peer was first to announce a block"},
                     {RPCResult::Type::NUM, "bytessent", "The total bytes sent"},
                     {RPCResult::Type::NUM, "bytesrecv", "The total bytes received"},
                     {RPCResult::Type::NUM, "cpu_load", /*optional=*/true, "Total CPU time spent processing "
@@ -182,6 +161,7 @@ static RPCHelpMan getpeerinfo()
                     {RPCResult::Type::NUM, "presynced_headers", "The current height of header pre-synchronization with this peer, or -1 if no low-work sync is in progress"},
                     {RPCResult::Type::NUM, "synced_headers", "The last header we have in common with this peer"},
                     {RPCResult::Type::NUM, "synced_blocks", "The last block we have in common with this peer"},
+                    {RPCResult::Type::NUM_TIME, "last_block_announcement", "The time of the last block announcement received from this peer, or 0 if none has been received"},
                     {RPCResult::Type::ARR, "inflight", "",
                     {
                         {RPCResult::Type::NUM, "n", "The heights of blocks we're currently asking from this peer"},
@@ -231,7 +211,6 @@ static RPCHelpMan getpeerinfo()
     connman.GetNodeStats(vstats);
 
     UniValue ret(UniValue::VARR);
-
     const auto now{GetTime<std::chrono::seconds>()};
 
     for (const CNodeStats& stats : vstats) {
@@ -266,7 +245,6 @@ static RPCHelpMan getpeerinfo()
         obj.pushKV("lastrecv", count_seconds(stats.m_last_recv));
         obj.pushKV("last_transaction", count_seconds(stats.m_last_tx_time));
         obj.pushKV("last_block", count_seconds(stats.m_last_block_time));
-        obj.pushKV("last_block_announcement", TicksSinceEpoch<std::chrono::seconds>(statestats.m_last_block_announcement));
         obj.pushKV("bytessent", stats.nSendBytes);
         obj.pushKV("bytesrecv", stats.nRecvBytes);
         if (stats.m_cpu_time > 0s && now > stats.m_connected) {
@@ -295,6 +273,7 @@ static RPCHelpMan getpeerinfo()
         obj.pushKV("presynced_headers", statestats.presync_height);
         obj.pushKV("synced_headers", statestats.nSyncHeight);
         obj.pushKV("synced_blocks", statestats.nCommonHeight);
+        obj.pushKV("last_block_announcement", TicksSinceEpoch<std::chrono::seconds>(statestats.m_last_block_announcement));
         UniValue heights(UniValue::VARR);
         for (const int height : statestats.vHeightInFlight) {
             heights.push_back(height);
@@ -342,14 +321,14 @@ static RPCHelpMan addnode()
     return RPCHelpMan{"addnode",
                 "\nAttempts to add or remove a node from the addnode list.\n"
                 "Or try a connection to a node once.\n"
-                +
+                "Nodes added using addnode (or -connect) are protected from DoS disconnection and are not required to be\n"
+                "full nodes/support SegWit as other outbound peers are (though such peers will not be synced from).\n" +
                 strprintf("Addnode connections are limited to %u at a time", MAX_ADDNODE_CONNECTIONS) +
                 " and are counted separately from the -maxconnections limit.\n",
                 {
                     {"node", RPCArg::Type::STR, RPCArg::Optional::NO, "The address of the peer to connect to"},
                     {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "'add' to add a node to the list, 'remove' to remove a node from the list, 'onetry' to try a connection to the node once"},
-                    {"v2transport|connection_type_compat", {RPCArg::Type::BOOL, RPCArg::Type::STR}, RPCArg::DefaultHint{"set by -v2transport"}, "Attempt to connect using BIP324 v2 transport protocol (ignored for 'remove' command)"},
-                    {"connection_type", RPCArg::Type::STR, RPCArg::Default{"manual"}, "Type of connection: \n" + Join(CONNECTION_TYPE_DOC, ",\n") + "\nOnly supported for command \"onetry\" for now."},
+                    {"v2transport", RPCArg::Type::BOOL, RPCArg::DefaultHint{"set by -v2transport"}, "Attempt to connect using BIP324 v2 transport protocol (ignored for 'remove' command)"},
                 },
                 RPCResult{RPCResult::Type::NONE, "", ""},
                 RPCExamples{
@@ -369,25 +348,7 @@ static RPCHelpMan addnode()
 
     const auto node_arg{self.Arg<std::string>("node")};
     bool node_v2transport = connman.GetLocalServices() & NODE_P2P_V2;
-    bool use_v2transport{node_v2transport};
-    ConnectionType connection_type = ConnectionType::MANUAL;
-    std::string connection_type_arg;
-    if (request.params[2].isStr()) {
-        // connection_type used to occupy this position (v0.21.0.knots20210130-v25.1.knots20231115)
-        if (command == "remove" || request.params.size() > 3) {
-            // Same behaviour as too many args passed normally
-            throw std::runtime_error(self.ToString());
-        }
-        connection_type = ConnectionTypeFromValue(request.params[2]);
-    } else {
-        use_v2transport = self.MaybeArg<bool>("v2transport").value_or(node_v2transport);
-        if (!request.params[3].isNull()) {
-            if (command == "remove") {
-                throw std::runtime_error(self.ToString());
-            }
-            connection_type = ConnectionTypeFromValue(request.params[3]);
-        }
-    }
+    bool use_v2transport = self.MaybeArg<bool>("v2transport").value_or(node_v2transport);
 
     if (use_v2transport && !node_v2transport) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Error: v2transport requested but not enabled (see -v2transport)");
@@ -396,16 +357,12 @@ static RPCHelpMan addnode()
     if (command == "onetry")
     {
         CAddress addr;
-        connman.OpenNetworkConnection(addr, /*fCountFailure=*/false, /*grant_outbound=*/{}, node_arg.c_str(), connection_type, use_v2transport);
+        connman.OpenNetworkConnection(addr, /*fCountFailure=*/false, /*grant_outbound=*/{}, node_arg.c_str(), ConnectionType::MANUAL, use_v2transport);
         return UniValue::VNULL;
     }
 
     if (command == "add")
     {
-        if (connection_type != ConnectionType::MANUAL) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "connection_type != manual is only supported for the \"onetry\" command for now");
-        }
-
         if (!connman.AddNode({node_arg, use_v2transport})) {
             throw JSONRPCError(RPC_CLIENT_NODE_ALREADY_ADDED, "Error: Node already added");
         }
@@ -443,6 +400,10 @@ static RPCHelpMan addconnection()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    if (Params().GetChainType() != ChainType::REGTEST) {
+        throw std::runtime_error("addconnection is for regression testing (-regtest mode) only.");
+    }
+
     const std::string address = request.params[0].get_str();
     const std::string conn_type_in{TrimString(request.params[1].get_str())};
     ConnectionType conn_type{};

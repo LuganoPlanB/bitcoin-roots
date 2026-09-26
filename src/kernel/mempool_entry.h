@@ -142,7 +142,7 @@ public:
           entryHeight{entry_height},
           cachedPriority{entryPriority},
           // Since entries arrive *after* the tip's height, their entry priority is for the height+1
-          cachedHeight{entry_height + 1},
+          cachedHeight{SaturatingAdd(entry_height, 1U)},
           inChainInputValue{coin_age_cache.in_chain_input_value},
           spendsCoinbase{spends_coinbase},
           m_modified_fee{nFee},
@@ -152,9 +152,14 @@ public:
           nSizeWithAncestors{GetTxSize()},
           nModFeesWithAncestors{nFee},
           nSigOpCostWithAncestors{sigOpCost} {
-            CAmount nValueIn = tx->GetValueOut() + nFee;
-            assert(inChainInputValue <= nValueIn);
+            assert(inChainInputValue == 0 || inChainInputValue <= tx->GetValueOut() + nFee);
         }
+
+    CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,
+                    int64_t time, unsigned int entry_height, uint64_t entry_sequence,
+                    bool spends_coinbase, int64_t sigops_cost, LockPoints lp)
+        : CTxMemPoolEntry(tx, fee, time, entry_height, entry_sequence, COIN_AGE_CACHE_ZERO,
+                          spends_coinbase, /*extra_weight=*/0, sigops_cost, lp) {}
 
     CTxMemPoolEntry(ExplicitCopyTag, const CTxMemPoolEntry& entry) : CTxMemPoolEntry(entry) {}
     CTxMemPoolEntry& operator=(const CTxMemPoolEntry&) = delete;
@@ -296,6 +301,14 @@ struct NewMempoolTransactionInfo {
           m_submitted_in_package{submitted_in_package},
           m_chainstate_is_current{chainstate_is_current},
           m_has_no_mempool_parents{has_no_mempool_parents} {}
+
+    NewMempoolTransactionInfo(const CTransactionRef& tx, const CAmount& fee,
+                              const int64_t vsize, const unsigned int height,
+                              const bool mempool_limit_bypassed, const bool submitted_in_package,
+                              const bool chainstate_is_current, const bool has_no_mempool_parents)
+        : NewMempoolTransactionInfo(tx, fee, vsize, height,
+                                    empty_ignore_rejects,
+                                    submitted_in_package, chainstate_is_current, has_no_mempool_parents) {}
 };
 
 #endif // BITCOIN_KERNEL_MEMPOOL_ENTRY_H

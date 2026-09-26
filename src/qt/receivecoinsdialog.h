@@ -13,7 +13,6 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QPoint>
-#include <QSortFilterProxyModel>
 #include <QVariant>
 
 class PlatformStyle;
@@ -52,8 +51,6 @@ public Q_SLOTS:
 
 private:
     Ui::ReceiveCoinsDialog *ui;
-    GUIUtil::TableViewLastColumnResizingFixer *columnResizingFixer{nullptr};
-    QSortFilterProxyModel* m_sort_proxy;
     WalletModel* model{nullptr};
     QMenu *contextMenu;
     QAction* copyLabelAction;
@@ -61,11 +58,8 @@ private:
     QAction* copyAmountAction;
     const PlatformStyle *platformStyle;
 
-    // Returns QModelIndex in source model
-    QModelIndexList SelectedRows();
+    QModelIndex selectedRow();
     void copyColumnToClipboard(int column);
-    void ShowReceiveRequestDialogForItem(const QModelIndex& index);
-    virtual void resizeEvent(QResizeEvent *event) override;
 
 private Q_SLOTS:
     void on_receiveButton_clicked();
@@ -74,7 +68,6 @@ private Q_SLOTS:
     void on_recentRequestsView_doubleClicked(const QModelIndex &index);
     void recentRequestsView_selectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
     void updateDisplayUnit();
-    void updateFontForMoney();
     void showMenu(const QPoint &point);
     void copyURI();
     void copyAddress();

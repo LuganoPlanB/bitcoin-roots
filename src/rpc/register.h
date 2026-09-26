@@ -22,7 +22,6 @@ void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC);
 void RegisterSignMessageRPCCommands(CRPCTable&);
 void RegisterSignerRPCCommands(CRPCTable &tableRPC);
 void RegisterTxoutProofRPCCommands(CRPCTable&);
-void RegisterStatsRPCCommands(CRPCTable&);
 
 static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
 {
@@ -39,7 +38,6 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterSignerRPCCommands(t);
 #endif // ENABLE_EXTERNAL_SIGNER
     RegisterTxoutProofRPCCommands(t);
-    RegisterStatsRPCCommands(t);
 }
 
 #endif // BITCOIN_RPC_REGISTER_H

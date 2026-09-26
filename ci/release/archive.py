@@ -12,16 +12,14 @@ import tarfile
 import zipfile
 
 
-VERSION_TAG_RE = re.compile(
-    r"^v[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
-)
+VERSION_TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+(?:\.[0-9]+|rc[0-9]+)?-roots\.[1-9][0-9]*$")
 GIT_SHA_RE = re.compile(r"^[0-9A-Fa-f]{12,64}$")
 
 
 def archive_root_name(release_tag, git_sha):
     if release_tag:
         if not VERSION_TAG_RE.fullmatch(release_tag):
-            raise ValueError(f"Invalid release version tag: {release_tag}")
+            raise ValueError(f"Invalid Roots release tag: {release_tag}")
         version = release_tag.removeprefix("v")
     else:
         if not GIT_SHA_RE.fullmatch(git_sha):
@@ -30,34 +28,44 @@ def archive_root_name(release_tag, git_sha):
     return f"bitcoin-roots-{version}"
 
 
-def archive_member_names(archive):
+def archive_members(archive):
     if archive.name.endswith(".tar.gz"):
         with tarfile.open(archive, mode="r:gz") as package:
-            return [member.name for member in package.getmembers()]
+            return package.getmembers()
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as package:
-            return package.namelist()
+            return package.infolist()
     raise ValueError(f"Unsupported release archive: {archive.name}")
 
 
 def validate_archive_root(archive, expected_root):
-    names = archive_member_names(archive)
-    if not names:
+    members = archive_members(archive)
+    if not members:
         raise ValueError(f"Release archive is empty: {archive.name}")
 
     has_payload = False
-    for name in names:
+    for member in members:
+        name = member.name if isinstance(member, tarfile.TarInfo) else member.filename
         normalized = name.rstrip("/")
         if not normalized:
             continue
         parts = normalized.split("/")
         if "\\" in normalized or any(part in {"", ".", ".."} for part in parts):
             raise ValueError(f"Unsafe path in {archive.name}: {name}")
+        if isinstance(member, tarfile.TarInfo):
+            if not (member.isfile() or member.isdir()):
+                raise ValueError(f"Unsupported archive member in {archive.name}: {name}")
+            is_regular_file = member.isfile()
+        else:
+            member_type = (member.external_attr >> 16) & 0o170000
+            if member_type not in {0, 0o100000, 0o40000}:
+                raise ValueError(f"Unsupported archive member in {archive.name}: {name}")
+            is_regular_file = not member.is_dir()
         if parts[0] != expected_root:
             raise ValueError(
                 f"Expected root directory {expected_root} in {archive.name}, found: {name}"
             )
-        has_payload |= len(parts) > 1
+        has_payload |= len(parts) > 1 and is_regular_file
 
     if not has_payload:
         raise ValueError(f"Release archive has no files below {expected_root}: {archive.name}")

@@ -18,7 +18,7 @@ class WinTaskbarProgress : public QObject, public QAbstractNativeEventFilter
     Q_OBJECT
 
 public:
-    explicit WinTaskbarProgress(QObject *parent = nullptr);
+    explicit WinTaskbarProgress(QObject* parent = nullptr);
     ~WinTaskbarProgress();
 
     void setWindow(QWidget* widget);
@@ -26,18 +26,18 @@ public:
     void setVisible(bool visible);
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    bool nativeEventFilter(const QByteArray &eventType, void *pMessage, qintptr *pnResult) override;
+    bool nativeEventFilter(const QByteArray& event_type, void* message, qintptr* result) override;
 #else
-    bool nativeEventFilter(const QByteArray &eventType, void *pMessage, long *pnResult) override;
+    bool nativeEventFilter(const QByteArray& event_type, void* message, long* result) override;
 #endif
 
 private:
     QPointer<QWindow> m_window;
-    int m_value = 0;
-    bool m_visible = false;
-    ITaskbarList3* m_taskbar_button = nullptr;
-    unsigned int m_taskbar_button_created_msg = 0;
-    bool m_taskbar_ready = false;
+    int m_value{0};
+    bool m_visible{false};
+    ITaskbarList3* m_taskbar_button{nullptr};
+    unsigned int m_taskbar_button_created_msg{0};
+    bool m_taskbar_ready{false};
 
     void updateProgress();
     void initTaskbarButton();

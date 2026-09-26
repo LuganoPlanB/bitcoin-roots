@@ -28,28 +28,11 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 set(CLIENT_NAME "Bitcoin Roots")
 set(CLIENT_VERSION_MAJOR 29)
-set(CLIENT_VERSION_MINOR 3)
+set(CLIENT_VERSION_MINOR 4)
 set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
 set(CLIENT_VERSION_IS_RELEASE "true")
 set(COPYRIGHT_YEAR "2026")
-
-set(CLIENT_VERSION_SUFFIX ".roots20260507")
-set(CLIENT_VERSION_TAG "" CACHE STRING "Exact release tag to embed in version metadata.")
-
-set(CLIENT_VERSION_BASE_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}${CLIENT_VERSION_SUFFIX}")
-if(CLIENT_VERSION_RC GREATER 0)
-  string(APPEND CLIENT_VERSION_BASE_STRING "rc${CLIENT_VERSION_RC}")
-endif()
-
-if(CLIENT_VERSION_TAG)
-  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/module/ClientVersion.cmake")
-  set_client_version_from_tag("${CLIENT_VERSION_TAG}")
-else()
-  set(CLIENT_VERSION_STRING "${CLIENT_VERSION_BASE_STRING}")
-  set(CLIENT_VERSION_FULL "v${CLIENT_VERSION_STRING}")
-  set(CLIENT_VERSION_NUMERIC "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}")
-endif()
 
 # During the enabling of the CXX and CXXOBJ languages, we modify
 # CMake's compiler/linker invocation strings by appending the content
@@ -75,10 +58,16 @@ project(BitcoinCore
 )
 
 set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_SUBSTITUTION "Bitcoin Knots")
-set(COPYRIGHT_HOLDERS_FINAL "The Bitcoin Knots developers")
-set(COPYRIGHT_FOUNDATION "Plan-₿ Foundation")
+set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
+
+# Keep the user-visible Roots release name separate from the numeric protocol
+# version. A normal v29.4-roots.1 Git tag still takes precedence in build info.
+set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
+if(CLIENT_VERSION_RC GREATER 0)
+  string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
+endif()
+string(APPEND CLIENT_VERSION_STRING "-roots.1")
 
 #=============================
 # Language setup
@@ -113,7 +102,6 @@ option(BUILD_GUI "Build bitcoin-qt executable." OFF)
 set(WITH_QT_VERSION "5" CACHE STRING "Choose 5 or 6.")
 set_property(CACHE WITH_QT_VERSION PROPERTY STRINGS "5" "6")
 option(BUILD_CLI "Build bitcoin-cli executable." ON)
-option(BUILD_BITCOINCONSENSUS_LIB "Build libbitcoinconsensus library." OFF)
 
 option(BUILD_TESTS "Build test_bitcoin executable." ON)
 option(BUILD_TX "Build bitcoin-tx executable." ${BUILD_TESTS})
@@ -177,8 +165,12 @@ if(WITH_SQLITE)
   if(VCPKG_TARGET_TRIPLET)
     # Use of the `unofficial::` namespace is a vcpkg package manager convention.
     find_package(unofficial-sqlite3 CONFIG REQUIRED)
+    add_library(SQLite3::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
   else()
     find_package(SQLite3 3.7.17 REQUIRED)
+    if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+      add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+    endif()
   endif()
   set(USE_SQLITE ON)
 endif()
@@ -306,7 +298,6 @@ if(BUILD_FOR_FUZZING)
   message(WARNING "BUILD_FOR_FUZZING=ON will disable all other targets and force BUILD_FUZZ_BINARY=ON.")
   set(BUILD_DAEMON OFF)
   set(BUILD_CLI OFF)
-  set(BUILD_BITCOINCONSENSUS_LIB OFF)
   set(BUILD_TX OFF)
   set(BUILD_UTIL OFF)
   set(BUILD_UTIL_CHAINSTATE OFF)
@@ -674,9 +665,6 @@ if(WERROR)
   unset(werror_flag)
 endif()
 
-if(BUILD_BITCOINCONSENSUS_LIB)
-  set(HAVE_CONSENSUS_LIB TRUE)
-endif()
 
 # Prefer Unix-style package components over frameworks on macOS.
 # This improves compatibility with Python version managers.
@@ -696,17 +684,6 @@ else()
   list(APPEND configure_warnings
     "Minimum required Python not found. Utils and rpcauth tests are disabled."
   )
-endif()
-
-if(BUILD_GUI)
-  find_program(RSVG_CONVERT rsvg-convert REQUIRED)
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    find_program(IMAGEMAGICK_CONVERT NAMES magick convert)
-    find_program(PNG2ICNS png2icns REQUIRED)
-  else()
-    find_program(IMAGEMAGICK_CONVERT NAMES magick convert REQUIRED)
-    find_program(PNG2ICNS png2icns)
-  endif()
 endif()
 
 target_compile_definitions(core_interface INTERFACE ${DEPENDS_COMPILE_DEFINITIONS})
@@ -782,7 +759,6 @@ else()
   set(bitcoin_gui_status OFF)
 endif()
 message("  bitcoin-cli ......................... ${BUILD_CLI}")
-message("  libbitcoinconsensus ................. ${BUILD_BITCOINCONSENSUS_LIB}")
 message("  bitcoin-tx .......................... ${BUILD_TX}")
 message("  bitcoin-util ........................ ${BUILD_UTIL}")
 message("  bitcoin-wallet ...................... ${BUILD_WALLET_TOOL}")

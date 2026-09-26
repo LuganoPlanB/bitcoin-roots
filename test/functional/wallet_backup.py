@@ -53,11 +53,11 @@ class WalletBackupTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
-        # nodes 1, 2, 3 are spenders, let's give them a keypool=100
+        # Nodes 0, 1, and 2 are spenders. Keep same-round change reusable; RBF behavior is tested elsewhere.
         self.extra_args = [
-            ["-keypool=100"],
-            ["-keypool=100"],
-            ["-keypool=100"],
+            ["-keypool=100", "-walletrbf=0"],
+            ["-keypool=100", "-walletrbf=0"],
+            ["-keypool=100", "-walletrbf=0"],
             [],
         ]
         self.rpc_timeout = 120
@@ -77,6 +77,7 @@ class WalletBackupTest(BitcoinTestFramework):
         if (randint(1,2) == 1):
             amount = Decimal(randint(1,10)) / Decimal(10)
             self.nodes[from_node].sendtoaddress(to_address, amount)
+            self.nodes[from_node].syncwithvalidationinterfacequeue()
 
     def do_one_round(self):
         a0 = self.nodes[0].getnewaddress()
@@ -227,7 +228,7 @@ class WalletBackupTest(BitcoinTestFramework):
             os.rename(node.wallets_path / "wallet.dat", node.wallets_path / "default.wallet.dat")
         backup_file = self.nodes[0].datadir_path / 'wallet.bak'
         wallet_name = ""
-        error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of a pruned node)"
+        error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of pruned node)"
         assert_raises_rpc_error(-4, error_message, node.restorewallet, wallet_name, backup_file)
         assert node.wallets_path.exists() # ensure the wallets dir exists
         if not self.options.descriptors:

@@ -29,7 +29,6 @@ jobs:
       gui: ${{ steps.classify.outputs.gui }}
       wallet: ${{ steps.classify.outputs.wallet }}
       sanitizers: ${{ steps.classify.outputs.sanitizers }}
-      fuzz: ${{ steps.classify.outputs.fuzz }}
       compat: ${{ steps.classify.outputs.compat }}
       platforms: ${{ steps.classify.outputs.platforms }}
       nightly_sanitizers: ${{ steps.classify.outputs.nightly_sanitizers }}
@@ -48,6 +47,7 @@ jobs:
         run: |
           python3 ci/test/test_change_classifier.py
           python3 ci/test/test_gui_qrencode.py
+          python3 ci/test/test_fuzz_workflows.py
           python3 ci/test/test_release_version.py
           python3 ci/test/test_windows_gui_workflows.py
       - name: Retrieve changed files
@@ -198,37 +198,6 @@ jobs:
       - name: Enable USDT coverage
         run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
       - name: Run sanitizer coverage
-        run: ./ci/test_run_all.sh
-
-  fuzz:
-    name: native Linux libFuzzer corpus
-    needs: classify
-    if: needs.classify.outputs.fuzz == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    env:
-      DANGER_CI_ON_HOST_FOLDERS: 1
-      FILE_ENV: ./ci/test/00_setup_env_native_fuzz.sh
-    steps:
-      - *checkout-pr
-      - name: Configure environment
-        uses: ./.github/actions/configure-environment
-      - name: Restore compiler cache
-        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
-        with:
-          install: binary
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
-            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
-          max-size: 500M
-          append-timestamp: true
-          save: false
-      - name: Restore caches
-        uses: ./.github/actions/restore-caches
-      - name: Configure Docker
-        uses: ./.github/actions/configure-docker
-      - name: Run native fuzz corpus
         run: ./ci/test_run_all.sh
 
   compat:
@@ -432,7 +401,7 @@ jobs:
   required-result:
     name: required result
     if: always()
-    needs: [classify, lint, gui, sanitizers, fuzz, compat, arm32, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
+    needs: [classify, lint, gui, sanitizers, compat, arm32, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -442,7 +411,6 @@ jobs:
           LINT: ${{ needs.lint.result }}
           GUI: ${{ needs.gui.result }}
           SANITIZERS: ${{ needs.sanitizers.result }}
-          FUZZ: ${{ needs.fuzz.result }}
           COMPAT: ${{ needs.compat.result }}
           ARM32: ${{ needs.arm32.result }}
           WINDOWS: ${{ needs.windows-smoke.result }}
@@ -453,7 +421,6 @@ jobs:
           NIGHTLY_FULL: ${{ needs.nightly-full.result }}
           GUI_SELECTED: ${{ needs.classify.outputs.gui }}
           SANITIZERS_SELECTED: ${{ needs.classify.outputs.sanitizers }}
-          FUZZ_SELECTED: ${{ needs.classify.outputs.fuzz }}
           COMPAT_SELECTED: ${{ needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true' }}
           PLATFORMS_SELECTED: ${{ needs.classify.outputs.platforms }}
           NIGHTLY_SANITIZERS_SELECTED: ${{ needs.classify.outputs.nightly_sanitizers }}
@@ -473,7 +440,6 @@ jobs:
           check_selected true "$LINT" lint
           check_selected "$GUI_SELECTED" "$GUI" gui
           check_selected "$SANITIZERS_SELECTED" "$SANITIZERS" sanitizers
-          check_selected "$FUZZ_SELECTED" "$FUZZ" fuzz
           check_selected "$COMPAT_SELECTED" "$COMPAT" compat
           check_selected "$PLATFORMS_SELECTED" "$ARM32" arm32
           check_selected "$PLATFORMS_SELECTED" "$WINDOWS" windows-smoke

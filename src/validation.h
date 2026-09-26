@@ -31,7 +31,6 @@
 #include <util/fs.h>
 #include <util/hasher.h>
 #include <util/result.h>
-#include <util/time.h>
 #include <util/translation.h>
 #include <versionbits.h>
 
@@ -65,8 +64,6 @@ namespace util {
 class SignalInterrupt;
 } // namespace util
 
-/** Default for using fee filter */
-static const bool DEFAULT_FEEFILTER = true;
 /** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of ActiveChain().Tip() will not be pruned. */
 static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
 static const signed int DEFAULT_CHECKBLOCKS = 6;
@@ -346,8 +343,6 @@ std::optional<LockPoints> CalculateLockPointsAtTip(
  */
 bool CheckSequenceLocksAtTip(CBlockIndex* tip,
                              const LockPoints& lock_points);
-
-void LimitMempoolSize(CTxMemPool&, CCoinsViewCache&);
 
 /**
  * Closure representing one script verification
@@ -828,7 +823,8 @@ private:
     void UpdateTip(const CBlockIndex* pindexNew)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    NodeClock::time_point m_next_write{NodeClock::time_point::max()};
+    SteadyClock::time_point m_last_write{};
+    SteadyClock::time_point m_last_flush{};
 
     /**
      * In case of an invalid snapshot, rename the coins leveldb directory so
@@ -1046,10 +1042,8 @@ public:
      * Every received block is assigned a unique and increasing identifier, so we
      * know which one to give priority in case of a fork.
      */
-    /** Blocks loaded from disk are assigned id SEQ_ID_INIT_FROM_DISK{1}
-     * (SEQ_ID_BEST_CHAIN_FROM_DISK{0} if they belong to the best chain loaded from disk),
-     * so start the counter after that. **/
-    int32_t nBlockSequenceId GUARDED_BY(::cs_main) = SEQ_ID_INIT_FROM_DISK + 1;
+    /** Blocks loaded from disk are assigned id 0, so start the counter at 1. */
+    int32_t nBlockSequenceId GUARDED_BY(::cs_main) = 1;
     /** Decreasing counter (used by subsequent preciousblock calls). */
     int32_t nBlockReverseSequenceId = -1;
     /** chainwork for the last block that preciousblock has been applied to. */
@@ -1060,7 +1054,7 @@ public:
     void ResetBlockSequenceCounters() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         AssertLockHeld(::cs_main);
-        nBlockSequenceId = SEQ_ID_INIT_FROM_DISK + 1;
+        nBlockSequenceId = 1;
         nBlockReverseSequenceId = -1;
     }
 
@@ -1148,19 +1142,6 @@ public:
     const CBlockIndex* GetBackgroundSyncTip() const EXCLUSIVE_LOCKS_REQUIRED(GetMutex()) {
         return BackgroundSyncInProgress() ? m_ibd_chainstate->m_chain.Tip() : nullptr;
     }
-
-    /**
-     * Update and possibly latch the IBD status.
-     *
-     * If block loading has finished and the current chain tip has enough work
-     * and is recent, set `m_cached_is_ibd` to false. This function never sets
-     * the flag back to true.
-     *
-     * This should be called after operations that may affect IBD exit
-     * conditions (e.g. after updating the active chain tip, or after
-     * `ImportBlocks()` finishes).
-     */
-    bool UpdateIBDStatus() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     node::BlockMap& BlockIndex() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
@@ -1290,7 +1271,7 @@ public:
      * @param[in]  tx              The transaction to submit for mempool acceptance.
      * @param[in]  test_accept     When true, run validation checks but don't submit to mempool.
      */
-    [[nodiscard]] MempoolAcceptResult ProcessTransaction(const CTransactionRef& tx, bool test_accept=false, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects)
+    [[nodiscard]] MempoolAcceptResult ProcessTransaction(const CTransactionRef& tx, bool test_accept=false)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     //! Load the block tree and coins database from disk, initializing state if we're running with -reindex
@@ -1361,8 +1342,6 @@ public:
     //! best header is no longer valid / guaranteed to be the most-work
     //! header in our block-index not known to be invalid, recalculate it.
     void RecalculateBestHeader() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-
-    bool m_script_check_queue_enabled{true};
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
 

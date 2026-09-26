@@ -9,14 +9,12 @@
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <core_memusage.h>
-#include <kernel/mempool_options.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <primitives/transaction.h>
 #include <streams.h>
 #include <test/fuzz/fuzz.h>
 #include <test/util/random.h>
-#include <test/util/transaction_utils.h>
 #include <univalue.h>
 #include <util/chaintype.h>
 #include <util/rbf.h>
@@ -62,8 +60,12 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
     }
 
     std::string reason;
-    const bool is_standard_with_permit_bare_multisig = IsStandardTx(tx, kernel::MemPoolOptions{.permit_bare_pubkey = true, .permit_bare_multisig = true}, reason);
-    const bool is_standard_without_permit_bare_multisig = IsStandardTx(tx, kernel::MemPoolOptions{.permit_bare_pubkey = true, .permit_bare_multisig = false}, reason);
+    StandardnessOptions standardness_opts;
+    standardness_opts.permit_bare_pubkey = true;
+    standardness_opts.permit_bare_multisig = true;
+    const bool is_standard_with_permit_bare_multisig = IsStandardTx(tx, standardness_opts, reason);
+    standardness_opts.permit_bare_multisig = false;
+    const bool is_standard_without_permit_bare_multisig = IsStandardTx(tx, standardness_opts, reason);
     if (is_standard_without_permit_bare_multisig) {
         assert(is_standard_with_permit_bare_multisig);
     }

@@ -14,15 +14,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 class COutPoint;
 class uint256;
 
 //! -dbbatchsize default (bytes)
-static const int64_t nDefaultDbBatchSize = 64 << 20;
+static const int64_t nDefaultDbBatchSize = 16 << 20;
 
 //! User-controlled performance and debug options.
 struct CoinsViewOptions {
@@ -33,17 +35,19 @@ struct CoinsViewOptions {
     int simulate_crash_ratio = 0;
 };
 
-/** CCoinsView backed by the coin database (chainstate/)
- * Cursor requires FlushStateToDisk for consistency.
- */
+/** CCoinsView backed by the coin database (chainstate/) */
 class CCoinsViewDB final : public CCoinsView
 {
 protected:
     DBParams m_db_params;
     CoinsViewOptions m_options;
+    //! Prevents CompactFull() from using m_db while ResizeCache() replaces it.
+    Mutex m_db_mutex;
     std::unique_ptr<CDBWrapper> m_db;
+    std::shared_future<void> m_compaction;
 public:
     explicit CCoinsViewDB(DBParams db_params, CoinsViewOptions options);
+    ~CCoinsViewDB() override;
 
     std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
     bool HaveCoin(const COutPoint &outpoint) const override;
@@ -57,10 +61,16 @@ public:
     size_t EstimateSize() const override;
 
     //! Dynamically alter the underlying leveldb cache size.
-    void ResizeCache(size_t new_cache_size) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void ResizeCache(size_t new_cache_size) EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_db_mutex);
 
     //! @returns filesystem path to on-disk storage or std::nullopt if in memory.
     std::optional<fs::path> StoragePath() { return m_db->StoragePath(); }
+
+    //! Perform a full compaction of the underlying LevelDB on a one-shot background thread.
+    std::shared_future<void> CompactFull() EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_db_mutex);
+
+    //! Return an underlying LevelDB property value, if available.
+    std::optional<std::string> GetDBProperty(const std::string& property);
 };
 
 #endif // BITCOIN_TXDB_H

@@ -2,8 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <dbwrapper.h>
 
 #include <logging.h>
@@ -13,21 +11,18 @@
 #include <streams.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
-#include <util/obfuscation.h>
 #include <util/strencodings.h>
-#include <util/translation.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
-#include <leveldb/c.h>
 #include <leveldb/cache.h>
 #include <leveldb/db.h>
 #include <leveldb/env.h>
 #include <leveldb/filter_policy.h>
-#include <memenv.h>
+#include <leveldb/helpers/memenv/memenv.h>
 #include <leveldb/iterator.h>
 #include <leveldb/options.h>
 #include <leveldb/slice.h>
@@ -51,47 +46,10 @@ static void HandleError(const leveldb::Status& status)
     if (status.ok())
         return;
     const std::string errmsg = "Fatal LevelDB error: " + status.ToString();
-    LogError("%s", errmsg);
-    LogInfo("You can use -debug=leveldb to get more complete diagnostic messages");
+    LogPrintf("%s\n", errmsg);
+    LogPrintf("You can use -debug=leveldb to get more complete diagnostic messages\n");
     throw dbwrapper_error(errmsg);
 }
-
-util::Result<void> dbwrapper_SanityCheck()
-{
-#ifndef EMBEDDED_LEVELDB
-    unsigned long header_version = (leveldb::kMajorVersion << 16) | leveldb::kMinorVersion;
-    unsigned long library_version = (leveldb_major_version() << 16) | leveldb_minor_version();
-
-    if (header_version != library_version) {
-        return util::Error{Untranslated(strprintf("Compiled with LevelDB %d.%d, but linked with LevelDB %d.%d (incompatible).",
-            leveldb::kMajorVersion, leveldb::kMinorVersion,
-            leveldb_major_version(), leveldb_minor_version()
-        ))};
-    }
-#endif
-
-    return {};
-}
-
-#ifndef WIN32
-namespace leveldb {
-class EnvPosixTestHelper {
-    static void SetReadOnlyMMapLimit(int limit);
-public:
-    static inline void SetReadOnlyMMapLimitForBitcoin(int limit) { SetReadOnlyMMapLimit(limit); }
-};
-}
-
-class BitcoinLevelDBInit {
-public:
-    BitcoinLevelDBInit() {
-        if (sizeof(void*) >= 8) {
-            leveldb::EnvPosixTestHelper::SetReadOnlyMMapLimitForBitcoin(4096);
-        }
-    }
-};
-static BitcoinLevelDBInit g_bitcoin_leveldb_init;
-#endif
 
 class CBitcoinLevelDBLogger : public leveldb::Logger {
 public:
@@ -200,17 +158,14 @@ struct CDBBatch::WriteBatchImpl {
 
 CDBBatch::CDBBatch(const CDBWrapper& _parent)
     : parent{_parent},
-      m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()}
-{
-    Clear();
-};
+      m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()} {};
 
 CDBBatch::~CDBBatch() = default;
 
 void CDBBatch::Clear()
 {
     m_impl_batch->batch.Clear();
-    size_estimate = kHeader;
+    size_estimate = 0;
 }
 
 void CDBBatch::WriteImpl(Span<const std::byte> key, DataStream& ssValue)
@@ -273,7 +228,6 @@ CDBWrapper::CDBWrapper(const DBParams& params)
     DBContext().iteroptions.fill_cache = false;
     DBContext().syncoptions.sync = true;
     DBContext().options = GetOptions(params.cache_bytes);
-    DBContext().options.max_file_size = params.options.max_file_size;
     DBContext().options.create_if_missing = true;
     if (params.memory_only) {
         DBContext().penv = leveldb::NewMemEnv(leveldb::Env::Default());
@@ -297,11 +251,12 @@ CDBWrapper::CDBWrapper(const DBParams& params)
 
     if (params.options.force_compact) {
         LogPrintf("Starting database compaction of %s\n", fs::PathToString(params.path));
-        DBContext().pdb->CompactRange(nullptr, nullptr);
+        CompactFull();
         LogPrintf("Finished database compaction of %s\n", fs::PathToString(params.path));
     }
 
-    assert(!obfuscate_key); // Needed for unobfuscated Read()/Write() below
+    // The base-case obfuscation key, which is a noop.
+    obfuscate_key = std::vector<unsigned char>(OBFUSCATE_KEY_NUM_BYTES, '\000');
 
     bool key_exists = Read(OBFUSCATE_KEY_KEY, obfuscate_key);
 
@@ -312,11 +267,12 @@ CDBWrapper::CDBWrapper(const DBParams& params)
 
         // Write `new_key` so we don't obfuscate the key with itself
         Write(OBFUSCATE_KEY_KEY, new_key);
-        Read(CDBWrapper::OBFUSCATE_KEY_KEY, obfuscate_key);
+        obfuscate_key = new_key;
 
-        LogInfo("Wrote new obfuscation key for %s: %s", fs::PathToString(params.path), obfuscate_key.HexKey());
+        LogPrintf("Wrote new obfuscate key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
     }
-    LogInfo("Using obfuscation key for %s: %s", fs::PathToString(params.path), obfuscate_key.HexKey());
+
+    LogPrintf("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
 }
 
 CDBWrapper::~CDBWrapper()
@@ -350,11 +306,18 @@ bool CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
     return true;
 }
 
+std::optional<std::string> CDBWrapper::GetProperty(const std::string& property) const
+{
+    if (std::string value; DBContext().pdb->GetProperty(property, &value)) return value;
+    return std::nullopt;
+}
+
+void CDBWrapper::CompactFull() { DBContext().pdb->CompactRange(nullptr, nullptr); }
+
 size_t CDBWrapper::DynamicMemoryUsage() const
 {
-    std::string memory;
     std::optional<size_t> parsed;
-    if (!DBContext().pdb->GetProperty("leveldb.approximate-memory-usage", &memory) || !(parsed = ToIntegral<size_t>(memory))) {
+    if (auto memory{GetProperty("leveldb.approximate-memory-usage")}; !memory || !(parsed = ToIntegral<size_t>(*memory))) {
         LogDebug(BCLog::LEVELDB, "Failed to get approximate-memory-usage property\n");
         return 0;
     }
@@ -367,13 +330,16 @@ size_t CDBWrapper::DynamicMemoryUsage() const
 // past the null-terminator.
 const std::string CDBWrapper::OBFUSCATE_KEY_KEY("\000obfuscate_key", 14);
 
+const unsigned int CDBWrapper::OBFUSCATE_KEY_NUM_BYTES = 8;
+
 /**
  * Returns a string (consisting of 8 random bytes) suitable for use as an
  * obfuscating XOR key.
  */
 std::vector<unsigned char> CDBWrapper::CreateObfuscateKey() const
 {
-    auto ret = FastRandomContext{}.randbytes(Obfuscation::KEY_SIZE);
+    std::vector<uint8_t> ret(OBFUSCATE_KEY_NUM_BYTES);
+    GetRandBytes(ret);
     return ret;
 }
 
@@ -385,7 +351,7 @@ std::optional<std::string> CDBWrapper::ReadImpl(Span<const std::byte> key) const
     if (!status.ok()) {
         if (status.IsNotFound())
             return std::nullopt;
-        LogError("LevelDB read failure: %s", status.ToString());
+        LogPrintf("LevelDB read failure: %s\n", status.ToString());
         HandleError(status);
     }
     return strValue;
@@ -400,7 +366,7 @@ bool CDBWrapper::ExistsImpl(Span<const std::byte> key) const
     if (!status.ok()) {
         if (status.IsNotFound())
             return false;
-        LogError("LevelDB read failure: %s", status.ToString());
+        LogPrintf("LevelDB read failure: %s\n", status.ToString());
         HandleError(status);
     }
     return true;
@@ -460,7 +426,7 @@ void CDBIterator::Next() { m_impl_iter->iter->Next(); }
 
 namespace dbwrapper_private {
 
-const Obfuscation& GetObfuscateKey(const CDBWrapper& w)
+const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w)
 {
     return w.obfuscate_key;
 }

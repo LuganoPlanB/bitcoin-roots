@@ -1,1 +1,0 @@
-../../../build-openbsd.md

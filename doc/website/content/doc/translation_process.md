@@ -1,1 +1,0 @@
-../../../translation_process.md

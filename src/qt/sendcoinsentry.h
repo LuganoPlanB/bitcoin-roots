@@ -33,7 +33,6 @@ public:
 
     void setModel(WalletModel *model);
     bool validate(interfaces::Node& node);
-    bool hasPaytoWarning() const;
     SendCoinsRecipient getValue();
 
     /** Return whether the entry is still empty and unedited */

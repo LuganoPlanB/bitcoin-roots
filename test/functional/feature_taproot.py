@@ -116,6 +116,9 @@ import hashlib
 import os
 import random
 
+# Keep in sync with DEFAULT_SCRIPT_SIZE_POLICY_LIMIT in src/policy/policy.h.
+ROOTS_DEFAULT_MAX_SCRIPT_SIZE = 1650
+
 # Whether or not to output generated test vectors, in JSON format.
 GEN_TEST_VECTORS = False
 
@@ -1377,7 +1380,10 @@ class TaprootTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [["-datacarrierfullcount"]]
+        self.extra_args = [[
+            "-acceptnonstddatacarrier=1",
+            "-rejectparasites=0",  # Keep generated Taproot spends focused on script semantics.
+        ]]
 
     def block_submit(self, node, txs, msg, err_msg, cb_pubkey=None, fees=0, sigops_weight=0, witness=False, accept=False):
 
@@ -1596,6 +1602,8 @@ class TaprootTest(BitcoinTestFramework):
                     and (all(utxo.spender.is_standard for utxo in input_utxos))  # All inputs must be standard
                     and tx.version in TX_STANDARD_VERSIONS # The tx version must be standard
                     and not (tx.version == 3 and tx.get_vsize() > TRUC_MAX_VSIZE)  # Topological standardness rules must be followed
+                    # Roots applies -maxscriptsize to each serialized witness stack.
+                    and all(len(txin_witness.serialize()) <= ROOTS_DEFAULT_MAX_SCRIPT_SIZE for txin_witness in tx.wit.vtxinwit)
                 )
                 tx.rehash()
                 msg = ','.join(utxo.spender.comment + ("*" if n == fail_input else "") for n, utxo in enumerate(input_utxos))

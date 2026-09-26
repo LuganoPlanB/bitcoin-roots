@@ -109,6 +109,15 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.nodes[1].assert_start_raises_init_error(["-whitelist=noban@127.0.0.1:230"], "Invalid netmask specified in", match=ErrorMatch.PARTIAL_REGEX)
         self.nodes[1].assert_start_raises_init_error(["-whitebind=noban@127.0.0.1/10"], "Cannot resolve -whitebind address", match=ErrorMatch.PARTIAL_REGEX)
         self.nodes[1].assert_start_raises_init_error(["-whitebind=noban@127.0.0.1", "-bind=127.0.0.1", "-listen=0"], "Cannot set -bind or -whitebind together with -listen=0", match=ErrorMatch.PARTIAL_REGEX)
+        for permission_arg in [
+            "-whitelist=blockfilters@127.0.0.1",
+            f"-whitebind=blockfilters@127.0.0.1:{p2p_port(self.nodes[1].index)}",
+        ]:
+            self.nodes[1].assert_start_raises_init_error(
+                [permission_arg],
+                "Cannot grant blockfilters permission without -blockfilterindex.",
+                match=ErrorMatch.PARTIAL_REGEX,
+            )
 
     def check_tx_relay(self):
         self.log.debug("Create a connection from a forcerelay peer that rebroadcasts raw txs")

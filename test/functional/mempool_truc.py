@@ -30,7 +30,7 @@ def cleanup(extra_args=None):
         def wrapper(self):
             try:
                 if extra_args is not None:
-                    self.restart_node(0, extra_args=extra_args)
+                    self.restart_node(0, extra_args=self.extra_args[0] + extra_args)
                 func(self)
             finally:
                 # Clear mempool again after test
@@ -43,7 +43,7 @@ def cleanup(extra_args=None):
 class MempoolTRUC(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [[]]
+        self.extra_args = [["-maxscriptsize=100000"]]
         self.setup_clean_chain = True
 
     def check_mempool(self, txids):
@@ -163,31 +163,6 @@ class MempoolTRUC(BitcoinTestFramework):
         assert_raises_rpc_error(-26, expected_error_v2_v3, node.sendrawtransaction, tx_v3_child_rbf_v2["hex"])
         self.check_mempool([tx_v3_bip125_rbf_v2["txid"], tx_v3_parent["txid"], tx_v3_child["txid"]])
 
-
-    @cleanup(extra_args=["-mempoolfullrbf=0"])
-    def test_truc_bip125(self):
-        node = self.nodes[0]
-        self.log.info("Test TRUC transactions that don't signal BIP125 are replaceable")
-        assert_equal(node.getmempoolinfo()["fullrbf"], False)
-        utxo_v3_no_bip125 = self.wallet.get_utxo()
-        tx_v3_no_bip125 = self.wallet.send_self_transfer(
-            from_node=node,
-            fee_rate=DEFAULT_FEE,
-            utxo_to_spend=utxo_v3_no_bip125,
-            sequence=MAX_BIP125_RBF_SEQUENCE + 1,
-            version=3
-        )
-
-        self.check_mempool([tx_v3_no_bip125["txid"]])
-        assert not node.getmempoolentry(tx_v3_no_bip125["txid"])["bip125-replaceable"]
-        tx_v3_no_bip125_rbf = self.wallet.send_self_transfer(
-            from_node=node,
-            fee_rate=DEFAULT_FEE * 2,
-            utxo_to_spend=utxo_v3_no_bip125,
-            version=3
-        )
-        self.check_mempool([tx_v3_no_bip125_rbf["txid"]])
-
     @cleanup(extra_args=["-datacarriersize=40000"])
     def test_truc_reorg(self):
         node = self.nodes[0]
@@ -256,7 +231,7 @@ class MempoolTRUC(BitcoinTestFramework):
         self.generate(node, 1)
 
         self.log.info("Test that a decreased limitancestorsize also applies to v3 parent")
-        self.restart_node(0, extra_args=["-limitancestorsize=10", "-datacarriersize=40000"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-limitancestorsize=10", "-datacarriersize=40000"])
         tx_v3_parent_large2 = self.wallet.send_self_transfer(
             from_node=node,
             target_vsize=parent_target_vsize,
@@ -644,7 +619,7 @@ class MempoolTRUC(BitcoinTestFramework):
         for minrelay_setting in (0, 5, 10, 100, 500, 1000, 5000, 333333, 2500000):
             self.log.info(f"-> Test -minrelaytxfee={minrelay_setting}sat/kvB...")
             setting_decimal = minrelay_setting / Decimal(COIN)
-            self.restart_node(0, extra_args=[f"-minrelaytxfee={setting_decimal:.8f}", "-persistmempool=0"])
+            self.restart_node(0, extra_args=self.extra_args[0] + [f"-minrelaytxfee={setting_decimal:.8f}", "-persistmempool=0"])
             minrelayfeerate = node.getmempoolinfo()["minrelaytxfee"]
             high_feerate = minrelayfeerate * 50
 
@@ -690,7 +665,6 @@ class MempoolTRUC(BitcoinTestFramework):
         self.test_truc_max_vsize()
         self.test_truc_acceptance()
         self.test_truc_replacement()
-        self.test_truc_bip125()
         self.test_truc_reorg()
         self.test_nondefault_package_limits()
         self.test_truc_ancestors_package()

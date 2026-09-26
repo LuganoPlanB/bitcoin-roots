@@ -51,14 +51,12 @@ RPCHelpMan signmessage()
             }
 
             const PKHash* pkhash = std::get_if<PKHash>(&dest);
-            MessageSignatureFormat sig_format{MessageSignatureFormat::LEGACY};
-            // TODO: Make sig_format choosable
             if (!pkhash) {
-                sig_format = MessageSignatureFormat::SIMPLE;
+                throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
             }
 
             std::string signature;
-            SigningResult err = pwallet->SignMessage(sig_format, strMessage, dest, signature);
+            SigningResult err = pwallet->SignMessage(strMessage, *pkhash, signature);
             if (err == SigningResult::SIGNING_FAILED) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, SigningResultString(err));
             } else if (err != SigningResult::OK) {

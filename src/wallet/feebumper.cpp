@@ -40,6 +40,11 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
         return feebumper::Result::WALLET_ERROR;
     }
 
+    if (!SignalsOptInRBF(*wtx.tx)) {
+        errors.emplace_back(Untranslated("Transaction is not BIP 125 replaceable"));
+        return feebumper::Result::WALLET_ERROR;
+    }
+
     if (wtx.mapValue.count("replaced_by_txid")) {
         errors.push_back(Untranslated(strprintf("Cannot bump transaction %s which was already bumped by transaction %s", wtx.GetHash().ToString(), wtx.mapValue.at("replaced_by_txid"))));
         return feebumper::Result::WALLET_ERROR;
@@ -82,10 +87,9 @@ static feebumper::Result CheckFeeRate(const CWallet& wallet, const CMutableTrans
         reused_inputs.push_back(txin.prevout);
     }
 
-    const std::optional<CAmount> combined_bump_fee = wallet.chain().calculateCombinedBumpFee(reused_inputs, newFeerate);
+    std::optional<CAmount> combined_bump_fee = wallet.chain().calculateCombinedBumpFee(reused_inputs, newFeerate);
     if (!combined_bump_fee.has_value()) {
-        errors.push_back(Untranslated(strprintf("Failed to calculate bump fees, because unconfirmed UTXOs depend on an enormous cluster of unconfirmed transactions.")));
-        return feebumper::Result::WALLET_ERROR;
+        errors.push_back(Untranslated(strprintf("Failed to calculate bump fees, because unconfirmed UTXOs depend on enormous cluster of unconfirmed transactions.")));
     }
     CAmount new_total_fee = newFeerate.GetFee(maxTxSize) + combined_bump_fee.value();
 

@@ -7,7 +7,6 @@
 import configparser
 from enum import Enum
 import argparse
-from importlib.util import find_spec
 import logging
 import os
 import platform
@@ -232,8 +231,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
         PortSeed.n = self.options.port_seed
 
-        self.MAINNET_NORMAL_STDERR = ''
-
     def set_binary_paths(self):
         """Update self.options with the paths of all binaries from environment variables or their default values"""
 
@@ -313,7 +310,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             pdb.set_trace()
 
         self.log.debug('Closing down network thread')
-        self.network_thread.close(timeout=self.options.timeout_factor * 10)
+        self.network_thread.close()
         if self.success == TestStatus.FAILED:
             self.log.info("Not stopping nodes as test failed. The dangling processes will be cleaned up later.")
         else:
@@ -547,7 +544,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 use_valgrind=self.options.valgrind,
                 descriptors=self.options.descriptors,
                 v2transport=self.options.v2transport,
-                expected_stderr_prefix=self.MAINNET_NORMAL_STDERR if (self.chain == '') else '',
             )
             self.nodes.append(test_node_i)
             if not test_node_i.version_is_at_least(170000):
@@ -984,25 +980,14 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             raise SkipTest("bitcoin-util has not been compiled")
 
     def skip_if_no_cli(self):
-        """Skip the running test if bitcoin-cli is not available."""
-        if not self.is_cli_available():
+        """Skip the running test if bitcoin-cli has not been compiled."""
+        if not self.is_cli_compiled():
             raise SkipTest("bitcoin-cli has not been compiled.")
 
     def skip_if_no_previous_releases(self):
         """Skip the running test if previous releases are not available."""
         if not self.has_previous_releases():
             raise SkipTest("previous releases not available or disabled")
-
-    def has_resource_module(self):
-        """Checks whether the resource module is available."""
-        return find_spec('resource') is not None
-
-    @property
-    def RLIM_INFINITY(self):
-        if not self.has_resource_module():
-            return None
-        import resource
-        return resource.RLIM_INFINITY
 
     def has_previous_releases(self):
         """Checks whether previous releases are present and enabled."""
@@ -1017,11 +1002,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if not self.is_external_signer_compiled():
             raise SkipTest("external signer support has not been compiled.")
 
-    def is_cli_available(self):
-        """Checks whether bitcoin-cli is available."""
-        if "BITCOINCLI" in os.environ:
-            return os.environ["BITCOINCLI"]
-
+    def is_cli_compiled(self):
+        """Checks whether bitcoin-cli was compiled."""
         return self.config["components"].getboolean("ENABLE_CLI")
 
     def is_external_signer_compiled(self):

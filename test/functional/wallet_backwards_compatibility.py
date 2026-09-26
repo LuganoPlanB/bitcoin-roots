@@ -325,9 +325,10 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
             # Restore the wallet to master
             load_res = node_master.restorewallet(wallet_name, backup_path)
 
-            # Make sure this wallet opens without warnings
+            # Make sure this wallet opens with only the migration warning. See https://github.com/bitcoin/bitcoin/pull/19054
             if not self.options.descriptors:
-                assert "warnings" not in load_res
+                # Legacy wallets will have only a deprecation warning
+                assert_equal(load_res["warnings"], ["Wallet loaded successfully. The legacy wallet type is being deprecated and support for creating and opening legacy wallets will be removed in the future. Legacy wallets can be migrated to a descriptor wallet with migratewallet."])
             else:
                 assert "warnings" not in load_res
 

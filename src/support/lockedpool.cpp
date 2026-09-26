@@ -263,8 +263,7 @@ size_t PosixLockedPageAllocator::GetLimit()
 #ifdef RLIMIT_MEMLOCK
     struct rlimit rlim;
     if (getrlimit(RLIMIT_MEMLOCK, &rlim) == 0) {
-        if (rlim.rlim_cur != RLIM_INFINITY &&
-            std::cmp_less_equal(rlim.rlim_cur, static_cast<rlim_t>(std::numeric_limits<size_t>::max()))) {
+        if (rlim.rlim_cur != RLIM_INFINITY) {
             return rlim.rlim_cur;
         }
     }

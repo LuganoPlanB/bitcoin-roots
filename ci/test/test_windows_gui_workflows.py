@@ -60,7 +60,7 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         self.assertIn("ctest --test-dir build -C Release --output-on-failure", windows_smoke)
 
     def test_release_builds_and_packages_windows_gui(self):
-        windows_release = job(RELEASE_WORKFLOW, "windows-x86_64-release")
+        windows_release = job(RELEASE_WORKFLOW, "windows-release")
         self.assert_gui_asset_tools(windows_release)
         self.assertIn("-DBUILD_GUI=ON", windows_release)
         self.assertNotIn("-DBUILD_GUI=OFF", windows_release)
@@ -69,8 +69,8 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         self.assertIn("Compress-Archive -Path $installDir", windows_release)
         self.assertNotIn('Compress-Archive -Path (Join-Path $installDir "*")', windows_release)
         self.assertIn("python ci/release/archive.py validate", windows_release)
-        self.assertIn('"bin\\bitcoin-qt.exe"', windows_release)
-        self.assertIn("Test-Path -PathType Leaf $gui", windows_release)
+        self.assertIn('Join-Path $installDir "bin\\bitcoin-qt.exe"', windows_release)
+        self.assertIn("Test-Path -PathType Leaf", windows_release)
 
 
 if __name__ == "__main__":

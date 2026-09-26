@@ -14,7 +14,7 @@ from subprocess import check_output, STDOUT, CalledProcessError
 from lint_ignore_dirs import SHARED_EXCLUDED_SUBTREES
 
 IGNORE_WORDS_FILE = 'test/lint/spelling.ignore-words.txt'
-FILES_ARGS = ['git', 'ls-files', '--', ":(exclude)contrib/seeds/*.txt", ":(exclude)depends/", ":(exclude)doc/release-notes/", ":(exclude)src/qt/locale/", ":(exclude)src/qt/*.qrc", ":(exclude)contrib/guix/patches", ":(exclude,glob)contrib/roots/**/*.patch", ":(exclude)doc/website/content/", ":(exclude)doc/website/package-lock.json"]
+FILES_ARGS = ['git', 'ls-files', '--', ":(exclude)contrib/seeds/*.txt", ":(exclude)depends/", ":(exclude)doc/release-notes/", ":(exclude)src/qt/locale/", ":(exclude)src/qt/*.qrc", ":(exclude)contrib/guix/patches"]
 FILES_ARGS += [f":(exclude){dir}" for dir in SHARED_EXCLUDED_SUBTREES]
 
 

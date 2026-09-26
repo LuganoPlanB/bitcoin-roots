@@ -53,9 +53,11 @@ class BIP68Test(BitcoinTestFramework):
         self.extra_args = [
             [
                 '-testactivationheight=csv@432',
+                '-blockprioritysize=0',  # Keep sequence-lock fixtures independent of priority mining.
             ],
             [
                 '-testactivationheight=csv@432',
+                '-blockprioritysize=0',
             ],
         ]
 
