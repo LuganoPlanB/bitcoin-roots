@@ -52,7 +52,7 @@ git -C "$replay_dir/repository" checkout --quiet --detach "$core_commit"
 git -C "$replay_dir/repository" \
     -c user.name='Bitcoin Roots release verification' \
     -c user.email='release-verification@invalid' \
-    am -3 "$patch_tmp" >/dev/null
+    am -3 --keep-cr "$patch_tmp" >/dev/null
 
 if ! git -C "$replay_dir/repository" diff --quiet \
     "$tag_commit" HEAD -- . ':(exclude).github/**'; then

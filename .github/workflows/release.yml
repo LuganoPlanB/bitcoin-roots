@@ -11,7 +11,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing annotated Roots tag to build without publishing
+        description: Future Roots tag name to rehearse without publishing
+        required: true
+        type: string
+      release_commit:
+        description: Full canonical roots/<version> commit to rehearse
         required: true
         type: string
 
@@ -25,6 +29,8 @@ concurrency:
 env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1
   RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+  RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_commit || '' }}
+  RELEASE_SOURCE_REF: ${{ github.event_name == 'push' && format('refs/tags/{0}', github.ref_name) || inputs.release_commit }}
 
 jobs:
   release-metadata-tests:
@@ -32,27 +38,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch and validate canonical release refs
+      - name: Prepare and validate release source
         run: |
           set -Eeuo pipefail
-          core_version="${RELEASE_TAG#v}"
-          core_version="${core_version%%-roots.*}"
-          git fetch --no-tags origin \
-            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
-            "refs/tags/v${core_version}:refs/tags/v${core_version}"
-          ci/release/validate-release-source.sh "$RELEASE_TAG"
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
 
       - name: Run release metadata tests
         run: |
           set -Eeuo pipefail
           python3 ci/test/test_create_patch_series.py
+          python3 ci/test/test_prepare_release_source.py
           python3 ci/test/test_prepare_release.py
           python3 ci/test/test_sign_manifest.py
           python3 ci/test/test_validate_release_tag.py
@@ -97,22 +100,18 @@ jobs:
             file-env: ./ci/test/00_setup_env_linux_aarch64_release.sh
             artifact-name: bitcoin-roots-linux-aarch64
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch and validate canonical release refs
+      - name: Prepare and validate release source
         run: |
           set -Eeuo pipefail
-          core_version="${RELEASE_TAG#v}"
-          core_version="${core_version%%-roots.*}"
-          git fetch --no-tags origin \
-            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
-            "refs/tags/v${core_version}:refs/tags/v${core_version}"
-          ci/release/validate-release-source.sh "$RELEASE_TAG"
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
@@ -158,23 +157,19 @@ jobs:
     env:
       PYTHONUTF8: 1
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch and validate canonical release refs
+      - name: Prepare and validate release source
         shell: bash
         run: |
           set -Eeuo pipefail
-          core_version="${RELEASE_TAG#v}"
-          core_version="${core_version%%-roots.*}"
-          git fetch --no-tags origin \
-            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
-            "refs/tags/v${core_version}:refs/tags/v${core_version}"
-          ci/release/validate-release-source.sh "$RELEASE_TAG"
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
 
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
@@ -260,22 +255,18 @@ jobs:
             expected-arch: arm64
             artifact-name: bitcoin-roots-darwin-arm64
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch and validate canonical release refs
+      - name: Prepare and validate release source
         run: |
           set -Eeuo pipefail
-          core_version="${RELEASE_TAG#v}"
-          core_version="${core_version%%-roots.*}"
-          git fetch --no-tags origin \
-            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
-            "refs/tags/v${core_version}:refs/tags/v${core_version}"
-          ci/release/validate-release-source.sh "$RELEASE_TAG"
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
 
       - name: Verify architecture and select Xcode
         env:
@@ -348,22 +339,18 @@ jobs:
       EXPECTED_PACKAGE_COUNT: 5
       PUBLIC_KEY_FILE: contrib/release/bitcoin-roots-release-key.asc
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch and validate canonical release refs
+      - name: Prepare and validate release source
         run: |
           set -Eeuo pipefail
-          core_version="${RELEASE_TAG#v}"
-          core_version="${core_version%%-roots.*}"
-          git fetch --no-tags origin \
-            "refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}" \
-            "refs/tags/v${core_version}:refs/tags/v${core_version}"
-          ci/release/validate-release-source.sh "$RELEASE_TAG"
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
 
       - name: Download release artifacts
         uses: actions/download-artifact@v5

@@ -27,17 +27,20 @@ class ReleaseVersionTest(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip(), "bitcoin-roots-29.4-roots.1")
 
-    def test_workflow_builds_tags_and_manual_dry_runs_from_the_tag(self):
+    def test_workflow_builds_tags_and_rehearses_explicit_canonical_commits(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("tags:", workflow)
         self.assertIn("'v[0-9]*-roots.[0-9]*'", workflow)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertNotIn("branches:", workflow)
         self.assertIn("github.event_name == 'push' && github.ref_name || inputs.release_tag", workflow)
-        self.assertIn("ref: refs/tags/${{ env.RELEASE_TAG }}", workflow)
+        self.assertIn("release_commit:", workflow)
+        self.assertIn("inputs.release_commit", workflow)
+        self.assertIn("ref: ${{ env.RELEASE_SOURCE_REF }}", workflow)
         self.assertIn("if: github.event_name == 'push'", workflow)
-        self.assertIn('ci/release/validate-release-source.sh "$RELEASE_TAG"', workflow)
-        self.assertIn('refs/heads/roots/${core_version}:refs/remotes/origin/roots/${core_version}', workflow)
+        self.assertIn("ci/release/prepare-release-source.sh", workflow)
+        self.assertEqual(workflow.count("ci/release/prepare-release-source.sh"), 5)
+        self.assertEqual(workflow.count("contents: write"), 1)
         self.assertNotIn("origin main:refs/remotes/origin/main", workflow)
         self.assertIn("environment: release", workflow)
 

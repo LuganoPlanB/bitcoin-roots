@@ -215,12 +215,34 @@ Never force-push release tags. Preserve archival branches.
 
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
-Before creating or pushing a tag, run the repository checks and verify the
-annotated tag target and ancestry:
+Before creating a permanent tag, merge the reviewed promotion so the trusted
+workflow is present on the default branch. Then dispatch `Release artifacts`
+with the future tag name and the full 40-hex canonical commit. Manual dispatch
+fetches the official Core tag from the Bitcoin Core repository, verifies the
+commit against `origin/roots/<core-version>`, creates an annotated tag only in
+each disposable runner checkout, and builds the same five-platform artifact
+set. It has read-only repository permissions and cannot create a GitHub
+release. It also refuses to run if the future tag already exists remotely.
+
+For example:
+
+```sh
+release_tag=v29.4-roots.1
+release_commit=$(git rev-parse origin/roots/29.4^{commit})
+gh workflow run release.yml --ref main \
+    -f release_tag="$release_tag" -f release_commit="$release_commit"
+```
+
+Download and inspect that run's five packages and patch artifact before
+assigning the permanent version. After the rehearsal passes, fetch again and
+verify the annotated tag target and ancestry immediately before pushing it:
 
 ```sh
 release_tag=v29.4-roots.1
 git check-ref-format "refs/tags/$release_tag"
+git fetch origin roots/29.4
+git fetch https://github.com/bitcoin/bitcoin.git \
+    refs/tags/v29.4:refs/tags/v29.4
 git tag --annotate "$release_tag" -m "Bitcoin Roots $release_tag"
 git rev-parse "$release_tag^{commit}"
 test "$(git rev-parse "$release_tag^{commit}")" = \
@@ -232,6 +254,7 @@ Run the retained release metadata tests before pushing:
 
 ```sh
 python3 ci/test/test_prepare_release.py
+python3 ci/test/test_prepare_release_source.py
 python3 ci/test/test_create_patch_series.py
 python3 ci/test/test_sign_manifest.py
 python3 ci/test/test_validate_release_tag.py
@@ -258,9 +281,15 @@ ci/release/create-patch-series.sh "$release_tag" \
     "/tmp/bitcoin-roots-${release_tag#v}.patch"
 ```
 
+The series contains inherited CRLF files. Apply the released mbox with
+`git am -3 --keep-cr <bitcoin-roots-*.patch>` so Git's mail parser preserves
+those bytes. Replay verification uses the same command and checks tree equality
+outside `.github/**`.
+
 Pushing the annotated tag builds Linux x86_64, Linux aarch64, macOS x86_64,
 macOS arm64, and Windows x86_64 archives. The draft release also contains the
 Git-am-compatible patch series and `SHA512SUMS`; `SHA512SUMS.asc` is included
 when the release environment has a matching signing key configured. The
-workflow can be dispatched manually with an existing tag to build and validate
-the same artifacts without creating or updating a GitHub release.
+tag-triggered workflow creates a draft, not an immediately public release.
+Independently verify the draft's archives, patch, checksums, optional signature,
+tag target, and source tree before changing only the draft's visibility.
