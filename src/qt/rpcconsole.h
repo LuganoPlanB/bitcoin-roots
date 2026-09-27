@@ -107,6 +107,8 @@ private Q_SLOTS:
     void clearSelectedNode();
     /** show detailed information on ui about selected node */
     void updateDetailWidget();
+    /** clear optional peer state details when they are unavailable */
+    void resetPeerStateStats();
 
 public Q_SLOTS:
     void clear(bool keep_prompt = false);
