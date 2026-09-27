@@ -184,7 +184,9 @@ void PeerTableModel::refresh()
         m_peers_data.swap(new_peers_data);
     }
 
-    const auto top_left = index(0, 0);
-    const auto bottom_right = index(rowCount() - 1, columnCount() - 1);
-    Q_EMIT dataChanged(top_left, bottom_right);
+    if (rowCount() > 0) {
+        const auto top_left = index(0, 0);
+        const auto bottom_right = index(rowCount() - 1, columnCount() - 1);
+        Q_EMIT dataChanged(top_left, bottom_right);
+    }
 }
