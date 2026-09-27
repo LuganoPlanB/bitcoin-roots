@@ -44,6 +44,19 @@ The retained P2P coverage includes
 [`p2p_invalid_messages.py`](/test/functional/p2p_invalid_messages.py).
 This is not a Network Watch or transaction/block activity feed.
 
+### Focused peer-health monitoring
+
+The existing Debug window's Peers tab provides a bounded, live view of current
+connections. Its sortable table shows connection age, direction, network,
+minimum ping, and sent/received traffic. Selecting one peer shows supported
+connection details including transport (v1 or v2), services, permissions,
+connection type, current ping, and synchronization heights.
+
+This uses the node's existing peer-stat refresh and does not retain history or
+inspect transaction or block content. If optional node-state details cannot be
+read during a refresh, the details pane reports them as unavailable instead of
+showing values from an earlier peer.
+
 ### Wallet and signing hardening
 
 The reviewed Roots wallet selection includes database and SQLite error handling,
@@ -125,11 +138,10 @@ The following areas are approved for evaluation in the follow-on operator
 features plan. They are not available merely because they appear in a candidate
 or in this roadmap.
 
-1. Focused peer-health monitoring.
-2. Narrow P2P privacy and resource-use hardening.
-3. Wallet database, flush, and backup reliability improvements.
-4. An optional thin per-send RBF control.
-5. Cross-feature regression coverage and catalog reconciliation.
+1. Narrow P2P privacy and resource-use hardening.
+2. Wallet database, flush, and backup reliability improvements.
+3. An optional thin per-send RBF control.
+4. Cross-feature regression coverage and catalog reconciliation.
 
 Each item requires its own accepted implementation and tests before it moves to
 the available section. Planned wallet reliability work does not imply a
