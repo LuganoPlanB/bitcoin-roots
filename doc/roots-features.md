@@ -121,21 +121,21 @@ from the presence of a local tag alone.
 
 ## Planned or under review
 
-The following six areas are approved for evaluation in the follow-on operator
+The following areas are approved for evaluation in the follow-on operator
 features plan. They are not available merely because they appear in a candidate
 or in this roadmap.
 
-1. Focused peer-health monitoring and safe Tor endpoint sharing.
+1. Focused peer-health monitoring.
 2. Narrow P2P privacy and resource-use hardening.
 3. Wallet database, flush, and backup reliability improvements.
-4. A secure, explicitly reviewed private-key sweep flow.
-5. Privacy-aware coin control and a per-send RBF choice.
-6. Cross-feature regression coverage and catalog reconciliation.
+4. An optional thin per-send RBF control.
+5. Cross-feature regression coverage and catalog reconciliation.
 
 Each item requires its own accepted implementation and tests before it moves to
-the available section. In particular, endpoint sharing is not authentication or
-pairing, and planned wallet work does not imply a guarantee about backup,
-recovery, or private-key handling before the relevant tests exist.
+the available section. Planned wallet reliability work does not imply a
+guarantee about backup or recovery before the relevant tests exist. The plan
+does not include Tor endpoint sharing, private-key sweeping, or broad or
+privacy-aware coin control.
 
 ## Consensus and provenance boundary
 
@@ -156,6 +156,9 @@ Roots does not ship or promise:
 - Network Watch, block/transaction feeds, or block/mempool visualizers;
 - Tor "pairing" credentials, proxy credentials, control-port secrets, or
   private-key sharing surfaces;
+- Tor endpoint sharing or a dedicated endpoint-sharing UI;
+- private-key sweeping, or broad or privacy-aware coin control and payment
+  history redesign;
 - the candidate's broad Knots common-maintenance, consensus/script, wallet, or
   documentation overlays merely because they occurred in historical source;
 - the discarded replay, frozen-state, generated-evidence, or promotion control
