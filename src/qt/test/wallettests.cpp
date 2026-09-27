@@ -305,8 +305,11 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Yes, &no_rbf_confirmation);
     QString rbf_confirmation;
     uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true, QMessageBox::Yes, &rbf_confirmation);
-    QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid1).tx));
-    QVERIFY(SignalsOptInRBF(*wallet->mapWallet.at(txid2).tx));
+    {
+        LOCK(wallet->cs_wallet);
+        QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid1).tx));
+        QVERIFY(SignalsOptInRBF(*wallet->mapWallet.at(txid2).tx));
+    }
     QVERIFY(no_rbf_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
     QVERIFY(rbf_confirmation.contains("signals Replace-By-Fee (BIP-125)"));
 
@@ -316,7 +319,10 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(default_rbf_dialog.findChild<QCheckBox*>("optInRBF")->isChecked());
     QString default_on_override_confirmation;
     uint256 txid3 = SendCoins(*wallet.get(), default_rbf_dialog, PKHash(), COIN, /*rbf=*/false, QMessageBox::Yes, &default_on_override_confirmation);
-    QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid3).tx));
+    {
+        LOCK(wallet->cs_wallet);
+        QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid3).tx));
+    }
     QVERIFY(default_on_override_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
     // Transaction table model updates on a QueuedConnection, so process events to ensure it's updated.
     qApp->processEvents();
