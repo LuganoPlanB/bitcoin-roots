@@ -23,6 +23,7 @@
 #include <node/types.h>
 #include <policy/fees.h>
 #include <txmempool.h>
+#include <util/rbf.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
@@ -199,8 +200,10 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         updateFeeSectionControls();
         updateSmartFeeLabel();
 
-        // set default rbf checkbox state
-        ui->optInRBF->setCheckState(Qt::Checked);
+        // Initialize the one-send override from the wallet default. The
+        // checkbox remains explicit, so updateCoinControlState() always
+        // passes its selected value to transaction creation.
+        ui->optInRBF->setChecked(model->wallet().getDefaultRbf());
 
         if (model->wallet().hasExternalSigner()) {
             //: "device" usually means a hardware wallet.
@@ -365,15 +368,18 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
         question_string.append(BitcoinUnits::formatHtmlWithUnit(model->getOptionsModel()->getDisplayUnit(), txFee));
         question_string.append("</span><br />");
 
-        // append RBF message according to transaction's signalling
-        question_string.append("<span style='font-size:10pt; font-weight:normal;'>");
-        if (ui->optInRBF->isChecked()) {
-            question_string.append(tr("You can increase the fee later (signals Replace-By-Fee, BIP-125)."));
-        } else {
-            question_string.append(tr("Not signalling Replace-By-Fee, BIP-125."));
-        }
-        question_string.append("</span>");
     }
+
+    // Show the signaling in the prepared transaction, rather than the
+    // requested value, so the confirmation states the effective result even
+    // when no fee is required.
+    question_string.append("<span style='font-size:10pt; font-weight:normal;'>");
+    if (SignalsOptInRBF(*m_current_transaction->getWtx())) {
+        question_string.append(tr("This transaction signals Replace-By-Fee (BIP-125). Replacement acceptance depends on network policy."));
+    } else {
+        question_string.append(tr("Not signalling Replace-By-Fee, BIP-125."));
+    }
+    question_string.append("</span>");
 
     // add total amount in all subdivision units
     question_string.append("<hr />");

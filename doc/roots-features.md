@@ -71,6 +71,14 @@ Legacy Berkeley DB support is a separate build choice. This catalog makes no
 claim that it has been tested on a particular host library; release-compatible
 legacy testing requires Berkeley DB 4.8.
 
+### Per-send Replace-By-Fee choice
+
+The Send Coins dialog provides an explicit Replace-By-Fee (BIP-125) choice for
+each transaction. It starts with the wallet's `-walletrbf` preference, and the
+confirmation shows whether the prepared transaction signals replacement. This
+only signals a transaction's replaceability; it does not promise that a later
+replacement will be accepted by peers or their local policy.
+
 ### Runtime and operator foundations
 
 The `getmempoolstats` RPC returns the node's collected, non-interpolated
@@ -140,8 +148,7 @@ or in this roadmap.
 
 1. Narrow P2P privacy and resource-use hardening.
 2. Wallet database, flush, and backup reliability improvements.
-3. An optional thin per-send RBF control.
-4. Cross-feature regression coverage and catalog reconciliation.
+3. Cross-feature regression coverage and catalog reconciliation.
 
 Each item requires its own accepted implementation and tests before it moves to
 the available section. Planned wallet reliability work does not imply a
