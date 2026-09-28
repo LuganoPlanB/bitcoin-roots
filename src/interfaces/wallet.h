@@ -258,6 +258,9 @@ public:
     //! Get tx confirm target.
     virtual unsigned int getConfirmTarget() = 0;
 
+    //! Return whether new transactions signal replace-by-fee by default.
+    virtual bool getDefaultRbf() = 0;
+
     // Return whether HD enabled.
     virtual bool hdEnabled() = 0;
 

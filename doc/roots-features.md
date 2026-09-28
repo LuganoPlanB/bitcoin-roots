@@ -5,12 +5,19 @@ operator and local-policy work whose historical lineage includes Bitcoin Knots
 `29.3.knots20260507`; Knots is not an upstream dependency and its candidate
 tree is not a list of shipped features.
 
-This page is the public inventory for Roots-specific work. Ordinary Bitcoin Core
-v29.4 functionality is documented in the built help and the manuals in this
-directory. The commands below describe the binary that is built from this tree;
-use `bitcoind -help` as the authority for the exact options in a given build.
+This page is the public inventory for Roots-specific work. The published
+`v29.4-roots.2` release is the baseline. This checkout begins at that published
+release and is an unreleased post-`v29.4-roots.2` wallet-privacy topic; work
+added after the baseline must not be read as a claim about the published
+release. Ordinary Bitcoin Core v29.4 functionality is documented in the built
+help and the manuals in this directory. The commands below describe the binary
+built from this tree; use `bitcoind -help` as the authority for the exact
+options in a given build.
 
-## Available now
+## Available in this checkout
+
+Unless explicitly marked as unreleased post-`v29.4-roots.2` work, the items in
+this section were available in the published `v29.4-roots.2` baseline.
 
 ### Conservative, configurable local transaction policy
 
@@ -44,6 +51,24 @@ The retained P2P coverage includes
 [`p2p_invalid_messages.py`](/test/functional/p2p_invalid_messages.py).
 This is not a Network Watch or transaction/block activity feed.
 
+The follow-on review retained these existing bounds and their coverage; it did
+not add a separate P2P hardening feature or alter Bitcoin P2P wire behavior.
+
+### Focused peer-health monitoring (released in `v29.4-roots.2`)
+
+The existing Debug window's Peers tab provides a bounded, live view of current
+connections. Its sortable table shows connection age, direction, network,
+minimum ping, and sent/received traffic. Selecting one peer shows supported
+connection details including transport (v1 or v2), services, permissions,
+connection type, current ping, and synchronization heights.
+
+This uses the node's existing peer-stat refresh and does not retain history or
+inspect transaction or block content. If optional node-state details cannot be
+read during a refresh, the details pane reports them as unavailable instead of
+showing values from an earlier peer. This Roots `v29.4-roots.2` feature is
+covered by [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp); it adds no
+new network collector or monitoring application.
+
 ### Wallet and signing hardening
 
 The reviewed Roots wallet selection includes database and SQLite error handling,
@@ -57,6 +82,20 @@ unit tests under [`src/wallet/test/`](/src/wallet/test/).
 Legacy Berkeley DB support is a separate build choice. This catalog makes no
 claim that it has been tested on a particular host library; release-compatible
 legacy testing requires Berkeley DB 4.8.
+
+The follow-on review retained these existing wallet boundaries and their
+coverage; it did not add a new database, flush, or backup behavior.
+
+### Per-send Replace-By-Fee choice (released in `v29.4-roots.2`)
+
+The Send Coins dialog provides an explicit Replace-By-Fee (BIP-125) choice for
+each transaction. It starts with the wallet's `-walletrbf` preference, and the
+confirmation shows whether the prepared transaction signals replacement. This
+only signals a transaction's replaceability; it does not promise that a later
+replacement will be accepted by peers or their local policy. This Roots
+`v29.4-roots.2` feature is covered by
+[`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
+explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
 ### Runtime and operator foundations
 
@@ -90,13 +129,14 @@ has been tested by the current checkout.
 
 ### Roots identity and desktop application
 
-The daemon, command-line tools, and Qt application identify themselves as
-Bitcoin Roots `v29.4-roots.1`. The Qt application includes Roots branding and
-icons. In the receive-request dialog, a QR image can be saved as a PNG. On
-Windows GUI builds where taskbar progress is enabled, synchronization progress
-is reflected in the taskbar. The Qt source and tests are in
-[`src/qt/`](/src/qt/), including QR export coverage in
-[`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
+The published baseline's daemon, command-line tools, and Qt application identify
+themselves as Bitcoin Roots `v29.4-roots.2`. This unreleased wallet-privacy
+topic is not a published release merely because it retains that build identity.
+The Qt application includes Roots branding and icons. In the receive-request
+dialog, a QR image can be saved as a PNG. On Windows GUI builds where taskbar
+progress is enabled, synchronization progress is reflected in the taskbar. The
+Qt source and tests are in [`src/qt/`](/src/qt/), including QR export coverage
+in [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
 
 The generated manuals and example configuration are available in
 [`doc/man/`](/doc/man/) and
@@ -121,21 +161,13 @@ in this checkout.
 
 ## Planned or under review
 
-The following six areas are approved for evaluation in the follow-on operator
-features plan. They are not available merely because they appear in a candidate
-or in this roadmap.
-
-1. Focused peer-health monitoring and safe Tor endpoint sharing.
-2. Narrow P2P privacy and resource-use hardening.
-3. Wallet database, flush, and backup reliability improvements.
-4. A secure, explicitly reviewed private-key sweep flow.
-5. Privacy-aware coin control and a per-send RBF choice.
-6. Cross-feature regression coverage and catalog reconciliation.
-
-Each item requires its own accepted implementation and tests before it moves to
-the available section. In particular, endpoint sharing is not authentication or
-pairing, and planned wallet work does not imply a guarantee about backup,
-recovery, or private-key handling before the relevant tests exist.
+No additional wallet-privacy feature is available merely because it is planned
+or evaluated in this unreleased post-`v29.4-roots.2` topic. The P2P and wallet
+reviews retained the existing published-baseline behavior rather than adding
+new hardening or backup features. Cross-feature coverage and catalog
+reconciliation are release-readiness work, not operator features. Any later
+proposal remains under review until it has an accepted implementation and
+tests.
 
 ## Consensus and provenance boundary
 
@@ -156,6 +188,9 @@ Roots does not ship or promise:
 - Network Watch, block/transaction feeds, or block/mempool visualizers;
 - Tor "pairing" credentials, proxy credentials, control-port secrets, or
   private-key sharing surfaces;
+- Tor endpoint sharing or a dedicated endpoint-sharing UI;
+- private-key sweeping, or broad or privacy-aware coin control and payment
+  history redesign;
 - the candidate's broad Knots common-maintenance, consensus/script, wallet, or
   documentation overlays merely because they occurred in historical source;
 - the discarded replay, frozen-state, generated-evidence, or promotion control
