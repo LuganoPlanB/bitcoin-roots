@@ -6,18 +6,18 @@ operator and local-policy work whose historical lineage includes Bitcoin Knots
 tree is not a list of shipped features.
 
 This page is the public inventory for Roots-specific work. The published
-`v29.4-roots.1` release is the baseline. This checkout is an unreleased
-post-`v29.4-roots.1` follow-on candidate: its accepted additions are identified
-below and must not be read as claims about that published release. Ordinary
-Bitcoin Core v29.4 functionality is documented in the built help and the
-manuals in this directory. The commands below describe the binary built from
-this tree; use `bitcoind -help` as the authority for the exact options in a
-given build.
+`v29.4-roots.2` release is the baseline. This checkout begins at that published
+release and is an unreleased post-`v29.4-roots.2` wallet-privacy topic; work
+added after the baseline must not be read as a claim about the published
+release. Ordinary Bitcoin Core v29.4 functionality is documented in the built
+help and the manuals in this directory. The commands below describe the binary
+built from this tree; use `bitcoind -help` as the authority for the exact
+options in a given build.
 
 ## Available in this checkout
 
-Unless marked as an unreleased follow-on, the items in this section were
-available in the published `v29.4-roots.1` baseline.
+Unless explicitly marked as unreleased post-`v29.4-roots.2` work, the items in
+this section were available in the published `v29.4-roots.2` baseline.
 
 ### Conservative, configurable local transaction policy
 
@@ -54,7 +54,7 @@ This is not a Network Watch or transaction/block activity feed.
 The follow-on review retained these existing bounds and their coverage; it did
 not add a separate P2P hardening feature or alter Bitcoin P2P wire behavior.
 
-### Focused peer-health monitoring (unreleased follow-on)
+### Focused peer-health monitoring (released in `v29.4-roots.2`)
 
 The existing Debug window's Peers tab provides a bounded, live view of current
 connections. Its sortable table shows connection age, direction, network,
@@ -65,9 +65,9 @@ connection type, current ping, and synchronization heights.
 This uses the node's existing peer-stat refresh and does not retain history or
 inspect transaction or block content. If optional node-state details cannot be
 read during a refresh, the details pane reports them as unavailable instead of
-showing values from an earlier peer. This Roots follow-on selection is covered
-by [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp); it adds no new
-network collector or monitoring application.
+showing values from an earlier peer. This Roots `v29.4-roots.2` feature is
+covered by [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp); it adds no
+new network collector or monitoring application.
 
 ### Wallet and signing hardening
 
@@ -86,14 +86,14 @@ legacy testing requires Berkeley DB 4.8.
 The follow-on review retained these existing wallet boundaries and their
 coverage; it did not add a new database, flush, or backup behavior.
 
-### Per-send Replace-By-Fee choice (unreleased follow-on)
+### Per-send Replace-By-Fee choice (released in `v29.4-roots.2`)
 
 The Send Coins dialog provides an explicit Replace-By-Fee (BIP-125) choice for
 each transaction. It starts with the wallet's `-walletrbf` preference, and the
 confirmation shows whether the prepared transaction signals replacement. This
 only signals a transaction's replaceability; it does not promise that a later
 replacement will be accepted by peers or their local policy. This Roots
-follow-on selection is covered by
+`v29.4-roots.2` feature is covered by
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
@@ -130,14 +130,13 @@ has been tested by the current checkout.
 ### Roots identity and desktop application
 
 The published baseline's daemon, command-line tools, and Qt application identify
-themselves as Bitcoin Roots `v29.4-roots.1`. The follow-on candidate is not a
-published release merely because it retains that build identity. The Qt
-application includes Roots branding and icons. In the receive-request dialog, a
-QR image can be saved as a PNG. On Windows GUI builds where taskbar progress is
-enabled, synchronization progress is reflected in the taskbar. The Qt source
-and tests are in
-[`src/qt/`](/src/qt/), including QR export coverage in
-[`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
+themselves as Bitcoin Roots `v29.4-roots.2`. This unreleased wallet-privacy
+topic is not a published release merely because it retains that build identity.
+The Qt application includes Roots branding and icons. In the receive-request
+dialog, a QR image can be saved as a PNG. On Windows GUI builds where taskbar
+progress is enabled, synchronization progress is reflected in the taskbar. The
+Qt source and tests are in [`src/qt/`](/src/qt/), including QR export coverage
+in [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
 
 The generated manuals and example configuration are available in
 [`doc/man/`](/doc/man/) and
@@ -162,12 +161,13 @@ in this checkout.
 
 ## Planned or under review
 
-No additional operator feature from this follow-on series is available merely
-because it was evaluated. The P2P and wallet reviews retained the existing
-published-baseline behavior rather than adding new hardening or backup features.
-Cross-feature coverage and catalog reconciliation are release-readiness work,
-not operator features. Any later proposal remains under review until it has an
-accepted implementation and tests.
+No additional wallet-privacy feature is available merely because it is planned
+or evaluated in this unreleased post-`v29.4-roots.2` topic. The P2P and wallet
+reviews retained the existing published-baseline behavior rather than adding
+new hardening or backup features. Cross-feature coverage and catalog
+reconciliation are release-readiness work, not operator features. Any later
+proposal remains under review until it has an accepted implementation and
+tests.
 
 ## Consensus and provenance boundary
 

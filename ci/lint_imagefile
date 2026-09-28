@@ -13,6 +13,7 @@ COPY ./ci/retry/retry /ci_retry
 COPY ./.python-version /.python-version
 COPY ./ci/lint/container-entrypoint.sh /entrypoint.sh
 COPY ./ci/lint/04_install.sh /install.sh
+COPY ./ci/test/apt.sh /ci/test/apt.sh
 COPY ./test/lint/test_runner /test/lint/test_runner
 
 RUN /install.sh && \
