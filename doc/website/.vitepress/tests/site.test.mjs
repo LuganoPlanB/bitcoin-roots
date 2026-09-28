@@ -138,15 +138,21 @@ test("the comparison is versioned and linked to primary sources", async () => {
   ]);
   const comparison = `${page}\n${table}`;
 
-  assert.match(comparison, /v31\.1/);
-  assert.match(comparison, /29\.3\.0\.roots20260507/);
+  assert.match(comparison, /v29\.4-roots\.2/);
+  assert.match(comparison, /Bitcoin Core direct base:[\s\S]*v29\.4/);
+  assert.match(comparison, /v29\.3\.knots20260507/);
   assert.match(comparison, /v29\.4\.1\.knots20260508/);
-  assert.match(comparison, /9 September 2026/);
+  assert.match(comparison, /28 September 2026/);
   assert.match(comparison, /github\.com\/bitcoin\/bitcoin/);
   assert.match(comparison, /github\.com\/LuganoPlanB\/bitcoin-roots/);
   assert.match(comparison, /github\.com\/bitcoinknots\/bitcoin/);
   assert.match(comparison, /BLAKE2b proof-of-work/);
   assert.match(comparison, /800 kWU/);
+  assert.match(comparison, /Private-key sweeping/);
+  assert.match(comparison, /Advanced privacy-aware coin control/);
+  assert.match(comparison, /getmempoolstats RPC/);
+  assert.match(comparison, /Monotonic process-uptime reporting/);
+  assert.match(comparison, /Windows taskbar synchronization progress/);
 });
 
 test("the comparison table is semantic and keyboard-scrollable", async () => {
@@ -159,4 +165,10 @@ test("the comparison table is semantic and keyboard-scrollable", async () => {
   assert.match(table, /tabindex="0"/);
   assert.match(table, /<th scope="col">/);
   assert.match(table, /<th scope="row">/);
+  assert.match(table, /<th scope="rowgroup" colspan="4">/);
+
+  const rootsColumn = table.indexOf(">Bitcoin Roots<");
+  const knotsColumn = table.indexOf(">Bitcoin Knots<");
+  const coreColumn = table.indexOf(">Bitcoin Core<");
+  assert.ok(rootsColumn < knotsColumn && knotsColumn < coreColumn, "expected Roots, Knots, Core column order");
 });

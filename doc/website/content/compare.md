@@ -14,39 +14,62 @@ head:
 # Compare Bitcoin node implementations
 
 Bitcoin Core, Bitcoin Roots, and Bitcoin Knots share a common code lineage, but
-they may differ in policy, configuration, release process, and consensus
-behaviour.
+they differ in policy, configuration, release process, wallet tools, and, for
+some releases, consensus behaviour.
 
 This page does not rank the projects. It identifies differences that matter when
 choosing which software and network rules to run.
 
 ## Versions reviewed
 
-- **Bitcoin Core:** [v31.1](https://github.com/bitcoin/bitcoin/releases/tag/v31.1)
-- **Bitcoin Roots:** [29.3.0.roots20260507 at d18c044e6a](https://github.com/LuganoPlanB/bitcoin-roots/commit/d18c044e6a30da77ef5bee13423b6e5db6e6bc01)
-- **Bitcoin Knots:** [v29.4.1.knots20260508](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
-- **Date last verified:** 9 September 2026
+- **Bitcoin Roots:** [v29.4-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2)
+- **Bitcoin Knots feature lineage:** [v29.3.knots20260507](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507)
+- **Bitcoin Core direct base:** [v29.4](https://github.com/bitcoin/bitcoin/releases/tag/v29.4)
+- **Current Knots consensus note:** [v29.4.1.knots20260508](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
+- **Date last verified:** 28 September 2026
 
-The initial Bitcoin Roots commit records <code>29.3.knots20260507</code> as its
-Knots lineage reference. Its direct parent carries
-[<code>29.3.knots20250903</code> package metadata](https://github.com/LuganoPlanB/bitcoin-roots/blob/99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b/CMakeLists.txt),
-while the node-source tree closely matches the later Knots release line apart
-from release and generated artifacts. The reference should therefore not be
-interpreted as an exact Git parent.
+Bitcoin Roots v29.4-roots.2 starts directly from Bitcoin Core v29.4 and applies
+a reviewed Roots patch. The patch preserves selected behaviour whose historical
+lineage includes Bitcoin Knots v29.3.knots20260507; Knots is not an upstream
+dependency and its full feature set is not imported. The table compares the
+matched v29.4 Core base and the Knots lineage release for feature presence. It
+mentions Knots v29.4.1 separately where that later release changes consensus.
 
 ## Comparison
 
 <ComparisonTable />
 
+The table is a feature inventory, not a claim that similarly named controls have
+identical defaults or implementation details. “Included” means the reviewed
+version exposes the described capability. For exact defaults and accepted
+values, use that version's built-in help. It lists every operator-facing
+Knots-lineage capability maintained in the released Roots feature catalog;
+internal wallet, build, and platform hardening is grouped rather than presented
+as dozens of indistinguishable implementation rows.
+
+### Wallet scope
+
+All three reviewed code lines include wallet-side coin selection and the Qt coin
+control dialog. Bitcoin Roots v29.4-roots.2 additionally makes the effective
+per-send RBF choice explicit and initializes it from the wallet default.
+
+Private-key sweeping is deliberately **not** included in v29.4-roots.2. The
+planned Roots privacy-aware coin-control work is also **not** included. That
+future work is not GUI-only: the plan requires wallet-owned data and transaction
+contracts, with Qt presenting the choices and their consequences. Until reviewed
+code and tests ship in a later release, neither item is a Roots feature.
+
 ### Sources
 
 The table was checked against these primary sources:
 
-- [Bitcoin Core v31.1 release](https://github.com/bitcoin/bitcoin/releases/tag/v31.1)
-  and [source tree](https://github.com/bitcoin/bitcoin/tree/v31.1)
-- [Bitcoin Roots current reviewed commit](https://github.com/LuganoPlanB/bitcoin-roots/commit/d18c044e6a30da77ef5bee13423b6e5db6e6bc01),
-  [project README](https://github.com/LuganoPlanB/bitcoin-roots/blob/d18c044e6a30da77ef5bee13423b6e5db6e6bc01/README.md),
-  and [version configuration](https://github.com/LuganoPlanB/bitcoin-roots/blob/d18c044e6a30da77ef5bee13423b6e5db6e6bc01/CMakeLists.txt)
+- [Bitcoin Roots v29.4-roots.2 release](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2),
+  [feature catalog](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.2/doc/roots-features.md),
+  and [source tree](https://github.com/LuganoPlanB/bitcoin-roots/tree/v29.4-roots.2)
+- [Bitcoin Core v29.4 release](https://github.com/bitcoin/bitcoin/releases/tag/v29.4)
+  and [source tree](https://github.com/bitcoin/bitcoin/tree/v29.4)
+- [Bitcoin Knots v29.3.knots20260507 release](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507)
+  and [source tree](https://github.com/bitcoinknots/bitcoin/tree/v29.3.knots20260507)
 - [Bitcoin Roots initial lineage commit](https://github.com/LuganoPlanB/bitcoin-roots/commit/07580114c35e870e242621316ec8cd051a938787)
   and [its direct parent version metadata](https://github.com/LuganoPlanB/bitcoin-roots/blob/99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b/CMakeLists.txt)
 - [Bitcoin Knots v29.4.1.knots20260508 release](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
@@ -71,7 +94,7 @@ inherited from the Bitcoin Knots lineage.
 
 An alternative implementation with additional policy and configuration choices.
 Version <code>v29.4.1.knots20260508</code> is not consensus-compatible with
-Bitcoin Core <code>v31.1</code>. Operators should examine the consensus rules of
+Bitcoin Core <code>v29.4</code>. Operators should examine the consensus rules of
 the specific release before upgrading or deploying it.
 
 ## Frequently asked questions
@@ -83,8 +106,9 @@ and Bitcoin Core-compatible consensus. It does not introduce a new token.
 
 ### Is Bitcoin Roots a network fork?
 
-Bitcoin Roots is a source-code fork from the Bitcoin Knots lineage. Its stated
-purpose is not to create a competing Bitcoin chain.
+Bitcoin Roots is a source-code fork built directly on Bitcoin Core, with
+selected behavior retained from the Bitcoin Knots lineage. Its stated purpose
+is not to create a competing Bitcoin chain.
 
 ### Does stricter policy change Bitcoin consensus?
 

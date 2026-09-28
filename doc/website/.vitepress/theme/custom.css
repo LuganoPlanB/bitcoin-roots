@@ -1091,7 +1091,7 @@ body {
 
 .roots-comparison-table th,
 .roots-comparison-table td {
-  width: 24%;
+  width: 26%;
   min-width: 0;
   padding: 1rem;
   border: 0;
@@ -1102,7 +1102,7 @@ body {
 
 .roots-comparison-table th:first-child,
 .roots-comparison-table td:first-child {
-  width: 28%;
+  width: 22%;
   border-left: 0;
 }
 
@@ -1135,8 +1135,30 @@ body {
   text-align: left;
 }
 
-.roots-comparison-table tbody tr:nth-child(even) td {
+.roots-comparison-table tbody + tbody .roots-comparison-table__section th {
+  border-top: 1px solid color-mix(in srgb, var(--planb-color-accent-strong) 42%, transparent);
+}
+
+.roots-comparison-table .roots-comparison-table__section th {
+  position: static;
+  padding: 0.7rem 1rem;
+  background: color-mix(in srgb, var(--planb-color-accent) 14%, var(--planb-color-panel-strong));
+  color: var(--planb-color-text);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.roots-comparison-table tbody tr:not(.roots-comparison-table__section) td:nth-child(2) {
+  background: color-mix(in srgb, var(--planb-color-accent) 7%, transparent);
+}
+
+.roots-comparison-table tbody tr:nth-child(odd):not(.roots-comparison-table__section) td {
   background: color-mix(in srgb, var(--planb-color-canvas-alt) 68%, transparent);
+}
+
+.roots-comparison-table tbody tr:nth-child(odd):not(.roots-comparison-table__section) td:nth-child(2) {
+  background: color-mix(in srgb, var(--planb-color-accent) 10%, var(--planb-color-canvas-alt));
 }
 
 @media (max-width: 960px) {

@@ -1,76 +1,192 @@
 <script setup lang="ts">
-const rows = [
+const sections = [
   {
-    question: "Primary role",
-    core: "Reference Bitcoin full-node implementation",
-    roots: "Bitcoin Core-compatible full node with selected conservative Bitcoin Knots policy controls",
-    knots: "Enhanced node and wallet software with additional policy controls and, in this release, independent consensus rules",
+    title: "Project and consensus",
+    rows: [
+      {
+        feature: "Role and lineage",
+        roots: "Bitcoin Core v29.4 plus a reviewable Roots patch carrying selected Knots-lineage behavior",
+        knots: "A separate Bitcoin Core-derived implementation with a broader feature set",
+        core: "The upstream reference implementation and the direct Roots base",
+      },
+      {
+        feature: "Bitcoin Core-compatible consensus",
+        roots: "Yes. Required for every Roots release.",
+        knots: "Yes in the reviewed 29.3 lineage; no in v29.4.1.knots20260508",
+        core: "Yes. Reference behavior.",
+      },
+      {
+        feature: "RDTS / BIP-110 enforcement",
+        roots: "Excluded",
+        knots: "Not enforced by the reviewed 29.3 lineage; enforced by v29.4.1",
+        core: "Not included",
+      },
+      {
+        feature: "Project-specific consensus changes",
+        roots: "Excluded",
+        knots: "Present in v29.4.1, including BLAKE2b proof-of-work and a temporary 800 kWU limit",
+        core: "Not included",
+      },
+    ],
   },
   {
-    question: "Source lineage",
-    core: "Primary upstream",
-    roots: "Based on Bitcoin Core, with selected features retained from the Bitcoin Knots lineage",
-    knots: "Derived from Bitcoin Core",
+    title: "Transaction and mining policy",
+    rows: [
+      {
+        feature: "Embedded-data relay controls (-datacarrier, -datacarriersize)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Configurable embedded-data cost (-datacarriercost)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Extended replacement policy modes (-mempoolreplacement)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Standard Core replacement policy; no equivalent mode selector",
+      },
+      {
+        feature: "Coin-age and maturity relay filters (-minrelaycoinblocks, -minrelaymaturity)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Sub-dust effective-fee penalty (-subdustfeepenalty)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Bare multisig policy toggle (-permitbaremultisig)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Mining weight and minimum-fee controls (-blockmaxweight, -blockmintxfee)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Coin-age priority mining reserve (-blockprioritysize)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+    ],
   },
   {
-    question: "Bitcoin network and chain",
-    core: "Bitcoin",
-    roots: "Bitcoin",
-    knots: "Uses a BLAKE2b proof-of-work chain after its 2026 hard fork, which is not the Bitcoin Core-compatible chain",
+    title: "Network resources and operator tools",
+    rows: [
+      {
+        feature: "Compact-block extra-transaction count bound (-blockreconstructionextratxn)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Compact-block reconstruction memory bound (-blockreconstructionextratxnsize)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Orphan-transaction cap (-maxorphantx)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Upload target and peer permissions (-maxuploadtarget, -whitebind, -whitelist)",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Collected mempool samples (getmempoolstats RPC)",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Monotonic process-uptime reporting",
+        roots: "Included from the Knots lineage",
+        knots: "Included",
+        core: "The uptime RPC exists; v29.4 does not use the retained monotonic uptime source",
+      },
+      {
+        feature: "RAM detection, memory-pressure response, and advisory I/O priority",
+        roots: "Selected safeguards retained from the Knots lineage",
+        knots: "Included",
+        core: "No equivalent combined facility in v29.4",
+      },
+      {
+        feature: "GUI peer-health view",
+        roots: "Bounded live peer table and details; expanded and hardened in v29.4-roots.2",
+        knots: "Included, with additional Knots monitoring surfaces",
+        core: "Standard peer table and details",
+      },
+    ],
   },
   {
-    question: "Consensus compatibility with current Bitcoin Core",
-    core: "Native reference",
-    roots: "Yes. This is a project release requirement.",
-    knots: "No for v29.4.1.knots20260508",
-  },
-  {
-    question: "RDTS/BIP-110 enforcement",
-    core: "No",
-    roots: "No",
-    knots: "Yes. The reviewed release activates RDTS at its proof-of-work change.",
-  },
-  {
-    question: "Proof-of-work rules",
-    core: "Bitcoin SHA-256d proof of work",
-    roots: "Same as Bitcoin Core",
-    knots: "BLAKE2b after the release’s hard-fork activation",
-  },
-  {
-    question: "Transaction relay policy",
-    core: "Bitcoin Core defaults and configuration",
-    roots: "Conservative and configurable",
-    knots: "Additional configurable filters; rejecttokens is enabled by default in the reviewed release",
-  },
-  {
-    question: "Mempool policy",
-    core: "Bitcoin Core policy",
-    roots: "Conservative and configurable",
-    knots: "Bitcoin Core-derived policy with additional Bitcoin Knots options",
-  },
-  {
-    question: "Resource controls",
-    core: "Standard Bitcoin Core controls",
-    roots: "Bitcoin Core controls plus selected retained controls",
-    knots: "Bitcoin Core-derived controls plus additional Bitcoin Knots options",
-  },
-  {
-    question: "Project-specific consensus changes",
-    core: "None relative to itself",
-    roots: "None intended relative to Bitcoin Core",
-    knots: "The reviewed release includes BLAKE2b proof of work, RDTS activation, an 800 kWU temporary block-weight limit, and other consensus changes",
-  },
-  {
-    question: "Relationship to Bitcoin Core releases",
-    core: "Upstream",
-    roots: "Suitable changes are reviewed and incorporated per release",
-    knots: "Derived from Bitcoin Core, with an independent release line and project-specific changes",
-  },
-  {
-    question: "New coin or token",
-    core: "No",
-    roots: "No",
-    knots: "No new token is described, but the reviewed release follows a consensus-incompatible proof-of-work chain",
+    title: "Wallet and desktop",
+    rows: [
+      {
+        feature: "Descriptor wallet and basic GUI coin control",
+        roots: "Included through the Core base",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Per-send Replace-By-Fee choice",
+        roots: "Included; follows the wallet default and confirms the transaction's effective signaling",
+        knots: "Included in the send dialog",
+        core: "Included in the send dialog; checked by default in v29.4",
+      },
+      {
+        feature: "Selected wallet database and signing hardening",
+        roots: "Selected Knots-lineage fixes retained without changing wallet formats",
+        knots: "Broader Knots wallet maintenance",
+        core: "Core v29.4 wallet behavior",
+      },
+      {
+        feature: "Private-key sweeping",
+        roots: "Excluded from v29.4-roots.2; future work only",
+        knots: "Included as sweepprivkeys RPC and a GUI dialog",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Advanced privacy-aware coin control",
+        roots: "Not shipped. Planned work spans wallet-side data and transaction contracts plus the Qt workflow.",
+        knots: "Basic coin control plus Knots-specific wallet and GUI behavior; not the planned Roots contract",
+        core: "Basic wallet coin selection and GUI coin control",
+      },
+      {
+        feature: "QR receive-request image export",
+        roots: "Included",
+        knots: "Included",
+        core: "Included",
+      },
+      {
+        feature: "Windows taskbar synchronization progress",
+        roots: "Included when the Windows GUI build enables taskbar progress",
+        knots: "Included",
+        core: "Not included in v29.4",
+      },
+      {
+        feature: "Selected build and dependency portability",
+        roots: "Qt 5 or Qt 6 selection plus retained QR, external-signer, Tor, and platform integration support",
+        knots: "Included in the broader Knots build matrix",
+        core: "Core v29.4 build and optional dependency support",
+      },
+    ],
   },
 ] as const;
 </script>
@@ -79,31 +195,34 @@ const rows = [
   <div
     class="roots-comparison-table"
     role="region"
-    aria-label="Comparison of Bitcoin Core, Bitcoin Roots, and Bitcoin Knots"
+    aria-label="Feature comparison of Bitcoin Roots, Bitcoin Knots, and Bitcoin Core"
     tabindex="0"
   >
     <p class="roots-comparison-table__hint">Scroll horizontally to compare all three projects.</p>
     <table>
       <thead>
         <tr>
-          <th scope="col">Question</th>
+          <th scope="col">Feature</th>
           <th scope="col">
-            <a href="https://github.com/bitcoin/bitcoin/releases/tag/v31.1">Bitcoin Core</a>
+            <a href="https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2">Bitcoin Roots</a>
           </th>
           <th scope="col">
-            <a href="https://github.com/LuganoPlanB/bitcoin-roots/commit/d18c044e6a30da77ef5bee13423b6e5db6e6bc01">Bitcoin Roots</a>
+            <a href="https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507">Bitcoin Knots</a>
           </th>
           <th scope="col">
-            <a href="https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508">Bitcoin Knots</a>
+            <a href="https://github.com/bitcoin/bitcoin/releases/tag/v29.4">Bitcoin Core</a>
           </th>
         </tr>
       </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.question">
-          <th scope="row">{{ row.question }}</th>
-          <td>{{ row.core }}</td>
+      <tbody v-for="section in sections" :key="section.title">
+        <tr class="roots-comparison-table__section">
+          <th scope="rowgroup" colspan="4">{{ section.title }}</th>
+        </tr>
+        <tr v-for="row in section.rows" :key="row.feature">
+          <th scope="row">{{ row.feature }}</th>
           <td>{{ row.roots }}</td>
           <td>{{ row.knots }}</td>
+          <td>{{ row.core }}</td>
         </tr>
       </tbody>
     </table>
