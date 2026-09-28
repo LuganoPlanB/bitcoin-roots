@@ -1,0 +1,82 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Reusable sanitizer coverage
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Immutable commit SHA to test
+        required: true
+        type: string
+      name:
+        description: Human-readable sanitizer check name
+        required: true
+        type: string
+      file-env:
+        description: CI environment file for this sanitizer configuration
+        required: true
+        type: string
+      timeout:
+        description: Job timeout in minutes
+        required: true
+        type: number
+      cache-save:
+        description: Whether this trusted run may save compiler-cache entries
+        required: true
+        type: boolean
+      enable-usdt:
+        description: Enable the ASan-only USDT coverage configuration
+        required: true
+        type: boolean
+      configure-aslr:
+        description: Lower ASLR entropy for sanitizer runtimes that require it
+        required: true
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sanitizer:
+    name: ${{ inputs.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout }}
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ${{ inputs.file-env }}
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ inputs.cache-save }}
+      - name: Restore caches
+        uses: ./.github/actions/restore-caches
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Enable USDT coverage
+        if: inputs.enable-usdt
+        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+      - name: Set mmap_rnd_bits for sanitizer runtime
+        if: inputs.configure-aslr
+        # Prevent crashes due to high ASLR entropy.
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - name: Run sanitizer coverage
+        run: ./ci/test_run_all.sh

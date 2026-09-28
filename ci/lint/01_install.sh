@@ -10,9 +10,12 @@ set -o errexit -o pipefail -o xtrace
 
 export CI_RETRY_EXE="/ci_retry --"
 
+# shellcheck source=/ci/test/apt.sh
+source /ci/test/apt.sh
+
 pushd "/"
 
-${CI_RETRY_EXE} apt-get update
+ci_retry_apt_update
 # Lint dependencies:
 # - cargo (used to run the lint tests)
 # - curl/xz-utils (to install shellcheck)

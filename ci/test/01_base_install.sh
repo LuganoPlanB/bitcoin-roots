@@ -8,6 +8,9 @@ export LC_ALL=C.UTF-8
 
 set -o errexit -o pipefail -o xtrace
 
+# shellcheck source=apt.sh
+source "$(dirname "${BASH_SOURCE[0]}")/apt.sh"
+
 CFG_DONE="${BASE_ROOT_DIR}/ci.base-install-done"  # Use a global setting to remember whether this script ran to avoid running it twice
 
 if [ "$( cat "${CFG_DONE}" || true )" == "done" ]; then
@@ -22,7 +25,7 @@ if [ -n "$DPKG_ADD_ARCH" ]; then
 fi
 
 if [ -n "${APT_LLVM_V}" ]; then
-  ${CI_RETRY_EXE} apt-get -o APT::Update::Error-Mode=any update
+  ci_retry_apt_update
   ${CI_RETRY_EXE} apt-get install curl -y
   curl "https://apt.llvm.org/llvm-snapshot.gpg.key" | tee "/etc/apt/trusted.gpg.d/apt.llvm.org.asc"
   (
@@ -40,7 +43,7 @@ elif [ "$CI_OS_NAME" != "macos" ]; then
   if [[ -n "${APPEND_APT_SOURCES_LIST}" ]]; then
     echo "${APPEND_APT_SOURCES_LIST}" >> /etc/apt/sources.list
   fi
-  ${CI_RETRY_EXE} apt-get -o APT::Update::Error-Mode=any update
+  ci_retry_apt_update
   ${CI_RETRY_EXE} bash -c "apt-get install --no-install-recommends --no-upgrade -y $PACKAGES $CI_BASE_PACKAGES"
 fi
 
