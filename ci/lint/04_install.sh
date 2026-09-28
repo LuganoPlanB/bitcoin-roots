@@ -8,9 +8,12 @@ export LC_ALL=C
 
 export CI_RETRY_EXE="/ci_retry --"
 
+# shellcheck source=/ci/test/apt.sh
+source /ci/test/apt.sh
+
 pushd "/"
 
-${CI_RETRY_EXE} apt-get update
+ci_retry_apt_update
 # Lint dependencies:
 # - curl/xz-utils (to install shellcheck)
 # - git (used in many lint scripts)
