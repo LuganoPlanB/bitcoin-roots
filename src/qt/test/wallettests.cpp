@@ -26,6 +26,7 @@
 #include <qt/walletmodel.h>
 #include <script/solver.h>
 #include <test/util/setup_common.h>
+#include <util/rbf.h>
 #include <validation.h>
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
@@ -76,7 +77,7 @@ void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_ty
 
 //! Send coins to address and return txid.
 uint256 SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDestination& address, CAmount amount, bool rbf,
-                  QMessageBox::StandardButton confirm_type = QMessageBox::Yes)
+                  QMessageBox::StandardButton confirm_type = QMessageBox::Yes, QString* confirmation_text = nullptr)
 {
     QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
     SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
@@ -90,7 +91,7 @@ uint256 SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDe
     boost::signals2::scoped_connection c(wallet.NotifyTransactionChanged.connect([&txid](const uint256& hash, ChangeType status) {
         if (status == CT_NEW) txid = hash;
     }));
-    ConfirmSend(/*text=*/nullptr, confirm_type);
+    ConfirmSend(confirmation_text, confirm_type);
     bool invoked = QMetaObject::invokeMethod(&sendCoinsDialog, "sendButtonClicked", Q_ARG(bool, false));
     assert(invoked);
     return txid;
@@ -273,6 +274,8 @@ public:
 //     QT_QPA_PLATFORM=cocoa   build/bin/test_bitcoin-qt  # macOS
 void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 {
+    wallet->m_signal_rbf = false;
+
     // Create widgets for sending coins and listing transactions.
     std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
     MiniGUI mini_gui(node, platformStyle.get());
@@ -292,19 +295,48 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // Send two transactions, and verify they are added to transaction list.
     TransactionTableModel* transactionTableModel = walletModel.getTransactionTableModel();
     QCOMPARE(transactionTableModel->rowCount({}), 105);
-    uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false);
-    uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true);
+    QCheckBox* rbf_checkbox = sendCoinsDialog.findChild<QCheckBox*>("optInRBF");
+    QVERIFY(rbf_checkbox);
+    QCOMPARE(rbf_checkbox->text(), "Enable Replace-By-Fee");
+    QVERIFY(rbf_checkbox->focusPolicy() != Qt::NoFocus);
+    QVERIFY(!rbf_checkbox->isChecked());
+
+    QString no_rbf_confirmation;
+    uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Yes, &no_rbf_confirmation);
+    QString rbf_confirmation;
+    uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true, QMessageBox::Yes, &rbf_confirmation);
+    {
+        LOCK(wallet->cs_wallet);
+        QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid1).tx));
+        QVERIFY(SignalsOptInRBF(*wallet->mapWallet.at(txid2).tx));
+    }
+    QVERIFY(no_rbf_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
+    QVERIFY(rbf_confirmation.contains("signals Replace-By-Fee (BIP-125)"));
+
+    wallet->m_signal_rbf = true;
+    SendCoinsDialog default_rbf_dialog(platformStyle.get());
+    default_rbf_dialog.setModel(&walletModel);
+    QVERIFY(default_rbf_dialog.findChild<QCheckBox*>("optInRBF")->isChecked());
+    QString default_on_override_confirmation;
+    uint256 txid3 = SendCoins(*wallet.get(), default_rbf_dialog, PKHash(), COIN, /*rbf=*/false, QMessageBox::Yes, &default_on_override_confirmation);
+    {
+        LOCK(wallet->cs_wallet);
+        QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid3).tx));
+    }
+    QVERIFY(default_on_override_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
     // Transaction table model updates on a QueuedConnection, so process events to ensure it's updated.
     qApp->processEvents();
-    QCOMPARE(transactionTableModel->rowCount({}), 107);
+    QCOMPARE(transactionTableModel->rowCount({}), 108);
     QVERIFY(FindTx(*transactionTableModel, txid1).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
+    QVERIFY(FindTx(*transactionTableModel, txid3).isValid());
 
     // Call bumpfee. Test disabled, canceled, enabled, then failing cases.
     BumpFee(transactionView, txid1, /*expectDisabled=*/true, /*expectError=*/"not BIP 125 replaceable", /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/true, /*expectError=*/"already bumped", /*cancel=*/false);
+    BumpFee(transactionView, txid3, /*expectDisabled=*/true, /*expectError=*/"not BIP 125 replaceable", /*cancel=*/false);
 
     // Check current balance on OverviewPage
     OverviewPage overviewPage(platformStyle.get());
@@ -443,6 +475,34 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
     PartiallySignedTransaction psbt;
     std::string err;
     QVERIFY(DecodeRawPSBT(psbt, MakeByteSpan(*decoded_psbt), err));
+    QVERIFY(!SignalsOptInRBF(CTransaction{*psbt.tx}));
+
+    SendCoinsDialog rbf_psbt_dialog(platformStyle.get());
+    rbf_psbt_dialog.setModel(&walletModel);
+    rbf_psbt_dialog.getCoinControl()->destChange = GetDestinationForKey(test.coinbaseKey.GetPubKey(), OutputType::LEGACY);
+    QTimer rbf_timer;
+    rbf_timer.setInterval(500);
+    QObject::connect(&rbf_timer, &QTimer::timeout, [&](){
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (widget->inherits("QMessageBox") && widget->objectName().compare("psbt_copied_message") == 0) {
+                QMessageBox* dialog = qobject_cast<QMessageBox*>(widget);
+                QAbstractButton* button = dialog->button(QMessageBox::Discard);
+                button->setEnabled(true);
+                button->click();
+                rbf_timer.stop();
+                break;
+            }
+        }
+    });
+    rbf_timer.start(500);
+
+    SendCoins(*wallet.get(), rbf_psbt_dialog, PKHash(), 5 * COIN, /*rbf=*/true, QMessageBox::Save);
+    decoded_psbt = DecodeBase64(QApplication::clipboard()->text().toStdString());
+    QVERIFY(decoded_psbt);
+    psbt = {};
+    err.clear();
+    QVERIFY(DecodeRawPSBT(psbt, MakeByteSpan(*decoded_psbt), err));
+    QVERIFY(SignalsOptInRBF(CTransaction{*psbt.tx}));
 }
 
 void TestGUI(interfaces::Node& node)

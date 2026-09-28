@@ -46,6 +46,7 @@ jobs:
       run: ${{ steps.decision.outputs.run }}
       reason: ${{ steps.decision.outputs.reason }}
       linux-matrix: ${{ steps.matrix.outputs.value }}
+      sanitizer-matrix: ${{ steps.matrix.outputs.sanitizers }}
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -100,12 +101,13 @@ jobs:
           SUITE: ${{ inputs.suite || 'all' }}
         run: |
           set -Eeuo pipefail
-          all='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240},{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
+          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
+          sanitizers='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}'
           case "${SUITE}" in
-            all) value="${all}" ;;
-            tsan) value='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240}]}' ;;
-            msan) value='{"include":[{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240}]}' ;;
-            sanitizers) value='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240}]}' ;;
+            all) value="${all}"; sanitizer_value="${sanitizers}" ;;
+            tsan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true}]}' ;;
+            msan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}' ;;
+            sanitizers) value='{"include":[]}'; sanitizer_value="${sanitizers}" ;;
             tidy) value='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360}]}' ;;
             i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240}]}' ;;
             previous-releases) value='{"include":[{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300}]}' ;;
@@ -113,7 +115,9 @@ jobs:
             fuzz|macos-fuzz|windows-fuzz) value='{"include":[]}' ;;
             *) echo "Unsupported suite: ${SUITE}" >&2; exit 1 ;;
           esac
+          sanitizer_value=${sanitizer_value:-'{"include":[]}'}
           echo "value=${value}" >> "${GITHUB_OUTPUT}"
+          echo "sanitizers=${sanitizer_value}" >> "${GITHUB_OUTPUT}"
 
   linux-assurance:
     name: ${{ matrix.name }}
@@ -151,12 +155,25 @@ jobs:
         uses: ./.github/actions/restore-caches
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
-      - name: Set mmap_rnd_bits for sanitizer runtime
-        if: matrix.file-env == './ci/test/00_setup_env_native_tsan.sh' || matrix.file-env == './ci/test/00_setup_env_native_msan.sh'
-        # Prevent crashes due to high ASLR entropy.
-        run: sudo sysctl -w vm.mmap_rnd_bits=28
       - name: Run assurance suite
         run: ./ci/test_run_all.sh
+
+  sanitizers:
+    name: ${{ matrix.name }}
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.gate.outputs.sanitizer-matrix) }}
+    uses: ./.github/workflows/reusable-sanitizer.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+      name: ${{ matrix.name }}
+      file-env: ${{ matrix.file-env }}
+      timeout: ${{ matrix.timeout }}
+      cache-save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      enable-usdt: false
+      configure-aslr: ${{ matrix.configure-aslr }}
 
   linux-fuzz:
     name: Linux native full fuzz corpus

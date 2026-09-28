@@ -18,12 +18,15 @@
 
 #include <QAction>
 #include <QColor>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPixmap>
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
+#include <QSortFilterProxyModel>
 #include <QString>
+#include <QTableView>
 #include <QTest>
 #include <QTextEdit>
 #include <QtGlobal>
@@ -52,6 +55,60 @@ void TestRpcCommand(RPCConsole* console)
     const QString output = messagesWidget->toPlainText();
     const QString pattern = QStringLiteral("\"chain\": \"(\\w+)\"");
     QCOMPARE(FindInConsole(output, pattern), QString("regtest"));
+}
+
+void TestPeerRefreshState(RPCConsole* console)
+{
+    auto* peer_widget = console->findChild<QTableView*>("peerWidget");
+    QVERIFY(peer_widget);
+    auto* peer_proxy = qobject_cast<QSortFilterProxyModel*>(peer_widget->model());
+    QVERIFY(peer_proxy);
+    auto* peer_model = qobject_cast<PeerTableModel*>(peer_proxy->sourceModel());
+    QVERIFY(peer_model);
+    QCOMPARE(peer_model->rowCount(), 0);
+
+    QSignalSpy data_changed_spy(peer_model, &QAbstractItemModel::dataChanged);
+    QVERIFY(data_changed_spy.isValid());
+    peer_model->refresh();
+    QCOMPARE(data_changed_spy.count(), 0);
+
+    const auto set_label = [console](const char* name) {
+        QLabel* label = console->findChild<QLabel*>(name);
+        if (label) label->setText(QStringLiteral("stale"));
+        return label;
+    };
+    QLabel* time_offset = set_label("timeoffset");
+    QLabel* services = set_label("peerServices");
+    QLabel* sync_height = set_label("peerSyncHeight");
+    QLabel* common_height = set_label("peerCommonHeight");
+    QLabel* starting_height = set_label("peerHeight");
+    QLabel* ping_wait = set_label("peerPingWait");
+    QLabel* addr_relay = set_label("peerAddrRelayEnabled");
+    QLabel* addr_processed = set_label("peerAddrProcessed");
+    QLabel* addr_rate_limited = set_label("peerAddrRateLimited");
+    QLabel* relay_txs = set_label("peerRelayTxes");
+
+    QVERIFY(time_offset);
+    QVERIFY(services);
+    QVERIFY(sync_height);
+    QVERIFY(common_height);
+    QVERIFY(starting_height);
+    QVERIFY(ping_wait);
+    QVERIFY(addr_relay);
+    QVERIFY(addr_processed);
+    QVERIFY(addr_rate_limited);
+    QVERIFY(relay_txs);
+    QVERIFY(QMetaObject::invokeMethod(console, "resetPeerStateStats"));
+    QCOMPARE(time_offset->text(), QStringLiteral("N/A"));
+    QCOMPARE(services->text(), QStringLiteral("N/A"));
+    QCOMPARE(sync_height->text(), QStringLiteral("Unknown"));
+    QCOMPARE(common_height->text(), QStringLiteral("Unknown"));
+    QCOMPARE(starting_height->text(), QStringLiteral("Unknown"));
+    QCOMPARE(ping_wait->text(), QStringLiteral("N/A"));
+    QCOMPARE(addr_relay->text(), QStringLiteral("N/A"));
+    QCOMPARE(addr_processed->text(), QStringLiteral("N/A"));
+    QCOMPARE(addr_rate_limited->text(), QStringLiteral("N/A"));
+    QCOMPARE(relay_txs->text(), QStringLiteral("N/A"));
 }
 
 void TestQrQuietZone()
@@ -128,6 +185,7 @@ void AppTests::consoleTests(RPCConsole* console)
 {
     HandleCallback callback{"consoleTests", *this};
     TestRpcCommand(console);
+    TestPeerRefreshState(console);
 }
 
 //! Destructor to shut down after the last expected callback completes.
