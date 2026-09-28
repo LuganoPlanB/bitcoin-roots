@@ -67,7 +67,7 @@ util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optst
         optstr.remove_prefix(pos + 1);
     }
 
-    if (optstr.rfind("target:", 0) == 0) {
+    if (optstr.starts_with("target:")) {
         const auto val = ToIntegral<uint16_t>(optstr.substr(7));
         if (!val) {
             return util::Error{_("failed to parse target block count")};
@@ -79,7 +79,7 @@ util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optst
             return util::Error{strprintf(_("target can only be at most %s blocks"), max_fee_estimate_blocks)};
         }
         return std::pair<int32_t, int>(-*val, multiplier);
-    } else if (optstr.rfind("mempool:", 0) == 0) {
+    } else if (optstr.starts_with("mempool:")) {
         const auto val = ToIntegral<int32_t>(optstr.substr(8));
         if (!val) {
             return util::Error{_("failed to parse mempool position")};
