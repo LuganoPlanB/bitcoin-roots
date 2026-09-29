@@ -1,450 +1,386 @@
 Contributing to Bitcoin Roots
 =============================
 
-The Bitcoin Roots project operates an open contributor model where anyone is
-welcome to contribute towards development in the form of peer review, testing
-and patches. This document explains the practical process and guidelines for
-contributing.
+Bitcoin Roots welcomes code, review, testing, documentation, and release
+engineering contributions. This guide explains how a contribution fits the
+Roots maintenance model. General coding, build, and test requirements are in
+the [developer notes](doc/developer-notes.md); the exact maintainer commands and
+release controls are in the
+[Roots maintainer workflow](contrib/roots/README.md).
 
-First, in terms of structure, there is no particular concept of "Bitcoin Roots
-developers" in the sense of privileged people. Open source often naturally
-revolves around a meritocracy where contributors earn trust from the developer
-community over time. Nevertheless, some hierarchy is necessary for practical
-purposes. As such, there are repository maintainers who are responsible for
-merging pull requests, the [release cycle](/doc/release-process.md), and
-moderation.
+Project boundaries
+------------------
 
-Getting Started
+Bitcoin Roots is a small, reviewable series of semantic changes carried on top
+of Bitcoin Core. Bitcoin Knots records the lineage of selected Roots features;
+it is not the Git base, a build dependency, or a source of consensus rules.
+
+Every contribution must preserve these boundaries:
+
+* Bitcoin Roots remains compatible with Bitcoin Core consensus.
+* Conservative transaction relay, mempool, and mining-template behavior is
+  local policy. A policy-rejected transaction may still be consensus-valid,
+  and a valid block containing it must remain acceptable.
+* Roots does not enforce RDTS/BIP110 consensus rules.
+* Git commits are the source of truth for the Roots patch. Exported patch files,
+  release archives, reports, and integration branches are derived artifacts.
+* Consensus, validation, serialization, wallet, networking, and cryptographic
+  changes require the smallest justified patch and regression coverage.
+
+The two contribution journeys
+-----------------------------
+
+Most product work belongs to one of two journeys. Name the journey in the pull
+request so reviewers know which history and evidence to compare.
+
+| Journey | Question | Starting point | Result |
+| --- | --- | --- | --- |
+| [1. Change the Roots patch](#journey-1-change-the-roots-patch) | What should Roots add, remove, or change on a supported Core base? | The oldest affected `roots/<core-version>` branch | Reviewed semantic commits carried forward to newer supported Roots lines |
+| [2. Port Roots to a new Core release](#journey-2-port-roots-to-a-new-core-release) | How should the existing Roots behavior apply to a newer Core base? | The exact official Bitcoin Core tag for the new version | A new `roots/<new-core-version>` branch containing the still-relevant Roots series |
+
+Do not mix the journeys casually. Adding a feature and porting the entire Roots
+series create different review questions. If both are needed, normally finish
+and review the feature on the oldest affected supported line first, then carry
+that reviewed behavior into the new Core line.
+
+Branch and release model
+------------------------
+
+The branch name communicates whether a ref is durable product history or
+temporary review state:
+
+* `roots/<core-version>` is the canonical release line. It begins at the exact
+  matching Bitcoin Core tag and contains the semantic Roots commit series for
+  that Core version.
+* `topic/<core-version>/<area>` is a focused feature, fix, or porting branch.
+  Product changes normally enter a canonical Roots line through such a branch.
+* `integration/<core-version>` is disposable combined-CI state. Do not base
+  durable work on it.
+* `promote/<name>` is temporary review state used to connect a reviewed
+  canonical line to `main`.
+* `main` is the integrated public project history and the default branch. It
+  records explicit release promotions and repository-level work such as the
+  project website. A commit being on `main` does not by itself make it part of
+  a release patch.
+* `archive/*` preserves retired candidates or maintenance systems as evidence.
+  Archive branches are not release inputs.
+
+A release branch can advance as fixes accumulate. A release itself is the
+immutable annotated tag `v<core-version>-roots.<number>` and the verified
+artifacts built from that tagged canonical commit. Release candidates use
+`v<core-version>rc<number>-roots.<number>`.
+
+Choose the pull-request base from the intended ownership:
+
+* Product behavior, source tests, build support, and documentation that must
+  ship in the portable Roots patch target the relevant
+  `roots/<core-version>` line.
+* A new-Core port targets its new `roots/<core-version>` line after a maintainer
+  establishes that branch at the official Core tag.
+* Website, repository-hosting, and other explicitly main-only changes target
+  `main`.
+* A release promotion targets `main`, retains the canonical tip as a merge
+  parent, and follows the promotion checks in `contrib/roots/README.md`.
+
+Getting started
 ---------------
 
-New contributors are very welcome and needed.
+Before editing, read the root [README](README.md), the relevant source and test
+documentation, and the current [Roots feature catalog](doc/roots-features.md).
+Build out of source and use only disposable regtest data directories.
 
-Reviewing and testing is highly valued and the most effective way you can contribute
-as a new contributor. It also will teach you much more about the code and
-process than opening pull requests. Please refer to the [peer review](#peer-review)
-section below.
+The ordinary GitHub workflow is:
 
-Before you start contributing, familiarize yourself with the Bitcoin Roots build
-system and tests. Refer to the documentation in this repository on how to build
-Bitcoin Roots and run the unit tests, functional tests, and fuzz tests.
+1. Fork `LuganoPlanB/bitcoin-roots` if you do not have a writable remote.
+2. Fetch the current target branch and its exact upstream Core tag.
+3. Create one focused topic branch from the correct base.
+4. Make atomic commits with the implementation, tests, operator help, and
+   documentation needed to explain the same behavior.
+5. Run the narrowest relevant tests, then broader tests proportional to risk.
+6. Push the topic branch and open a pull request against the correct Roots
+   branch.
 
-There are many open issues of varying difficulty waiting to be fixed.
-If you're looking for somewhere to start contributing, check out the
-[good first issue](https://github.com/bitcoin/bitcoin/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
-list or changes that are
-[up for grabs](https://github.com/bitcoin/bitcoin/issues?utf8=%E2%9C%93&q=label%3A%22Up+for+grabs%22).
-Some of them might no longer be applicable. So if you are interested, but
-unsure, you might want to leave a comment on the issue first.
+Use scoped, imperative commit subjects where practical, for example:
 
-You may also participate in the [Bitcoin Core PR Review Club](https://bitcoincore.reviews/).
+```
+policy: make package limits configurable
+wallet: preserve backup metadata
+docs: explain Roots patch maintenance
+```
 
-### Good First Issue Label
+Explain why the change exists and which invariant it preserves. Do not combine
+behavior changes with unrelated formatting, code moves, generated files, or
+vendored-subtree cleanup. Do not put `@` mentions in commit messages.
 
-The purpose of the `good first issue` label is to highlight which issues are
-suitable for a new contributor without a deep understanding of the codebase.
+Journey 1: Change the Roots patch
+---------------------------------
 
-However, good first issues can be solved by anyone. If they remain unsolved
-for a longer time, a frequent contributor might address them.
+Use this journey to add or remove a Roots feature, change its configuration or
+tests, fix a Roots-specific bug, or change what the patch carries across
+current and future Core releases.
 
-You do not need to request permission to start working on an issue. However,
-you are encouraged to leave a comment if you are planning to work on it. This
-will help other contributors monitor which issues are actively being addressed
-and is also an effective way to request assistance if and when you need it.
+### 1. Define the semantic change
 
-Communication Channels
-----------------------
+Describe the operator-visible behavior independently of the current file names
+or APIs. Identify:
 
-Most communication about Bitcoin development happens on IRC, in the
-`#bitcoin-core-dev` channel on Libera Chat. The easiest way to participate on IRC is
-with the web client, [web.libera.chat](https://web.libera.chat/#bitcoin-core-dev). Chat
-history logs can be found
-on [https://www.erisian.com.au/bitcoin-core-dev/](https://www.erisian.com.au/bitcoin-core-dev/)
-and [https://gnusha.org/bitcoin-core-dev/](https://gnusha.org/bitcoin-core-dev/).
+* the feature owner and its focused tests;
+* whether the change affects policy, consensus, wallet, P2P, GUI, build, or
+  release behavior;
+* the oldest supported Roots line that needs it;
+* which newer supported lines must also receive it; and
+* whether `doc/roots-features.md`, option help, or release notes must change.
 
-Discussion about codebase improvements happens in GitHub issues and pull
-requests.
+For imported behavior, record provenance but review and maintain the result as
+Roots code. Do not make Bitcoin Knots an upstream dependency.
 
-The developer
-[mailing list](https://groups.google.com/g/bitcoindev)
-should be used to discuss complicated or controversial consensus or P2P protocol changes before working on
-a patch set.
-Archives can be found on [https://gnusha.org/pi/bitcoindev/](https://gnusha.org/pi/bitcoindev/).
+### 2. Start from the oldest affected line
 
-
-Contributor Workflow
---------------------
+Fix the oldest supported canonical line that needs the change. For example:
 
-The codebase is maintained using the "contributor workflow" where everyone
-without exception contributes patch proposals using "pull requests" (PRs). This
-facilitates social contribution, easy testing and peer review.
+```sh
+git fetch origin roots/29.4
+git switch --create topic/29.4/<area> origin/roots/29.4
+git merge-base --is-ancestor v29.4 HEAD
+```
 
-To contribute a patch, the workflow is as follows:
+Do not begin product work on `main` and later guess which parts belong in the
+release patch. Starting from the canonical line keeps the patch boundary and
+release evidence reviewable.
 
-  1. Fork repository ([only for the first time](https://docs.github.com/en/get-started/quickstart/fork-a-repo))
-  1. Create topic branch
-  1. Commit patches
+### 3. Preserve the policy/consensus boundary
 
-For GUI-related issues or pull requests, the https://github.com/bitcoin-core/gui repository should be used.
-For all other issues and pull requests, the https://github.com/bitcoin/bitcoin node repository should be used.
+For any rule that can reject a consensus-valid transaction locally, test both
+sides explicitly:
 
-The master branch for all monotree repositories is identical.
+1. the configured node rejects it from admission, relay, or block-template
+   selection; and
+2. a consensus-valid block containing it is still accepted.
 
-As a rule of thumb, everything that only modifies `src/qt` is a GUI-only pull
-request. However:
+Treat changes under `src/consensus/`, `src/script/`, serialization, and block
+validation as consensus-sensitive even when the intended change is policy-only.
+Do not perform incidental cleanup there.
 
-* For global refactoring or other transversal changes the node repository
-  should be used.
-* For GUI-related build system changes, the node repository should be used
-  because the change needs review by the build systems reviewers.
-* Changes in `src/interfaces` need to go to the node repository because they
-  might affect other components like the wallet.
+### 4. Make the semantic commit self-contained
 
-For large GUI changes that include build system and interface changes, it is
-recommended to first open a pull request against the GUI repository. When there
-is agreement to proceed with the changes, a pull request with the build system
-and interfaces changes can be submitted to the node repository.
+A commit should carry enough evidence to survive a future Core port:
 
-The project coding conventions in the [developer notes](doc/developer-notes.md)
-must be followed.
+* implementation and stable configuration/help text;
+* focused unit, functional, Qt, or fuzz coverage;
+* comments explaining invariants rather than current mechanics;
+* feature-catalog and release-note updates where user-visible; and
+* provenance in the commit message when behavior was adapted from elsewhere.
+
+This is the unit future maintainers will keep, drop, adapt, or split. Avoid a
+single cross-feature commit whose meaning cannot be reviewed independently.
 
-### Committing Patches
+### 5. Review and carry the change forward
 
-In general, [commits should be atomic](https://en.wikipedia.org/wiki/Atomic_commit#Atomic_commit_convention)
-and diffs should be easy to read. For this reason, do not mix any formatting
-fixes or code moves with actual code changes.
+Open the PR against the canonical branch, not an integration branch. After the
+change is accepted, carry it into every newer affected Roots line with
+provenance:
 
-Make sure each individual commit is hygienic: that it builds successfully on its
-own without warnings, errors, regressions, or test failures.
+```sh
+git switch roots/<newer-core-version>
+git cherry-pick -x <accepted-commit>
+```
 
-Commit messages should be verbose by default consisting of a short subject line
-(50 chars max), a blank line and detailed explanatory text as separate
-paragraph(s), unless the title alone is self-explanatory (like "Correct typo
-in init.cpp") in which case a single title line is sufficient. Commit messages should be
-helpful to people reading your code in the future, so explain the reasoning for
-your decisions. Further explanation [here](https://chris.beams.io/posts/git-commit/).
-
-If a particular commit references another issue, please add the reference. For
-example: `refs #1234` or `fixes #4321`. Using the `fixes` or `closes` keywords
-will cause the corresponding issue to be closed when the pull request is merged.
-
-Commit messages should never contain any `@` mentions (usernames prefixed with "@").
-
-Please refer to the [Git manual](https://git-scm.com/doc) for more information
-about Git.
-
-  - Push changes to your fork
-  - Create pull request
-
-### Creating the Pull Request
-
-The title of the pull request should be prefixed by the component or area that
-the pull request affects. Valid areas as:
-
-  - `consensus` for changes to consensus critical code
-  - `doc` for changes to the documentation
-  - `qt` or `gui` for changes to bitcoin-qt
-  - `log` for changes to log messages
-  - `mining` for changes to the mining code
-  - `net` or `p2p` for changes to the peer-to-peer network code
-  - `refactor` for structural changes that do not change behavior
-  - `rpc`, `rest` or `zmq` for changes to the RPC, REST or ZMQ APIs
-  - `contrib` or `cli` for changes to the scripts and tools
-  - `test`, `qa` or `ci` for changes to the unit tests, QA tests or CI code
-  - `util` or `lib` for changes to the utils or libraries
-  - `wallet` for changes to the wallet code
-  - `build` for changes to CMake
-  - `guix` for changes to the GUIX reproducible builds
-
-Examples:
-
-    consensus: Add new opcode for BIP-XXXX OP_CHECKAWESOMESIG
-    net: Automatically create onion service, listen on Tor
-    qt: Add feed bump button
-    log: Fix typo in log message
-
-The body of the pull request should contain sufficient description of *what* the
-patch does, and even more importantly, *why*, with justification and reasoning.
-You should include references to any discussions (for example, other issues or
-mailing list discussions).
-
-The description for a new pull request should not contain any `@` mentions. The
-PR description will be included in the commit message when the PR is merged and
-any users mentioned in the description will be annoyingly notified each time a
-fork of Bitcoin Core copies the merge. Instead, make any username mentions in a
-subsequent comment to the PR.
-
-### Translation changes
-
-Note that translations should not be submitted as pull requests. Please see
-[Translation Process](https://github.com/bitcoin/bitcoin/blob/master/doc/translation_process.md)
-for more information on helping with translations.
-
-### Work in Progress Changes and Requests for Comments
-
-If a pull request is not to be considered for merging (yet), please
-prefix the title with [WIP] or use [Tasks Lists](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#task-lists)
-in the body of the pull request to indicate tasks are pending.
-
-### Address Feedback
-
-At this stage, one should expect comments and review from other contributors. You
-can add more commits to your pull request by committing them locally and pushing
-to your fork.
-
-You are expected to reply to any review comments before your pull request is
-merged. You may update the code or reject the feedback if you do not agree with
-it, but you should express so in a reply. If there is outstanding feedback and
-you are not actively working on it, your pull request may be closed.
-
-Please refer to the [peer review](#peer-review) section below for more details.
-
-### Squashing Commits
-
-If your pull request contains fixup commits (commits that change the same line of code repeatedly) or too fine-grained
-commits, you may be asked to [squash](https://git-scm.com/docs/git-rebase#_interactive_mode) your commits
-before it will be reviewed. The basic squashing workflow is shown below.
-
-    git checkout your_branch_name
-    git rebase -i HEAD~n
-    # n is normally the number of commits in the pull request.
-    # Set commits (except the one in the first line) from 'pick' to 'squash', save and quit.
-    # On the next screen, edit/refine commit messages.
-    # Save and quit.
-    git push -f # (force push to GitHub)
-
-Please update the resulting commit message, if needed. It should read as a
-coherent message. In most cases, this means not just listing the interim
-commits.
-
-If your change contains a merge commit, the above workflow may not work and you
-will need to remove the merge commit first. See the next section for details on
-how to rebase.
-
-Please refrain from creating several pull requests for the same change.
-Use the pull request that is already open (or was created earlier) to amend
-changes. This preserves the discussion and review that happened earlier for
-the respective change set.
-
-The length of time required for peer review is unpredictable and will vary from
-pull request to pull request.
-
-### Rebasing Changes
-
-When a pull request conflicts with the target branch, you may be asked to rebase it on top of the current target branch.
-
-    git fetch https://github.com/bitcoin/bitcoin  # Fetch the latest upstream commit
-    git rebase FETCH_HEAD  # Rebuild commits on top of the new base
-
-This project aims to have a clean git history, where code changes are only made in non-merge commits. This simplifies
-auditability because merge commits can be assumed to not contain arbitrary code changes. Merge commits should be signed,
-and the resulting git tree hash must be deterministic and reproducible. The script in
-[/contrib/verify-commits](/contrib/verify-commits) checks that.
-
-After a rebase, reviewers are encouraged to sign off on the force push. This should be relatively straightforward with
-the `git range-diff` tool explained in the [productivity
-notes](/doc/productivity.md#diff-the-diffs-with-git-range-diff). To avoid needless review churn, maintainers will
-generally merge pull requests that received the most review attention first.
-
-Pull Request Philosophy
------------------------
-
-Patchsets should always be focused. For example, a pull request could add a
-feature, fix a bug, or refactor code; but not a mixture. Please also avoid super
-pull requests which attempt to do too much, are overly large, or overly complex
-as this makes review difficult.
-
-
-### Features
-
-When adding a new feature, thought must be given to the long term technical debt
-and maintenance that feature may require after inclusion. Before proposing a new
-feature that will require maintenance, please consider if you are willing to
-maintain it (including bug fixing). If features get orphaned with no maintainer
-in the future, they may be removed by the Repository Maintainer.
-
-
-### Refactoring
-
-Refactoring is a necessary part of any software project's evolution. The
-following guidelines cover refactoring pull requests for the project.
-
-There are three categories of refactoring: code-only moves, code style fixes, and
-code refactoring. In general, refactoring pull requests should not mix these
-three kinds of activities in order to make refactoring pull requests easy to
-review and uncontroversial. In all cases, refactoring PRs must not change the
-behaviour of code within the pull request (bugs must be preserved as is).
-
-Project maintainers aim for a quick turnaround on refactoring pull requests, so
-where possible keep them short, uncomplex and easy to verify.
-
-Pull requests that refactor the code should not be made by new contributors. It
-requires a certain level of experience to know where the code belongs to and to
-understand the full ramification (including rebase effort of open pull requests).
-
-Trivial pull requests or pull requests that refactor the code with no clear
-benefits may be immediately closed by the maintainers to reduce unnecessary
-workload on reviewing.
-
-
-"Decision Making" Process
+Use `-x` only when the new commit is a faithful cherry-pick. If newer Core APIs
+require a material rewrite, explain the source commit and the deviation in the
+new commit message instead of preserving a misleading cherry-pick identity.
+Use `git range-diff` to show reviewers what changed between generations.
+
+Never rewrite published release commits or tags. A maintenance release advances
+its canonical branch from one tagged tip to another; it does not merge a newer
+Core branch into an older Roots line.
+
+Journey 2: Port Roots to a new Core release
+-------------------------------------------
+
+Use this journey when Bitcoin Roots moves from one Core base to another, for
+example from Core 29.4 to Core 30.0. The goal is not to replay every old diff
+blindly. The goal is to preserve the intended Roots behavior on the new Core
+architecture with a reviewable semantic series.
+
+### 1. Establish the new base
+
+Fetch the tag from the official Bitcoin Core repository, inspect its peeled
+commit, and create the canonical branch directly at that commit:
+
+```sh
+core_remote=<configured-bitcoin-core-remote>
+core_tag=v<new-core-version>
+git remote get-url "$core_remote"
+git fetch "$core_remote" --tags
+core_commit=$(git rev-parse "$core_tag^{commit}")
+git show --no-patch --decorate "$core_commit"
+git switch --create roots/<new-core-version> "$core_commit"
+```
+
+Do not merge the complete old `roots/<core-version>` branch. That would mix two
+Core histories and make it difficult to distinguish upstream changes from the
+Roots patch.
+
+### 2. Inventory the old semantic series
+
+List every Roots commit between the old Core tag and canonical tip. For each
+commit, make one explicit decision:
+
+| Decision | Meaning |
+| --- | --- |
+| Keep | The behavior is still needed and applies cleanly. |
+| Drop | New Core already provides it, removed the need, or made it unsafe. |
+| Adapt | The operator-visible behavior remains, but new Core APIs require a rewrite. |
+| Split or combine | Core reorganized ownership, so a different commit boundary is clearer. |
+
+Record the reason for every dropped or materially changed commit. Compare the
+old and proposed series with:
+
+```sh
+git range-diff \
+    v<old-core-version>..roots/<old-core-version> \
+    v<new-core-version>..roots/<new-core-version>
+```
+
+### 3. Port commits semantically
+
+Cherry-pick a commit with `-x` when it remains faithful. Resolve conflicts by
+understanding the new Core ownership and invariants, not by bulk-selecting the
+old or new side:
+
+```sh
+git cherry-pick -x <semantic-roots-commit>
+# Inspect and resolve an identified conflict.
+git diff --check
+git cherry-pick --continue
+```
+
+When a change is no longer a true cherry-pick, create an adapted commit that
+names the old commit and explains why the implementation changed. Abort a port
+whose premise is wrong rather than hiding the conflict with an overwrite.
+
+### 4. Re-prove the behavior on new Core
+
+Passing compilation is not sufficient. For each retained feature:
+
+* run its focused regression tests;
+* verify option help, defaults, RPC/GUI exposure, and release documentation;
+* repeat policy-rejection and block-acceptance tests where applicable;
+* exercise database, upgrade, reindex, wallet reload, or P2P paths affected by
+  the upstream change; and
+* run the appropriate broad unit, functional, sanitizer, fuzz, and platform
+  matrix before promotion.
+
+The port PR must include the old and new Core commits, the old and new Roots
+tips, the range-diff, the keep/drop/adapt inventory, and exact test results.
+
+### 5. Review, promote, and release
+
+Review the new canonical series independently of `main`. Integration branches
+may combine work for CI, but they remain disposable. Once the canonical tip is
+accepted, maintainers create an explicit promotion into `main` using the
+procedure in `contrib/roots/README.md`.
+
+Before assigning a permanent version, maintainers dispatch the release workflow
+from `main` with the future tag name and the full canonical commit. After the
+five platform packages and portable patch have been inspected, the annotated
+Roots tag is created at exactly that canonical commit. Pushing the tag builds a
+draft GitHub release for independent verification and publication.
+
+Pull-request requirements
 -------------------------
 
-The following applies to code changes to the Bitcoin Roots project (and related
-projects such as libsecp256k1), and is not to be confused with overall Bitcoin
-Network Protocol consensus changes.
+Every PR should state:
 
-Whether a pull request is merged into Bitcoin Roots rests with the project merge
-maintainers and ultimately the project lead.
+* Journey 1, Journey 2, or main-only repository work;
+* target branch and upstream Core base;
+* affected supported Roots lines;
+* behavior changed and why;
+* consensus and policy impact, including an explicit statement when there is
+  no consensus change;
+* provenance for imported or carried-forward behavior;
+* commits kept, dropped, adapted, or split when porting;
+* exact verification commands and results; and
+* documentation and release-note impact.
 
-Maintainers will take into consideration if a patch is in line with the general
-principles of the project; meets the minimum standards for inclusion; and will
-judge the general consensus of contributors.
+PR titles should use a clear component prefix such as `policy:`, `wallet:`,
+`net:`, `qt:`, `rpc:`, `build:`, `ci:`, `test:`, or `docs:`. Mark
+incomplete work as a draft pull request rather than presenting it as
+merge-ready.
 
-In general, all pull requests must:
+Keep patch sets focused. Refactors, formatting changes, feature work, and Core
+ports should be separate unless the dependency is unavoidable and explained.
+Reviewers may ask for fixup commits to be squashed before final review. After a
+rebase or material rewrite, provide a `git range-diff` so previous review can
+be mapped to the new series.
 
-  - Have a clear use case, fix a demonstrable bug or serve the greater good of
-    the project (for example refactoring for modularisation);
-  - Be well peer-reviewed;
-  - Have unit tests, functional tests, and fuzz tests, where appropriate;
-  - Follow code style guidelines ([C++](doc/developer-notes.md), [functional tests](test/functional/README.md));
-  - Not break the existing test suite;
-  - Where bugs are fixed, where possible, there should be unit tests
-    demonstrating the bug and also proving the fix. This helps prevent regression.
-  - Change relevant comments and documentation when behaviour of code changes.
+Review and decision making
+--------------------------
 
-Patches that change Bitcoin consensus rules are considerably more involved than
-normal because they affect the entire ecosystem and so must be preceded by
-extensive mailing list discussions and have a numbered BIP. While each case will
-be different, one should be prepared to expend more time and effort than for
-other kinds of patches because of increased peer review and consensus building
-requirements.
+Anyone may review a pull request. Useful review describes both the commit
+reviewed and the evidence gathered. For example, distinguish code inspection
+from focused tests, broad tests, and manual operator testing.
 
+Maintainers consider whether a change:
 
-### Peer Review
+* has a clear operator or maintenance benefit;
+* respects the project boundaries above;
+* has appropriate unit, functional, Qt, fuzz, or platform coverage;
+* is small enough to audit and carry to future Core releases;
+* documents user-visible behavior and configuration; and
+* has received review proportional to its risk.
 
-Anyone may participate in peer review which is expressed by comments in the pull
-request. Typically reviewers will review the code for obvious errors, as well as
-test out the patch set and opine on the technical merits of the patch. Project
-maintainers take into account the peer review when determining if there is
-consensus to merge a pull request (remember that discussions may have been
-spread out over GitHub, mailing list and IRC discussions).
+Consensus-sensitive changes require substantially more discussion and review.
+Changes to Bitcoin consensus are outside the ordinary Roots feature process and
+must not be introduced as policy maintenance or as a routine Core port.
 
-Code review is a burdensome but important part of the development process, and
-as such, certain types of pull requests are rejected. In general, if the
-**improvements** do not warrant the **review effort** required, the PR has a
-high chance of being rejected. It is up to the PR author to convince the
-reviewers that the changes warrant the review effort, and if reviewers are
-"Concept NACK'ing" the PR, the author may need to present arguments and/or do
-research backing their suggested changes.
+When reviewing a port, concentrate on semantic equivalence rather than textual
+similarity. A clean cherry-pick can still be wrong if Core changed the
+surrounding invariant; a rewritten commit can be correct when the range-diff,
+tests, and explanation make the adaptation clear.
 
-#### Conceptual Review
+Release maintenance
+-------------------
 
-A review can be a conceptual review, where the reviewer leaves a comment
- * `Concept (N)ACK`, meaning "I do (not) agree with the general goal of this pull
-   request",
- * `Approach (N)ACK`, meaning `Concept ACK`, but "I do (not) agree with the
-   approach of this change".
+Apply a security or correctness fix first to the oldest supported Roots line
+that needs it, then carry it forward with recorded provenance. Do not rewrite a
+published tag or force-push a canonical branch other contributors may use.
 
-A `NACK` needs to include a rationale why the change is not worthwhile.
-NACKs without accompanying reasoning may be disregarded.
+The release workflow validates that a Roots tag targets the matching remote
+`roots/<core-version>` tip and that the branch starts from the official Core
+tag. It generates the portable patch directly from that Git range and verifies
+that replay reproduces the tagged product tree outside `.github/**`. The patch
+is an artifact, never a second source tree to edit or commit.
 
-#### Code Review
+The exact rehearsal, tagging, patch-generation, signing, and draft-publication
+commands are maintained in [`contrib/roots/README.md`](contrib/roots/README.md).
+Do not copy those commands into a feature PR or bypass their validation with a
+hand-built archive.
 
-After conceptual agreement on the change, code review can be provided. A review
-begins with `ACK BRANCH_COMMIT`, where `BRANCH_COMMIT` is the top of the PR
-branch, followed by a description of how the reviewer did the review. The
-following language is used within pull request comments:
+Communication and upstream work
+-------------------------------
 
-  - "I have tested the code", involving change-specific manual testing in
-    addition to running the unit, functional, or fuzz tests, and in case it is
-    not obvious how the manual testing was done, it should be described;
-  - "I have not tested the code, but I have reviewed it and it looks
-    OK, I agree it can be merged";
-  - A "nit" refers to a trivial, often non-blocking issue.
+Discuss Roots-specific behavior and repository work in this repository's
+issues and pull requests. For complicated or controversial Bitcoin consensus
+or P2P protocol proposals, use the broader Bitcoin development forums before
+writing an implementation.
 
-Project maintainers reserve the right to weigh the opinions of peer reviewers
-using common sense judgement and may also weigh based on merit. Reviewers that
-have demonstrated a deeper commitment and understanding of the project over time
-or who have clear domain expertise may naturally have more weight, as one would
-expect in all walks of life.
+If a change is generally suitable for Bitcoin Core, consider contributing it
+upstream first. Follow Bitcoin Core's own contribution process for that work.
+Once upstream accepts equivalent behavior, the next Roots port should normally
+drop the redundant Roots commit and record that decision in the port inventory.
 
-Where a patch set affects consensus-critical code, the bar will be much
-higher in terms of discussion and peer review requirements, keeping in mind that
-mistakes could be very costly to the wider community. This includes refactoring
-of consensus-critical code.
+Translation changes
+-------------------
 
-Where a patch set proposes to change the Bitcoin consensus, it must have been
-discussed extensively on the mailing list and IRC, be accompanied by a widely
-discussed BIP and have a generally widely perceived technical consensus of being
-a worthwhile change based on the judgement of the maintainers.
-
-### Finding Reviewers
-
-As most reviewers are themselves developers with their own projects, the review
-process can be quite lengthy, and some amount of patience is required. If you find
-that you've been waiting for a pull request to be given attention for several
-months, there may be a number of reasons for this, some of which you can do something
-about:
-
-  - It may be because of a feature freeze due to an upcoming release. During this time,
-    only bug fixes are taken into consideration. If your pull request is a new feature,
-    it will not be prioritized until after the release. Wait for the release.
-  - It may be because the changes you are suggesting do not appeal to people. Rather than
-    nits and critique, which require effort and means they care enough to spend time on your
-    contribution, thundering silence is a good sign of widespread (mild) dislike of a given change
-    (because people don't assume *others* won't actually like the proposal). Don't take
-    that personally, though! Instead, take another critical look at what you are suggesting
-    and see if it: changes too much, is too broad, doesn't adhere to the
-    [developer notes](doc/developer-notes.md), is dangerous or insecure, is messily written, etc.
-    Identify and address any of the issues you find. Then ask e.g. on IRC if someone could give
-    their opinion on the concept itself.
-  - It may be because your code is too complex for all but a few people, and those people
-    may not have realized your pull request even exists. A great way to find people who
-    are qualified and care about the code you are touching is the
-    [Git Blame feature](https://docs.github.com/en/github/managing-files-in-a-repository/managing-files-on-github/tracking-changes-in-a-file). Simply
-    look up who last modified the code you are changing and see if you can find
-    them and give them a nudge. Don't be incessant about the nudging, though.
-  - Finally, if all else fails, ask on IRC or elsewhere for someone to give your pull request
-    a look. If you think you've been waiting for an unreasonably long time (say,
-    more than a month) for no particular reason (a few lines changed, etc.),
-    this is totally fine. Try to return the favor when someone else is asking
-    for feedback on their code, and the universe balances out.
-  - Remember that the best thing you can do while waiting is give review to others!
-
-
-Backporting
------------
-
-Security and bug fixes can be backported from `master` to release
-branches.
-Maintainers will do backports in batches and
-use the proper `Needs backport (...)` labels
-when needed (the original author does not need to worry about it).
-
-A backport should contain the following metadata in the commit body:
-
-```
-Github-Pull: #<PR number>
-Rebased-From: <commit hash of the original commit>
-```
-
-Have a look at [an example backport PR](
-https://github.com/bitcoin/bitcoin/pull/16189).
-
-Also see the [backport.py script](
-https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
-
-Bitcoin Roots release lines use the additional Git-native workflow documented
-in [`contrib/roots/README.md`](/contrib/roots/README.md). Canonical
-`roots/<core-version>` branches start directly at the matching Bitcoin Core tag;
-`main` records promoted product history. Fix the oldest supported Roots line
-that needs a change, then cherry-pick it with provenance into newer affected
-lines. Exported patch files are release artifacts, not a second source tree.
+Do not manually edit generated `src/qt/locale/bitcoin_*.ts` files. Follow the
+[translation process](doc/translation_process.md) and regenerate translations
+only through the documented tooling.
 
 Copyright
 ---------
 
 By contributing to this repository, you agree to license your work under the
-MIT license unless specified otherwise in `contrib/debian/copyright` or at
-the top of the file itself. Any work contributed where you are not the original
-author must contain its license header with the original author(s) and source.
+MIT license unless specified otherwise in `contrib/debian/copyright` or at the
+top of the file itself. Work for which you are not the original author must
+retain its license, attribution, and source.
