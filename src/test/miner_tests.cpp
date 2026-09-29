@@ -39,6 +39,7 @@ using node::BlockAssembler;
 namespace miner_tests {
 struct MinerTestingSetup : public TestingSetup {
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool TestSequenceLocks(const CTransaction& tx, CTxMemPool& tx_mempool) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
@@ -665,6 +666,47 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     }
 }
 
+// A transaction added by the coin-age priority phase must not keep subsidising
+// its descendants in the ancestor-feerate phase.
+//
+// Test entries have no coin-age priority, so the priority phase ranks them by
+// fee score, adds the fee-paying parent (the child still depends on it), and
+// then stops at MINIMUM_TX_PRIORITY. The child pays no fee and must not be
+// selected on the strength of its already-included parent's fee.
+void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
+{
+    CTxMemPool& tx_mempool{MakeMempool()};
+    BlockAssembler::Options options;
+    options.coinbase_output_script = scriptPubKey;
+    gArgs.ForceSetArg("-blockprioritysize", "100000");
+
+    LOCK(tx_mempool.cs);
+    TestMemPoolEntryHelper entry;
+
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].scriptSig = CScript() << OP_1;
+    tx.vin[0].prevout.hash = txFirst[0]->GetHash();
+    tx.vin[0].prevout.n = 0;
+    tx.vout.resize(1);
+    tx.vout[0].nValue = 5000000000LL - 100000;
+    const Txid parent_txid = tx.GetHash();
+    AddToMempool(tx_mempool, entry.Fee(100000).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
+
+    tx.vin[0].prevout.hash = parent_txid;
+    const Txid child_txid = tx.GetHash();
+    AddToMempool(tx_mempool, entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
+
+    const auto block_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+    BOOST_REQUIRE(block_template);
+    const CBlock& block{block_template->block};
+    BOOST_CHECK_EQUAL(block.vtx.size(), 2U);
+    BOOST_CHECK(block.vtx[1]->GetHash() == parent_txid);
+    for (const auto& btx : block.vtx) BOOST_CHECK(btx->GetHash() != child_txid);
+
+    gArgs.ForceSetArg("-blockprioritysize", "0");
+}
+
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
@@ -737,6 +779,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     SetMockTime(0);
 
     TestPackageSelection(scriptPubKey, txFirst);
+    TestPriorityPhaseStaleAncestors(scriptPubKey, txFirst);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
     SetMockTime(0);
