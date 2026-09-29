@@ -688,7 +688,7 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_opts.min_relay_feerate.GetFeePerK()));
     ret.pushKV("incrementalrelayfee", ValueFromAmount(pool.m_opts.incremental_relay_feerate.GetFeePerK()));
     ret.pushKV("unbroadcastcount", uint64_t{pool.GetUnbroadcastTxs().size()});
-    ret.pushKV("fullrbf", true);
+    ret.pushKV("fullrbf", pool.m_opts.rbf_policy == RBFPolicy::Always);
     ret.pushKV("permitbaremultisig", pool.m_opts.permit_bare_multisig);
     ret.pushKV("maxdatacarriersize", pool.m_opts.max_datacarrier_bytes.value_or(0));
     return ret;
