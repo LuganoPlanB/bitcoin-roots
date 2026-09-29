@@ -131,6 +131,18 @@ test("primary navigation includes the two editorial routes", async () => {
   }
 });
 
+test("the contribution guide separates patch maintenance from Core ports", async () => {
+  const guide = await readFile(resolve(repositoryRoot, "CONTRIBUTING.md"), "utf8");
+
+  assert.match(guide, /Journey 1: Change the Roots patch/);
+  assert.match(guide, /Journey 2: Port Roots to a new Core release/);
+  assert.match(guide, /oldest supported canonical line that needs the change/);
+  assert.match(guide, /create the canonical branch directly at that commit/);
+  assert.match(guide, /Do not merge the complete old `roots\/<core-version>` branch/);
+  assert.match(guide, /A release itself is the\s+immutable annotated tag/);
+  assert.match(guide, /A commit being on `main` does not by itself make it part of\s+a release patch/);
+});
+
 test("the comparison is versioned and linked to primary sources", async () => {
   const [page, table] = await Promise.all([
     readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
