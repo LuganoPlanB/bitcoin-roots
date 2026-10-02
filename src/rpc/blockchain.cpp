@@ -2165,8 +2165,7 @@ bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& 
         COutPoint key;
         Coin coin;
         if (!cursor->GetKey(key) || !cursor->GetValue(coin)) return false;
-        if (++count % 8192 == 0) {
-            interruption_point();
+        if (rpc::scan::CheckInterruption(++count, interruption_point)) {
             if (should_abort) {
                 // allow to abort the scan via the abort reference
                 return false;
@@ -2188,33 +2187,40 @@ bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& 
 } // namespace
 
 /** RAII object to prevent concurrency issue when scanning the txout set */
-static std::atomic<int> g_scan_progress;
-static std::atomic<bool> g_scan_in_progress;
-static std::atomic<bool> g_should_abort_scan;
-class CoinsViewScanReserver
+std::atomic<int> rpc::scan::g_progress;
+std::atomic<bool> rpc::scan::g_in_progress;
+std::atomic<bool> rpc::scan::g_should_abort;
+bool rpc::scan::Reserver::reserve() {
+    CHECK_NONFATAL(!m_reserved);
+    if (g_in_progress.exchange(true)) return false;
+    CHECK_NONFATAL(g_progress == 0);
+    m_reserved = true;
+    return true;
+}
+rpc::scan::Reserver::~Reserver() { if (m_reserved) { g_in_progress = false; g_progress = 0; } }
+bool rpc::scan::CheckInterruption(int64_t count, const std::function<void()>& interruption) { if (count % 8192 != 0) return false; interruption(); return true; }
+using rpc::scan::Reserver;
+
+interfaces::ScanResult ScanUTXOSet(NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins)
 {
-private:
-    bool m_could_reserve{false};
-public:
-    explicit CoinsViewScanReserver() = default;
-
-    bool reserve() {
-        CHECK_NONFATAL(!m_could_reserve);
-        if (g_scan_in_progress.exchange(true)) {
-            return false;
-        }
-        CHECK_NONFATAL(g_scan_progress == 0);
-        m_could_reserve = true;
-        return true;
+    Reserver reserver;
+    if (!reserver.reserve()) return interfaces::ScanResult::BUSY;
+    std::unique_ptr<CCoinsViewCursor> cursor;
+    {
+        ChainstateManager& chainman = EnsureChainman(node);
+        LOCK(cs_main);
+        Chainstate& chainstate = chainman.ActiveChainstate();
+        chainstate.ForceFlushStateToDisk();
+        cursor = CHECK_NONFATAL(chainstate.CoinsDB().Cursor());
     }
-
-    ~CoinsViewScanReserver() {
-        if (m_could_reserve) {
-            g_scan_in_progress = false;
-            g_scan_progress = 0;
-        }
+    rpc::scan::g_should_abort = false;
+    std::atomic<int> progress;
+    int64_t count;
+    if (FindScriptPubKey(progress, rpc::scan::g_should_abort, count, cursor.get(), needles, coins, node.rpc_interruption_point)) {
+        return interfaces::ScanResult::SUCCESS;
     }
-};
+    return rpc::scan::g_should_abort ? interfaces::ScanResult::ABORTED : interfaces::ScanResult::UNAVAILABLE;
+}
 
 static const auto scan_action_arg_desc = RPCArg{
     "action", RPCArg::Type::STR, RPCArg::Optional::NO, "The action to execute\n"
@@ -2321,24 +2327,24 @@ static RPCHelpMan scantxoutset()
     UniValue result(UniValue::VOBJ);
     const auto action{self.Arg<std::string>("action")};
     if (action == "status") {
-        CoinsViewScanReserver reserver;
+        Reserver reserver;
         if (reserver.reserve()) {
             // no scan in progress
             return UniValue::VNULL;
         }
-        result.pushKV("progress", g_scan_progress.load());
+        result.pushKV("progress", rpc::scan::g_progress.load());
         return result;
     } else if (action == "abort") {
-        CoinsViewScanReserver reserver;
+        Reserver reserver;
         if (reserver.reserve()) {
             // reserve was possible which means no scan was running
             return false;
         }
         // set the abort flag
-        g_should_abort_scan = true;
+        rpc::scan::g_should_abort = true;
         return true;
     } else if (action == "start") {
-        CoinsViewScanReserver reserver;
+        Reserver reserver;
         if (!reserver.reserve()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Scan already in progress, use action \"abort\" or \"status\"");
         }
@@ -2366,7 +2372,7 @@ static RPCHelpMan scantxoutset()
         UniValue unspents(UniValue::VARR);
         std::vector<CTxOut> input_txos;
         std::map<COutPoint, Coin> coins;
-        g_should_abort_scan = false;
+        rpc::scan::g_should_abort = false;
         int64_t count = 0;
         std::unique_ptr<CCoinsViewCursor> pcursor;
         const CBlockIndex* tip;
@@ -2379,7 +2385,7 @@ static RPCHelpMan scantxoutset()
             pcursor = CHECK_NONFATAL(active_chainstate.CoinsDB().Cursor());
             tip = CHECK_NONFATAL(active_chainstate.m_chain.Tip());
         }
-        bool res = FindScriptPubKey(g_scan_progress, g_should_abort_scan, count, pcursor.get(), needles, coins, node.rpc_interruption_point);
+        bool res = FindScriptPubKey(rpc::scan::g_progress, rpc::scan::g_should_abort, count, pcursor.get(), needles, coins, node.rpc_interruption_point);
         result.pushKV("success", res);
         result.pushKV("txouts", count);
         result.pushKV("height", tip->nHeight);

@@ -91,6 +91,8 @@ void RPCNestedTests::rpcNestedTests()
     QVERIFY(filtered == "signmessagewithprivkey(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "signrawtransactionwithkey(abc)", false, &filtered);
     QVERIFY(filtered == "signrawtransactionwithkey(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "sweepprivkeys([sentinel], destination)", false, &filtered);
+    QVERIFY(filtered == "sweepprivkeys(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrase(help())", false, &filtered);
     QVERIFY(filtered == "walletpassphrase(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrasechange(help(walletpassphrasechange(abc)))", false, &filtered);

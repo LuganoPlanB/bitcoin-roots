@@ -892,6 +892,7 @@ RPCHelpMan sendall();
 RPCHelpMan walletprocesspsbt();
 RPCHelpMan walletcreatefundedpsbt();
 RPCHelpMan signrawtransactionwithwallet();
+RPCHelpMan sweepprivkeys();
 
 // signmessage
 RPCHelpMan signmessage();
@@ -957,6 +958,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &setwalletflag},
         {"wallet", &signmessage},
         {"wallet", &signrawtransactionwithwallet},
+        {"wallet", &sweepprivkeys},
         {"wallet", &simulaterawtransaction},
         {"wallet", &sendall},
         {"wallet", &unloadwallet},

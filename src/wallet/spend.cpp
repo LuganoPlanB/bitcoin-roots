@@ -15,6 +15,7 @@
 #include <policy/truc_policy.h>
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
+#include <rpc/rawtransaction_util.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
@@ -43,6 +44,40 @@ TRACEPOINT_SEMAPHORE(coin_selection, attempting_aps_create_tx);
 TRACEPOINT_SEMAPHORE(coin_selection, aps_create_tx_internal);
 
 namespace wallet {
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, FlatSigningProvider& provider,
+                                                            const std::map<COutPoint, Coin>& coins,
+                                                            const CScript& destination, const SweepBroadcastFn& broadcast)
+{
+    CAmount amount{0};
+    CMutableTransaction tx;
+    for (const auto& [outpoint, coin] : coins) {
+        amount += coin.out.nValue;
+        tx.vin.emplace_back(outpoint);
+    }
+    if (coins.empty()) return util::Error{Untranslated("No spendable UTXOs found")};
+    tx.vout.emplace_back(amount, destination);
+    std::map<int, bilingual_str> errors;
+    if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+    CAmount fee{0};
+    for (int attempts{0}; attempts < 10; ++attempts) {
+        fee = GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr);
+        if (fee >= amount) return util::Error{Untranslated("Fee exceeds swept value")};
+        tx.vout[0].nValue = amount - fee;
+        errors.clear();
+        if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+        if (fee >= GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr)) break;
+    }
+    if (fee < GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr)) {
+        return util::Error{Untranslated("Unable to calculate a stable sweep fee")};
+    }
+    if (IsDust(tx.vout[0], wallet.chain().relayMinFee())) return util::Error{Untranslated("Swept output would be dust")};
+    CTransactionRef final_tx{MakeTransactionRef(tx)};
+    if (broadcast) {
+        std::string error;
+        if (!broadcast(final_tx, error)) return util::Error{Untranslated("Sweep transaction broadcast failed: " + error)};
+    }
+    return SweepTransactionResult{final_tx, amount, fee};
+}
 static constexpr size_t OUTPUT_GROUP_MAX_ENTRIES{100};
 
 /** Whether the descriptor represents, directly or not, a witness program. */
