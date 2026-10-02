@@ -10,6 +10,7 @@
 #include <script/solver.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/fees.h>
 #include <wallet/spend.h>
 #include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
@@ -46,6 +47,40 @@ BOOST_AUTO_TEST_CASE(anti_fee_sniping_avoids_reserved_policy_locktime)
             BOOST_CHECK_LE(lock_time, height);
         }
     }
+}
+
+BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
+{
+    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    auto wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey);
+    const CKey key{GenerateRandomKey()};
+    const CScript script{GetScriptForDestination(PKHash{key.GetPubKey()})};
+    std::map<COutPoint, Coin> coins;
+    coins.emplace(COutPoint{Txid{}, 1}, Coin{CTxOut{COIN, script}, 1, false});
+    int broadcasts{0};
+
+    FlatSigningProvider missing_key;
+    auto signing_failure{CreateSweepTransaction(*wallet, missing_key, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; })};
+    BOOST_CHECK(!signing_failure);
+    BOOST_CHECK_EQUAL(broadcasts, 0);
+
+    FlatSigningProvider provider;
+    provider.keys.emplace(key.GetPubKey().GetID(), key);
+    provider.pubkeys.emplace(key.GetPubKey().GetID(), key.GetPubKey());
+    auto success{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; })};
+    BOOST_REQUIRE(success);
+    BOOST_CHECK_GE(success->fee, GetMinimumFee(*wallet, GetVirtualTransactionSize(*success->tx), CCoinControl{}, nullptr));
+    BOOST_CHECK_EQUAL(broadcasts, 1);
+
+    std::string rejection;
+    auto broadcast_failure{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string& error) {
+        ++broadcasts;
+        error = "txn-mempool-conflict";
+        return false;
+    })};
+    BOOST_CHECK(!broadcast_failure);
+    BOOST_CHECK(util::ErrorString(broadcast_failure).original.find("txn-mempool-conflict") != std::string::npos);
+    BOOST_CHECK_EQUAL(broadcasts, 2);
 }
 
 BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)

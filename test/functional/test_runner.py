@@ -355,6 +355,7 @@ BASE_SCRIPTS = [
     'wallet_send.py --descriptors',
     'wallet_sendall.py --legacy-wallet',
     'wallet_sendall.py --descriptors',
+    'wallet_sweepprivkeys.py --descriptors',
     'wallet_sendmany.py --descriptors',
     'wallet_sendmany.py --legacy-wallet',
     'wallet_create_tx.py --descriptors',

@@ -7,14 +7,22 @@
 
 #include <consensus/amount.h>
 #include <core_io.h>
+#include <interfaces/chain.h>
 #include <streams.h>
 #include <sync.h>
 #include <util/fs.h>
 #include <validation.h>
 
+#include <coins.h>
+#include <script/script.h>
+
 #include <any>
+#include <atomic>
+#include <functional>
 #include <stdint.h>
 #include <vector>
+#include <map>
+#include <set>
 
 class CBlock;
 class CBlockIndex;
@@ -24,6 +32,19 @@ namespace node {
 class BlockManager;
 struct NodeContext;
 } // namespace node
+
+namespace rpc::scan {
+extern std::atomic<int> g_progress;
+extern std::atomic<bool> g_in_progress;
+extern std::atomic<bool> g_should_abort;
+class Reserver {
+    bool m_reserved{false};
+public:
+    bool reserve();
+    ~Reserver();
+};
+bool CheckInterruption(int64_t count, const std::function<void()>& interruption);
+} // namespace rpc::scan
 
 static constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
 
@@ -58,5 +79,10 @@ UniValue CreateUTXOSnapshot(
 //! Return height of highest block that has been pruned, or std::nullopt if no blocks have been pruned
 std::optional<int> GetPruneHeight(const node::BlockManager& blockman, const CChain& chain) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 void CheckBlockDataAvailability(node::BlockManager& blockman, const CBlockIndex& blockindex, bool check_for_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+//! Scan the current UTXO set while sharing scantxoutset's reservation and RPC
+//! interruption behavior. The returned coins are a snapshot and must be
+//! revalidated by the caller before broadcast.
+interfaces::ScanResult ScanUTXOSet(node::NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins);
 
 #endif // BITCOIN_RPC_BLOCKCHAIN_H
