@@ -154,4 +154,33 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block, TestChain100Setup)
     WITH_LOCK(::cs_main, assert((orig_tip->nStatus & BLOCK_FAILED_VALID) == 0));
 }
 
+BOOST_AUTO_TEST_CASE(scan_reservation_lifecycle)
+{
+    using namespace rpc::scan;
+    g_in_progress = false;
+    g_progress = 0;
+    g_should_abort = false;
+    {
+        Reserver owner;
+        BOOST_REQUIRE(owner.reserve());
+        Reserver competitor;
+        BOOST_CHECK(!competitor.reserve());
+        BOOST_CHECK(g_in_progress);
+        g_should_abort = true;
+        BOOST_CHECK(g_should_abort);
+    }
+    BOOST_CHECK(!g_in_progress);
+    BOOST_CHECK_EQUAL(g_progress, 0);
+    { Reserver after_release; BOOST_CHECK(after_release.reserve()); }
+    try {
+        Reserver interrupted;
+        BOOST_REQUIRE(interrupted.reserve());
+        CheckInterruption(8192, [] { throw std::runtime_error{"shutdown"}; });
+        BOOST_FAIL("shutdown interruption was not propagated");
+    } catch (const std::runtime_error&) {
+    }
+    Reserver after_shutdown;
+    BOOST_CHECK(after_shutdown.reserve());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
