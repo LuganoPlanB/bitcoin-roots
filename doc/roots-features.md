@@ -97,6 +97,24 @@ replacement will be accepted by peers or their local policy. This Roots
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
+### Advanced sweep and coin-control tools (unreleased post-`v29.4-roots.2`)
+
+This checkout adds, but has not released, a guarded private-key sweep and
+advanced coin-control views. These tools are not part of the published
+`v29.4-roots.2` release. Their operational contract and limitations are in
+[`doc/wallet-privacy.md`](/doc/wallet-privacy.md); the built
+`bitcoin-cli help sweepprivkeys` output is authoritative for the exact RPC
+schema in a given build.
+
+The sweep accepts only the documented WIF/script combinations, sends only to a
+spendable destination in the selected wallet, and never imports supplied keys.
+Coin control presents wallet-reported selection, reuse, grouping, fee, change,
+and RBF facts. It provides no privacy score or anonymity guarantee. The
+reviewed coverage includes
+[`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
+[`wallet_send.py`](/test/functional/wallet_send.py), and
+[`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp).
+
 ### Runtime and operator foundations
 
 The `getmempoolstats` RPC returns the node's collected, non-interpolated
@@ -161,10 +179,10 @@ in this checkout.
 
 ## Planned or under review
 
-No additional wallet-privacy feature is available merely because it is planned
-or evaluated in this unreleased post-`v29.4-roots.2` topic. The P2P and wallet
-reviews retained the existing published-baseline behavior rather than adding
-new hardening or backup features. Cross-feature coverage and catalog
+The sweep and coin-control tools described above are available only in this
+unreleased post-`v29.4-roots.2` topic, not in the published baseline. The P2P
+and wallet reviews otherwise retained the published-baseline behavior rather
+than adding hardening or backup features. Cross-feature coverage and catalog
 reconciliation are release-readiness work, not operator features. Any later
 proposal remains under review until it has an accepted implementation and
 tests.
@@ -189,7 +207,8 @@ Roots does not ship or promise:
 - Tor "pairing" credentials, proxy credentials, control-port secrets, or
   private-key sharing surfaces;
 - Tor endpoint sharing or a dedicated endpoint-sharing UI;
-- private-key sweeping, or broad or privacy-aware coin control and payment
+- CoinJoin, payjoin, silent automatic consolidation, a privacy score,
+  anonymity guarantee, address graph, chain-analysis dashboard, or payment
   history redesign;
 - the candidate's broad Knots common-maintenance, consensus/script, wallet, or
   documentation overlays merely because they occurred in historical source;
