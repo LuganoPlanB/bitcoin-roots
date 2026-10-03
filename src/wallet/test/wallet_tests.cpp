@@ -11,6 +11,7 @@
 
 #include <addresstype.h>
 #include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <key_io.h>
 #include <node/blockstorage.h>
 #include <policy/policy.h>
@@ -445,6 +446,43 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     BOOST_CHECK_EQUAL(list.size(), 1U);
     BOOST_CHECK_EQUAL(std::get<PKHash>(list.begin()->first).ToString(), coinbaseAddress);
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 2U);
+}
+
+BOOST_FIXTURE_TEST_CASE(coin_control_interface_facts, TestChain100Setup)
+{
+    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    auto wallet{std::shared_ptr<CWallet>{CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey).release()}};
+    const CFeeRate feerate{1000};
+    const auto available_coins{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet, /*coin_control=*/nullptr, feerate).All())};
+    BOOST_REQUIRE(!available_coins.empty());
+    const COutput coin{available_coins.front()};
+
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(coin.outpoint, /*persist=*/false));
+    WalletContext context;
+    context.chain = m_node.chain.get();
+    auto wallet_interface{interfaces::MakeWallet(context, wallet)};
+
+    const auto without_feerate{wallet_interface->getCoins({coin.outpoint})};
+    BOOST_REQUIRE_EQUAL(without_feerate.size(), 1U);
+    BOOST_CHECK(!without_feerate.front().effective_value);
+
+    const auto coins{wallet_interface->getCoins({coin.outpoint}, feerate)};
+    BOOST_REQUIRE_EQUAL(coins.size(), 1U);
+    const auto& info{coins.front()};
+    BOOST_CHECK(info.outpoint == coin.outpoint);
+    BOOST_CHECK_EQUAL(info.txout.nValue, coin.txout.nValue);
+    BOOST_CHECK_EQUAL(info.time, coin.time);
+    BOOST_CHECK_EQUAL(info.depth_in_main_chain, coin.depth);
+    BOOST_CHECK_EQUAL(info.input_bytes, coin.input_bytes);
+    BOOST_REQUIRE(info.effective_value);
+    BOOST_CHECK_EQUAL(*info.effective_value, coin.GetEffectiveValue());
+    BOOST_CHECK_EQUAL(info.ancestor_bump_fees, coin.ancestor_bump_fees);
+    BOOST_CHECK_EQUAL(info.is_spendable, WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(coin.txout)));
+    BOOST_CHECK_EQUAL(info.is_solvable, coin.solvable);
+    BOOST_CHECK_EQUAL(info.is_safe, coin.safe);
+    BOOST_CHECK(info.is_locked);
+    BOOST_CHECK(!info.is_reused);
+    BOOST_CHECK(!info.is_spent);
 }
 
 void TestCoinsResult(ListCoinsTest& context, OutputType out_type, CAmount amount,
