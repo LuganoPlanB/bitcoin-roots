@@ -71,6 +71,7 @@ private:
     std::unique_ptr<WalletModelTransaction> m_current_transaction;
     bool fNewRecipientAllowed{true};
     bool fFeeMinimized{true};
+    bool m_sending{false};
     const PlatformStyle *platformStyle;
 
     // Copy PSBT to clipboard and offer to save it.
@@ -91,6 +92,8 @@ private:
      * @returns false if any failure occurred, which may include the user rejection of a transaction on the device.
      */
     bool signWithExternalSigner(PartiallySignedTransaction& psbt, CMutableTransaction& mtx, bool& complete);
+    void appendCoinControlSummary(QString& text) const;
+    void invalidateSendPreview();
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
 
@@ -115,6 +118,7 @@ private Q_SLOTS:
     void updateFeeSectionControls();
     void updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state);
     void updateSmartFeeLabel();
+    void walletChanged(const interfaces::WalletBalances& balances);
 
 Q_SIGNALS:
     // Fired when a message should be reported to the user
