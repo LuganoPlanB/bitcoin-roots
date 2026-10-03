@@ -46,7 +46,7 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
     setWindowTitle(tr("Sweep Private Key"));
     setModal(true);
     auto* layout = new QVBoxLayout(this);
-    auto* warning = new QLabel(tr("A private key is a bearer secret. It is used only for this sweep and is never saved in this wallet."), this);
+    auto* warning = new QLabel(tr("A private key is a bearer secret. It is used only for this sweep and is never saved in this wallet. Keep an independent backup until the transaction confirms."), this);
     warning->setWordWrap(true);
     layout->addWidget(warning);
     auto* form = new QFormLayout;
@@ -64,7 +64,7 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
     m_destination = new QLineEdit(this);
     m_destination->setObjectName("sweepDestination");
     m_destination->setAccessibleName(tr("Destination address"));
-    m_destination->setAccessibleDescription(tr("A destination address controlled by the selected wallet."));
+    m_destination->setAccessibleDescription(tr("A spendable destination address controlled by the selected wallet. Watch-only and private-key-disabled wallets are not eligible."));
     form->addRow(tr("Private key:"), m_private_key);
     form->addRow(QString{}, reveal);
     form->addRow(tr("Destination:"), m_destination);
@@ -83,8 +83,8 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
     m_broadcast->setEnabled(false);
     m_preview->setAccessibleName(tr("Preview sweep"));
     m_broadcast->setAccessibleName(tr("Broadcast sweep"));
-    m_preview->setAccessibleDescription(tr("Scan for eligible coins and create a transaction preview without broadcasting."));
-    m_broadcast->setAccessibleDescription(tr("Broadcast the currently displayed sweep transaction. This cannot be undone."));
+    m_preview->setAccessibleDescription(tr("Scan eligible supported coins and create a transaction preview without broadcasting. Review its fee, destination, and Replace-By-Fee state."));
+    m_broadcast->setAccessibleDescription(tr("Broadcast the currently displayed sweep transaction. This cannot be undone and may fail if chain state or fees changed."));
     layout->addWidget(buttons);
     setTabOrder(m_private_key, reveal);
     setTabOrder(reveal, m_destination);
