@@ -53,11 +53,12 @@ All three reviewed code lines include wallet-side coin selection and the Qt coin
 control dialog. Bitcoin Roots v29.4-roots.2 additionally makes the effective
 per-send RBF choice explicit and initializes it from the wallet default.
 
-Private-key sweeping is deliberately **not** included in v29.4-roots.2. The
-planned Roots privacy-aware coin-control work is also **not** included. That
-future work is not GUI-only: the plan requires wallet-owned data and transaction
-contracts, with Qt presenting the choices and their consequences. Until reviewed
-code and tests ship in a later release, neither item is a Roots feature.
+Private-key sweeping and the advanced privacy-aware coin-control view are
+deliberately **not** included in the published v29.4-roots.2 release. They are
+implemented and tested in the intended v29.4-roots.3 candidate, with wallet-owned
+data and transaction contracts and Qt presenting the choices and consequences.
+That candidate status is not a release announcement. [Review the candidate
+wallet tools](/wallet-privacy) before using a build that contains them.
 
 ### Sources
 

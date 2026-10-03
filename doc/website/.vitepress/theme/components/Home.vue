@@ -180,6 +180,35 @@ const validationStages = [
       </div>
     </section>
 
+    <section class="roots-wallet-privacy" aria-labelledby="wallet-privacy-title">
+      <div class="roots-section-heading">
+        <div>
+          <p class="roots-wallet-privacy__eyebrow">v29.4-roots.3 candidate</p>
+          <h2 id="wallet-privacy-title">Review wallet privacy choices before signing</h2>
+        </div>
+        <div>
+          <p>
+            The candidate adds an explicit private-key sweep workflow and
+            privacy-aware coin control facts without promising anonymity.
+          </p>
+          <ul>
+            <li>Preview a supported WIF sweep before choosing to broadcast.</li>
+            <li>Inspect selected inputs, reuse, grouping, fee, change, and RBF facts.</li>
+            <li>Keep supplied keys transient and cancel before broadcast submission begins.</li>
+          </ul>
+          <p>
+            These tools do not add CoinJoin, payjoin, automatic consolidation,
+            private-key export, or a privacy score. Keep an independent backup
+            until a sweep confirms.
+          </p>
+          <a class="roots-text-link" :href="withBase('/wallet-privacy')">
+            Review the candidate wallet tools
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
     <section class="roots-start" aria-labelledby="start-title">
       <div class="roots-start__lead">
         <h2 id="start-title">From source to a running node</h2>

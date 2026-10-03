@@ -116,6 +116,7 @@ export default defineConfig({
       { text: "Get started", link: "/getting-started" },
       { text: "Principles", link: "/principles" },
       { text: "Compare", link: "/compare" },
+      { text: "Wallet privacy", link: "/wallet-privacy" },
       { text: "Documentation", link: "/documentation" },
       { text: "Policy", link: "/doc/policy/README" },
       { text: "Contribute", link: "/CONTRIBUTING" },
