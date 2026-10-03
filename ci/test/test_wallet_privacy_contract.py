@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contracts for transient sweep-key handling and cancellation."""
+"""Static contracts for wallet privacy behavior and documentation."""
 
 from pathlib import Path
 import unittest
@@ -25,6 +25,39 @@ class WalletPrivacyContractTest(unittest.TestCase):
         broadcast = spend.index("broadcast(final_tx, error)")
         self.assertLess(begin, broadcast)
         self.assertIn("authorization.IsCancelled()", spend)
+
+    def test_coin_control_documentation_matches_its_row_filter(self):
+        documentation = (ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8")
+        wallet_interface = (ROOT / "src/wallet/interfaces.cpp").read_text(encoding="utf-8")
+        wallet_spend = (ROOT / "src/wallet/spend.cpp").read_text(encoding="utf-8")
+        coin_control = (ROOT / "src/wallet/coincontrol.h").read_text(encoding="utf-8")
+
+        self.assertIn("starts with the wallet's normal available-output list", documentation)
+        self.assertIn("Locked\n  outputs remain visible", documentation)
+        self.assertIn("Unsafe and immature outputs are not added merely to show a status", documentation)
+        self.assertIn("not an\n  inventory of unavailable outputs", documentation)
+        self.assertNotIn("Locked, unsafe,\n  immature, or unavailable inputs are reported", documentation)
+
+        list_coins = wallet_spend[wallet_spend.index("ListCoins(const CWallet& wallet)"):]
+        self.assertIn("coins_params.skip_locked = false;", list_coins)
+        self.assertNotIn("coins_params.include_immature_coinbase = true;", list_coins)
+        self.assertIn("bool m_include_unsafe_inputs = false;", coin_control)
+        self.assertIn("for (const auto& entry : ListCoins(*m_wallet))", wallet_interface)
+
+    def test_candidate_documents_release_state_and_verification(self):
+        catalog = (ROOT / "doc/roots-features.md").read_text(encoding="utf-8")
+        guide = (ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8")
+        release_notes = (ROOT / "doc/release-notes.md").read_text(encoding="utf-8")
+
+        for document in (catalog, guide, release_notes):
+            self.assertIn("v30.3-roots.1", document)
+            self.assertIn("candidate", document)
+        self.assertIn("candidate documentation for the intended `v30.3-roots.1` release", release_notes)
+        self.assertNotIn("v30.3-roots.1 is now available", release_notes)
+        self.assertNotIn("v30.3-roots.1 has been released", release_notes)
+        self.assertIn("bitcoin-cli help sweepprivkeys", guide)
+        self.assertIn("bitcoin-cli --version", guide)
+        self.assertIn("no wallet-format migration", release_notes)
 
 
 if __name__ == "__main__":

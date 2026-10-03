@@ -6,17 +6,17 @@ operator and local-policy work whose historical lineage includes Bitcoin Knots
 tree is not a list of shipped features.
 
 This page is the public inventory for Roots-specific work. The published
-`v29.4-roots.2` release is the historical baseline. This checkout is an unreleased
-port onto Bitcoin Core v30.3 with follow-on additions identified below; it is
-not a published release. Ordinary Bitcoin Core v30.3 functionality is documented
-in the built help and the manuals in this directory. The commands below describe
-the binary built from this tree; use `bitcoind -help` as the authority for the
-exact options in a given build.
+`v29.4-roots.2` release is the historical baseline. This checkout is the
+unreleased candidate for the intended `v30.3-roots.1` release, ported directly
+onto Bitcoin Core v30.3; candidate wording is not a release announcement.
+Ordinary Bitcoin Core v30.3 functionality is documented in the built help and
+manuals in this directory. The commands below describe the binary built from
+this tree; use `bitcoind -help` as the authority for its exact options.
 
 ## Available in this checkout
 
-Unless explicitly marked as unreleased post-`v29.4-roots.2` work, the items in
-this section were available in the published `v29.4-roots.2` baseline.
+Unless explicitly marked as `v30.3-roots.1` candidate work, the items in this
+section were available in the published `v29.4-roots.2` baseline.
 
 ### Conservative, configurable local transaction policy
 
@@ -78,9 +78,9 @@ regression coverage includes
 [`wallet_multiwallet.py`](/test/functional/wallet_multiwallet.py), and wallet
 unit tests under [`src/wallet/test/`](/src/wallet/test/).
 
-Legacy Berkeley DB support is a separate build choice. This catalog makes no
-claim that it has been tested on a particular host library; release-compatible
-legacy testing requires Berkeley DB 4.8.
+Core v30.3 supports descriptor wallets. Legacy wallet files must be migrated
+before using these wallet tools; this port does not restore a Berkeley DB
+build option.
 
 The follow-on review retained these existing wallet boundaries and their
 coverage; it did not add a new database, flush, or backup behavior.
@@ -96,9 +96,9 @@ replacement will be accepted by peers or their local policy. This Roots
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
-### Advanced sweep and coin-control tools (unreleased post-`v29.4-roots.2`)
+### Advanced sweep and coin-control tools (candidate for `v30.3-roots.1`)
 
-This checkout adds, but has not released, a guarded private-key sweep and
+The intended `v30.3-roots.1` candidate adds a guarded private-key sweep and
 advanced coin-control views. These tools are not part of the published
 `v29.4-roots.2` release. Their operational contract and limitations are in
 [`doc/wallet-privacy.md`](/doc/wallet-privacy.md); the built
@@ -107,9 +107,13 @@ schema in a given build.
 
 The sweep accepts only the documented WIF/script combinations, sends only to a
 spendable destination in the selected wallet, and never imports supplied keys.
-Coin control presents wallet-reported selection, reuse, grouping, fee, change,
-and RBF facts. It provides no privacy score or anonymity guarantee. The
-reviewed coverage includes
+Its GUI request can be invalidated while scanning, but broadcast submission has
+a final authorization boundary and must be allowed to finish once it begins.
+The key-handling path uses transient secure storage and clears temporary dialog
+state; it does not promise erasure of every copy a GUI toolkit or host might
+retain. Coin control presents wallet-reported selection, reuse, grouping, fee,
+change, and RBF facts. It provides no privacy score or anonymity guarantee. The
+candidate coverage includes
 [`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
 [`wallet_send.py`](/test/functional/wallet_send.py), and
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp).
@@ -178,8 +182,8 @@ from the presence of a local tag alone.
 
 ## Planned or under review
 
-The sweep and coin-control tools described above are available only in this
-unreleased post-`v29.4-roots.2` topic, not in the published baseline. The P2P
+The sweep and coin-control tools described above are intended
+`v30.3-roots.1` candidate work, not part of the published baseline. The P2P
 and wallet reviews otherwise retained the published-baseline behavior rather
 than adding hardening or backup features. Cross-feature coverage and catalog
 reconciliation are release-readiness work, not operator features. Any later
