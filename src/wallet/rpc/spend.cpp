@@ -36,12 +36,17 @@ namespace wallet {
 RPCHelpMan sweepprivkeys()
 {
     return RPCHelpMan{"sweepprivkeys",
-        "Sweep confirmed UTXOs for supplied private keys to an address already controlled by this wallet.\n"
-        "Supplied keys are never imported or saved. Set broadcast to true only after reviewing a preview.\n",
+        "Sweep confirmed UTXOs from supplied Base58 WIF private keys to a spendable address in this wallet.\n"
+        "All valid WIF keys support P2PKH. Compressed keys also support native P2WPKH and wrapped P2SH-P2WPKH. "
+        "Taproot and other script forms are not scanned.\n"
+        "The destination must be controlled and spendable by this selected wallet; watch-only and private-key-disabled wallets are rejected. "
+        "Supplied keys are never imported or saved. Keep an independent backup until the transaction confirms.\n"
+        "With broadcast=false (the default), the result is a signed preview and no transaction is submitted. The fee reflects current wallet fee settings and chain state. "
+        "Set broadcast=true only after reviewing a fresh preview; broadcast can fail if inputs, fee policy, or chain state changed.\n",
         {
-            {"privkeys", RPCArg::Type::ARR, RPCArg::Optional::NO, "Base58-encoded private keys", {{"privatekey", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "private key"}}},
-            {"destination", RPCArg::Type::STR, RPCArg::Optional::NO, "An address controlled by this wallet"},
-            {"broadcast", RPCArg::Type::BOOL, RPCArg::Default{false}, "Broadcast the signed transaction instead of returning a preview"},
+            {"privkeys", RPCArg::Type::ARR, RPCArg::Optional::NO, "Valid Base58 WIF private keys", {{"privatekey", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "private key"}}},
+            {"destination", RPCArg::Type::STR, RPCArg::Optional::NO, "A spendable address controlled by this selected wallet"},
+            {"broadcast", RPCArg::Type::BOOL, RPCArg::Default{false}, "Submit the signed transaction after a preview has been reviewed"},
         },
         RPCResult{RPCResult::Type::OBJ, "", "", {
             {RPCResult::Type::STR_HEX, "hex", "Signed transaction"},
@@ -49,7 +54,7 @@ RPCHelpMan sweepprivkeys()
             {RPCResult::Type::STR_AMOUNT, "amount", "Total value of swept inputs"},
             {RPCResult::Type::STR_AMOUNT, "fee", "Transaction fee"},
             {RPCResult::Type::NUM, "inputs", "Number of swept inputs"},
-            {RPCResult::Type::BOOL, "broadcast", "Whether the transaction was broadcast"},
+            {RPCResult::Type::BOOL, "broadcast", "Whether the transaction was submitted for broadcast"},
         }},
         RPCExamples{HelpExampleCli("sweepprivkeys", "'[\"cV...\"]' bcrt1... false")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {

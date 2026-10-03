@@ -335,10 +335,13 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(sweep_reveal->accessibleDescription().contains("Copy and cut"));
     QCOMPARE(sweep_destination->accessibleName(), "Destination address");
     QVERIFY(sweep_destination->accessibleDescription().contains("selected wallet"));
+    QVERIFY(sweep_destination->accessibleDescription().contains("Watch-only"));
     QCOMPARE(sweep_result->accessibleName(), "Sweep preview");
     QVERIFY(sweep_result->accessibleDescription().contains("Non-secret"));
     QCOMPARE(sweep_preview->accessibleName(), "Preview sweep");
+    QVERIFY(sweep_preview->accessibleDescription().contains("Replace-By-Fee"));
     QCOMPARE(sweep_broadcast->accessibleName(), "Broadcast sweep");
+    QVERIFY(sweep_broadcast->accessibleDescription().contains("fees changed"));
     sweep_dialog.show();
     sweep_key->setFocus();
     QTRY_COMPARE(qApp->focusWidget(), static_cast<QWidget*>(sweep_key));
