@@ -118,10 +118,23 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     int depth) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
+    result.outpoint = COutPoint{wtx.GetHash(), static_cast<uint32_t>(n)};
     result.txout = wtx.tx->vout[n];
     result.time = wtx.GetTxTime();
     result.depth_in_main_chain = depth;
-    result.is_spent = wallet.IsSpent(COutPoint(wtx.GetHash(), n));
+    result.is_spent = wallet.IsSpent(result.outpoint);
+    result.is_locked = wallet.IsLockedCoin(result.outpoint);
+    result.is_reused = wallet.IsSpentKey(result.txout.scriptPubKey);
+    result.is_immature = wallet.IsTxImmatureCoinBase(wtx);
+    result.is_change = OutputIsChange(wallet, result.txout);
+    ExtractDestination(result.txout.scriptPubKey, result.address);
+    if (const auto* entry = wallet.FindAddressBookEntry(result.address)) {
+        result.label = entry->GetLabel();
+    }
+    CTxDestination grouping_address;
+    if (ExtractDestination(FindNonChangeParentOutput(wallet, result.outpoint).scriptPubKey, grouping_address)) {
+        result.grouping_address = grouping_address;
+    }
     return result;
 }
 
@@ -129,10 +142,31 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     const COutput& output) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
+    result.outpoint = output.outpoint;
     result.txout = output.txout;
     result.time = output.time;
     result.depth_in_main_chain = output.depth;
     result.is_spent = wallet.IsSpent(output.outpoint);
+    result.input_bytes = output.input_bytes;
+    if (output.HasEffectiveValue()) result.effective_value = output.GetEffectiveValue();
+    result.ancestor_bump_fees = output.ancestor_bump_fees;
+    result.is_spendable = wallet.IsMine(output.txout);
+    result.is_solvable = output.solvable;
+    result.is_safe = output.safe;
+    result.is_locked = wallet.IsLockedCoin(output.outpoint);
+    result.is_reused = wallet.IsSpentKey(output.txout.scriptPubKey);
+    if (const CWalletTx* wtx = wallet.GetWalletTx(output.outpoint.hash)) {
+        result.is_immature = wallet.IsTxImmatureCoinBase(*wtx);
+    }
+    result.is_change = OutputIsChange(wallet, output.txout);
+    ExtractDestination(output.txout.scriptPubKey, result.address);
+    if (const auto* entry = wallet.FindAddressBookEntry(result.address)) {
+        result.label = entry->GetLabel();
+    }
+    CTxDestination grouping_address;
+    if (ExtractDestination(FindNonChangeParentOutput(wallet, output.outpoint).scriptPubKey, grouping_address)) {
+        result.grouping_address = grouping_address;
+    }
     return result;
 }
 
@@ -502,13 +536,32 @@ public:
         }
         return result;
     }
-    std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) override
+    std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs, const std::optional<CFeeRate>& feerate) override
     {
         LOCK(m_wallet->cs_wallet);
+        CCoinControl coin_control;
+        // Expose factual state rather than applying a caller's transaction
+        // policy. In particular, dirty, locked, unsafe, watch-only, and
+        // immature coins need to be inspectable even when not selectable.
+        coin_control.m_avoid_address_reuse = false;
+        CoinFilterParams params;
+        params.check_version_trucness = false;
+        params.include_immature_coinbase = true;
+        params.skip_locked = false;
+        std::map<COutPoint, COutput> available_coins;
+        for (const COutput& coin : AvailableCoins(*m_wallet, &coin_control, feerate, params).All()) {
+            available_coins.emplace(coin.outpoint, coin);
+        }
+
         std::vector<WalletTxOut> result;
         result.reserve(outputs.size());
         for (const auto& output : outputs) {
+            if (const auto coin = available_coins.find(output); coin != available_coins.end()) {
+                result.emplace_back(MakeWalletTxOut(*m_wallet, coin->second));
+                continue;
+            }
             result.emplace_back();
+            result.back().outpoint = output;
             auto it = m_wallet->mapWallet.find(output.hash);
             if (it != m_wallet->mapWallet.end()) {
                 int depth = m_wallet->GetTxDepthInMainChain(it->second);
