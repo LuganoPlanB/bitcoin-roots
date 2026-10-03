@@ -13,9 +13,11 @@
 #include <primitives/transaction_identifier.h>
 #include <support/allocators/secure.h>
 
+#include <cstdint>
 #include <vector>
 
 #include <QObject>
+#include <QThread>
 
 enum class OutputType;
 
@@ -156,6 +158,10 @@ public:
     // Otherwise, uses the wallet's cached available balance.
     CAmount getAvailableBalance(const wallet::CCoinControl* control);
 
+    uint64_t invalidateSweepRequests();
+    uint64_t requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
+                          std::optional<Txid> expected_txid = std::nullopt);
+
 private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
     std::unique_ptr<interfaces::Handler> m_handler_unload;
@@ -167,6 +173,9 @@ private:
     ClientModel* m_client_model;
     interfaces::Node& m_node;
 
+    uint64_t m_sweep_request_generation{0};
+    QObject m_sweep_context;
+    QThread m_sweep_thread;
     bool fForceCheckBalanceChanged{false};
 
     // Wallet has an options model for wallet-specific options
@@ -215,6 +224,9 @@ Q_SIGNALS:
 
     // Notify that there are now keys in the keypool
     void canGetAddressesChanged();
+    void sweepRequestInvalidated(uint64_t generation);
+    void sweepFinished(uint64_t generation, bool broadcast, bool success, const QString& error,
+                       qint64 amount, qint64 fee, quint64 inputs, qint64 vsize, bool rbf, const QString& txid);
 
     void timerTimeout();
 

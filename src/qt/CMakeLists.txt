@@ -192,6 +192,8 @@ if(ENABLE_WALLET)
       sendcoinsentry.h
       signverifymessagedialog.cpp
       signverifymessagedialog.h
+      sweepdialog.cpp
+      sweepdialog.h
       transactiondesc.cpp
       transactiondesc.h
       transactiondescdialog.cpp
