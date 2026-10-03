@@ -57,6 +57,17 @@ struct WalletTxOut;
 struct WalletTxStatus;
 struct WalletMigrationResult;
 
+//! Result of a transient-private-key sweep. The supplied key is never retained
+//! by this interface or by the wallet.
+struct WalletSweepResult {
+    CTransactionRef tx;
+    CAmount amount{0};
+    CAmount fee{0};
+    size_t inputs{0};
+    int64_t vsize{0};
+    bool broadcast{false};
+};
+
 using WalletOrderForm = std::vector<std::pair<std::string, std::string>>;
 using WalletValueMap = std::map<std::string, std::string>;
 
@@ -105,6 +116,12 @@ public:
 
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CTxDestination& dest) = 0;
+
+    //! Sweep one transient private key to a destination controlled by this wallet.
+    virtual util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
+                                                             const CTxDestination& destination,
+                                                             bool broadcast,
+                                                             const std::optional<Txid>& expected_txid = std::nullopt) = 0;
 
     //! Add or update address.
     virtual bool setAddressBook(const CTxDestination& dest, const std::string& name, const std::optional<wallet::AddressPurpose>& purpose) = 0;

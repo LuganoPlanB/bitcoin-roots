@@ -9,6 +9,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/node.h>
 #include <key_io.h>
+#include <logging.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
@@ -21,6 +22,7 @@
 #include <qt/recentrequeststablemodel.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
+#include <qt/sweepdialog.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
@@ -32,6 +34,9 @@
 #include <wallet/wallet.h>
 
 #include <chrono>
+#include <functional>
+#include <initializer_list>
+#include <list>
 #include <memory>
 
 #include <QAbstractButton>
@@ -39,8 +44,13 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QFont>
+#include <QLabel>
+#include <QLineEdit>
 #include <QObject>
 #include <QPushButton>
+#include <QSettings>
+#include <QTest>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QTextEdit>
@@ -59,6 +69,22 @@ using wallet::WalletRescanReserver;
 
 namespace
 {
+class LogCapture
+{
+public:
+    LogCapture()
+        : m_connection{LogInstance().PushBackCallback([this](const std::string& message) { output += message; })}
+    {
+    }
+
+    ~LogCapture() { LogInstance().DeleteCallback(m_connection); }
+
+    std::string output;
+
+private:
+    std::list<std::function<void(const std::string&)>>::iterator m_connection;
+};
+
 //! Press "Yes" or "Cancel" buttons in modal send confirmation dialog.
 void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_type = QMessageBox::Yes)
 {
@@ -275,6 +301,123 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     WalletModel& walletModel = *mini_gui.walletModel;
     SendCoinsDialog& sendCoinsDialog = mini_gui.sendCoinsDialog;
     TransactionView& transactionView = mini_gui.transactionView;
+    qApp->processEvents(); // Drain the fixture's queued RemoveWallet notification.
+
+    const QString sweep_sentinel{"sweep-ui-secret-sentinel"};
+    LogCapture sweep_logs;
+
+    // Verify the guarded sweep dialog contract and asynchronous error path.
+    SweepDialog sweep_dialog(&walletModel);
+    QLineEdit* sweep_key = sweep_dialog.findChild<QLineEdit*>("sweepPrivateKey");
+    QLineEdit* sweep_destination = sweep_dialog.findChild<QLineEdit*>("sweepDestination");
+    QPushButton* sweep_preview = sweep_dialog.findChild<QPushButton*>("sweepPreview");
+    QPushButton* sweep_broadcast = sweep_dialog.findChild<QPushButton*>("sweepBroadcast");
+    QCheckBox* sweep_reveal = sweep_dialog.findChild<QCheckBox*>("sweepReveal");
+    QLabel* sweep_result = sweep_dialog.findChild<QLabel*>("sweepResult");
+    QVERIFY(sweep_key && sweep_destination && sweep_preview && sweep_broadcast && sweep_reveal && sweep_result);
+    QCOMPARE(sweep_key->echoMode(), QLineEdit::Password);
+    QCOMPARE(sweep_key->contextMenuPolicy(), Qt::NoContextMenu);
+    QCOMPARE(sweep_key->accessibleName(), "Private key");
+    QVERIFY(sweep_key->accessibleDescription().contains("Copy, cut"));
+    QCOMPARE(sweep_reveal->accessibleName(), "Show private key");
+    QVERIFY(sweep_reveal->accessibleDescription().contains("Copy and cut"));
+    QCOMPARE(sweep_destination->accessibleName(), "Destination address");
+    QVERIFY(sweep_destination->accessibleDescription().contains("selected wallet"));
+    QCOMPARE(sweep_result->accessibleName(), "Sweep preview");
+    QVERIFY(sweep_result->accessibleDescription().contains("Non-secret"));
+    QCOMPARE(sweep_preview->accessibleName(), "Preview sweep");
+    QCOMPARE(sweep_broadcast->accessibleName(), "Broadcast sweep");
+    sweep_dialog.show();
+    sweep_key->setFocus();
+    QTRY_COMPARE(qApp->focusWidget(), static_cast<QWidget*>(sweep_key));
+    QTest::keyClick(sweep_key, Qt::Key_Tab);
+    QTRY_COMPARE(qApp->focusWidget(), static_cast<QWidget*>(sweep_reveal));
+    QTest::keyClick(sweep_reveal, Qt::Key_Tab);
+    QTRY_COMPARE(qApp->focusWidget(), static_cast<QWidget*>(sweep_destination));
+    QTest::keyClick(sweep_destination, Qt::Key_Tab);
+    QTRY_COMPARE(qApp->focusWidget(), static_cast<QWidget*>(sweep_preview));
+    sweep_reveal->setChecked(true);
+    QCOMPARE(sweep_key->echoMode(), QLineEdit::Normal);
+    sweep_reveal->setChecked(false);
+    QCOMPARE(sweep_key->echoMode(), QLineEdit::Password);
+    QVERIFY(!sweep_broadcast->isEnabled());
+    auto sweep_dest{walletModel.wallet().getNewDestination(OutputType::BECH32, "")};
+    QVERIFY(sweep_dest);
+    sweep_destination->setText(QString::fromStdString(EncodeDestination(*sweep_dest)));
+    sweep_key->setText(sweep_sentinel);
+    QVERIFY(QMetaObject::invokeMethod(&sweep_dialog, "preview"));
+    QVERIFY(!sweep_key->isEnabled());
+    QVERIFY(sweep_key->text().isEmpty());
+    QTRY_VERIFY(sweep_key->isEnabled());
+    QVERIFY(!sweep_result->text().contains(sweep_sentinel));
+    QVERIFY(!QString::fromStdString(sweep_logs.output).contains(sweep_sentinel));
+
+    sweep_key->setText("not-a-private-key");
+    QVERIFY(QMetaObject::invokeMethod(&sweep_dialog, "preview"));
+    QVERIFY(!sweep_key->isEnabled());
+    QVERIFY(sweep_key->text().isEmpty());
+    // A competing wallet update must discard the transient key and preview
+    // immediately, rather than relying on broadcast-time stale detection.
+    walletModel.updateTransaction();
+    QVERIFY(sweep_key->isEnabled());
+    QVERIFY(sweep_key->text().isEmpty());
+    QVERIFY(!sweep_broadcast->isEnabled());
+    QVERIFY(sweep_result->text().contains("fresh preview"));
+    QTRY_VERIFY_WITH_TIMEOUT(sweep_key->isEnabled(), 5000);
+    QVERIFY(!sweep_result->text().contains("not-a-private-key"));
+    QVERIFY(!sweep_broadcast->isEnabled());
+    sweep_dialog.reject();
+    QVERIFY(sweep_key->text().isEmpty());
+
+    const auto settings_contain_sentinel = [&] {
+        QSettings settings;
+        for (const QString& key : settings.allKeys()) {
+            if (key.contains(sweep_sentinel) || settings.value(key).toString().contains(sweep_sentinel)) return true;
+        }
+        return false;
+    };
+    const auto widgets_contain_sentinel = [&] {
+        for (QWidget* widget : qApp->allWidgets()) {
+            if (auto* line_edit = qobject_cast<QLineEdit*>(widget); line_edit && line_edit->text().contains(sweep_sentinel)) return true;
+            if (auto* label = qobject_cast<QLabel*>(widget); label && label->text().contains(sweep_sentinel)) return true;
+            if (auto* button = qobject_cast<QAbstractButton*>(widget); button && button->text().contains(sweep_sentinel)) return true;
+        }
+        return false;
+    };
+    QVERIFY(!settings_contain_sentinel());
+    QVERIFY(!widgets_contain_sentinel());
+    for (int i = 0; i < 3; ++i) {
+        auto dialog = std::make_unique<SweepDialog>(&walletModel);
+        QLineEdit* key = dialog->findChild<QLineEdit*>("sweepPrivateKey");
+        QVERIFY(key);
+        key->setText(sweep_sentinel);
+        dialog->reject();
+        QVERIFY(key->text().isEmpty());
+        dialog.reset();
+        QVERIFY(!widgets_contain_sentinel());
+    }
+    QVERIFY(!settings_contain_sentinel());
+
+    const auto verify_layout = [&](const QFont& font, const QSize& size) {
+        SweepDialog dialog(&walletModel);
+        dialog.setFont(font);
+        dialog.resize(size);
+        dialog.show();
+        QTRY_VERIFY(dialog.isVisible());
+        QVERIFY(dialog.sizeHint().width() <= size.width());
+        QVERIFY(dialog.sizeHint().height() <= size.height());
+        for (QWidget* widget : std::initializer_list<QWidget*>{dialog.findChild<QLineEdit*>("sweepPrivateKey"), dialog.findChild<QLineEdit*>("sweepDestination"),
+                                                               dialog.findChild<QCheckBox*>("sweepReveal"), dialog.findChild<QPushButton*>("sweepPreview"),
+                                                               dialog.findChild<QPushButton*>("sweepBroadcast"), dialog.findChild<QLabel*>("sweepResult")}) {
+            QVERIFY(widget && widget->isVisible());
+            QVERIFY(dialog.contentsRect().contains(widget->mapTo(&dialog, widget->rect().center())));
+        }
+        dialog.reject();
+    };
+    verify_layout(sweep_dialog.font(), QSize{1024, 700});
+    QFont large_font{sweep_dialog.font()};
+    large_font.setPointSize(24);
+    verify_layout(large_font, QSize{1600, 1000});
 
     // Update walletModel cached balance which will trigger an update for the 'labelBalance' QLabel.
     walletModel.pollBalanceChanged();
