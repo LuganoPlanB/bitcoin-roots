@@ -8,12 +8,15 @@
 #include <policy/policy.h>
 #include <random.h>
 #include <script/solver.h>
+#include <util/rbf.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
 #include <wallet/spend.h>
 #include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
+
+#include <algorithm>
 
 #include <boost/test/unit_test.hpp>
 
@@ -169,6 +172,44 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
     // Second case, don't use 'subtract_fee_from_outputs'.
     recipients[0].fSubtractFeeFromAmount = false;
     BOOST_CHECK(!CreateTransaction(*wallet, recipients, /*change_pos=*/std::nullopt, coin_control));
+}
+
+BOOST_FIXTURE_TEST_CASE(manual_coin_control_honors_selection_and_rbf, TestChain100Setup)
+{
+    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    auto wallet{CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey)};
+    const auto coins{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).All())};
+    BOOST_REQUIRE(!coins.empty());
+    const COutput selected_coin{coins.front()};
+    const CTxDestination destination{PKHash{GenerateRandomKey().GetPubKey()}};
+    const CRecipient recipient{destination, COIN, /*subtract_fee=*/false};
+
+    CCoinControl coin_control;
+    coin_control.m_allow_other_inputs = false;
+    coin_control.m_signal_bip125_rbf = false;
+    coin_control.Select(selected_coin.outpoint);
+
+    const auto no_rbf{CreateTransaction(*wallet, {recipient}, /*change_pos=*/std::nullopt, coin_control, /*sign=*/false)};
+    BOOST_REQUIRE(no_rbf);
+    BOOST_REQUIRE_EQUAL(no_rbf->tx->vin.size(), 1U);
+    BOOST_CHECK(no_rbf->tx->vin.front().prevout == selected_coin.outpoint);
+    BOOST_CHECK(no_rbf->tx->vin.front().nSequence == CTxIn::MAX_SEQUENCE_NONFINAL);
+    CAmount outputs{0};
+    for (const auto& output : no_rbf->tx->vout) outputs += output.nValue;
+    BOOST_CHECK_EQUAL(selected_coin.txout.nValue, outputs + no_rbf->fee);
+
+    coin_control.m_signal_bip125_rbf = true;
+    const auto rbf{CreateTransaction(*wallet, {recipient}, /*change_pos=*/std::nullopt, coin_control, /*sign=*/false)};
+    BOOST_REQUIRE(rbf);
+    BOOST_REQUIRE_EQUAL(rbf->tx->vin.size(), 1U);
+    BOOST_CHECK(rbf->tx->vin.front().prevout == selected_coin.outpoint);
+    BOOST_CHECK_EQUAL(rbf->tx->vin.front().nSequence, MAX_BIP125_RBF_SEQUENCE);
+
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(selected_coin.outpoint));
+    const auto available_after_lock{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).All())};
+    BOOST_CHECK(std::none_of(available_after_lock.cbegin(), available_after_lock.cend(),
+                             [&selected_coin](const COutput& coin) { return coin.outpoint == selected_coin.outpoint; }));
+    BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->IsLockedCoin(selected_coin.outpoint)));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

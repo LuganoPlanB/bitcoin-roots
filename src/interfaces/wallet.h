@@ -9,6 +9,7 @@
 #include <common/signmessage.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
+#include <policy/feerate.h>
 #include <pubkey.h>
 #include <script/script.h>
 #include <support/allocators/secure.h>
@@ -26,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-class CFeeRate;
 class CKey;
 enum class FeeReason;
 enum class OutputType;
@@ -261,7 +261,8 @@ public:
     virtual CoinsList listCoins() = 0;
 
     //! Return wallet transaction output information.
-    virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) = 0;
+    virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs,
+                                               const std::optional<CFeeRate>& feerate = std::nullopt) = 0;
 
     //! Get required fee.
     virtual CAmount getRequiredFee(unsigned int tx_bytes) = 0;
@@ -451,10 +452,27 @@ struct WalletTxStatus
 //! Wallet transaction output.
 struct WalletTxOut
 {
+    //! Outpoint identifying this output in the wallet.
+    COutPoint outpoint;
     CTxOut txout;
+    //! Wallet's smart transaction time for this output.
     int64_t time;
     int depth_in_main_chain = -1;
     bool is_spent = false;
+    //! Wallet-owned facts used to present coin-control choices.
+    int input_bytes = -1;
+    std::optional<CAmount> effective_value;
+    CAmount ancestor_bump_fees{0};
+    bool is_spendable = false;
+    bool is_solvable = false;
+    bool is_safe = false;
+    bool is_locked = false;
+    bool is_reused = false;
+    bool is_immature = false;
+    bool is_change = false;
+    CTxDestination address;
+    CTxDestination grouping_address;
+    std::string label;
 };
 
 //! Migrated wallet info
