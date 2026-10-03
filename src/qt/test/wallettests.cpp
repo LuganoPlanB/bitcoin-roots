@@ -10,9 +10,11 @@
 #include <interfaces/node.h>
 #include <key_io.h>
 #include <logging.h>
+#include <policy/feerate.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
+#include <qt/coincontroldialog.h>
 #include <qt/optionsmodel.h>
 #include <qt/overviewpage.h>
 #include <qt/platformstyle.h>
@@ -49,9 +51,11 @@
 #include <QLineEdit>
 #include <QObject>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QSettings>
 #include <QTest>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QTextEdit>
 #include <QListView>
@@ -427,6 +431,82 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // Check 'UseAvailableBalance' functionality
     VerifyUseAvailableBalance(sendCoinsDialog, walletModel);
 
+    // The coin control view presents wallet-owned facts and keeps filtering a
+    // display-only operation: it must not alter the selected outpoints.
+    CoinControlDialog coin_control_dialog(*sendCoinsDialog.getCoinControl(), &walletModel, platformStyle.get());
+    QTreeWidget* coin_tree = coin_control_dialog.findChild<QTreeWidget*>("treeWidget");
+    QLineEdit* coin_filter = coin_control_dialog.findChild<QLineEdit*>("lineEditFilter");
+    QLabel* available = coin_control_dialog.findChild<QLabel*>("labelAvailable");
+    QLabel* fee_rate = coin_control_dialog.findChild<QLabel*>("labelCoinControlFeeRate");
+    QLabel* rbf_summary = coin_control_dialog.findChild<QLabel*>("labelCoinControlRbf");
+    QLabel* selection_notice = coin_control_dialog.findChild<QLabel*>("labelSelectionNotice");
+    QVERIFY(coin_tree && coin_filter && available && fee_rate && rbf_summary && selection_notice);
+    QCOMPARE(coin_tree->headerItem()->text(6), "Status");
+    QCOMPARE(coin_tree->headerItem()->text(7), "Effective value");
+    QCOMPARE(coin_tree->headerItem()->text(8), "Input bytes");
+    QVERIFY(available->text().contains("eligible"));
+    QVERIFY(rbf_summary->text().contains("Replace-By-Fee"));
+    QCOMPARE(coin_filter->accessibleName(), "Filter coin selection");
+    QVERIFY(coin_tree->accessibleDescription().contains("Status column"));
+    const auto selected_before_filter = sendCoinsDialog.getCoinControl()->ListSelected();
+    coin_filter->setText("not-a-wallet-coin");
+    qApp->processEvents();
+    for (int row = 0; row < coin_tree->topLevelItemCount(); ++row) QVERIFY(coin_tree->topLevelItem(row)->isHidden());
+    QVERIFY(sendCoinsDialog.getCoinControl()->ListSelected() == selected_before_filter);
+    coin_filter->clear();
+    QVERIFY(coin_tree->focusPolicy() != Qt::NoFocus);
+    QVERIFY(QMetaObject::invokeMethod(&coin_control_dialog, "walletChanged"));
+    QVERIFY(!sendCoinsDialog.getCoinControl()->HasSelected());
+    QVERIFY(!selection_notice->isHidden());
+    QVERIFY(selection_notice->text().contains("cleared"));
+    coin_control_dialog.reject();
+
+    // Effective value must use the active coin-control fee rate, not fall back
+    // to face value. Check the formatted value, its numeric sorting key, and
+    // the item sorting implementation independently of localized labels.
+    const CFeeRate effective_fee_rate{1000};
+    const auto coin_groups = walletModel.wallet().listCoins();
+    QVERIFY(!coin_groups.empty());
+    const COutPoint effective_outpoint{std::get<0>(coin_groups.begin()->second.front())};
+    const auto effective_coins = walletModel.wallet().getCoins({effective_outpoint}, effective_fee_rate);
+    QCOMPARE(effective_coins.size(), 1U);
+    const auto& effective_coin = effective_coins.front();
+    QVERIFY(effective_coin.effective_value);
+    QVERIFY(*effective_coin.effective_value < effective_coin.txout.nValue);
+
+    wallet::CCoinControl effective_control;
+    effective_control.m_feerate = effective_fee_rate;
+    CoinControlDialog effective_dialog(effective_control, &walletModel, platformStyle.get());
+    QRadioButton* list_mode = effective_dialog.findChild<QRadioButton*>("radioListMode");
+    QTreeWidget* effective_tree = effective_dialog.findChild<QTreeWidget*>("treeWidget");
+    QVERIFY(list_mode && effective_tree);
+    list_mode->setChecked(true);
+    qApp->processEvents();
+    QTreeWidgetItem* effective_item{nullptr};
+    for (int row = 0; row < effective_tree->topLevelItemCount(); ++row) {
+        QTreeWidgetItem* item = effective_tree->topLevelItem(row);
+        if (item->data(3, Qt::UserRole).toString() == QString::fromStdString(effective_outpoint.hash.GetHex()) &&
+            item->data(3, Qt::UserRole + 1).toUInt() == effective_outpoint.n) {
+            effective_item = item;
+            break;
+        }
+    }
+    QVERIFY(effective_item);
+    QCOMPARE(effective_item->text(7), BitcoinUnits::format(walletModel.getOptionsModel()->getDisplayUnit(), *effective_coin.effective_value));
+    QCOMPARE(effective_item->data(7, Qt::UserRole).toLongLong(), qlonglong{*effective_coin.effective_value});
+
+    QTreeWidget effective_sort_tree;
+    effective_sort_tree.setColumnCount(9);
+    auto* larger_effective = new CCoinControlWidgetItem(&effective_sort_tree);
+    larger_effective->setText(7, "0.00000001");
+    larger_effective->setData(7, Qt::UserRole, qlonglong{*effective_coin.effective_value + 1});
+    auto* smaller_effective = new CCoinControlWidgetItem(&effective_sort_tree);
+    smaller_effective->setText(7, "9.99999999");
+    smaller_effective->setData(7, Qt::UserRole, qlonglong{*effective_coin.effective_value});
+    effective_sort_tree.sortItems(7, Qt::AscendingOrder);
+    QCOMPARE(effective_sort_tree.topLevelItem(0)->data(7, Qt::UserRole).toLongLong(), qlonglong{*effective_coin.effective_value});
+    effective_dialog.reject();
+
     // Send two transactions, and verify they are added to transaction list.
     TransactionTableModel* transactionTableModel = walletModel.getTransactionTableModel();
     QCOMPARE(transactionTableModel->rowCount({}), 105);
@@ -447,6 +527,10 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     }
     QVERIFY(no_rbf_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
     QVERIFY(rbf_confirmation.contains("signals Replace-By-Fee (BIP-125)"));
+    QVERIFY(rbf_confirmation.contains("Effective coin control"));
+    QVERIFY(rbf_confirmation.contains("Inputs:"));
+    QVERIFY(rbf_confirmation.contains("Fee rate:"));
+    QVERIFY(rbf_confirmation.contains("Change:"));
 
     wallet->m_signal_rbf = true;
     SendCoinsDialog default_rbf_dialog(platformStyle.get());
@@ -600,7 +684,10 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
     timer.start(500);
 
     // Send tx and verify PSBT copied to the clipboard.
-    SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Save);
+    QString psbt_confirmation;
+    SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Save, &psbt_confirmation);
+    QVERIFY(psbt_confirmation.contains("Effective coin control"));
+    QVERIFY(psbt_confirmation.contains("Inputs:"));
     const std::string& psbt_string = QApplication::clipboard()->text().toStdString();
     QVERIFY(!psbt_string.empty());
 
