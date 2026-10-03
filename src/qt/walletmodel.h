@@ -158,7 +158,7 @@ public:
     // Otherwise, uses the wallet's cached available balance.
     CAmount getAvailableBalance(const wallet::CCoinControl* control);
 
-    uint64_t invalidateSweepRequests();
+    bool invalidateSweepRequests();
     uint64_t requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
                           std::optional<Txid> expected_txid = std::nullopt);
 
@@ -174,6 +174,7 @@ private:
     interfaces::Node& m_node;
 
     uint64_t m_sweep_request_generation{0};
+    std::shared_ptr<interfaces::SweepAuthorization> m_sweep_authorization;
     QObject m_sweep_context;
     QThread m_sweep_thread;
     bool fForceCheckBalanceChanged{false};

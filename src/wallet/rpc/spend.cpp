@@ -5,6 +5,7 @@
 #include <common/messages.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <interfaces/wallet.h>
 #include <key_io.h>
 #include <node/types.h>
 #include <policy/policy.h>
@@ -100,9 +101,10 @@ RPCHelpMan sweepprivkeys()
             case interfaces::ScanResult::UNAVAILABLE: throw JSONRPCError(RPC_MISC_ERROR, "UTXO scan unavailable");
             }
             const bool broadcast{!request.params[2].isNull() && request.params[2].get_bool()};
+            interfaces::SweepAuthorization authorization;
             auto swept{CreateSweepTransaction(*pwallet, provider, coins, destination_script, broadcast ? SweepBroadcastFn{[&](const CTransactionRef& tx, std::string& error) {
                 return pwallet->chain().broadcastTransaction(tx, pwallet->m_default_max_tx_fee, /*relay=*/true, error);
-            }} : SweepBroadcastFn{})};
+            }} : SweepBroadcastFn{}, authorization)};
             if (!swept) {
                 const std::string error{util::ErrorString(swept).original};
                 const int code{error == "No spendable UTXOs found" || error == "Fee exceeds swept value" ? RPC_WALLET_INSUFFICIENT_FUNDS :

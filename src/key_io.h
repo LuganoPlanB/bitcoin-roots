@@ -10,10 +10,12 @@
 #include <chainparams.h>
 #include <key.h>
 #include <pubkey.h>
+#include <support/allocators/secure.h>
 
 #include <string>
 
 CKey DecodeSecret(const std::string& str);
+CKey DecodeSecret(const SecureString& str);
 std::string EncodeSecret(const CKey& key);
 
 CExtKey DecodeExtKey(const std::string& str);

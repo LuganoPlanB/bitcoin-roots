@@ -9,6 +9,7 @@
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <node/types.h>
 #include <numeric>
 #include <policy/policy.h>
@@ -46,8 +47,10 @@ TRACEPOINT_SEMAPHORE(coin_selection, aps_create_tx_internal);
 namespace wallet {
 util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, FlatSigningProvider& provider,
                                                             const std::map<COutPoint, Coin>& coins,
-                                                            const CScript& destination, const SweepBroadcastFn& broadcast)
+                                                            const CScript& destination, const SweepBroadcastFn& broadcast,
+                                                            interfaces::SweepAuthorization& authorization)
 {
+    if (authorization.IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
     CAmount amount{0};
     CMutableTransaction tx;
     for (const auto& [outpoint, coin] : coins) {
@@ -71,8 +74,12 @@ util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, Fla
         return util::Error{Untranslated("Unable to calculate a stable sweep fee")};
     }
     if (IsDust(tx.vout[0], wallet.chain().relayMinFee())) return util::Error{Untranslated("Swept output would be dust")};
+    if (authorization.IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
     CTransactionRef final_tx{MakeTransactionRef(tx)};
     if (broadcast) {
+        // This is the last safe cancellation point. BeginBroadcast and Cancel
+        // use one atomic state transition, so only one of them can succeed.
+        if (!authorization.BeginBroadcast()) return util::Error{Untranslated("Sweep cancelled")};
         std::string error;
         if (!broadcast(final_tx, error)) return util::Error{Untranslated("Sweep transaction broadcast failed: " + error)};
     }
