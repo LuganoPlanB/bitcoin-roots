@@ -20,6 +20,7 @@ class SweepDialog : public QDialog
 public:
     explicit SweepDialog(WalletModel* wallet_model, QWidget* parent = nullptr);
     ~SweepDialog() override;
+    void reject() override;
 
 private Q_SLOTS:
     void preview();
