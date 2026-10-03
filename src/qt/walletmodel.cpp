@@ -67,19 +67,24 @@ WalletModel::~WalletModel()
     unsubscribeFromCoreSignals();
 }
 
-uint64_t WalletModel::invalidateSweepRequests()
+bool WalletModel::invalidateSweepRequests()
 {
+    if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return false;
     ++m_sweep_request_generation;
+    m_sweep_authorization.reset();
     Q_EMIT sweepRequestInvalidated(m_sweep_request_generation);
-    return m_sweep_request_generation;
+    return true;
 }
 
 uint64_t WalletModel::requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
                                    std::optional<uint256> expected_txid)
 {
+    if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return 0;
     const uint64_t generation{++m_sweep_request_generation};
-    QMetaObject::invokeMethod(&m_sweep_context, [this, generation, private_key = std::move(private_key), destination = std::move(destination), broadcast, expected_txid]() mutable {
-        auto result{m_wallet->sweepPrivateKey(private_key, destination, broadcast, expected_txid)};
+    auto authorization{std::make_shared<interfaces::SweepAuthorization>()};
+    m_sweep_authorization = authorization;
+    QMetaObject::invokeMethod(&m_sweep_context, [this, generation, authorization, private_key = std::move(private_key), destination = std::move(destination), broadcast, expected_txid]() mutable {
+        auto result{m_wallet->sweepPrivateKey(private_key, destination, broadcast, expected_txid, authorization)};
         private_key.clear();
 
         const bool success{result.has_value()};
@@ -92,6 +97,7 @@ uint64_t WalletModel::requestSweep(SecureString private_key, CTxDestination dest
         const QString txid{success && result->tx ? QString::fromStdString(result->tx->GetHash().ToString()) : QString{}};
         QMetaObject::invokeMethod(this, [this, generation, broadcast, success, error, amount, fee, inputs, vsize, rbf, txid] {
             if (generation != m_sweep_request_generation) return;
+            m_sweep_authorization.reset();
             Q_EMIT sweepFinished(generation, broadcast, success, error, amount, fee, inputs, vsize, rbf, txid);
         }, Qt::QueuedConnection);
     }, Qt::QueuedConnection);

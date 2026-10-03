@@ -206,7 +206,8 @@ public:
     //! populates the values.
     virtual void findCoins(std::map<COutPoint, Coin>& coins) = 0;
     //! Snapshot scan for script matches. Results can become spent before use.
-    virtual ScanResult findScriptPubKeys(const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins) = 0;
+    virtual ScanResult findScriptPubKeys(const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins,
+                                         const std::function<bool()>& should_abort = {}) = 0;
 
     //! Estimate fraction of total transactions verified if blocks up to
     //! the specified block hash are verified.

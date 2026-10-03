@@ -17,6 +17,7 @@
 #include <util/result.h>
 #include <util/ui_change_type.h>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -57,6 +58,31 @@ struct WalletTx;
 struct WalletTxOut;
 struct WalletTxStatus;
 struct WalletMigrationResult;
+
+//! Shared authorization for an asynchronous sweep. Cancellation and the final
+//! transition into broadcast are mutually exclusive, so a successful cancel
+//! guarantees that broadcast cannot start afterwards.
+class SweepAuthorization
+{
+public:
+    bool Cancel()
+    {
+        State expected{State::ACTIVE};
+        if (m_state.compare_exchange_strong(expected, State::CANCELLED)) return true;
+        return expected == State::CANCELLED;
+    }
+    bool IsCancelled() const { return m_state.load() == State::CANCELLED; }
+    bool BeginBroadcast()
+    {
+        State expected{State::ACTIVE};
+        return m_state.compare_exchange_strong(expected, State::BROADCAST_STARTED);
+    }
+    bool BroadcastStarted() const { return m_state.load() == State::BROADCAST_STARTED; }
+
+private:
+    enum class State : uint8_t { ACTIVE, CANCELLED, BROADCAST_STARTED };
+    std::atomic<State> m_state{State::ACTIVE};
+};
 
 //! Result of a transient-private-key sweep. The supplied key is never retained
 //! by this interface or by the wallet.
@@ -122,7 +148,8 @@ public:
     virtual util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
                                                              const CTxDestination& destination,
                                                              bool broadcast,
-                                                             const std::optional<uint256>& expected_txid = std::nullopt) = 0;
+                                                             const std::optional<uint256>& expected_txid,
+                                                             const std::shared_ptr<SweepAuthorization>& authorization) = 0;
 
     //! Return whether wallet has watch only keys.
     virtual bool haveWatchOnly() = 0;

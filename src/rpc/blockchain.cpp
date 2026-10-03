@@ -2108,7 +2108,7 @@ static RPCHelpMan getblockstats()
 
 namespace {
 //! Search for a given set of pubkey scripts
-bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& should_abort, int64_t& count, CCoinsViewCursor* cursor, const std::set<CScript>& needles, std::map<COutPoint, Coin>& out_results, std::function<void()>& interruption_point)
+bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& should_abort, int64_t& count, CCoinsViewCursor* cursor, const std::set<CScript>& needles, std::map<COutPoint, Coin>& out_results, std::function<void()>& interruption_point, const std::function<bool()>& local_should_abort = {})
 {
     scan_progress = 0;
     count = 0;
@@ -2117,7 +2117,7 @@ bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& 
         Coin coin;
         if (!cursor->GetKey(key) || !cursor->GetValue(coin)) return false;
         if (rpc::scan::CheckInterruption(++count, interruption_point)) {
-            if (should_abort) {
+            if (should_abort || (local_should_abort && local_should_abort())) {
                 // allow to abort the scan via the abort reference
                 return false;
             }
@@ -2152,7 +2152,8 @@ rpc::scan::Reserver::~Reserver() { if (m_reserved) { g_in_progress = false; g_pr
 bool rpc::scan::CheckInterruption(int64_t count, const std::function<void()>& interruption) { if (count % 8192 != 0) return false; interruption(); return true; }
 using rpc::scan::Reserver;
 
-interfaces::ScanResult ScanUTXOSet(NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins)
+interfaces::ScanResult ScanUTXOSet(NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins,
+                                   const std::function<bool()>& should_abort)
 {
     Reserver reserver;
     if (!reserver.reserve()) return interfaces::ScanResult::BUSY;
@@ -2167,10 +2168,10 @@ interfaces::ScanResult ScanUTXOSet(NodeContext& node, const std::set<CScript>& n
     rpc::scan::g_should_abort = false;
     std::atomic<int> progress;
     int64_t count;
-    if (FindScriptPubKey(progress, rpc::scan::g_should_abort, count, cursor.get(), needles, coins, node.rpc_interruption_point)) {
+    if (FindScriptPubKey(progress, rpc::scan::g_should_abort, count, cursor.get(), needles, coins, node.rpc_interruption_point, should_abort)) {
         return interfaces::ScanResult::SUCCESS;
     }
-    return rpc::scan::g_should_abort ? interfaces::ScanResult::ABORTED : interfaces::ScanResult::UNAVAILABLE;
+    return rpc::scan::g_should_abort || (should_abort && should_abort()) ? interfaces::ScanResult::ABORTED : interfaces::ScanResult::UNAVAILABLE;
 }
 
 static const auto scan_action_arg_desc = RPCArg{
