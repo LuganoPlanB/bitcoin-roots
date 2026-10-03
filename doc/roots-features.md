@@ -6,18 +6,18 @@ operator and local-policy work whose historical lineage includes Bitcoin Knots
 tree is not a list of shipped features.
 
 This page is the public inventory for Roots-specific work. The published
-`v29.4-roots.2` release is the baseline. This checkout begins at that published
-release and is an unreleased post-`v29.4-roots.2` wallet-privacy topic; work
-added after the baseline must not be read as a claim about the published
-release. Ordinary Bitcoin Core v29.4 functionality is documented in the built
-help and the manuals in this directory. The commands below describe the binary
-built from this tree; use `bitcoind -help` as the authority for the exact
-options in a given build.
+`v29.4-roots.2` release remains the baseline. The wallet privacy work in this
+checkout is documented as the candidate for the intended
+`v29.4-roots.3` release; that candidate wording is not a release announcement.
+Ordinary Bitcoin Core v29.4 functionality is documented in the built help and
+the manuals in this directory. The commands below describe the binary built
+from this tree; use `bitcoind -help` as the authority for the exact options in a
+given build.
 
 ## Available in this checkout
 
-Unless explicitly marked as unreleased post-`v29.4-roots.2` work, the items in
-this section were available in the published `v29.4-roots.2` baseline.
+Unless explicitly marked as `v29.4-roots.3` candidate work, the items in this
+section were available in the published `v29.4-roots.2` baseline.
 
 ### Conservative, configurable local transaction policy
 
@@ -97,9 +97,9 @@ replacement will be accepted by peers or their local policy. This Roots
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
-### Advanced sweep and coin-control tools (unreleased post-`v29.4-roots.2`)
+### Advanced sweep and coin-control tools (candidate for `v29.4-roots.3`)
 
-This checkout adds, but has not released, a guarded private-key sweep and
+The intended `v29.4-roots.3` candidate adds a guarded private-key sweep and
 advanced coin-control views. These tools are not part of the published
 `v29.4-roots.2` release. Their operational contract and limitations are in
 [`doc/wallet-privacy.md`](/doc/wallet-privacy.md); the built
@@ -108,9 +108,13 @@ schema in a given build.
 
 The sweep accepts only the documented WIF/script combinations, sends only to a
 spendable destination in the selected wallet, and never imports supplied keys.
-Coin control presents wallet-reported selection, reuse, grouping, fee, change,
-and RBF facts. It provides no privacy score or anonymity guarantee. The
-reviewed coverage includes
+Its GUI request can be invalidated while scanning, but broadcast submission has
+a final authorization boundary and must be allowed to finish once it begins.
+The key-handling path uses transient secure storage and clears temporary dialog
+state; it does not promise erasure of every copy a GUI toolkit or host might
+retain. Coin control presents wallet-reported selection, reuse, grouping, fee,
+change, and RBF facts. It provides no privacy score or anonymity guarantee. The
+candidate coverage includes
 [`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
 [`wallet_send.py`](/test/functional/wallet_send.py), and
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp).
@@ -148,8 +152,10 @@ has been tested by the current checkout.
 ### Roots identity and desktop application
 
 The published baseline's daemon, command-line tools, and Qt application identify
-themselves as Bitcoin Roots `v29.4-roots.2`. This unreleased wallet-privacy
-topic is not a published release merely because it retains that build identity.
+themselves as Bitcoin Roots `v29.4-roots.2`. The intended
+`v29.4-roots.3` identifier is candidate documentation, not evidence that an
+untagged local build has that release identity; use the built binary's
+`--version` output when verifying an executable.
 The Qt application includes Roots branding and icons. In the receive-request
 dialog, a QR image can be saved as a PNG. On Windows GUI builds where taskbar
 progress is enabled, synchronization progress is reflected in the taskbar. The
@@ -179,8 +185,8 @@ in this checkout.
 
 ## Planned or under review
 
-The sweep and coin-control tools described above are available only in this
-unreleased post-`v29.4-roots.2` topic, not in the published baseline. The P2P
+The sweep and coin-control tools described above are intended
+`v29.4-roots.3` candidate work, not part of the published baseline. The P2P
 and wallet reviews otherwise retained the published-baseline behavior rather
 than adding hardening or backup features. Cross-feature coverage and catalog
 reconciliation are release-readiness work, not operator features. Any later
