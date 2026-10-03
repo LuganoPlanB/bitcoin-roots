@@ -130,6 +130,28 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         wallet.settxfee(Decimal('0.10000000'))
         assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
         assert wif not in Path(self.options.tmpdir, 'node0', 'regtest', 'debug.log').read_text()
+
+        # A sweep output is an ordinary wallet UTXO after confirmation. Exercise
+        # it through explicit coin control only after the encrypted wallet has
+        # restarted and been unloaded/reloaded, so neither lifecycle handling
+        # nor a stale sweep state can silently substitute another input.
+        lifecycle_wif, lifecycle_pubkey = generate_keypair(wif=True)
+        miner.sendtoaddress(key_to_p2wpkh(lifecycle_pubkey), 1)
+        self.generate(miner, 1)
+        self.sync_blocks()
+        lifecycle_preview = wallet.sweepprivkeys([lifecycle_wif], destination)
+        lifecycle_sweep = wallet.sweepprivkeys([lifecycle_wif], destination, True)
+        assert_equal(lifecycle_sweep['txid'], lifecycle_preview['txid'])
+        self.sync_mempools()
+        self.generate(miner, 1)
+        self.sync_blocks()
+        self.wait_until(lambda: any(utxo['txid'] == lifecycle_sweep['txid'] for utxo in wallet.listunspent()))
+        lifecycle_utxo = next(utxo for utxo in wallet.listunspent() if utxo['txid'] == lifecycle_sweep['txid'])
+        lifecycle_input = {'txid': lifecycle_utxo['txid'], 'vout': lifecycle_utxo['vout']}
+        wallet.lockunspent(False, [lifecycle_input])
+        assert_equal(wallet.listlockunspent(), [lifecycle_input])
+        wallet.lockunspent(True, [lifecycle_input])
+
         wallet_name = wallet.getwalletinfo()['walletname']
         self.restart_node(0)
         wallet = self.nodes[0].get_wallet_rpc(wallet_name)
@@ -140,5 +162,23 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         self.nodes[0].loadwallet(wallet_name)
         wallet = self.nodes[0].get_wallet_rpc(wallet_name)
         assert_equal(wallet.getaddressinfo(key_to_p2pkh(pubkey))['ismine'], False)
+        wallet.walletpassphrase('pass', 60)
+        controlled_send = wallet.send(
+            outputs={miner.getnewaddress(): Decimal('0.5')},
+            options={
+                'inputs': [lifecycle_input],
+                'add_inputs': False,
+                'fee_rate': 1,
+                'replaceable': True,
+            },
+        )
+        assert_equal(controlled_send['complete'], True)
+        controlled_tx = self.nodes[0].decoderawtransaction(self.nodes[0].getrawtransaction(controlled_send['txid']))
+        assert_equal(len(controlled_tx['vin']), 1)
+        assert_equal(controlled_tx['vin'][0]['txid'], lifecycle_input['txid'])
+        assert_equal(controlled_tx['vin'][0]['vout'], lifecycle_input['vout'])
+        assert controlled_tx['vin'][0]['sequence'] < 0xfffffffe
+        assert controlled_send['txid'] in wallet.getrawmempool()
+        assert lifecycle_wif not in Path(self.options.tmpdir, 'node0', 'regtest', 'debug.log').read_text()
 
 if __name__ == '__main__': SweepPrivKeysTest(__file__).main()
