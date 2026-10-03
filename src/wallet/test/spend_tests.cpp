@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <consensus/amount.h>
+#include <interfaces/wallet.h>
 #include <key.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
@@ -61,29 +62,47 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
     std::map<COutPoint, Coin> coins;
     coins.emplace(COutPoint{Txid{}, 1}, Coin{CTxOut{COIN, script}, 1, false});
     int broadcasts{0};
+    interfaces::SweepAuthorization signing_authorization;
 
     FlatSigningProvider missing_key;
-    auto signing_failure{CreateSweepTransaction(*wallet, missing_key, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; })};
+    auto signing_failure{CreateSweepTransaction(*wallet, missing_key, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; }, signing_authorization)};
     BOOST_CHECK(!signing_failure);
     BOOST_CHECK_EQUAL(broadcasts, 0);
 
     FlatSigningProvider provider;
     provider.keys.emplace(key.GetPubKey().GetID(), key);
     provider.pubkeys.emplace(key.GetPubKey().GetID(), key.GetPubKey());
-    auto success{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; })};
+    interfaces::SweepAuthorization success_authorization;
+    auto success{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; }, success_authorization)};
     BOOST_REQUIRE(success);
     BOOST_CHECK_GE(success->fee, GetMinimumFee(*wallet, GetVirtualTransactionSize(*success->tx), CCoinControl{}, nullptr));
     BOOST_CHECK_EQUAL(broadcasts, 1);
 
     std::string rejection;
+    interfaces::SweepAuthorization failure_authorization;
     auto broadcast_failure{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string& error) {
         ++broadcasts;
         error = "txn-mempool-conflict";
         return false;
-    })};
+    }, failure_authorization)};
     BOOST_CHECK(!broadcast_failure);
     BOOST_CHECK(util::ErrorString(broadcast_failure).original.find("txn-mempool-conflict") != std::string::npos);
     BOOST_CHECK_EQUAL(broadcasts, 2);
+
+    interfaces::SweepAuthorization cancelled_authorization;
+    BOOST_REQUIRE(cancelled_authorization.Cancel());
+    auto cancelled{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) {
+        ++broadcasts;
+        return true;
+    }, cancelled_authorization)};
+    BOOST_CHECK(!cancelled);
+    BOOST_CHECK_EQUAL(util::ErrorString(cancelled).original, "Sweep cancelled");
+    BOOST_CHECK_EQUAL(broadcasts, 2);
+
+    interfaces::SweepAuthorization committed_authorization;
+    BOOST_REQUIRE(committed_authorization.BeginBroadcast());
+    BOOST_CHECK(!committed_authorization.Cancel());
+    BOOST_CHECK(committed_authorization.BroadcastStarted());
 }
 
 BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)

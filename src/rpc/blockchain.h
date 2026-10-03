@@ -83,6 +83,7 @@ void CheckBlockDataAvailability(node::BlockManager& blockman, const CBlockIndex&
 //! Scan the current UTXO set while sharing scantxoutset's reservation and RPC
 //! interruption behavior. The returned coins are a snapshot and must be
 //! revalidated by the caller before broadcast.
-interfaces::ScanResult ScanUTXOSet(node::NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins);
+interfaces::ScanResult ScanUTXOSet(node::NodeContext& node, const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins,
+                                   const std::function<bool()>& should_abort = {});
 
 #endif // BITCOIN_RPC_BLOCKCHAIN_H

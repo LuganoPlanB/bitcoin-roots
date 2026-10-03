@@ -7,11 +7,13 @@
 #include <qt/bitcoinunits.h>
 #include <qt/optionsmodel.h>
 #include <qt/walletmodel.h>
+#include <support/cleanse.h>
 #include <util/translation.h>
 #include <uint256.h>
 
-#include <QDialogButtonBox>
+#include <QByteArray>
 #include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -27,6 +29,18 @@ class SecureLineEdit final : public QLineEdit
 {
 public:
     using QLineEdit::QLineEdit;
+
+    SecureString TakeText()
+    {
+        QByteArray encoded{text().toLatin1()};
+        SecureString result{encoded.constData(), static_cast<size_t>(encoded.size())};
+        if (!encoded.isEmpty()) memory_cleanse(encoded.data(), encoded.size());
+        // QLineEdit does not expose its internal buffer for cleansing. Replace
+        // its contents before clearing so the widget no longer retains the WIF.
+        setText(QString(text().size(), QChar{' '}));
+        clear();
+        return result;
+    }
 
 protected:
     void keyPressEvent(QKeyEvent* event) override
@@ -118,7 +132,10 @@ SweepDialog::~SweepDialog() { clearSensitive(); }
 
 void SweepDialog::invalidate()
 {
-    if (m_request_generation != 0) m_wallet_model->invalidateSweepRequests();
+    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
+        m_result->setText(tr("Sweep broadcast submission has started and can no longer be cancelled. Wait for its result."));
+        return;
+    }
     m_request_generation = 0;
     m_private_key_cache.clear();
     m_preview_txid.clear();
@@ -147,13 +164,13 @@ void SweepDialog::preview()
 {
     const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
     if (!IsValidDestination(destination)) { setResult(tr("Enter a valid destination address."), false); return; }
-    m_private_key_cache = SecureString{m_private_key->text().toStdString()};
-    if (m_private_key_cache.empty()) { setResult(tr("Enter a private key."), false); return; }
     const QSignalBlocker block{m_private_key};
-    m_private_key->clear();
+    m_private_key_cache = static_cast<SecureLineEdit*>(m_private_key)->TakeText();
+    if (m_private_key_cache.empty()) { setResult(tr("Enter a private key."), false); return; }
     setBusy(true);
     m_result->setText(tr("Scanning for eligible coins and preparing a preview…"));
     m_request_generation = m_wallet_model->requestSweep(m_private_key_cache, destination, false);
+    if (m_request_generation == 0) setResult(tr("Another sweep broadcast is already being submitted."), false);
 }
 
 void SweepDialog::broadcast()
@@ -170,6 +187,18 @@ void SweepDialog::broadcast()
     m_preview_current = false;
     m_result->setText(tr("Rechecking the preview and broadcasting the sweep…"));
     m_request_generation = m_wallet_model->requestSweep(m_private_key_cache, destination, true, expected_txid);
+    if (m_request_generation == 0) setResult(tr("Sweep broadcast submission has already started. Wait for its result."), false);
+}
+
+void SweepDialog::reject()
+{
+    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
+        m_result->setText(tr("Sweep broadcast submission has started and can no longer be cancelled. Wait for its result."));
+        return;
+    }
+    m_request_generation = 0;
+    clearSensitive();
+    QDialog::reject();
 }
 
 void SweepDialog::handleSweepFinished(uint64_t generation, bool broadcast, bool success, const QString& error,
@@ -204,7 +233,7 @@ void SweepDialog::handleSweepFinished(uint64_t generation, bool broadcast, bool 
 
 void SweepDialog::clearSensitive()
 {
-    if (m_request_generation != 0) m_wallet_model->invalidateSweepRequests();
+    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) return;
     m_request_generation = 0;
     const QSignalBlocker block{m_private_key};
     m_private_key->clear();

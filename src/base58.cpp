@@ -37,7 +37,8 @@ static const int8_t mapBase58[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
 };
 
-[[nodiscard]] static bool DecodeBase58(const char* psz, std::vector<unsigned char>& vch, int max_ret_len)
+template <typename Allocator>
+[[nodiscard]] static bool DecodeBase58(const char* psz, std::vector<unsigned char, Allocator>& vch, int max_ret_len)
 {
     // Skip leading spaces.
     while (*psz && IsSpace(*psz))
@@ -52,7 +53,7 @@ static const int8_t mapBase58[256] = {
     }
     // Allocate enough space in big-endian base256 representation.
     int size = strlen(psz) * 733 /1000 + 1; // log(58) / log(256), rounded up.
-    std::vector<unsigned char> b256(size);
+    std::vector<unsigned char, Allocator> b256(size);
     // Process the characters.
     static_assert(std::size(mapBase58) == 256, "mapBase58.size() should be 256"); // guarantee not out of range
     while (*psz && !IsSpace(*psz)) {
@@ -61,7 +62,7 @@ static const int8_t mapBase58[256] = {
         if (carry == -1)  // Invalid b58 character
             return false;
         int i = 0;
-        for (std::vector<unsigned char>::reverse_iterator it = b256.rbegin(); (carry != 0 || i < length) && (it != b256.rend()); ++it, ++i) {
+        for (auto it = b256.rbegin(); (carry != 0 || i < length) && (it != b256.rend()); ++it, ++i) {
             carry += 58 * (*it);
             *it = carry % 256;
             carry /= 256;
@@ -77,7 +78,7 @@ static const int8_t mapBase58[256] = {
     if (*psz != 0)
         return false;
     // Skip leading zeroes in b256.
-    std::vector<unsigned char>::iterator it = b256.begin() + (size - length);
+    auto it = b256.begin() + (size - length);
     // Copy result into output vector.
     vch.reserve(zeroes + (b256.end() - it));
     vch.assign(zeroes, 0x00);
@@ -143,7 +144,8 @@ std::string EncodeBase58Check(Span<const unsigned char> input)
     return EncodeBase58(vch);
 }
 
-[[nodiscard]] static bool DecodeBase58Check(const char* psz, std::vector<unsigned char>& vchRet, int max_ret_len)
+template <typename Allocator>
+[[nodiscard]] static bool DecodeBase58Check(const char* psz, std::vector<unsigned char, Allocator>& vchRet, int max_ret_len)
 {
     if (!DecodeBase58(psz, vchRet, max_ret_len > std::numeric_limits<int>::max() - 4 ? std::numeric_limits<int>::max() : max_ret_len + 4) ||
         (vchRet.size() < 4)) {
@@ -163,6 +165,14 @@ std::string EncodeBase58Check(Span<const unsigned char> input)
 bool DecodeBase58Check(const std::string& str, std::vector<unsigned char>& vchRet, int max_ret)
 {
     if (!ContainsNoNUL(str)) {
+        return false;
+    }
+    return DecodeBase58Check(str.c_str(), vchRet, max_ret);
+}
+
+bool DecodeBase58Check(const SecureString& str, std::vector<unsigned char, secure_allocator<unsigned char>>& vchRet, int max_ret)
+{
+    if (std::find(str.begin(), str.end(), '\0') != str.end()) {
         return false;
     }
     return DecodeBase58Check(str.c_str(), vchRet, max_ret);

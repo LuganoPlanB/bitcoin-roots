@@ -217,9 +217,11 @@ public:
     util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
                                                      const CTxDestination& destination,
                                                      bool broadcast,
-                                                     const std::optional<uint256>& expected_txid) override
+                                                     const std::optional<uint256>& expected_txid,
+                                                     const std::shared_ptr<interfaces::SweepAuthorization>& authorization) override
     {
-        CKey key{DecodeSecret(std::string{private_key.begin(), private_key.end()})};
+        if (!authorization || authorization->IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
+        CKey key{DecodeSecret(private_key)};
         if (!key.IsValid()) return util::Error{Untranslated("Invalid private key or wrong network")};
         const CPubKey pubkey{key.GetPubKey()};
         FlatSigningProvider provider;
@@ -240,7 +242,7 @@ public:
             }
         }
         std::map<COutPoint, Coin> coins;
-        switch (m_wallet->chain().findScriptPubKeys(scan_objects, coins)) {
+        switch (m_wallet->chain().findScriptPubKeys(scan_objects, coins, [&] { return authorization->IsCancelled(); })) {
         case interfaces::ScanResult::SUCCESS: break;
         case interfaces::ScanResult::BUSY: return util::Error{Untranslated("UTXO scan already in progress")};
         case interfaces::ScanResult::ABORTED: return util::Error{Untranslated("UTXO scan aborted")};
@@ -252,7 +254,7 @@ public:
                 return false;
             }
             return m_wallet->chain().broadcastTransaction(tx, m_wallet->m_default_max_tx_fee, /*relay=*/true, error);
-        }} : SweepBroadcastFn{})};
+        }} : SweepBroadcastFn{}, *authorization)};
         if (!swept) return util::Error{util::ErrorString(swept)};
         return WalletSweepResult{swept->tx, swept->amount, swept->fee, coins.size(), GetVirtualTransactionSize(*swept->tx), broadcast};
     }
