@@ -30,6 +30,10 @@
 #include <wallet/spend.h>
 #include <wallet/wallet.h>
 
+#include <key_io.h>
+#include <script/solver.h>
+#include <policy/policy.h>
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -46,6 +50,7 @@ using interfaces::WalletBalances;
 using interfaces::WalletLoader;
 using interfaces::WalletMigrationResult;
 using interfaces::WalletOrderForm;
+using interfaces::WalletSweepResult;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
 using interfaces::WalletTxStatus;
@@ -174,6 +179,48 @@ public:
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->IsMine(dest) & ISMINE_SPENDABLE;
+    }
+    util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
+                                                     const CTxDestination& destination,
+                                                     bool broadcast,
+                                                     const std::optional<uint256>& expected_txid) override
+    {
+        CKey key{DecodeSecret(std::string{private_key.begin(), private_key.end()})};
+        if (!key.IsValid()) return util::Error{Untranslated("Invalid private key or wrong network")};
+        const CPubKey pubkey{key.GetPubKey()};
+        FlatSigningProvider provider;
+        provider.keys.emplace(pubkey.GetID(), key);
+        provider.pubkeys.emplace(pubkey.GetID(), pubkey);
+        std::set<CScript> scan_objects{GetScriptForDestination(PKHash(pubkey))};
+        if (pubkey.IsCompressed()) {
+            const CScript witness{GetScriptForDestination(WitnessV0KeyHash(pubkey))};
+            scan_objects.insert(witness);
+            provider.scripts.emplace(CScriptID(witness), witness);
+            scan_objects.insert(GetScriptForDestination(ScriptHash(witness)));
+        }
+        const CScript destination_script{GetScriptForDestination(destination)};
+        {
+            LOCK(m_wallet->cs_wallet);
+            if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !(m_wallet->IsMine(destination_script) & ISMINE_SPENDABLE)) {
+                return util::Error{Untranslated("Destination is not controlled by this wallet")};
+            }
+        }
+        std::map<COutPoint, Coin> coins;
+        switch (m_wallet->chain().findScriptPubKeys(scan_objects, coins)) {
+        case interfaces::ScanResult::SUCCESS: break;
+        case interfaces::ScanResult::BUSY: return util::Error{Untranslated("UTXO scan already in progress")};
+        case interfaces::ScanResult::ABORTED: return util::Error{Untranslated("UTXO scan aborted")};
+        case interfaces::ScanResult::UNAVAILABLE: return util::Error{Untranslated("UTXO scan unavailable")};
+        }
+        auto swept{CreateSweepTransaction(*m_wallet, provider, coins, destination_script, broadcast ? SweepBroadcastFn{[&, expected_txid](const CTransactionRef& tx, std::string& error) {
+            if (expected_txid && tx->GetHash() != *expected_txid) {
+                error = "Sweep preview is stale; create a fresh preview";
+                return false;
+            }
+            return m_wallet->chain().broadcastTransaction(tx, m_wallet->m_default_max_tx_fee, /*relay=*/true, error);
+        }} : SweepBroadcastFn{})};
+        if (!swept) return util::Error{util::ErrorString(swept)};
+        return WalletSweepResult{swept->tx, swept->amount, swept->fee, coins.size(), GetVirtualTransactionSize(*swept->tx), broadcast};
     }
     bool haveWatchOnly() override
     {
