@@ -87,6 +87,24 @@ BOOST_AUTO_TEST_CASE(obfuscation_empty)
     BOOST_CHECK(non_null_obf);
 }
 
+BOOST_AUTO_TEST_CASE(autofile_empty_write)
+{
+    const fs::path path{m_args.GetDataDirBase() / "empty_write.bin"};
+    const std::vector<std::byte> empty;
+    {
+        AutoFile file{fsbridge::fopen(path, "wb")};
+        file << std::span{empty};
+        file << std::byte{0x2a};
+    }
+    {
+        AutoFile file{fsbridge::fopen(path, "rb")};
+        std::byte value;
+        file >> value;
+        BOOST_CHECK_EQUAL(value, std::byte{0x2a});
+        BOOST_CHECK_EXCEPTION(file >> value, std::ios_base::failure, HasReason{"AutoFile::read: end of file"});
+    }
+}
+
 BOOST_AUTO_TEST_CASE(xor_file)
 {
     fs::path xor_path{m_args.GetDataDirBase() / "test_xor.bin"};

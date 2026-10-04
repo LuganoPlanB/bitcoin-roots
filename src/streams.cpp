@@ -81,6 +81,7 @@ void AutoFile::ignore(size_t nSize)
 void AutoFile::write(std::span<const std::byte> src)
 {
     if (!m_file) throw std::ios_base::failure("AutoFile::write: file handle is nullptr");
+    if (src.empty()) return;
     if (!m_obfuscation) {
         if (std::fwrite(src.data(), 1, src.size(), m_file) != src.size()) {
             throw std::ios_base::failure("AutoFile::write: write failed");
