@@ -649,6 +649,9 @@ fn lint_markdown() -> LintResult {
     let bin_name = "mlc";
     let mut md_ignore_paths = get_subtrees();
     md_ignore_paths.push("./doc/README_doxygen.md");
+    // VitePress resolves this documentation mirror, including its symlinks.
+    // Checking those links as repository-root Markdown produces false errors.
+    md_ignore_paths.push("./doc/website/content");
     let md_ignore_path_str = md_ignore_paths.join(",");
 
     let mut cmd = Command::new(bin_name);

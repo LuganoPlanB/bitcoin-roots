@@ -70,6 +70,7 @@ test("website-owned navigation only targets published pages", async () => {
     "/documentation",
     "/getting-started",
     "/principles",
+    "/wallet-privacy",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
   const websiteFiles = [
@@ -77,6 +78,7 @@ test("website-owned navigation only targets published pages", async () => {
     "content/compare.md",
     "content/getting-started.md",
     "content/principles.md",
+    "content/wallet-privacy.md",
   ];
 
   for (const file of websiteFiles) {
@@ -123,12 +125,32 @@ test("primary navigation includes the two editorial routes", async () => {
     ["Get started", "/getting-started"],
     ["Principles", "/principles"],
     ["Compare", "/compare"],
+    ["Wallet privacy", "/wallet-privacy"],
     ["Documentation", "/documentation"],
     ["Policy", "/doc/policy/README"],
     ["Contribute", "/CONTRIBUTING"],
   ]) {
     assert.match(config, new RegExp(`text: "${label}", link: "${route}"`));
   }
+});
+
+test("wallet privacy candidate copy states capabilities and boundaries", async () => {
+  const [home, page] = await Promise.all([
+    readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
+    readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8"),
+  ]);
+  const source = `${home}\n${page}`;
+
+  assert.match(source, /v29\.4-roots\.3 candidate/);
+  assert.match(source, /private-key sweep/);
+  assert.match(source, /privacy-aware coin control/);
+  assert.match(source, /cancel/i);
+  assert.match(source, /independent backup/i);
+  assert.match(source, /do not add CoinJoin, payjoin/i);
+  assert.match(source, /not a release announcement/i);
+  assert.match(source, /do not provide an anonymity guarantee/i);
+  assert.match(source, /wallet privacy manual/i);
+  assert.match(source, /release notes/i);
 });
 
 test("the contribution guide separates patch maintenance from Core ports", async () => {

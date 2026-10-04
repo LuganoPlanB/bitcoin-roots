@@ -356,12 +356,57 @@ body {
 .roots-validation,
 .roots-boundary,
 .roots-why,
+.roots-wallet-privacy,
 .roots-start,
 .roots-library,
 .roots-development {
   max-width: var(--roots-max-width);
   margin: 0 auto;
   padding: clamp(5rem, 10vw, 8rem) var(--roots-gutter);
+}
+
+.roots-wallet-privacy {
+  max-width: none;
+  padding-right: max(var(--roots-gutter), calc((100vw - var(--roots-max-width)) / 2 + var(--roots-gutter)));
+  padding-left: max(var(--roots-gutter), calc((100vw - var(--roots-max-width)) / 2 + var(--roots-gutter)));
+  background: var(--planb-color-canvas-alt);
+}
+
+.roots-wallet-privacy .roots-section-heading {
+  max-width: var(--roots-max-width);
+  margin: 0 auto;
+  align-items: start;
+}
+
+.roots-wallet-privacy h2 {
+  max-width: 13ch;
+  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  font-weight: 800;
+}
+
+.roots-wallet-privacy__eyebrow {
+  margin-bottom: 1rem !important;
+  color: var(--vp-c-brand-1);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.roots-wallet-privacy .roots-section-heading > div:last-child > p,
+.roots-wallet-privacy li {
+  color: var(--planb-color-text-soft);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.roots-wallet-privacy ul {
+  margin: 1.4rem 0;
+  padding-left: 1.3rem;
+}
+
+.roots-wallet-privacy li + li {
+  margin-top: 0.6rem;
 }
 
 .roots-validation,
@@ -1218,6 +1263,20 @@ body {
   .roots-close > .roots-actions {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+/* The additional wallet route exhausts the desktop navigation width before the
+ * theme's default mobile breakpoint. Switch to its existing accessible mobile
+ * navigation early enough to avoid horizontal overflow on tablet viewports. */
+@media (max-width: 900px) {
+  .VPNavBarMenu,
+  .VPNavBarExtra {
+    display: none !important;
+  }
+
+  .VPNavBarHamburger {
+    display: flex !important;
   }
 }
 
