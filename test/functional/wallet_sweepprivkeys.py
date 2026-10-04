@@ -181,4 +181,5 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         assert controlled_send['txid'] in wallet.getrawmempool()
         assert lifecycle_wif not in Path(self.options.tmpdir, 'node0', 'regtest', 'debug.log').read_text()
 
-if __name__ == '__main__': SweepPrivKeysTest(__file__).main()
+if __name__ == '__main__':
+    SweepPrivKeysTest(__file__).main()
