@@ -147,4 +147,16 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
     }
 }
 
+BOOST_AUTO_TEST_CASE(secure_string_private_key_decode)
+{
+    SelectParams(ChainType::REGTEST);
+    const CKey key{GenerateRandomKey()};
+    const std::string encoded{EncodeSecret(key)};
+    SecureString secure_encoded{encoded.begin(), encoded.end()};
+    BOOST_CHECK(DecodeSecret(secure_encoded) == key);
+
+    secure_encoded.insert(secure_encoded.begin() + 1, '\0');
+    BOOST_CHECK(!DecodeSecret(secure_encoded).IsValid());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

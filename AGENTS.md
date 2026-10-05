@@ -454,7 +454,9 @@ series contains inherited CRLF files, apply the released mbox with
 
 Before assigning a permanent release tag:
 
-1. Merge the reviewed promotion PR and verify its tree equals the canonical tip.
+1. Merge the reviewed promotion PR and verify product equality with the canonical
+   tip. Enumerate approved repository-only differences as described in
+   `contrib/roots/README.md`; require full tree equality when none exist.
 2. Dispatch `Release artifacts` from `main` with the future Roots tag and the
    full 40-hex `origin/roots/<core-version>` commit.
 3. Require all five platform builds and independently inspect the packages and

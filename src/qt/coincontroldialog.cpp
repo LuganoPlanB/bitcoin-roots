@@ -25,8 +25,13 @@
 #include <QDialogButtonBox>
 #include <QFlags>
 #include <QIcon>
+#include <QLineEdit>
 #include <QSettings>
+#include <QStringList>
 #include <QTreeWidget>
+
+#include <limits>
+#include <map>
 
 using wallet::CCoinControl;
 
@@ -35,7 +40,9 @@ bool CoinControlDialog::fSubtractFeeFromAmount = false;
 
 bool CCoinControlWidgetItem::operator<(const QTreeWidgetItem &other) const {
     int column = treeWidget()->sortColumn();
-    if (column == CoinControlDialog::COLUMN_AMOUNT || column == CoinControlDialog::COLUMN_DATE || column == CoinControlDialog::COLUMN_CONFIRMATIONS)
+    if (column == CoinControlDialog::COLUMN_AMOUNT || column == CoinControlDialog::COLUMN_EFFECTIVE_VALUE ||
+        column == CoinControlDialog::COLUMN_INPUT_BYTES || column == CoinControlDialog::COLUMN_DATE ||
+        column == CoinControlDialog::COLUMN_CONFIRMATIONS)
         return data(column, Qt::UserRole).toLongLong() < other.data(column, Qt::UserRole).toLongLong();
     return QTreeWidgetItem::operator<(other);
 }
@@ -98,6 +105,9 @@ CoinControlDialog::CoinControlDialog(CCoinControl& coin_control, WalletModel* _m
 
     // (un)select all
     connect(ui->pushButtonSelectAll, &QPushButton::clicked, this, &CoinControlDialog::buttonSelectAllClicked);
+    connect(ui->lineEditFilter, &QLineEdit::textChanged, this, &CoinControlDialog::filterChanged);
+    connect(model, &WalletModel::balanceChanged, this, &CoinControlDialog::walletChanged);
+    connect(model, &WalletModel::unload, this, &QDialog::reject);
 
     ui->treeWidget->setColumnWidth(COLUMN_CHECKBOX, 84);
     ui->treeWidget->setColumnWidth(COLUMN_AMOUNT, 110);
@@ -105,6 +115,14 @@ CoinControlDialog::CoinControlDialog(CCoinControl& coin_control, WalletModel* _m
     ui->treeWidget->setColumnWidth(COLUMN_ADDRESS, 320);
     ui->treeWidget->setColumnWidth(COLUMN_DATE, 130);
     ui->treeWidget->setColumnWidth(COLUMN_CONFIRMATIONS, 110);
+    ui->treeWidget->setColumnWidth(COLUMN_STATUS, 180);
+    ui->treeWidget->setColumnWidth(COLUMN_EFFECTIVE_VALUE, 125);
+    ui->treeWidget->setColumnWidth(COLUMN_INPUT_BYTES, 95);
+
+    ui->lineEditFilter->setAccessibleName(tr("Filter coin selection"));
+    ui->lineEditFilter->setAccessibleDescription(tr("Filters outpoints, addresses, labels, amounts, and wallet state without changing selected inputs."));
+    ui->treeWidget->setAccessibleName(tr("Coin selection list"));
+    ui->treeWidget->setAccessibleDescription(tr("Use Space to select an eligible input. Locked, unsafe, watch-only, and reused states are shown in the Status column."));
 
     // default view is sorted by amount desc
     sortView(COLUMN_AMOUNT, Qt::DescendingOrder);
@@ -318,6 +336,30 @@ void CoinControlDialog::headerSectionClicked(int logicalIndex)
     }
 }
 
+void CoinControlDialog::filterChanged(const QString& filter)
+{
+    const QString needle{filter.trimmed()};
+    const auto matches = [&needle](QTreeWidgetItem* item) {
+        if (needle.isEmpty()) return true;
+        for (int column = COLUMN_AMOUNT; column <= COLUMN_STATUS; ++column) {
+            if (item->text(column).contains(needle, Qt::CaseInsensitive)) return true;
+        }
+        return item->data(COLUMN_ADDRESS, TxHashRole).toString().contains(needle, Qt::CaseInsensitive);
+    };
+    for (int i = 0; i < ui->treeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* parent{ui->treeWidget->topLevelItem(i)};
+        const bool group_matches{matches(parent)};
+        bool has_visible_child{false};
+        for (int child = 0; child < parent->childCount(); ++child) {
+            const bool visible{group_matches || matches(parent->child(child))};
+            parent->child(child)->setHidden(!visible);
+            has_visible_child |= visible;
+        }
+        parent->setHidden(parent->childCount() ? !has_visible_child && !group_matches : !group_matches);
+        if (!needle.isEmpty() && parent->childCount()) parent->setExpanded(has_visible_child);
+    }
+}
+
 // toggle tree mode
 void CoinControlDialog::radioTreeMode(bool checked)
 {
@@ -364,6 +406,26 @@ void CoinControlDialog::updateLabelLocked()
        ui->labelLocked->setVisible(true);
     }
     else ui->labelLocked->setVisible(false);
+}
+
+void CoinControlDialog::updateAvailableLabel()
+{
+    ui->labelAvailable->setText(tr("Available: %1 (%2 eligible)")
+                                    .arg(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), m_available_amount))
+                                    .arg(m_available_count));
+}
+
+void CoinControlDialog::walletChanged()
+{
+    // A balance update can represent a competing spend, a reorg, or a lock
+    // change. Keep intent only for harmless presentation refreshes; wallet
+    // changes require the operator to deliberately select inputs again.
+    m_coin_control.UnSelectAll();
+    updateView();
+    updateLabelLocked();
+    CoinControlDialog::updateLabels(m_coin_control, model, this);
+    ui->labelSelectionNotice->setText(tr("Input selection cleared after a wallet change. Review the current inputs."));
+    ui->labelSelectionNotice->setVisible(true);
 }
 
 void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *model, QDialog* dialog)
@@ -502,6 +564,9 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     QLabel *l4 = dialog->findChild<QLabel *>("labelCoinControlAfterFee");
     QLabel *l5 = dialog->findChild<QLabel *>("labelCoinControlBytes");
     QLabel *l8 = dialog->findChild<QLabel *>("labelCoinControlChange");
+    QLabel *fee_rate = dialog->findChild<QLabel *>("labelCoinControlFeeRate");
+    QLabel *rbf = dialog->findChild<QLabel *>("labelCoinControlRbf");
+    QLabel *dust = dialog->findChild<QLabel *>("labelCoinControlDust");
 
     // enable/disable "change"
     dialog->findChild<QLabel *>("labelCoinControlChangeText")   ->setEnabled(nPayAmount > 0);
@@ -514,6 +579,10 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     l4->setText(BitcoinUnits::formatWithUnit(nDisplayUnit, nAfterFee));      // After Fee
     l5->setText(((nBytes > 0) ? ASYMP_UTF8 : "") + QString::number(nBytes));        // Bytes
     l8->setText(BitcoinUnits::formatWithUnit(nDisplayUnit, nChange));        // Change
+    if (fee_rate) fee_rate->setText(nBytes > 0 ? tr("%1 sat/vB").arg(QString::number(static_cast<double>(nPayFee) / nBytes, 'f', 1)) : tr("—"));
+    if (rbf) rbf->setText(m_coin_control.m_signal_bip125_rbf ? tr("Signals Replace-By-Fee") : tr("Does not signal Replace-By-Fee"));
+    if (dust) dust->setText(nQuantity > 0 && nChange == 0 && nPayAmount > 0 && !CoinControlDialog::fSubtractFeeFromAmount
+                                ? tr("No change output (change may have been added to the fee)") : tr("No dust change detected"));
     if (nPayFee > 0)
     {
         l3->setText(ASYMP_UTF8 + l3->text());
@@ -555,7 +624,9 @@ void CoinControlDialog::updateView()
     if (!model || !model->getOptionsModel() || !model->getAddressTableModel())
         return;
 
-    bool treeMode = ui->radioTreeMode->isChecked();
+    const bool treeMode = ui->radioTreeMode->isChecked();
+    m_available_amount = 0;
+    m_available_count = 0;
 
     ui->treeWidget->clear();
     ui->treeWidget->setEnabled(false); // performance, otherwise updateLabels would be called for every checked checkbox
@@ -565,7 +636,21 @@ void CoinControlDialog::updateView()
 
     BitcoinUnit nDisplayUnit = model->getOptionsModel()->getDisplayUnit();
 
-    for (const auto& coins : model->wallet().listCoins()) {
+    const auto coin_groups = model->wallet().listCoins();
+    std::vector<COutPoint> outpoints;
+    for (const auto& coins : coin_groups) {
+        for (const auto& outpair : coins.second) outpoints.push_back(std::get<0>(outpair));
+    }
+    // Use the same fee choice that the wallet will use for the current coin
+    // control. This makes effective value a wallet calculation, rather than
+    // a GUI approximation. The 1000-vbyte query converts the selected wallet
+    // fee into CFeeRate's sat/kvB representation.
+    const CFeeRate fee_rate{m_coin_control.m_feerate.value_or(
+        CFeeRate(model->wallet().getMinimumFee(1000, m_coin_control, /*returned_target=*/nullptr, /*reason=*/nullptr)))};
+    std::map<COutPoint, interfaces::WalletTxOut> coin_facts;
+    for (const auto& coin : model->wallet().getCoins(outpoints, fee_rate)) coin_facts.emplace(coin.outpoint, coin);
+
+    for (const auto& coins : coin_groups) {
         CCoinControlWidgetItem* itemWalletAddress{nullptr};
         QString sWalletAddress = QString::fromStdString(EncodeDestination(coins.first));
         QString sWalletLabel = model->getAddressTableModel()->labelForAddress(sWalletAddress);
@@ -585,13 +670,15 @@ void CoinControlDialog::updateView()
 
             // address
             itemWalletAddress->setText(COLUMN_ADDRESS, sWalletAddress);
+            itemWalletAddress->setText(COLUMN_STATUS, tr("Grouped by wallet address"));
+            itemWalletAddress->setToolTip(COLUMN_STATUS, tr("Grouping reflects wallet address relationships. Selecting this group combines its inputs; it does not measure privacy."));
         }
 
         CAmount nSum = 0;
         int nChildren = 0;
         for (const auto& outpair : coins.second) {
             const COutPoint& output = std::get<0>(outpair);
-            const interfaces::WalletTxOut& out = std::get<1>(outpair);
+            const interfaces::WalletTxOut& out = coin_facts.at(output);
             nSum += out.txout.nValue;
             nChildren++;
 
@@ -640,14 +727,35 @@ void CoinControlDialog::updateView()
             itemOutput->setText(COLUMN_CONFIRMATIONS, QString::number(out.depth_in_main_chain));
             itemOutput->setData(COLUMN_CONFIRMATIONS, Qt::UserRole, QVariant((qlonglong)out.depth_in_main_chain));
 
+            QStringList states;
+            if (out.is_locked) states << tr("Locked");
+            if (!out.is_safe) states << tr("Unsafe");
+            if (!out.is_spendable && out.is_solvable) states << tr("Watch-only");
+            if (!out.is_spendable && !out.is_solvable) states << tr("Not spendable");
+            if (out.is_reused) states << tr("Reused address");
+            if (out.is_immature) states << tr("Immature");
+            if (out.is_change) states << tr("Change");
+            if (states.isEmpty()) states << tr("Eligible");
+            itemOutput->setText(COLUMN_STATUS, states.join(", "));
+            itemOutput->setToolTip(COLUMN_STATUS, tr("Wallet-reported state. Reuse and grouping describe observable wallet facts; they are not a privacy score."));
+            if (out.effective_value) {
+                itemOutput->setText(COLUMN_EFFECTIVE_VALUE, BitcoinUnits::format(nDisplayUnit, *out.effective_value));
+                itemOutput->setData(COLUMN_EFFECTIVE_VALUE, Qt::UserRole, QVariant((qlonglong)*out.effective_value));
+            } else {
+                itemOutput->setText(COLUMN_EFFECTIVE_VALUE, tr("Not estimated"));
+                itemOutput->setData(COLUMN_EFFECTIVE_VALUE, Qt::UserRole, QVariant(std::numeric_limits<qlonglong>::min()));
+            }
+            itemOutput->setText(COLUMN_INPUT_BYTES, out.input_bytes >= 0 ? QString::number(out.input_bytes) : tr("Unknown"));
+            itemOutput->setData(COLUMN_INPUT_BYTES, Qt::UserRole, QVariant((qlonglong)out.input_bytes));
+
             // transaction hash
             itemOutput->setData(COLUMN_ADDRESS, TxHashRole, QString::fromStdString(output.hash.GetHex()));
 
             // vout index
             itemOutput->setData(COLUMN_ADDRESS, VOutRole, output.n);
 
-             // disable locked coins
-            if (model->wallet().isLockedCoin(output))
+             // Wallet-owned locked state prevents selection, but remains visible.
+            if (out.is_locked)
             {
                 m_coin_control.UnSelect(output); // just to be sure
                 itemOutput->setDisabled(true);
@@ -657,6 +765,10 @@ void CoinControlDialog::updateView()
             // set checkbox
             if (m_coin_control.IsSelected(output))
                 itemOutput->setCheckState(COLUMN_CHECKBOX, Qt::Checked);
+            if (out.is_spendable && out.is_safe && !out.is_locked && !out.is_immature) {
+                m_available_amount += out.txout.nValue;
+                ++m_available_count;
+            }
         }
 
         // amount
@@ -679,4 +791,6 @@ void CoinControlDialog::updateView()
     // sort view
     sortView(sortColumn, sortOrder);
     ui->treeWidget->setEnabled(true);
+    updateAvailableLabel();
+    filterChanged(ui->lineEditFilter->text());
 }

@@ -10,6 +10,7 @@
 #include <consensus/tx_verify.h>
 #include <interfaces/mining.h>
 #include <node/miner.h>
+#include <policy/coin_age_priority.h>
 #include <policy/policy.h>
 #include <test/util/random.h>
 #include <test/util/transaction_utils.h>
@@ -19,6 +20,7 @@
 #include <util/check.h>
 #include <util/feefrac.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -39,6 +41,7 @@ using node::BlockAssembler;
 namespace miner_tests {
 struct MinerTestingSetup : public TestingSetup {
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool TestSequenceLocks(const CTransaction& tx, CTxMemPool& tx_mempool) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
@@ -665,6 +668,129 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     }
 }
 
+// A transaction added by the coin-age priority phase must not keep subsidising
+// its descendants in the ancestor-feerate phase.
+//
+// The first scenario's entries have no coin-age priority, so it ranks them by
+// fee score, adds the fee-paying parent (the child still depends on it), and
+// then stops at MINIMUM_TX_PRIORITY. The child pays no fee and must not be
+// selected on the strength of its already-included parent's fee.
+void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
+{
+    CTxMemPool& tx_mempool{MakeMempool()};
+    BlockAssembler::Options options;
+    options.coinbase_output_script = scriptPubKey;
+    gArgs.ForceSetArg("-blockprioritysize", "100000");
+
+    LOCK(tx_mempool.cs);
+    TestMemPoolEntryHelper entry;
+
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].scriptSig = CScript() << OP_1;
+    tx.vin[0].prevout.hash = txFirst[0]->GetHash();
+    tx.vin[0].prevout.n = 0;
+    tx.vout.resize(1);
+    tx.vout[0].nValue = 5000000000LL - 100000;
+    const Txid parent_txid = tx.GetHash();
+    AddToMempool(tx_mempool, entry.Fee(100000).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
+
+    tx.vin[0].prevout.hash = parent_txid;
+    const Txid child_txid = tx.GetHash();
+    AddToMempool(tx_mempool, entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
+
+    const auto block_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+    BOOST_REQUIRE(block_template);
+    const CBlock& block{block_template->block};
+    BOOST_REQUIRE_EQUAL(block.vtx.size(), 2U);
+    BOOST_CHECK(block.vtx[1]->GetHash() == parent_txid);
+    for (const auto& btx : block.vtx) BOOST_CHECK(btx->GetHash() != child_txid);
+
+    // Template policy must not make the otherwise-valid zero-fee child invalid.
+    CBlock block_with_child{block};
+    block_with_child.vtx.push_back(MakeTransactionRef(tx));
+    node::RegenerateCommitments(block_with_child, *m_node.chainman);
+    BlockValidationState state;
+    BOOST_CHECK(TestBlockValidity(state, m_node.chainman->GetParams(), m_node.chainman->ActiveChainstate(),
+                                 block_with_child, m_node.chainman->ActiveChain().Tip(), /*fCheckPOW=*/false));
+
+    // With the priority phase disabled, ordinary package selection must still
+    // include the parent and stop subsidising its zero-fee child afterwards.
+    gArgs.ForceSetArg("-blockprioritysize", "0");
+    const auto no_priority_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+    BOOST_REQUIRE(no_priority_template);
+    BOOST_REQUIRE_EQUAL(no_priority_template->block.vtx.size(), 2U);
+    BOOST_CHECK(no_priority_template->block.vtx[1]->GetHash() == parent_txid);
+
+    // A zero mining fee floor may still select the child.
+    options.blockMinFeeRate = CFeeRate{0};
+    const auto zero_floor_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+    BOOST_REQUIRE(zero_floor_template);
+    BOOST_REQUIRE_EQUAL(zero_floor_template->block.vtx.size(), 3U);
+    BOOST_CHECK(zero_floor_template->block.vtx[2]->GetHash() == child_txid);
+
+    tx_mempool.removeRecursive(*block.vtx[1], MemPoolRemovalReason::REPLACED);
+
+    // Confirmed coin age selects zero-fee parents first. The child's own fee
+    // meets the mining floor, but its stale package including those parents
+    // does not. Exercise both one ancestor and a shared descendant of two
+    // ancestors, which must each be subtracted exactly once.
+    for (const size_t parent_count : {1U, 2U}) {
+        BOOST_TEST_CONTEXT("priority-selected parents: " << parent_count) {
+            options.blockMinFeeRate = CFeeRate{1000};
+            const unsigned int height = m_node.chainman->ActiveChain().Height();
+            std::vector<CTransactionRef> parents;
+            size_t priority_tx_size{0};
+            for (size_t i{0}; i < parent_count; ++i) {
+                CMutableTransaction parent;
+                parent.vin.resize(1);
+                parent.vin[0].prevout = COutPoint{txFirst[i]->GetHash(), 0};
+                parent.vin[0].scriptSig = CScript() << OP_1;
+                parent.vout.emplace_back(50 * COIN, CScript{});
+                parents.push_back(MakeTransactionRef(parent));
+                const auto coin_age = GetCoinAge(*parents.back(), m_node.chainman->ActiveChainstate().CoinsTip(), height + 1);
+                // AddToMempool does not preserve the coin-age cache.
+                auto changeset = tx_mempool.GetChangeSet();
+                changeset->StageAddition(parents.back(), /*fee=*/0, /*time=*/0, height, /*entry_sequence=*/0,
+                                         coin_age, /*spends_coinbase=*/true, /*extra_weight=*/0, /*sigops_cost=*/4, LockPoints{});
+                changeset->Apply();
+                const auto parent_iter = tx_mempool.mapTx.find(parents.back()->GetHash());
+                BOOST_REQUIRE(parent_iter != tx_mempool.mapTx.end());
+                BOOST_REQUIRE(parent_iter->GetPriority(height + 1) > MINIMUM_TX_PRIORITY);
+                priority_tx_size += GetSerializeSize(TX_WITH_WITNESS(*parents.back()));
+            }
+
+            CMutableTransaction child;
+            for (const auto& parent : parents) {
+                child.vin.emplace_back(COutPoint{parent->GetHash(), 0}, CScript() << OP_1);
+            }
+            child.vout.emplace_back(parent_count * 50 * COIN, CScript{});
+            const CAmount child_fee = options.blockMinFeeRate.GetFee(GetVirtualTransactionSize(CTransaction{child}));
+            child.vout[0].nValue -= child_fee;
+            const auto child_ref = MakeTransactionRef(child);
+            AddToMempool(tx_mempool, entry.Fee(child_fee).SpendsCoinbase(false).FromTx(child_ref));
+
+            // Without priority selection the entire package is below the floor.
+            gArgs.ForceSetArg("-blockprioritysize", "0");
+            const auto below_floor_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+            BOOST_REQUIRE(below_floor_template);
+            BOOST_CHECK_EQUAL(below_floor_template->block.vtx.size(), 1U);
+
+            // The assembler reserves 1000 bytes before adding transactions;
+            // end the priority phase immediately after including the parents.
+            gArgs.ForceSetArg("-blockprioritysize", util::ToString(1000 + priority_tx_size));
+            const auto priority_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
+            BOOST_REQUIRE(priority_template);
+            BOOST_REQUIRE_EQUAL(priority_template->block.vtx.size(), parent_count + 2);
+            BOOST_CHECK(priority_template->block.vtx.back()->GetHash() == child_ref->GetHash());
+            BOOST_CHECK_EQUAL(priority_template->vTxFees.back(), child_fee);
+            for (const auto& parent : parents) tx_mempool.removeRecursive(*parent, MemPoolRemovalReason::REPLACED);
+        }
+    }
+
+    gArgs.ForceSetArg("-blockprioritysize", "0");
+}
+
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
@@ -737,6 +863,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     SetMockTime(0);
 
     TestPackageSelection(scriptPubKey, txFirst);
+    TestPriorityPhaseStaleAncestors(scriptPubKey, txFirst);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
     SetMockTime(0);

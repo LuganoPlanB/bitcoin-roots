@@ -30,6 +30,10 @@
 #include <wallet/spend.h>
 #include <wallet/wallet.h>
 
+#include <key_io.h>
+#include <script/solver.h>
+#include <policy/policy.h>
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -46,6 +50,7 @@ using interfaces::WalletBalances;
 using interfaces::WalletLoader;
 using interfaces::WalletMigrationResult;
 using interfaces::WalletOrderForm;
+using interfaces::WalletSweepResult;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
 using interfaces::WalletTxStatus;
@@ -114,10 +119,23 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     int depth) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
+    result.outpoint = COutPoint{wtx.GetHash(), static_cast<uint32_t>(n)};
     result.txout = wtx.tx->vout[n];
     result.time = wtx.GetTxTime();
     result.depth_in_main_chain = depth;
-    result.is_spent = wallet.IsSpent(COutPoint(wtx.GetHash(), n));
+    result.is_spent = wallet.IsSpent(result.outpoint);
+    result.is_locked = wallet.IsLockedCoin(result.outpoint);
+    result.is_reused = wallet.IsSpentKey(result.txout.scriptPubKey);
+    result.is_immature = wallet.IsTxImmatureCoinBase(wtx);
+    result.is_change = OutputIsChange(wallet, result.txout);
+    ExtractDestination(result.txout.scriptPubKey, result.address);
+    if (const auto* entry = wallet.FindAddressBookEntry(result.address)) {
+        result.label = entry->GetLabel();
+    }
+    CTxDestination grouping_address;
+    if (ExtractDestination(FindNonChangeParentOutput(wallet, result.outpoint).scriptPubKey, grouping_address)) {
+        result.grouping_address = grouping_address;
+    }
     return result;
 }
 
@@ -125,10 +143,31 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     const COutput& output) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
+    result.outpoint = output.outpoint;
     result.txout = output.txout;
     result.time = output.time;
     result.depth_in_main_chain = output.depth;
     result.is_spent = wallet.IsSpent(output.outpoint);
+    result.input_bytes = output.input_bytes;
+    if (output.HasEffectiveValue()) result.effective_value = output.GetEffectiveValue();
+    result.ancestor_bump_fees = output.ancestor_bump_fees;
+    result.is_spendable = output.spendable;
+    result.is_solvable = output.solvable;
+    result.is_safe = output.safe;
+    result.is_locked = wallet.IsLockedCoin(output.outpoint);
+    result.is_reused = wallet.IsSpentKey(output.txout.scriptPubKey);
+    if (const CWalletTx* wtx = wallet.GetWalletTx(output.outpoint.hash)) {
+        result.is_immature = wallet.IsTxImmatureCoinBase(*wtx);
+    }
+    result.is_change = OutputIsChange(wallet, output.txout);
+    ExtractDestination(output.txout.scriptPubKey, result.address);
+    if (const auto* entry = wallet.FindAddressBookEntry(result.address)) {
+        result.label = entry->GetLabel();
+    }
+    CTxDestination grouping_address;
+    if (ExtractDestination(FindNonChangeParentOutput(wallet, output.outpoint).scriptPubKey, grouping_address)) {
+        result.grouping_address = grouping_address;
+    }
     return result;
 }
 
@@ -174,6 +213,50 @@ public:
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->IsMine(dest) & ISMINE_SPENDABLE;
+    }
+    util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
+                                                     const CTxDestination& destination,
+                                                     bool broadcast,
+                                                     const std::optional<uint256>& expected_txid,
+                                                     const std::shared_ptr<interfaces::SweepAuthorization>& authorization) override
+    {
+        if (!authorization || authorization->IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
+        CKey key{DecodeSecret(private_key)};
+        if (!key.IsValid()) return util::Error{Untranslated("Invalid private key or wrong network")};
+        const CPubKey pubkey{key.GetPubKey()};
+        FlatSigningProvider provider;
+        provider.keys.emplace(pubkey.GetID(), key);
+        provider.pubkeys.emplace(pubkey.GetID(), pubkey);
+        std::set<CScript> scan_objects{GetScriptForDestination(PKHash(pubkey))};
+        if (pubkey.IsCompressed()) {
+            const CScript witness{GetScriptForDestination(WitnessV0KeyHash(pubkey))};
+            scan_objects.insert(witness);
+            provider.scripts.emplace(CScriptID(witness), witness);
+            scan_objects.insert(GetScriptForDestination(ScriptHash(witness)));
+        }
+        const CScript destination_script{GetScriptForDestination(destination)};
+        {
+            LOCK(m_wallet->cs_wallet);
+            if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !(m_wallet->IsMine(destination_script) & ISMINE_SPENDABLE)) {
+                return util::Error{Untranslated("Destination is not controlled by this wallet")};
+            }
+        }
+        std::map<COutPoint, Coin> coins;
+        switch (m_wallet->chain().findScriptPubKeys(scan_objects, coins, [&] { return authorization->IsCancelled(); })) {
+        case interfaces::ScanResult::SUCCESS: break;
+        case interfaces::ScanResult::BUSY: return util::Error{Untranslated("UTXO scan already in progress")};
+        case interfaces::ScanResult::ABORTED: return util::Error{Untranslated("UTXO scan aborted")};
+        case interfaces::ScanResult::UNAVAILABLE: return util::Error{Untranslated("UTXO scan unavailable")};
+        }
+        auto swept{CreateSweepTransaction(*m_wallet, provider, coins, destination_script, broadcast ? SweepBroadcastFn{[&, expected_txid](const CTransactionRef& tx, std::string& error) {
+            if (expected_txid && tx->GetHash() != *expected_txid) {
+                error = "Sweep preview is stale; create a fresh preview";
+                return false;
+            }
+            return m_wallet->chain().broadcastTransaction(tx, m_wallet->m_default_max_tx_fee, /*relay=*/true, error);
+        }} : SweepBroadcastFn{}, *authorization)};
+        if (!swept) return util::Error{util::ErrorString(swept)};
+        return WalletSweepResult{swept->tx, swept->amount, swept->fee, coins.size(), GetVirtualTransactionSize(*swept->tx), broadcast};
     }
     bool haveWatchOnly() override
     {
@@ -480,13 +563,32 @@ public:
         }
         return result;
     }
-    std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) override
+    std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs, const std::optional<CFeeRate>& feerate) override
     {
         LOCK(m_wallet->cs_wallet);
+        CCoinControl coin_control;
+        // Expose factual state rather than applying a caller's transaction
+        // policy. In particular, dirty, locked, unsafe, watch-only, and
+        // immature coins need to be inspectable even when not selectable.
+        coin_control.m_avoid_address_reuse = false;
+        CoinFilterParams params;
+        params.only_spendable = false;
+        params.include_immature_coinbase = true;
+        params.skip_locked = false;
+        std::map<COutPoint, COutput> available_coins;
+        for (const COutput& coin : AvailableCoins(*m_wallet, &coin_control, feerate, params).All()) {
+            available_coins.emplace(coin.outpoint, coin);
+        }
+
         std::vector<WalletTxOut> result;
         result.reserve(outputs.size());
         for (const auto& output : outputs) {
+            if (const auto coin = available_coins.find(output); coin != available_coins.end()) {
+                result.emplace_back(MakeWalletTxOut(*m_wallet, coin->second));
+                continue;
+            }
             result.emplace_back();
+            result.back().outpoint = output;
             auto it = m_wallet->mapWallet.find(output.hash);
             if (it != m_wallet->mapWallet.end()) {
                 int depth = m_wallet->GetTxDepthInMainChain(it->second);

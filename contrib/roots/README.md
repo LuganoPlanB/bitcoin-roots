@@ -24,7 +24,9 @@ release artifacts separate:
   rebuilt and must not be used as the base for durable work.
 - `main` is the currently promoted product history. An explicit promotion merge
   connects it to a reviewed canonical release line; the merge result must have
-  exactly the same tree as that canonical tip.
+  the same product files as that canonical tip. Reviewed repository-only
+  website, contribution guidance, and website lint integration may remain on
+  `main`; list every such difference in the promotion PR.
 - `archive/*` preserves superseded candidates and retired maintenance systems.
   Archive branches are evidence, not dependencies or release inputs.
 
@@ -37,7 +39,8 @@ Pull requests that promote a release into `main` and pull requests that review
 the canonical patch series have different bases. Never rebase or squash the
 canonical series merely to make a promotion pull request appear linear. Build
 the promotion from `main`, retain the canonical tip as a merge parent, and
-verify tree equality before publishing it.
+verify product equality and enumerate repository-only differences before
+publishing it.
 
 ## Inspecting a maintenance branch
 
@@ -149,14 +152,24 @@ git merge --no-ff --no-commit "$canonical_ref"
 # Resolve deliberately, then verify the proposed index and worktree.
 git diff --cached --name-status
 git commit
-git diff --exit-code "$canonical_ref"..HEAD
-test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$canonical_ref^{tree}")"
+git diff --name-status "$canonical_ref"..HEAD
+# Review every difference; only explicitly approved repository-only paths
+# may differ. Product source, build inputs, and feature tests must match.
+git diff --exit-code "$canonical_ref"..HEAD -- src CMakeLists.txt cmake depends
 ```
 
-The last two commands are the defining promotion check: the merge records both
-histories, but its product tree is identical to the canonical release tip. A
-promotion branch is review state and may be rebuilt with a force-with-lease;
-the canonical release branch is not rewritten after publication.
+The merge must retain the canonical tip as a parent. Its product files must
+match that tip; the source/build command above is a partial check, not a
+substitute for reviewing the complete difference list. When there are no
+repository-only exceptions, also require complete tree equality. Any exception
+must name exact paths and explain why they do not alter the released product.
+For website preservation, this can include `doc/website/**`, its deployment
+workflow, contribution/maintainer guidance, and the lint exclusions required by
+the website mirror. Other CI and feature tests still match the canonical tip.
+
+Release tags and artifacts continue to use the canonical branch, never the
+promotion commit. A promotion branch is review state and may be rebuilt with a
+force-with-lease; the canonical release branch is not rewritten after publication.
 
 ## Editing policy safely
 

@@ -13,10 +13,33 @@
 #include <wallet/wallet.h>
 
 #include <optional>
+#include <functional>
+#include <map>
+
+class COutPoint;
+class Coin;
+class CScript;
+struct FlatSigningProvider;
+
+namespace interfaces {
+class SweepAuthorization;
+}
 
 class FastRandomContext;
 
 namespace wallet {
+struct SweepTransactionResult
+{
+    CTransactionRef tx;
+    CAmount amount;
+    CAmount fee;
+};
+
+using SweepBroadcastFn = std::function<bool(const CTransactionRef&, std::string&)>;
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, FlatSigningProvider& provider,
+                                                            const std::map<COutPoint, Coin>& coins,
+                                                            const CScript& destination, const SweepBroadcastFn& broadcast,
+                                                            interfaces::SweepAuthorization& authorization);
 /** Pick an automatic anti-fee-sniping locktime that does not collide with reserved policy markers. */
 uint32_t GetAntiFeeSnipingLockTime(int block_height, FastRandomContext& rng_fast);
 

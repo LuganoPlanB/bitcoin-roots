@@ -96,6 +96,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "getdescriptoractivity", 1, "scanobjects" },
     { "getdescriptoractivity", 2, "include_mempool" },
     { "scantxoutset", 1, "scanobjects" },
+    { "sweepprivkeys", 0, "privkeys" },
+    { "sweepprivkeys", 2, "broadcast" },
     { "addmultisigaddress", 0, "nrequired" },
     { "addmultisigaddress", 1, "keys" },
     { "createmultisig", 0, "nrequired" },

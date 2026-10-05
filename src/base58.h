@@ -14,6 +14,8 @@
 #ifndef BITCOIN_BASE58_H
 #define BITCOIN_BASE58_H
 
+#include <support/allocators/secure.h>
+
 #include <span.h>
 
 #include <string>
@@ -40,5 +42,6 @@ std::string EncodeBase58Check(Span<const unsigned char> input);
  * vector (vchRet), return true if decoding is successful
  */
 [[nodiscard]] bool DecodeBase58Check(const std::string& str, std::vector<unsigned char>& vchRet, int max_ret_len);
+[[nodiscard]] bool DecodeBase58Check(const SecureString& str, std::vector<unsigned char, secure_allocator<unsigned char>>& vchRet, int max_ret_len);
 
 #endif // BITCOIN_BASE58_H

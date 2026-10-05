@@ -638,6 +638,8 @@ public:
                int{FillBlock(block2, block2_out, lock, active, chainman().m_blockman)};
     }
     void findCoins(std::map<COutPoint, Coin>& coins) override { return FindCoins(m_node, coins); }
+    interfaces::ScanResult findScriptPubKeys(const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins,
+                                             const std::function<bool()>& should_abort) override { return ScanUTXOSet(m_node, needles, coins, should_abort); }
     double guessVerificationProgress(const uint256& block_hash) override
     {
         LOCK(chainman().GetMutex());
