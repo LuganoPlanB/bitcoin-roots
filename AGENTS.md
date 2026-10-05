@@ -454,19 +454,23 @@ series contains inherited CRLF files, apply the released mbox with
 
 Before assigning a permanent release tag:
 
-1. Merge the reviewed promotion PR and verify product equality with the canonical
-   tip. Enumerate approved repository-only differences as described in
-   `contrib/roots/README.md`; require full tree equality when none exist.
+1. Complete independent implementation review, then merge the reviewed promotion
+   PR. Verify product equality with the canonical tip and enumerate approved
+   repository-only exceptions as described in `contrib/roots/README.md`;
+   require full tree equality when none exist.
 2. Dispatch `Release artifacts` from `main` with the future Roots tag and the
    full 40-hex `origin/roots/<core-version>` commit.
 3. Require all five platform builds and independently inspect the packages and
    patch. Manual rehearsal must create neither a remote tag nor a release.
-4. Re-fetch refs, create one annotated tag at the unchanged canonical tip, run
-   the release-source validator, and push only that tag. Never move it.
+4. Keep the canonical tip stable through release verification. Re-fetch refs,
+   check out the reviewed commit in a dedicated release worktree, create one
+   annotated tag explicitly at that commit, run the release-source validator,
+   and push only that tag. Never move it.
 5. Verify the tag-triggered draft's packages, patch, `SHA512SUMS`, optional
    signature, tag target, and source tree before publishing the unchanged draft.
 6. Repeat tag, asset, checksum, and signature-if-present verification through an
-   unauthenticated client after publication.
+   unauthenticated client after publication. Do not rerun the tag workflow after
+   publication: its upload path can replace existing release assets.
 
 The detailed commands and branch maintenance rules are in
 `contrib/roots/README.md`. The local Bitcoin Core v29.4 tag is signed, but the
