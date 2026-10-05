@@ -1,6 +1,22 @@
 Release Process
 ====================
 
+## Bitcoin Roots releases
+
+Use the [Roots maintainer workflow](../contrib/roots/README.md) for Roots ports,
+promotions, release rehearsal, tagging, artifact verification and publication.
+The canonical release source is `roots/<core-version>`, based directly on the
+matching official Core tag. `main` contains the promoted product plus reviewed
+repository-only files. Release tags point to canonical commits.
+
+The instructions below are inherited Bitcoin Core release-engineering
+reference material. They are not the Roots release checklist. A Roots port
+consumes an already released Core tag; it does not independently refresh Core
+chain parameters, seeds, translations or version policy as a release chore.
+Only make such changes through separately justified product review.
+
+## Upstream Bitcoin Core reference
+
 ## Branch updates
 
 ### Before every release candidate

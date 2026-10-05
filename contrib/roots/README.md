@@ -1,7 +1,8 @@
 # Bitcoin Roots maintainer workflow
 
 Bitcoin Roots is maintained as a small, reviewable Git history on top of
-Bitcoin Core. Bitcoin Core v29.4 is the direct upstream base for this release.
+Bitcoin Core. Each canonical line names its exact upstream version; for example,
+`roots/29.4` starts at `v29.4` and `roots/30.3` starts at `v30.3`.
 Bitcoin Knots is historical provenance for selected Roots policy features, not
 an upstream, a dependency, or a source of consensus rules.
 
@@ -30,8 +31,8 @@ release artifacts separate:
 - `archive/*` preserves superseded candidates and retired maintenance systems.
   Archive branches are evidence, not dependencies or release inputs.
 
-For example, `roots/29.4` starts directly at `v29.4`, while `roots/30.0`
-starts directly at `v30.0`. Do not merge the complete 29.4 branch into the 30.0
+For example, `roots/29.4` starts directly at `v29.4`, while `roots/30.3`
+starts directly at `v30.3`. Do not merge the complete 29.4 branch into the 30.3
 branch. Port the semantic Roots commits to the new Core base, dropping behavior
 that Core has adopted and adapting or splitting commits when its APIs changed.
 
@@ -41,6 +42,10 @@ canonical series merely to make a promotion pull request appear linear. Build
 the promotion from `main`, retain the canonical tip as a merge parent, and
 verify product equality and enumerate repository-only differences before
 publishing it.
+
+Run the command sequences below in Bash with `set -euo pipefail`, substitute
+reviewed values for placeholders, and stop on any failed check. Use clean,
+dedicated worktrees for mutations.
 
 ## Inspecting a maintenance branch
 
@@ -102,14 +107,28 @@ ordinary Git operations:
 
 ```sh
 core_remote=<configured-bitcoin-core-remote>
-core_tag=v30.0
+core_tag=v30.3
 git remote get-url "$core_remote"
-git fetch "$core_remote" --tags
+git fetch --no-tags "$core_remote" "refs/tags/${core_tag}:refs/tags/${core_tag}"
+git verify-tag "$core_tag" # Authenticate the signer key separately.
 core_commit=$(git rev-parse "$core_tag^{commit}")
 git show --no-patch --decorate "$core_commit"
-git switch --create roots/30.0 "$core_commit"
+git switch --create roots/30.3 "$core_commit"
+git switch --create topic/30.3/port
 git cherry-pick -x <semantic-roots-commit>
 ```
+
+If the destination branch already exists, inspect its ancestry and coordinate
+with its owner instead of recreating or overwriting it. Pin the source Roots
+tip and account for every source commit as kept, adapted, adopted upstream, or
+intentionally dropped. Include implementation, tests, help and recent fixes.
+
+A new branch at the upstream tag initially lacks Roots CI support. Port the
+reviewed workflow and the scripts it invokes together before relying on Roots
+PR checks. Some jobs use the PR workflow while explicitly checking out its head;
+a newer workflow with an older source tree can fail on missing scripts. Verify
+which revision every job tests. Push events alone are not evidence that the
+full PR test matrix ran.
 
 Repeat the cherry-pick for each semantic commit after deciding whether that
 change is still needed. `-x` records the source commit when the new commit is a
@@ -120,8 +139,13 @@ misleading cherry-pick identity.
 Compare the old and new generations as patch series:
 
 ```sh
-git range-diff v29.4..roots/29.4 v30.0..roots/30.0
+git range-diff v29.4..roots/29.4 v30.3..roots/30.3
 ```
+
+Review topic PRs against the canonical branch and integrate them linearly.
+Rebase-merging can change commit IDs; record and verify the final canonical
+commit and run any required checks not covered by equivalent tested content.
+Never squash the complete port or create merge commits in the canonical range.
 
 Resolve only identified conflicts, inspect the result with `git diff` and
 targeted tests, then use `git cherry-pick --continue`. If the port premise is
@@ -157,6 +181,13 @@ git diff --name-status "$canonical_ref"..HEAD
 # may differ. Product source, build inputs, and feature tests must match.
 git diff --exit-code "$canonical_ref"..HEAD -- src CMakeLists.txt cmake depends
 ```
+
+For a new Core generation, a normal merge can retain obsolete files or old
+product changes from `main`. Review every difference from canonical, including
+unconflicted paths, rather than assuming a clean merge is correct. Preserve the
+website and other approved repository-only work, but reconcile product files
+to the new canonical tree. Merge the promotion PR with **Create a merge commit**;
+do not squash or rebase it.
 
 The merge must retain the canonical tip as a parent. Its product files must
 match that tip; the source/build command above is a partial check, not a
@@ -226,6 +257,10 @@ Never force-push release tags. Preserve archival branches.
 
 ## Release handoff
 
+Complete independent review of the canonical implementation before assigning a
+permanent tag. Artifact inspection and post-publication checks complement that
+review; they cannot replace it.
+
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
 Before creating a permanent tag, merge the reviewed promotion so the trusted
@@ -237,11 +272,24 @@ each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
 
-For example:
+Coordinate a stable canonical tip from rehearsal through tag builds and draft
+verification. Each release job fetches the branch again and requires tip
+equality; advancing it during a run can fail later jobs even though the input
+commit was pinned. If it changes before tagging, review and rehearse the new
+candidate. After tagging, never move the tag to repair a failed run.
+
+The manual workflow comes from `main`, but build scripts are checked out from
+the requested canonical commit; the tag-triggered workflow comes from the tag.
+Require the release workflow and its script interface to agree between the
+reviewed main revision and the candidate. Include necessary workflow fixes on
+the canonical branch before promotion and rehearsal.
+
+For example (substitute the actual reviewed candidate):
 
 ```sh
-release_tag=v29.4-roots.1
-release_commit=$(git rev-parse origin/roots/29.4^{commit})
+release_tag=v30.3-roots.1
+git fetch origin roots/30.3
+release_commit=$(git rev-parse origin/roots/30.3^{commit})
 gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
 ```
@@ -251,17 +299,26 @@ assigning the permanent version. After the rehearsal passes, fetch again and
 verify the annotated tag target and ancestry immediately before pushing it:
 
 ```sh
-release_tag=v29.4-roots.1
+# In a dedicated release worktree, retain the reviewed rehearsal commit.
+release_tag=v30.3-roots.1
+release_commit=REPLACE_WITH_REVIEWED_40_HEX_COMMIT
 git check-ref-format "refs/tags/$release_tag"
-git fetch origin roots/29.4
-git fetch https://github.com/bitcoin/bitcoin.git \
-    refs/tags/v29.4:refs/tags/v29.4
-git tag --annotate "$release_tag" -m "Bitcoin Roots $release_tag"
-git rev-parse "$release_tag^{commit}"
-test "$(git rev-parse "$release_tag^{commit}")" = \
-    "$(git rev-parse origin/roots/29.4^{commit})"
+git fetch origin roots/30.3
+git fetch --no-tags https://github.com/bitcoin/bitcoin.git \
+    refs/tags/v30.3:refs/tags/v30.3
+test "$release_commit" = "$(git rev-parse origin/roots/30.3^{commit})"
+git switch --detach "$release_commit"
+# Confirm the release tag is absent both locally and remotely before creating it.
+git tag --annotate "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
 ci/release/validate-release-source.sh "$release_tag"
 ```
+
+The validator requires `HEAD` to equal the tagged commit, as well as requiring
+the tag to equal the current canonical tip. Run it in that release worktree,
+not on the promotion merge. An annotated tag is not necessarily signed; verify
+and describe tag and checksum signatures separately. Rehearsal tags must live
+in disposable clones (worktrees share a tag namespace), so an ephemeral tag
+cannot be accidentally pushed as the permanent release.
 
 Run the retained release metadata tests before pushing:
 
@@ -306,3 +363,18 @@ when the release environment has a matching signing key configured. The
 tag-triggered workflow creates a draft, not an immediately public release.
 Independently verify the draft's archives, patch, checksums, optional signature,
 tag target, and source tree before changing only the draft's visibility.
+
+
+Before publication, verify the release notes and contributor acknowledgements.
+Generated GitHub notes can miss changes ported from an earlier generation, and
+updating an existing draft only uploads assets; it does not regenerate notes.
+Prepare notes before approving publication, then publish the inspected draft
+without rebuilding or replacing its assets.
+
+Do not rerun a tag release workflow after publication: its existing-release
+path uploads with `--clobber` and can replace public assets. Diagnose failed
+pre-publication runs against the immutable tag; never move a tag or rewrite a
+public release to hide a failure. Once the canonical branch advances, its tip
+is no longer evidence for an older release. Historical verification uses the
+immutable tag, authenticated upstream base, public checksums/signatures and
+clean patch replay, rather than requiring the old tag to equal today's tip.
