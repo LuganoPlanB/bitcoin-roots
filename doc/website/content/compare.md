@@ -22,7 +22,7 @@ choosing which software and network rules to run.
 
 ## Versions reviewed
 
-- **Bitcoin Roots:** [v29.4-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2)
+- **Bitcoin Roots:** [v29.4-roots.3](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.3)
 - **Bitcoin Knots feature lineage:** [v29.3.knots20260507](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507)
 - **Bitcoin Core direct base:** [v29.4](https://github.com/bitcoin/bitcoin/releases/tag/v29.4)
 - **Current Knots consensus note:** [v29.4.1.knots20260508](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
@@ -55,10 +55,10 @@ per-send RBF choice explicit and initializes it from the wallet default.
 
 Private-key sweeping and the advanced privacy-aware coin-control view are
 deliberately **not** included in the published v29.4-roots.2 release. They are
-implemented and tested in the intended v29.4-roots.3 candidate, with wallet-owned
+implemented and tested in the published v29.4-roots.3 release, with wallet-owned
 data and transaction contracts and Qt presenting the choices and consequences.
-That candidate status is not a release announcement. [Review the candidate
-wallet tools](/wallet-privacy) before using a build that contains them.
+Review the [wallet privacy tools](/wallet-privacy) before using a build that
+contains them.
 
 ### Sources
 
