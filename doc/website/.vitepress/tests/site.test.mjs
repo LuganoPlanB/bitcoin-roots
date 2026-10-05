@@ -134,7 +134,7 @@ test("primary navigation includes the two editorial routes", async () => {
   }
 });
 
-test("wallet privacy candidate copy states capabilities and boundaries", async () => {
+test("wallet privacy copy states capabilities and boundaries", async () => {
   const [home, page] = await Promise.all([
     readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
     readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8"),
@@ -147,7 +147,8 @@ test("wallet privacy candidate copy states capabilities and boundaries", async (
   assert.match(source, /cancel/i);
   assert.match(source, /independent backup/i);
   assert.match(source, /do not add CoinJoin, payjoin/i);
-  assert.match(source, /not a release announcement/i);
+  assert.match(page, /published\s+`v29\.4-roots\.3`\s+release/i);
+  assert.match(page, /release documentation/i);
   assert.match(source, /do not provide an anonymity guarantee/i);
   assert.match(source, /wallet privacy manual/i);
   assert.match(source, /release notes/i);
