@@ -8,13 +8,13 @@ head:
       content: Bitcoin Roots wallet privacy tools
   - - meta
     - property: og:description
-      content: Review the guarded sweep and privacy-aware coin control tools in the v29.4-roots.3 candidate.
+      content: Review the guarded sweep and privacy-aware coin control tools in the v29.4-roots.3 release.
 ---
 
 # Wallet privacy tools
 
-The intended `v29.4-roots.3` candidate adds two explicit wallet workflows. This
-is candidate documentation, not a release announcement. Verify the version and
+The published `v29.4-roots.3` release adds two explicit wallet workflows. This
+is release documentation. Verify the version and
 built-in help of any binary before using these tools.
 
 ## Sweep a supported private key
@@ -72,8 +72,8 @@ bitcoin-cli --version
 bitcoin-cli help sweepprivkeys
 ```
 
-Review the candidate's complete
-[wallet privacy manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/topic/29.4/wallet-privacy/doc/wallet-privacy.md)
+Review the release's complete
+[wallet privacy manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.3/doc/wallet-privacy.md)
 and
-[release notes](https://github.com/LuganoPlanB/bitcoin-roots/blob/topic/29.4/wallet-privacy/doc/release-notes.md)
+[release notes](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.3/doc/release-notes.md)
 with the source and tests before using these workflows.
