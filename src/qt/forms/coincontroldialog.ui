@@ -15,7 +15,7 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayoutTop" stretch="0,0,0,0">
+    <layout class="QHBoxLayout" name="horizontalLayoutTop" stretch="0,0,0,0,0">
      <property name="topMargin">
       <number>0</number>
      </property>
@@ -77,7 +77,7 @@
           </font>
          </property>
          <property name="text">
-          <string>Bytes:</string>
+          <string>Estimated vbytes:</string>
          </property>
         </widget>
        </item>
@@ -272,6 +272,14 @@
        </item>
       </layout>
      </item>
+     <item>
+      <layout class="QFormLayout" name="formLayoutCoinControlSummary">
+       <item row="0" column="0"><widget class="QLabel" name="labelCoinControlFeeRateText"><property name="text"><string>Fee rate:</string></property></widget></item>
+       <item row="0" column="1"><widget class="QLabel" name="labelCoinControlFeeRate"><property name="text"><string notr="true">—</string></property></widget></item>
+       <item row="1" column="0"><widget class="QLabel" name="labelCoinControlRbfText"><property name="text"><string>RBF:</string></property></widget></item>
+       <item row="1" column="1"><widget class="QLabel" name="labelCoinControlRbf"><property name="text"><string>Does not signal Replace-By-Fee</string></property></widget></item>
+      </layout>
+     </item>
     </layout>
    </item>
    <item>
@@ -294,6 +302,12 @@
         <property name="spacing">
          <number>14</number>
         </property>
+        <item>
+         <widget class="QLineEdit" name="lineEditFilter">
+          <property name="placeholderText"><string>Filter inputs…</string></property>
+          <property name="clearButtonEnabled"><bool>true</bool></property>
+         </widget>
+        </item>
         <item>
          <widget class="QPushButton" name="pushButtonSelectAll">
           <property name="sizePolicy">
@@ -347,6 +361,24 @@
          </widget>
         </item>
         <item>
+         <widget class="QLabel" name="labelAvailable">
+          <property name="text"><string>Available: 0 (0 eligible)</string></property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelCoinControlDust">
+          <property name="text"><string>No dust change detected</string></property>
+          <property name="toolTip"><string>This is an estimate; the final transaction preview is authoritative.</string></property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelSelectionNotice">
+          <property name="visible"><bool>false</bool></property>
+          <property name="wordWrap"><bool>true</bool></property>
+          <property name="text"><string>Input selection is current.</string></property>
+         </widget>
+        </item>
+        <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
@@ -373,7 +405,7 @@
       <bool>false</bool>
      </property>
      <property name="columnCount">
-      <number>6</number>
+      <number>9</number>
      </property>
      <attribute name="headerShowSortIndicator" stdset="0">
       <bool>true</bool>
@@ -414,26 +446,9 @@
        <string>Confirmed</string>
       </property>
      </column>
-     <column>
-      <property name="text">
-       <string/>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string/>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string/>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string/>
-      </property>
-     </column>
+     <column><property name="text"><string>Status</string></property><property name="toolTip"><string>Wallet-reported facts, not a privacy score.</string></property></column>
+     <column><property name="text"><string>Effective value</string></property><property name="toolTip"><string>Value after the wallet's estimated input fee where available.</string></property></column>
+     <column><property name="text"><string>Input bytes</string></property><property name="toolTip"><string>Wallet-provided input size estimate.</string></property></column>
     </widget>
    </item>
    <item>

@@ -5,6 +5,7 @@
 #include <common/messages.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <interfaces/wallet.h>
 #include <key_io.h>
 #include <node/types.h>
 #include <policy/policy.h>
@@ -31,6 +32,94 @@ using common::TransactionErrorString;
 using node::TransactionError;
 
 namespace wallet {
+//! Sweep coins controlled by transient keys. The keys are deliberately kept out
+//! of the wallet and are only used by the local signing provider below.
+RPCHelpMan sweepprivkeys()
+{
+    return RPCHelpMan{"sweepprivkeys",
+        "Sweep confirmed UTXOs from supplied Base58 WIF private keys to a spendable address in this wallet.\n"
+        "All valid WIF keys support P2PKH. Compressed keys also support native P2WPKH and wrapped P2SH-P2WPKH. "
+        "Taproot and other script forms are not scanned.\n"
+        "The destination must be controlled and spendable by this selected wallet; watch-only and private-key-disabled wallets are rejected. "
+        "Supplied keys are never imported or saved. Keep an independent backup until the transaction confirms.\n"
+        "With broadcast=false (the default), the result is a signed preview and no transaction is submitted. The fee reflects current wallet fee settings and chain state. "
+        "Set broadcast=true only after reviewing a fresh preview; broadcast can fail if inputs, fee policy, or chain state changed.\n",
+        {
+            {"privkeys", RPCArg::Type::ARR, RPCArg::Optional::NO, "Valid Base58 WIF private keys", {{"privatekey", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "private key"}}},
+            {"destination", RPCArg::Type::STR, RPCArg::Optional::NO, "A spendable address controlled by this selected wallet"},
+            {"broadcast", RPCArg::Type::BOOL, RPCArg::Default{false}, "Submit the signed transaction after a preview has been reviewed"},
+        },
+        RPCResult{RPCResult::Type::OBJ, "", "", {
+            {RPCResult::Type::STR_HEX, "hex", "Signed transaction"},
+            {RPCResult::Type::STR_HEX, "txid", "Transaction id"},
+            {RPCResult::Type::STR_AMOUNT, "amount", "Total value of swept inputs"},
+            {RPCResult::Type::STR_AMOUNT, "fee", "Transaction fee"},
+            {RPCResult::Type::NUM, "inputs", "Number of swept inputs"},
+            {RPCResult::Type::BOOL, "broadcast", "Whether the transaction was submitted for broadcast"},
+        }},
+        RPCExamples{HelpExampleCli("sweepprivkeys", "'[\"cV...\"]' bcrt1... false")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            const std::shared_ptr<CWallet> pwallet = GetWalletForJSONRPCRequest(request);
+            if (!pwallet) return UniValue::VNULL;
+
+            FlatSigningProvider provider;
+            std::set<CKeyID> seen_keys;
+            std::set<CScript> scan_objects;
+            for (const UniValue& value : request.params[0].get_array().getValues()) {
+                CKey key{DecodeSecret(value.get_str())};
+                if (!key.IsValid()) throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key or wrong network");
+                const CPubKey pubkey{key.GetPubKey()};
+                if (!seen_keys.insert(pubkey.GetID()).second) throw JSONRPCError(RPC_INVALID_PARAMETER, "Duplicate private key");
+                provider.keys.emplace(pubkey.GetID(), key);
+                provider.pubkeys.emplace(pubkey.GetID(), pubkey);
+                scan_objects.insert(GetScriptForDestination(PKHash(pubkey)));
+                if (pubkey.IsCompressed()) {
+                    const CScript witness{GetScriptForDestination(WitnessV0KeyHash(pubkey))};
+                    scan_objects.insert(witness);
+                    provider.scripts.emplace(CScriptID(witness), witness);
+                    scan_objects.insert(GetScriptForDestination(ScriptHash(witness)));
+                }
+            }
+            if (seen_keys.empty()) throw JSONRPCError(RPC_INVALID_PARAMETER, "At least one private key is required");
+
+            const CTxDestination destination{DecodeDestination(request.params[1].get_str())};
+            if (!IsValidDestination(destination)) throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid destination");
+            const CScript destination_script{GetScriptForDestination(destination)};
+            {
+                LOCK(pwallet->cs_wallet);
+                if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !(pwallet->IsMine(destination_script) & ISMINE_SPENDABLE)) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, "Destination is not controlled by this wallet");
+                }
+            }
+
+            std::map<COutPoint, Coin> coins;
+            switch (pwallet->chain().findScriptPubKeys(scan_objects, coins)) {
+            case interfaces::ScanResult::SUCCESS: break;
+            case interfaces::ScanResult::BUSY: throw JSONRPCError(RPC_MISC_ERROR, "UTXO scan already in progress");
+            case interfaces::ScanResult::ABORTED: throw JSONRPCError(RPC_MISC_ERROR, "UTXO scan aborted");
+            case interfaces::ScanResult::UNAVAILABLE: throw JSONRPCError(RPC_MISC_ERROR, "UTXO scan unavailable");
+            }
+            const bool broadcast{!request.params[2].isNull() && request.params[2].get_bool()};
+            interfaces::SweepAuthorization authorization;
+            auto swept{CreateSweepTransaction(*pwallet, provider, coins, destination_script, broadcast ? SweepBroadcastFn{[&](const CTransactionRef& tx, std::string& error) {
+                return pwallet->chain().broadcastTransaction(tx, pwallet->m_default_max_tx_fee, /*relay=*/true, error);
+            }} : SweepBroadcastFn{}, authorization)};
+            if (!swept) {
+                const std::string error{util::ErrorString(swept).original};
+                const int code{error == "No spendable UTXOs found" || error == "Fee exceeds swept value" ? RPC_WALLET_INSUFFICIENT_FUNDS :
+                               error == "Unable to sign all swept inputs" ? RPC_VERIFY_ERROR : RPC_WALLET_ERROR};
+                throw JSONRPCError(code, error);
+            }
+            UniValue result{UniValue::VOBJ};
+            result.pushKV("hex", EncodeHexTx(*swept->tx));
+            result.pushKV("txid", swept->tx->GetHash().GetHex());
+            result.pushKV("amount", ValueFromAmount(swept->amount));
+            result.pushKV("fee", ValueFromAmount(swept->fee));
+            result.pushKV("inputs", coins.size());
+            result.pushKV("broadcast", broadcast);
+            return result;
+        }};
+}
 std::vector<CRecipient> CreateRecipients(const std::vector<std::pair<CTxDestination, CAmount>>& outputs, const std::set<int>& subtract_fee_outputs)
 {
     std::vector<CRecipient> recipients;
