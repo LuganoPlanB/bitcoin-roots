@@ -20,6 +20,7 @@
 #include <util/check.h>
 #include <util/feefrac.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -29,7 +30,6 @@
 #include <test/util/setup_common.h>
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -805,7 +805,7 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
 
             // The assembler reserves 1000 bytes before adding transactions;
             // end the priority phase immediately after including the parents.
-            gArgs.ForceSetArg("-blockprioritysize", std::to_string(1000 + priority_tx_size));
+            gArgs.ForceSetArg("-blockprioritysize", util::ToString(1000 + priority_tx_size));
             const auto priority_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_REQUIRE(priority_template);
             BOOST_REQUIRE_EQUAL(priority_template->block.vtx.size(), parent_count + 2);
