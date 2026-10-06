@@ -8,13 +8,15 @@
   },
   "scripts": {
     "releases:prepare": "node scripts/prepare-releases.mjs",
+    "patches:render": "node scripts/render-patches.mjs",
     "docs:prepare": "node scripts/generate-doc-catalog.mjs",
     "dev": "npm run docs:prepare && vitepress dev",
-    "build": "npm run docs:prepare && vitepress build && node scripts/check-static-html.mjs",
+    "build": "npm run docs:prepare && vitepress build && npm run patches:render && node scripts/check-static-html.mjs",
     "preview": "vitepress preview",
     "test": "npm run docs:prepare && node --test .vitepress/tests/*.test.mjs"
   },
   "dependencies": {
+    "diff2html": "3.4.56",
     "lugano-planb-vite-theme": "file:../../../vite-theme"
   },
   "devDependencies": {

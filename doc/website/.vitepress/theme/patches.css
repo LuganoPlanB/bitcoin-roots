@@ -1,0 +1,21 @@
+/* Loaded only on standalone patch pages. L3 owns the final section treatment. */
+.roots-patches { margin: 0; background: var(--vp-c-bg, #fffefa); color: var(--vp-c-text-1, #030b20); font: 16px/1.6 var(--vp-font-family-base, Inter, Arial, sans-serif); }
+.roots-patches .patch-header, .roots-patches main, .roots-patches footer { width: min(1240px, calc(100% - 3rem)); margin: auto; }
+.roots-patches .patch-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding-block: 1.25rem; border-bottom: 1px solid var(--vp-c-divider, #dde5ef); }
+.roots-patches nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+.roots-patches main { padding-block: 2rem; }
+.roots-patches h1 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.2; overflow-wrap: anywhere; }
+.roots-patches a { color: var(--vp-c-brand-1, #246caf); text-decoration: underline; text-underline-offset: .2em; }
+.roots-patches a:focus-visible { outline: 2px solid #7468ff; outline-offset: 3px; }
+.roots-patches code, .roots-patches pre { font-family: var(--vp-font-family-mono, Consolas, monospace); }
+.roots-patches li, .roots-patches p, .roots-patches code { overflow-wrap: anywhere; }
+.roots-patches .patch-view-nav, .roots-patches .patch-pagination { margin-block: 1rem; }
+.roots-patches .patch-diff { max-width: 100%; overflow-x: auto; }
+.roots-patches .patch-diff .d2h-wrapper { margin: 0; }
+.roots-patches .d2h-code-line-ctn { white-space: pre; }
+.roots-patches .d2h-code-linenumber, .roots-patches .d2h-code-side-linenumber { user-select: none; }
+.roots-patches .d2h-file-name { overflow-wrap: anywhere; }
+.roots-patches footer { padding-block: 2rem; border-top: 1px solid var(--vp-c-divider, #dde5ef); }
+.roots-patches .patch-skip { position: absolute; left: 1rem; top: -10rem; }
+.roots-patches .patch-skip:focus { top: 1rem; background: var(--vp-c-bg, #fffefa); }
+@media (max-width: 600px) { .roots-patches .patch-header, .roots-patches main, .roots-patches footer { width: calc(100% - 2rem); } }

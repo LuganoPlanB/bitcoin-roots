@@ -13,7 +13,8 @@ Use the same preparation command for the first build, retries, and later
 refreshes. It explicitly contacts the public GitHub releases API, following
 numbered pages through the final empty page. Unit tests and the ordinary website
 build do not contact GitHub. Rendering these inputs into patch pages is a
-separate website stage; preparation currently writes inputs for that stage.
+separate offline stage included in `npm run build`. A build requires a prepared
+input catalogue.
 
 The ignored `.vitepress/release-inputs/catalogue.json` contains the stable,
 chronologically sorted public inventory, including prereleases and releases
@@ -75,3 +76,132 @@ The persistent inputs totaled 12,608,759 bytes. Two consecutive live
 preparations produced byte-identical catalogue output (SHA256
 `4e8576a6434ce972d7e816bda665c4d9fcd7279361d0d8e6a459eefdaeee80b9`).
 These are importer measurements, not browser or renderer performance budgets.
+
+## Mail-series parsing
+
+`scripts/patch-series.mjs` reads the downloaded UTF-8 Git format-patch mail
+series. It retains original commit IDs, ordered decoded mail metadata and
+distinct file-change entries, including repeated paths. Navigation IDs contain
+only the validated release tag and commit/file ordinals; filenames are display
+data. Each file entry retains its original diff text, including CRLF endings
+and no-newline markers. Original asset bytes remain in the verified input cache.
+
+The parser counts old/new hunk lines before recognizing subsequent mail or file
+boundaries. Header-like source lines cannot become extra commits or files.
+Binary changes, metadata-only changes (including modes, empty files and pure
+renames), unsupported formats/ambiguous paths, and mails without a diff each
+have explicit states. Invalid UTF-8, malformed mail headers and incomplete
+hunks fail generation rather than publishing incomplete coverage. Encoded mail
+headers with unsupported character sets retain their original spelling.
+This is a series of file changes; totals do not describe a net diff.
+
+Focused offline coverage runs from `doc/website` with:
+
+```sh
+node --test .vitepress/tests/patch-series.test.mjs
+```
+
+On the 2026-10-06 input snapshot, parser commit/file/binary/metadata-only counts
+match the table above with zero unsupported sections. Independent
+`git -C /tmp apply --numstat --allow-empty < /absolute/path/to/cached.patch`
+confirms the file counts without applying changes. Run this inspection outside
+the repository: Git filters paths to the current subdirectory when run from
+`doc/website`. Each asset's 58 CRLF endings remain in the extracted sections.
+
+## Static patch rendering
+
+`npm run build` builds VitePress, then `npm run patches:render` emits standalone
+HTML below `.vitepress/dist/patches/`. To regenerate only patch views after an
+existing VitePress build, use `npm run patches:render`. `DOCS_BASE=/bitcoin-roots/`
+selects the production prefix; leaving it unset selects `/` for previews. Use the
+same base for the VitePress build and renderer so shared CSS font URLs agree.
+The renderer revalidates catalogue routes, download URLs, cache filenames,
+byte size and SHA512 digest before reading a series into pages. Failure stops
+the build and does not publish a partial patch directory.
+
+diff2html is pinned to `3.4.56` in the package and lockfile. The adapter supplies
+counted JSON hunk rows to its HTML API with `matching: none`, no inline word
+highlighting, and no browser renderer/parser bundle. The library's string parser
+is bypassed because it removes no-newline markers and normalizes source bytes.
+Displayed no-newline markers retain their positions with blank line-number
+cells; source lines that merely contain marker-like text stay intact.
+
+Routes use `patches/<tag>/commit-<ordinal>/file-<ordinal>/`. File views default to
+unified HTML; `side-by-side/` selects the alternative. `page-<n>/` links to later
+parts. All overviews, navigation and diff text exist in static HTML and work
+without JavaScript. Each page loads local shared site CSS, local diff2html CSS
+and section-only `patches.css`; neither a CDN nor runtime GitHub access is needed.
+These pages bypass Vue/Markdown compilation and global VitePress search. They
+contain no prefetch hints, patch body data bundles or client-side parser.
+`patches/catalogue.json` contains navigation metadata only and is not loaded
+merely to visit the release index.
+
+Each text part starts with at most 400 diff rows, preserving original before/
+after line numbers. Parts split further when HTML expansion exceeds 1,800,000
+bytes in either view. Source lines/hunk headers over 4,096 characters receive an
+explicit oversized state with the complete original patch download. Binary,
+metadata-only and unsupported changes also retain dedicated source-linked
+pages. Every overview must stay below 500,000 bytes and every HTML document
+below 2,000,000 bytes; exceeding these bounds fails generation explicitly.
+The measured real-asset output below meets these bounds.
+
+Focused static-output, pagination and hostile-input tests run with:
+
+```sh
+node --test .vitepress/tests/patch-renderer.test.mjs
+```
+
+## Output cache and measured budgets
+
+`.vitepress/patch-cache/` holds ignored complete-output snapshots. Their SHA256
+keys bind the full verified catalogue (including asset SHA512 digests), renderer
+version/settings, limits, base, shared CSS identities, and hashes of the parser,
+adapter, page template, section CSS, cache/generator code and dependency lockfile.
+Changing a release, renderer, template, style or setting selects a new snapshot.
+Old snapshots may be removed to recover space; deleting this disposable cache
+forces cold generation without refetching the verified release inputs.
+
+Reuse first rechecks every original asset's size and SHA512 digest, then verifies
+the complete cached file list and each output's size/SHA256. Missing, modified,
+path-tampered or symlinked objects cause regeneration from verified inputs.
+Input integrity errors stop the build. HTML is staged before publication into
+the local dist directory; deployment still requires the website workflow to
+finish successfully. No cache presence is evidence that Pages deployed.
+
+On this workstation with Node 24, the 2026-10-06 five-release snapshot and
+production base produced the following uncompressed output:
+
+| Tag | Static HTML pages | HTML bytes |
+| --- | ---: | ---: |
+| v29.4-roots.4 | 998 | 30,585,165 |
+| v29.4-roots.3 | 969 | 30,056,201 |
+| v29.4-roots.2 | 793 | 25,353,447 |
+| v29.4-roots.1 | 753 | 24,593,820 |
+| v29.3-roots.1 | 1 | 1,196 |
+
+Including the release index, there are 3,515 HTML pages totaling 110,591,447
+bytes. The complete output with metadata/CSS is 111,385,956 bytes. Total history
+size is a build/deployment cost; a browser opens one bounded page at a time.
+The largest HTML document is 291,734 bytes; the largest overview is 12,636
+bytes, and the release index is 1,618 bytes. All 1,689 file changes have a
+dedicated entry; current assets need no unsupported/oversized fallback.
+
+Cold generation, including cache population and output writes, took 3.10 s
+with 328,696 KiB peak RSS. Verified warm reuse took 1.32 s with 117,164 KiB
+peak RSS. A second independent cold generation took 3.08 s with 333,072 KiB.
+The sorted output manifests were byte-identical across all three runs (SHA256
+`44dba1d75ffde78bedb37239439feafd8fccc529f3014318998ee293349bad56`).
+Parsing the largest 3,288,042-byte release alone took 44.4 ms; rendering its
+952 unified/side-by-side text parts took 195.3 ms with 123,932 KiB peak RSS.
+These workstation measurements are baselines, not promised build times.
+
+Chromium checks at 1440×900 and 390×844, 100% font scale, with JavaScript
+disabled opened the index, largest release, commit and file, switched views,
+and used Back. The index loaded its 1,618-byte HTML plus 368,237 bytes of local
+shared/section CSS and fonts, with no scripts, patch bodies, catalogue fetch or
+history prefetch. The largest release overview loaded 7,866 bytes of HTML.
+Both viewports had no document-wide overflow or failed requests; switching
+views removed the old document and retained exactly one diff wrapper. Generated
+patch bodies and renderer code are absent from the VitePress JavaScript/search
+assets. Final visual styling and the broader accessibility matrix belong to
+the website UI milestone.
