@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const sourceFiles = ["scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs",
+    "scripts/patch-overview.mjs", "scripts/patch-browser.js", "scripts/patch-theme.js",
     "scripts/render-patches.mjs", "scripts/patch-cache.mjs", ".vitepress/theme/patches.css", "package-lock.json"];
 
 export async function patchCacheKey({ websiteRoot, catalogue, base, siteStyles, limits, rendererVersion, rendererSettings }) {

@@ -1,12 +1,12 @@
-/* Loaded only on standalone patch pages. L3 owns the final section treatment. */
-.roots-patches { margin: 0; background: var(--vp-c-bg, #fffefa); color: var(--vp-c-text-1, #030b20); font: 16px/1.6 var(--vp-font-family-base, Inter, Arial, sans-serif); }
+/* Standalone patch pages only; ordinary documentation retains its own styles. */
+.roots-patches { margin: 0; background: var(--vp-c-bg, #fffefa); color: var(--vp-c-text-1, #030b20); font: 1rem/1.68 var(--vp-font-family-base, Inter, Arial, sans-serif); }
 .roots-patches .patch-header, .roots-patches main, .roots-patches footer { width: min(1240px, calc(100% - 3rem)); margin: auto; }
 .roots-patches .patch-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding-block: 1.25rem; border-bottom: 1px solid var(--vp-c-divider, #dde5ef); }
 .roots-patches nav { display: flex; flex-wrap: wrap; gap: 1rem; }
 .roots-patches main { padding-block: 2rem; }
 .roots-patches h1 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.2; overflow-wrap: anywhere; }
 .roots-patches a { color: var(--vp-c-brand-1, #246caf); text-decoration: underline; text-underline-offset: .2em; }
-.roots-patches a:focus-visible { outline: 2px solid #7468ff; outline-offset: 3px; }
+.roots-patches :focus-visible { outline: 2px solid var(--planb-color-focus, #7468ff); outline-offset: 3px; }
 .roots-patches code, .roots-patches pre { font-family: var(--vp-font-family-mono, Consolas, monospace); }
 .roots-patches li, .roots-patches p, .roots-patches code { overflow-wrap: anywhere; }
 .roots-patches .patch-view-nav, .roots-patches .patch-pagination { margin-block: 1rem; }
@@ -16,6 +16,124 @@
 .roots-patches .d2h-code-linenumber, .roots-patches .d2h-code-side-linenumber { user-select: none; }
 .roots-patches .d2h-file-name { overflow-wrap: anywhere; }
 .roots-patches footer { padding-block: 2rem; border-top: 1px solid var(--vp-c-divider, #dde5ef); }
-.roots-patches .patch-skip { position: absolute; left: 1rem; top: -10rem; }
+.roots-patches .patch-skip { position: absolute; left: 1rem; top: -10rem; z-index: 10; padding: .6rem 1rem; }
 .roots-patches .patch-skip:focus { top: 1rem; background: var(--vp-c-bg, #fffefa); }
 @media (max-width: 600px) { .roots-patches .patch-header, .roots-patches main, .roots-patches footer { width: calc(100% - 2rem); } }
+
+.roots-patches *, .roots-patches *::before, .roots-patches *::after { box-sizing: border-box; }
+.roots-patches [hidden] { display: none !important; }
+.roots-patches .patch-header > a { font-weight: 800; color: var(--planb-color-brand-night); text-decoration: none; }
+.roots-patches .patch-header nav a { font-weight: 700; text-decoration: none; }
+.roots-patches .patch-header-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.5rem; }
+.roots-patches .patch-appearance { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--vp-c-text-2); }
+.roots-patches .patch-appearance select { min-height: 2.5rem; }
+.roots-patches .patch-header [aria-current] { border-bottom: 2px solid var(--planb-color-highlight); }
+.roots-patches .patch-intro { max-width: 54rem; margin-block: 1.5rem 2rem; }
+.roots-patches h1, .roots-patches h2 { color: var(--planb-color-brand-night, #082952); font-weight: 800; letter-spacing: -.035em; }
+.roots-patches h1 { margin-block: .4rem 1rem; font-size: clamp(2.3rem, 5vw, 4.5rem); line-height: 1.08; }
+.roots-patches h2 { margin-block: 0 1rem; font-size: 1.5rem; line-height: 1.25; }
+.roots-patches p { margin-block: .75rem; }
+.roots-patches .patch-eyebrow { color: var(--vp-c-text-2); font-size: .76rem; text-transform: uppercase; font-weight: 800; letter-spacing: .06em; }
+.roots-patches .patch-lede { font-size: 1.35rem; font-weight: 700; }
+.roots-patches .patch-featured { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: clamp(1.5rem, 3vw, 2.5rem); background: var(--planb-panel-background, var(--vp-c-bg-alt)); border: 1px solid var(--vp-c-divider); border-left: 4px solid var(--planb-color-highlight); border-radius: 16px; margin-bottom: 3rem; }
+.roots-patches .patch-action { display: inline-flex; align-items: center; justify-content: center; gap: 1rem; padding: .75rem 1.3rem; min-height: 46px; background: var(--planb-color-brand-night); color: var(--vp-c-bg); font-weight: 800; border-radius: 999px; text-decoration: none; flex-shrink: 0; }
+.roots-patches .patch-release-list, .roots-patches .patch-commit-list, .roots-patches .patch-file-list { list-style: none; padding: 0; margin-block: 1.5rem; }
+.roots-patches .patch-release-list > li { border-bottom: 1px solid var(--vp-c-divider); }
+.roots-patches .patch-release-list > li > a { display: block; position: relative; padding: 1.3rem 2rem 1.3rem 0; text-decoration: none; }
+.roots-patches .patch-release-list strong { font-size: 1.15rem; }
+.roots-patches .patch-release-meta { display: block; color: var(--vp-c-text-2); font-size: .9rem; margin-top: .25rem; font-weight: 400; }
+.roots-patches .patch-row-arrow { position: absolute; right: .2rem; top: 1.3rem; }
+.roots-patches .patch-status { display: inline-block; margin: .5rem .5rem .25rem 0; padding: .15rem .6rem; border: 1px solid var(--vp-c-divider); border-radius: 999px; color: var(--vp-c-text-1); background: var(--vp-c-bg-alt); font-size: .8rem; font-weight: 700; }
+.roots-patches .patch-explanation { padding: 1.5rem; background: var(--vp-c-bg-alt); border-radius: 16px; margin-block: 2rem; max-width: 70rem; }
+.roots-patches .patch-explanation p { max-width: 80ch; }
+.roots-patches .patch-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; padding: 1.25rem; border: 1px solid var(--vp-c-divider); border-radius: 16px; background: var(--vp-c-bg-elv); }
+.roots-patches .patch-filters label { display: grid; gap: .5rem; flex: 1 1 15rem; font-size: .85rem; font-weight: 700; }
+.roots-patches .patch-filters input, .roots-patches select, .roots-patches button { min-height: 46px; min-width: 0; max-width: 100%; border: 1px solid color-mix(in srgb, var(--vp-c-text-2) 60%, var(--vp-c-bg)); border-radius: 12px; background: var(--vp-c-bg); color: var(--vp-c-text-1); font: inherit; padding: .7rem 1rem; }
+.roots-patches .patch-filters input::placeholder { color: var(--vp-c-text-2); opacity: 1; }
+.roots-patches button { cursor: pointer; font-weight: 700; }
+.roots-patches .patch-result-count, .roots-patches .patch-no-match { flex-basis: 100%; margin: 0; }
+.roots-patches .patch-result-count { color: var(--vp-c-text-2); font-size: .85rem; }
+.roots-patches .patch-breadcrumb { font-size: .9rem; }
+.roots-patches .patch-resource-links { margin-block: 1rem 2rem; }
+.roots-patches .patch-resource-links a { padding-block: .5rem; }
+.roots-patches .patch-stats { display: flex; flex-wrap: wrap; gap: 1rem 3rem; padding-block: 1.5rem; border-block: 1px solid var(--vp-c-divider); }
+.roots-patches .patch-stats dt { color: var(--vp-c-text-2); font-size: .85rem; }
+.roots-patches .patch-stats dd { margin: .4rem 0 0; font-size: 1.2rem; font-weight: 800; }
+.roots-patches .patch-commit-list > li { border-bottom: 1px solid var(--vp-c-divider); }
+.roots-patches summary { cursor: pointer; }
+.roots-patches .patch-commit > summary { display: flex; align-items: start; gap: 1.2rem; padding: 1.25rem .25rem; }
+.roots-patches .patch-commit > summary::before { content: "+"; font-weight: 800; color: var(--vp-c-brand-1); }
+.roots-patches .patch-commit[open] > summary::before { content: "−"; }
+.roots-patches .patch-ordinal { color: var(--vp-c-text-2); font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }
+.roots-patches .patch-commit > summary > span:last-child { min-width: 0; }
+.roots-patches .patch-commit-content { padding: 0 1rem 1rem 3.2rem; }
+.roots-patches .patch-file-list li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; border-top: 1px solid var(--vp-c-divider); padding-block: .7rem; }
+.roots-patches .patch-file-list a { font-family: var(--vp-font-family-mono); font-size: .85rem; }
+.roots-patches .patch-file-state { color: var(--vp-c-text-2); font-size: .8rem; }
+@media (max-width: 720px) {
+  .roots-patches .patch-featured { flex-direction: column; align-items: stretch; }
+  .roots-patches .patch-featured .patch-action { align-self: start; }
+  .roots-patches .patch-commit > summary { gap: .65rem; }
+  .roots-patches .patch-commit-content { padding-left: .5rem; padding-right: .5rem; }
+}
+@media (max-width: 420px) {
+  .roots-patches .patch-featured .patch-action { align-self: stretch; }
+  .roots-patches .patch-filters button { width: 100%; }
+}
+
+/* Diff2html's palette is mapped locally, including its explicit light wrapper.
+   Source uses the normal text color; restrained fills and literal signs convey
+   additions/removals in both themes without relying on red/green alone. */
+.roots-patches { --patch-add-bg: #e9f4ec; --patch-add-text: #205c37; --patch-remove-bg: #faecec; --patch-remove-text: #953239; }
+.dark .roots-patches { --patch-add-bg: #1e3527; --patch-add-text: #a6e3b8; --patch-remove-bg: #3b2529; --patch-remove-text: #ffb8bc; }
+.roots-patches .d2h-wrapper {
+  --d2h-bg-color: var(--vp-c-bg);
+  --d2h-border-color: var(--vp-c-divider);
+  --d2h-line-border-color: var(--vp-c-divider);
+  --d2h-dim-color: var(--vp-c-text-2);
+  --d2h-file-header-bg-color: var(--vp-c-bg-alt);
+  --d2h-file-header-border-color: var(--vp-c-divider);
+  --d2h-empty-placeholder-bg-color: var(--vp-c-bg-soft);
+  --d2h-empty-placeholder-border-color: var(--vp-c-divider);
+  --d2h-info-bg-color: var(--vp-c-bg-alt);
+  --d2h-info-border-color: var(--vp-c-divider);
+  --d2h-ins-bg-color: var(--patch-add-bg);
+  --d2h-ins-border-color: var(--vp-c-divider);
+  --d2h-ins-label-color: var(--patch-add-text);
+  --d2h-del-bg-color: var(--patch-remove-bg);
+  --d2h-del-border-color: var(--vp-c-divider);
+  --d2h-del-label-color: var(--patch-remove-text);
+  --d2h-change-del-color: var(--patch-remove-bg);
+  --d2h-change-ins-color: var(--patch-add-bg);
+  --d2h-change-label-color: var(--vp-c-text-2);
+  --d2h-moved-label-color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+}
+.roots-patches .patch-file-heading { max-width: 68rem; font-size: clamp(1.4rem, 3vw, 2.4rem); font-family: var(--vp-font-family-mono); letter-spacing: -.025em; line-height: 1.35; }
+.roots-patches .patch-view-nav { display: inline-flex; gap: .4rem; padding: .3rem; border: 1px solid var(--vp-c-divider); border-radius: 12px; background: var(--vp-c-bg-alt); }
+.roots-patches .patch-view-nav a { padding: .5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 700; }
+.roots-patches .patch-view-nav [aria-current] { background: var(--vp-c-bg); color: var(--vp-c-text-1); box-shadow: 0 0 0 1px var(--vp-c-divider); }
+.roots-patches .patch-pagination { align-items: center; justify-content: space-between; max-width: 48rem; color: var(--vp-c-text-2); font-size: .9rem; }
+.roots-patches .patch-diff-legend { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; font-size: .85rem; }
+.roots-patches .patch-added { background: var(--patch-add-bg); color: var(--patch-add-text); padding: .15rem .5rem; border-radius: 4px; font-weight: 700; }
+.roots-patches .patch-removed { background: var(--patch-remove-bg); color: var(--patch-remove-text); padding: .15rem .5rem; border-radius: 4px; font-weight: 700; }
+.roots-patches .patch-scroll-hint { max-width: 72ch; color: var(--vp-c-text-2); font-size: .85rem; }
+.roots-patches .patch-diff { width: 100%; border-radius: 12px; border: 1px solid var(--vp-c-divider); margin-block: 1.5rem; padding: 0; scroll-behavior: auto; }
+.roots-patches .d2h-file-wrapper { margin: 0; border: 0; border-radius: 0; }
+.roots-patches .d2h-file-header { height: auto; min-height: 2.8rem; padding: .75rem 1rem; font-family: var(--vp-font-family-mono); }
+.roots-patches .d2h-file-name-wrapper { font-size: .85rem; min-width: 0; gap: .5rem; }
+.roots-patches .d2h-file-name { white-space: normal; overflow: visible; text-overflow: clip; }
+.roots-patches .d2h-tag { font-family: var(--vp-font-family-base); font-size: .7rem; align-self: start; }
+.roots-patches .d2h-diff-table { font: .85rem/1.65 var(--vp-font-family-mono); }
+.roots-patches .d2h-code-linenumber, .roots-patches .d2h-code-side-linenumber { cursor: default; font-variant-numeric: tabular-nums; }
+.roots-patches .d2h-code-line-prefix { font-weight: 700; }
+.roots-patches .d2h-code-line-ctn { user-select: text; }
+.roots-patches .d2h-file-diff { overflow: visible; position: relative; }
+.roots-patches .d2h-file-side-diff { position: relative; }
+.roots-patches .d2h-files-diff { min-width: 64rem; }
+.roots-patches .patch-side-headings { display: flex; min-width: 64rem; border-bottom: 1px solid var(--vp-c-divider); color: var(--vp-c-text-2); font-size: .85rem; font-weight: 700; background: var(--vp-c-bg-alt); }
+.roots-patches .patch-side-headings span { width: 50%; padding: .5rem 1rem; }
+.roots-patches pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: var(--vp-c-bg-alt); border-radius: 12px; }
+.roots-patches .patch-fallback { padding: 1.5rem; border: 1px solid var(--vp-c-divider); border-radius: 12px; background: var(--vp-c-bg-alt); }
+@media (prefers-reduced-motion: reduce) { .roots-patches { scroll-behavior: auto; } }

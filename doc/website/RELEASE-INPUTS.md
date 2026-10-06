@@ -193,7 +193,8 @@ The sorted output manifests were byte-identical across all three runs (SHA256
 `44dba1d75ffde78bedb37239439feafd8fccc529f3014318998ee293349bad56`).
 Parsing the largest 3,288,042-byte release alone took 44.4 ms; rendering its
 952 unified/side-by-side text parts took 195.3 ms with 123,932 KiB peak RSS.
-These workstation measurements are baselines, not promised build times.
+These workstation measurements describe the initial renderer before the styled
+browsing UI; they are baselines, not promised build times.
 
 Chromium checks at 1440×900 and 390×844, 100% font scale, with JavaScript
 disabled opened the index, largest release, commit and file, switched views,
@@ -203,5 +204,69 @@ history prefetch. The largest release overview loaded 7,866 bytes of HTML.
 Both viewports had no document-wide overflow or failed requests; switching
 views removed the old document and retained exactly one diff wrapper. Generated
 patch bodies and renderer code are absent from the VitePress JavaScript/search
-assets. Final visual styling and the broader accessibility matrix belong to
-the website UI milestone.
+assets.
+
+## Browsing UI and acceptance checks
+
+The website's Patches navigation uses full-document links to the standalone
+pages. The index stays chronological and highlights the newest available patch;
+missing releases and public prereleases remain explicit. Core-line labels come
+from the release tag, rather than implying independently verified ancestry.
+Release overviews contain ordered commits and all file-change paths, including
+repeated paths in different commits. These are metadata lists, not source-diff
+payloads. Optional release/path-group searches operate on the rendered page;
+reset and no-match states remain recoverable. Search parameters survive reload
+and normal history navigation.
+
+`patch-theme.js` shares VitePress's `vitepress-theme-appearance` preference and
+applies explicit light/dark or system appearance before stylesheet paint.
+`patch-browser.js` adds filtering. Both scripts are small same-origin assets,
+are part of the renderer cache key, and load neither a parser nor GitHub data.
+With JavaScript disabled, release, commit, file, view and pagination links plus
+native expandable commit lists still work. Appearance and filtering controls
+are shown only when their enhancement is available. Unified views are the
+default; side-by-side views keep their horizontal scrolling inside the code
+area. File line numbers refer to before/after source files; visible signs and
+an explicit legend accompany the addition/removal colors.
+
+Every `npm run build` now runs `npm run patches:check`. This offline acceptance
+check verifies the complete static route set against the rendered catalogue,
+all file-change counts, local links/resources, document budgets, headings, and
+the restricted same-origin runtime assets. A failure stops the build. Renderer
+input failures also stop generation and preserve the previous patch output;
+they do not relabel a published asset as unavailable. Unit tests exercise empty
+inventories, broken links, hostile runtime URLs and explicit binary,
+metadata-only, unsupported and oversized states.
+
+For a real-browser smoke check after a prepared build, reuse an existing
+Playwright installation and Chromium. No browser dependency is installed by
+this command:
+
+```sh
+PLAYWRIGHT_MODULE=/path/to/playwright \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium \
+PATCH_BROWSER_EVIDENCE=/tmp/roots-browser-evidence \
+    npm run patches:smoke
+```
+
+The two Playwright variables can be omitted when the package and browser are
+already resolvable by the standard Playwright runtime. The smoke check runs
+desktop/mobile navigation from the website shell through release, commit and
+file, reload/back/forward, missing/prerelease/empty/fallback states and
+JavaScript-disabled browsing. It blocks external runtime requests. Explicit
+outbound download and notes clicks use local mocks to check the exact published
+destinations; the mocked download preserves and verifies the original cached
+patch bytes. This proves navigation without contacting GitHub and does not
+claim a live production check. Future-release examples are local synthetic
+fixtures, never public releases. Results and screenshots are written to the
+specified evidence directory, or a temporary directory printed on completion.
+
+On the five-release backfill, the styled index is about 5 KB, the largest release
+overview about 128 KB and the largest file document about 293 KB uncompressed.
+All 1,689 file changes have dedicated routes across 3,515 HTML pages. Browser
+acceptance covers light/dark at 1440×900 and 390×844, 100% and 200% root font
+size, explicit modes against the opposite OS preference, keyboard focus and
+scrolling, selectable source, and homepage/documentation style regressions.
+The measured text-contrast samples exceed 4.5:1; code scrolling does not expand
+the document width. Mobile commit ordinals remain single unbroken units at
+both font sizes.
