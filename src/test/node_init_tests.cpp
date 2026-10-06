@@ -39,7 +39,11 @@ BOOST_AUTO_TEST_CASE(init_test)
 {
     // Clear state set by BasicTestingSetup that AppInitMain assumes is unset.
     LogInstance().DisconnectTestLogger();
-    m_node.args->SetConfigFilePath({});
+    // Initialize both read-only and Roots read/write configuration paths in
+    // the fixture's isolated datadir, as normal node startup does.
+    m_node.args->ForceSetArg("-chain", "regtest");
+    std::string error;
+    BOOST_REQUIRE_MESSAGE(m_node.args->ReadConfigFiles(error), error);
 
     // Prevent the test from trying to listen on ports 8332 and 8333.
     m_node.args->ForceSetArg("-server", "0");
