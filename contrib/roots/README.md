@@ -378,3 +378,30 @@ public release to hide a failure. Once the canonical branch advances, its tip
 is no longer evidence for an older release. Historical verification uses the
 immutable tag, authenticated upstream base, public checksums/signatures and
 clean patch replay, rather than requiring the old tag to equal today's tip.
+
+After publication, repeat the tag, asset, checksum and signature-if-present
+checks through an unauthenticated client. Then refresh the website's historical
+patch browser using the separate documentation workflow from trusted `main`:
+
+```sh
+gh workflow run deploy-docs.yml --repo LuganoPlanB/bitcoin-roots --ref main
+gh run list --repo LuganoPlanB/bitcoin-roots --workflow deploy-docs.yml --branch main --limit 5
+gh run watch <refresh-run-id> --repo LuganoPlanB/bitcoin-roots --exit-status
+```
+
+Select the newly dispatched run ID. After it succeeds, check the
+[public patch index](https://plan-b.foundation/bitcoin-roots/patches/), new release
+overview, representative commit/file links and original download/checksum links.
+Confirm the public deployment receipt and catalogue account for every public
+release, including historical entries without a patch. Matching checksums do not
+by themselves authenticate a signature.
+
+The documentation workflow also checks inventory every six hours, plus GitHub
+scheduling delay, to catch missed dispatches. Release events use tag refs and
+`GITHUB_TOKEN` publication can suppress follow-on event workflows; refresh does
+not rely on either. A failed website run preserves the last successful site and
+does not invalidate the binary release. Retry `deploy-docs.yml` after diagnosis;
+never rerun the published tag's release workflow, replace assets or move the tag
+to repair website visibility. The website-owned
+[backfill, cache, verification and recovery guide](../../doc/website/RELEASE-INPUTS.md)
+documents the single local build command and publication diagnostics.

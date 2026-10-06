@@ -1,16 +1,37 @@
 # Website release inputs
 
-From `doc/website`, with the website dependencies and the pinned sibling
-`vite-theme` checkout available, prepare the complete public history:
+Use Node.js 24 (the workflow version; the package minimum is 20), a clean Roots
+checkout or snapshot, and a sibling `vite-theme` checkout pinned to
+`b969923b3407fb85a46cf45a8e18385d239cf79e`. The layout is
+`<workspace>/bitcoin-roots/doc/website` and `<workspace>/vite-theme`; the theme
+is a local file dependency. Confirm the theme revision from the Roots root,
+then install the website dependencies once:
+
+```sh
+git -C ../vite-theme rev-parse HEAD
+cd doc/website
+npm ci
+```
+
+Prepare, verify and build every public historical release with one command:
+
+```sh
+DOCS_BASE=/bitcoin-roots/ npm run releases:build
+```
+
+Use the same command for a local refresh or retry. It downloads published bytes,
+then builds VitePress, renders bounded patch views and checks static links and
+coverage. Run `npm test` for the offline suite. For a root-base local preview,
+use `DOCS_BASE=/ npm run releases:build` followed by `npm run preview`.
+Production uses `/bitcoin-roots/`; use the same base for every build stage.
+
+The preparation stage remains separately available when only inputs are needed:
 
 ```sh
 npm run releases:prepare
-npm test
-npm run build
 ```
 
-Use the same preparation command for the first build, retries, and later
-refreshes. It explicitly contacts the public GitHub releases API, following
+Preparation explicitly contacts the public GitHub releases API, following
 numbered pages through the final empty page. Unit tests and the ordinary website
 build do not contact GitHub. Rendering these inputs into patch pages is a
 separate offline stage included in `npm run build`. A build requires a prepared
@@ -48,6 +69,83 @@ is bounded at 1,000 pages with 8 MiB and 30 seconds per page. Bounds fail
 explicitly; increases require measured review rather than silently truncating
 data. The asset cache reuses verified bytes on subsequent preparations while
 discovery always refreshes the full inventory.
+
+## Publication refresh and recovery
+
+After publishing and independently verifying a release, a maintainer can request
+an immediate website refresh from trusted `main`:
+
+```sh
+gh workflow run deploy-docs.yml --repo LuganoPlanB/bitcoin-roots --ref main
+gh run list --repo LuganoPlanB/bitcoin-roots --workflow deploy-docs.yml --branch main --limit 5
+gh run watch <refresh-run-id> --repo LuganoPlanB/bitcoin-roots --exit-status
+```
+
+Select the new run ID from the list. These commands require repository workflow
+dispatch authority. This is the documentation workflow, separate from
+`release.yml` and its immutable binary-release handoff. A website retry never
+rebuilds binaries, moves tags, uploads or replaces release assets. Do not rerun
+a published tag's release workflow to refresh the site.
+
+`deploy-docs.yml` also checks the complete public inventory at minute 17 every
+six hours in UTC, and on main pushes. Expected automatic catch-up is within six
+hours **plus GitHub scheduling delay**, not a delivery guarantee: schedules can
+be delayed or dropped, and public repositories' schedules can be disabled after
+60 days without activity. Manual dispatch recovers a missed update. See
+[GitHub's scheduled-event rules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+Release events use a release tag ref, whose website files can be old or absent;
+publication performed with `GITHUB_TOKEN` ordinarily suppresses subsequent
+release-triggered workflows. The explicit dispatch and scheduled inventory do
+not depend on that event chain or introduce a PAT. GitHub documents the
+[tag-ref release behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)
+and [token-trigger exceptions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+
+Each production run acquires the existing whole-workflow `pages` concurrency
+group, resolves current `main`, then discovers all current public releases.
+It never builds a queued event's old source SHA or released tag. Concurrency
+ordering is not guaranteed, so input discovery happens after acquisition.
+Non-main dispatches and fork runs cannot deploy; PR checks and local previews
+have no Pages publication authority. Only the deployment job receives Pages
+write and OIDC permissions. The pinned shared theme remains unchanged.
+
+The public [deployment receipt](https://plan-b.foundation/bitcoin-roots/deployment.json)
+is emitted into the checked Pages artifact after the build succeeds. It binds
+the complete inventory fingerprint, main revision, pinned theme revision and
+base, plus release/available-patch counts. The fingerprint includes release
+identity, publication/prerelease state and edits, and patch/checksum/signature
+asset IDs, names, URLs, sizes, update timestamps and platform digests. Added,
+deleted, newly unavailable or replaced inputs cause a fresh build; an asset's
+previously verified bytes are not assumed unchanged after its metadata changes.
+The receipt is deployment evidence only when served by the public site.
+Matching public evidence skips dependency installation, full build and deploy.
+A missing or malformed receipt forces a build; cache presence cannot suppress
+one. Transient receipt/API errors fail the refresh and preserve the public site.
+
+The workflow first saves its checked inventory in ignored
+`.vitepress/release-inputs/publication.json`, then fetches/verifies exactly that
+snapshot. It adds a receipt only when the verified input inventory and rendered
+catalogue agree. Actions caches contain only verified asset objects and renderer
+output, under `website-patches-v1-…`; the receipt and checked snapshot are never
+restored as deployed evidence. All restored bytes and generated pages are
+revalidated. Download, checksum, parse, output-budget or link-check failures
+prevent upload/deployment, leaving the last successful public site intact.
+
+Diagnose the failing step in the refresh run before retrying:
+
+| Failure | Check and recovery |
+| --- | --- |
+| Public inventory / receipt | Check GitHub API rate limits, connectivity, Pages URL and run errors. Retry the documentation dispatch after the transient issue clears. An absent receipt on first deployment is expected. |
+| Fetch / integrity | Compare the exact selected asset identity, filename, size, GitHub digest and SHA512SUMS entry. A checksum mismatch is a published-input problem until investigated; matching checksums alone do not authenticate signatures. |
+| Verified input cache | Locally remove `.vitepress/release-inputs/assets/` and repeat `releases:build`. In Actions, remove the affected website cache through the repository's Actions caches UI, then dispatch again. Never edit cached bytes to make verification pass. |
+| Render / static checks | Inspect the release, commit/file state and reported bound. Clear disposable `.vitepress/patch-cache/` for a cold retry. Corrupt output caches regenerate automatically; malformed input or exceeded limits require a reviewed fix. |
+
+For a successful run, open the public `/patches/` index and every release
+overview, including unavailable history. Check representative commit/file deep
+links, original download/checksum destinations and public receipt counts against
+the run's captured inventory. Release overviews retain series totals and explicit
+verification states; the receipt records publication identity, not signature
+authentication. Browser screenshots and production checks are separate from
+the local smoke test below.
 
 ## Observed history and baseline
 
