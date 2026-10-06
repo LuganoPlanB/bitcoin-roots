@@ -2,6 +2,7 @@ node_modules/
 .vitepress/cache/
 .vitepress/dist/
 .vitepress/generated/
+.vitepress/release-inputs/
 .impeccable/review/
 .playwright-cli/
 output/
