@@ -62,12 +62,21 @@ set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 # Keep the user-visible Roots release name separate from the numeric protocol
-# version. A normal v29.4-roots.1 Git tag still takes precedence in build info.
+# version. Release builders supply CLIENT_VERSION_TAG even when Git metadata
+# is unavailable; a clean Git tag still takes precedence in build info.
 set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
 if(CLIENT_VERSION_RC GREATER 0)
   string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
 endif()
-string(APPEND CLIENT_VERSION_STRING "-roots.1")
+if(DEFINED CLIENT_VERSION_TAG)
+  string(REPLACE "." "\\." client_version_tag_base_pattern "${CLIENT_VERSION_STRING}")
+  if(NOT CLIENT_VERSION_TAG MATCHES "^v${client_version_tag_base_pattern}-roots\\.[1-9][0-9]*$")
+    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${CLIENT_VERSION_STRING}.")
+  endif()
+  string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
+else()
+  string(APPEND CLIENT_VERSION_STRING "-roots.1")
+endif()
 
 #=============================
 # Language setup

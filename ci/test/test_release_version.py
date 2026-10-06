@@ -6,6 +6,7 @@
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import unittest
 
 
@@ -16,6 +17,51 @@ RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 
 
 class ReleaseVersionTest(unittest.TestCase):
+    def configure_release_version(self, tag=None):
+        build_config = BUILD_CONFIG.read_text(encoding="utf-8")
+        version_block = build_config.split('set(CLIENT_VERSION_STRING ', 1)[1]
+        version_block = 'set(CLIENT_VERSION_STRING ' + version_block.split('#=============================', 1)[0]
+        with tempfile.TemporaryDirectory(prefix="roots-release-version-") as directory:
+            source = Path(directory)
+            metadata = "\n".join(
+                re.search(rf"set\({name} [^)]+\)", build_config).group(0)
+                for name in ("CLIENT_VERSION_MAJOR", "CLIENT_VERSION_MINOR", "CLIENT_VERSION_RC")
+            )
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.22)\n"
+                "project(ReleaseVersionTest LANGUAGES NONE)\n"
+                + metadata + "\n" + version_block
+                + f'configure_file("{ROOT / "cmake/bitcoin-build-config.h.in"}" '
+                '"${CMAKE_BINARY_DIR}/bitcoin-build-config.h" @ONLY)\n',
+                encoding="utf-8",
+            )
+            command = ["cmake", "-S", str(source), "-B", str(source / "build")]
+            if tag is not None:
+                command.append(f"-DCLIENT_VERSION_TAG={tag}")
+            result = subprocess.run(command, capture_output=True, text=True)
+            header = source / "build/bitcoin-build-config.h"
+            return result, header.read_text(encoding="utf-8") if header.exists() else ""
+
+    def test_release_tag_sets_compiled_version_without_git_metadata(self):
+        for tag in ("v29.4-roots.2", "v29.4-roots.4"):
+            with self.subTest(tag=tag):
+                result, header = self.configure_release_version(tag)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f'#define CLIENT_VERSION_STRING "{tag[1:]}"', header)
+                self.assertNotIn("Manually-specified variables were not used", result.stderr)
+
+    def test_release_tag_rejects_wrong_base_and_invalid_roots_version(self):
+        for tag in ("v30.0-roots.4", "v29x4-roots.4", "v29.4-roots.0", "v29.4-knots.4", ""):
+            with self.subTest(tag=tag):
+                result, _ = self.configure_release_version(tag)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("CLIENT_VERSION_TAG must be a Roots release tag", result.stderr)
+
+    def test_untagged_build_keeps_default_roots_version(self):
+        result, header = self.configure_release_version()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('#define CLIENT_VERSION_STRING "29.4-roots.1"', header)
+
     def test_l7_version_and_release_tag_name_agree(self):
         build_config = BUILD_CONFIG.read_text(encoding="utf-8")
         self.assertIn("set(CLIENT_VERSION_MAJOR 29)", build_config)
