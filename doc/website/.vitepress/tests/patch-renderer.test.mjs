@@ -9,6 +9,7 @@ import { renderFilePages, renderLimits, rendererSettings, toDiffFile } from "../
 import { renderPatchSite, rendererVersion, validateRenderCatalogue, websiteRoot } from "../../scripts/render-patches.mjs";
 import { patchCacheKey } from "../../scripts/patch-cache.mjs";
 import { patchDocument, validateBase } from "../../scripts/patch-page.mjs";
+import { checkPatchHtml } from "../../scripts/check-patch-html.mjs";
 
 const tag = "v29.4-roots.4";
 const mail = (diff, subject = "[PATCH] Fixture") => `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nFrom: <script>author</script>\nDate: 2026-10-01\nSubject: ${subject}\n\nMessage.\n---\n\n${diff}-- \n2.43.0\n`;
@@ -94,10 +95,14 @@ test("complete standalone routes provide static navigation and download access a
         const routes = ["", `${tag}/`, `${tag}/commit-1/`, `${tag}/commit-1/file-1/`, `${tag}/commit-1/file-1/page-2/`,
             `${tag}/commit-1/file-1/side-by-side/`, `${tag}/commit-1/file-1/side-by-side/page-2/`, "v29.3-roots.1/"];
         assert.equal(result.pageCount, routes.length);
+        const checked = await checkPatchHtml({ outputDir: fixture.outputDir });
+        assert.equal(checked.pages, routes.length);
+        assert.equal(checked.fileChanges, 1);
         for (const route of routes) {
             const html = await readFile(join(fixture.outputDir, route, "index.html"), "utf8");
             assert.ok(html.includes(`<link rel="stylesheet" href="${base}assets/style.abc.css">`));
-            assert.doesNotMatch(html, /<script\b|modulepreload|prefetch|javascript:/i);
+            assert.match(html, new RegExp(`<script src="${base}patches/patch-browser.js" defer></script>`));
+            assert.doesNotMatch(html, /<script(?! src=)|modulepreload|prefetch|javascript:/i);
             for (const href of html.matchAll(/href="([^"]+)"/g)) {
                 if (href[1].startsWith("#") || href[1].startsWith("https:")) continue;
                 assert.ok(href[1].startsWith(base), href[1]);
@@ -114,6 +119,21 @@ test("complete standalone routes provide static navigation and download access a
         const catalogue = await readFile(join(fixture.outputDir, "catalogue.json"), "utf8");
         assert.doesNotMatch(catalogue, /item-404|diff --git/);
     }
+});
+
+test("static acceptance rejects broken deep links, unexplained routes and external runtime scripts", async (t) => {
+    const fixture = await inputs(t);
+    await renderPatchSite(fixture);
+    const path = join(fixture.outputDir, "index.html");
+    const html = await readFile(path, "utf8");
+    await writeFile(path, html.replace('href="/patches/v29.4-roots.4/"', 'href="/patches/nonexistent/"'));
+    await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /Broken patch link/);
+    await writeFile(path, html.replace('src="/patches/patch-browser.js"', 'src="https://cdn.example/browser.js"'));
+    await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /External runtime/);
+    await writeFile(path, html);
+    await mkdir(join(fixture.outputDir, "unexpected"));
+    await writeFile(join(fixture.outputDir, "unexpected/index.html"), html);
+    await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /page count mismatch/);
 });
 
 test("binary, metadata-only, unsupported and oversized changes publish explicit source-linked pages", async (t) => {
@@ -139,6 +159,7 @@ test("malformed URLs/cache paths/tags cannot escape output; corrupted bytes pres
         (r) => r.integrity.cacheFile = "../../secret",
         (r) => r.url = "https://attacker.test",
         (r) => r.patchState = "invented",
+        (r) => r.checksum = { url: "javascript:alert(1)" },
     ]) {
         const catalogue = structuredClone(fixture.catalogue);
         mutate(catalogue.releases[0]);
@@ -153,6 +174,18 @@ test("malformed URLs/cache paths/tags cannot escape output; corrupted bytes pres
     await assert.rejects(renderPatchSite(fixture), /integrity/);
     assert.deepEqual(await readFile(join(fixture.outputDir, "index.html")), previous);
     assert.ok(!(await readdir(fixture.directory)).some((file) => file.includes("tmp-")));
+});
+
+test("empty prepared inventory renders an honest static index and passes route acceptance", async (t) => {
+    const fixture = await inputs(t);
+    await writeFile(join(fixture.inputDir, "catalogue.json"), JSON.stringify({ ...fixture.catalogue, releases: [] }));
+    const result = await renderPatchSite(fixture);
+    assert.equal(result.pageCount, 1);
+    const html = await readFile(join(fixture.outputDir, "index.html"), "utf8");
+    assert.match(html, /class="patch-empty"/);
+    assert.doesNotMatch(html, /class="patch-featured"/);
+    assert.doesNotMatch(html, /data-patch-filter=/);
+    assert.equal((await checkPatchHtml({ outputDir: fixture.outputDir })).releases, 0);
 });
 
 test("warm output cache is byte-identical and binds input digest, renderer/settings and template sources", async (t) => {
@@ -181,7 +214,7 @@ test("warm output cache is byte-identical and binds input digest, renderer/setti
     assert.notEqual(changed.cacheKey, key);
     const alternateSources = join(fixture.directory, "sources");
     for (const path of ["scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs", "scripts/render-patches.mjs",
-        "scripts/patch-cache.mjs", ".vitepress/theme/patches.css", "package-lock.json"]) {
+        "scripts/patch-cache.mjs", "scripts/patch-overview.mjs", "scripts/patch-browser.js", "scripts/patch-theme.js", ".vitepress/theme/patches.css", "package-lock.json"]) {
         await mkdir(join(alternateSources, path, ".."), { recursive: true });
         await copyFile(join(websiteRoot, path), join(alternateSources, path));
     }
@@ -200,7 +233,7 @@ test("corrupt, incomplete, path-tampered and symlink cache objects regenerate fr
     const page = join(entry, "pages", `${tag}/commit-1/file-1/index.html`);
     await writeFile(page, '<script>alert("cache corruption")</script>');
     assert.equal((await renderPatchSite({ ...fixture, cacheDir })).cache, "miss");
-    assert.doesNotMatch(await readFile(page, "utf8"), /<script/);
+    assert.doesNotMatch(await readFile(page, "utf8"), /<script(?! src=)/);
     await rm(page);
     assert.equal((await renderPatchSite({ ...fixture, cacheDir })).cache, "miss");
     const manifestPath = join(entry, "manifest.json");

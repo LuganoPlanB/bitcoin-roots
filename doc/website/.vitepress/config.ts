@@ -118,6 +118,8 @@ export default defineConfig({
       { text: "Compare", link: "/compare" },
       { text: "Wallet privacy", link: "/wallet-privacy" },
       { text: "Documentation", link: "/documentation" },
+      // Static patch documents bypass VitePress page-data routing.
+      { text: "Patches", link: "/patches/", target: "_self" },
       { text: "Policy", link: "/doc/policy/README" },
       { text: "Contribute", link: "/CONTRIBUTING" },
     ],

@@ -8,7 +8,8 @@ import { defaultInputDir } from "./prepare-releases.mjs";
 import { parsePatchSeries } from "./patch-series.mjs";
 import { renderFilePages, renderLimits, rendererSettings } from "./patch-renderer.mjs";
 import { patchCacheKey, restorePatchCache, storePatchCache } from "./patch-cache.mjs";
-import { escapeHtml as e, fileNavigation, link, patchDocument, seriesExplanation, sourceLink, validateBase } from "./patch-page.mjs";
+import { escapeHtml as e, fileNavigation, link, patchDocument, sourceLink, validateBase } from "./patch-page.mjs";
+import { orderedReleases, releaseIndex, releaseOverview } from "./patch-overview.mjs";
 
 const require = createRequire(import.meta.url);
 export const rendererVersion = require("diff2html/package.json").version;
@@ -23,6 +24,7 @@ export function validateRenderCatalogue(catalogue) {
         if (tags.has(release.tag)) throw new Error("Duplicate rendering release tag");
         tags.add(release.tag);
         if (typeof release.prerelease !== "boolean" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(release.publishedAt)) throw new Error("Invalid rendering release metadata");
+        if (release.checksum) validateReleaseUrl(release.checksum.url, release.tag, "SHA512SUMS");
         if (release.patchState === "unavailable" && release.patch === null) continue;
         if (release.patchState !== "available" || release.patch?.name !== expectedPatchName(release.tag)) throw new Error("Invalid rendering patch state");
         if (!Number.isSafeInteger(release.patch.size) || release.patch.size < 0 || release.patch.size > 20 * 1024 * 1024) throw new Error("Invalid rendering patch byte size");
@@ -71,14 +73,14 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
         }
         await copyFile(require.resolve("diff2html/bundles/css/diff2html.min.css"), join(temporary, "diff2html.css"));
         await copyFile(join(websiteRoot, ".vitepress/theme/patches.css"), join(temporary, "patches.css"));
-        await page("", "Release patches", `<h1>Release patches</h1><p>${e(seriesExplanation)}</p><ol>${catalogue.releases.map((release) =>
-            `<li>${link(local(`${release.tag}/`), release.tag)}${release.prerelease ? " · Prerelease" : ""} · ${e(release.publishedAt.slice(0, 10))}${release.patchState === "unavailable" ? " · Patch unavailable" : ""}</li>`).join("")}</ol>`, true);
-        for (const release of catalogue.releases) {
+        await copyFile(join(websiteRoot, "scripts/patch-browser.js"), join(temporary, "patch-browser.js"));
+        await copyFile(join(websiteRoot, "scripts/patch-theme.js"), join(temporary, "patch-theme.js"));
+        await page("", "Release patches", releaseIndex(catalogue.releases, local), true);
+        for (const release of orderedReleases(catalogue.releases)) {
             const releaseRoute = `${release.tag}/`;
             const releaseTitle = `${release.tag} patch series`;
-            const notes = link(release.url, "Release notes");
             if (release.patchState === "unavailable") {
-                await page(releaseRoute, releaseTitle, `<h1>${e(releaseTitle)}</h1><p>No patch asset was published for this release.</p><p>${notes}</p><p>${link(local(""), "All releases")}</p>`, true);
+                await page(releaseRoute, releaseTitle, releaseOverview(release, null, local), true);
                 summary.releases.push({ tag: release.tag, state: "unavailable", commits: [], fileCount: 0 });
                 continue;
             }
@@ -86,11 +88,8 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
             if (bytes.length !== release.patch.size || createHash("sha512").update(bytes).digest("hex") !== release.integrity.sha512) throw new Error(`Rendering input integrity mismatch for ${release.tag}`);
             const series = parsePatchSeries(bytes, release.tag);
             const entry = { tag: release.tag, state: "available", sha512: release.integrity.sha512, fileCount: series.fileCount, commits: [] };
-            const releaseLinks = `${sourceLink(release)} · ${notes}`;
-            await page(releaseRoute, releaseTitle, `<h1>${e(releaseTitle)}</h1><p>${e(seriesExplanation)}</p>
-<p>${series.commits.length} commits · ${series.fileCount} file changes · ${bytes.length.toLocaleString("en-US")} bytes</p>
-<p>SHA512 checksum: ${e(release.integrity.checksum)} · GitHub SHA256 digest: ${e(release.integrity.platformDigest)} · Signature: not verified.</p>
-<p>${releaseLinks}</p><ol>${series.commits.map((commit) => `<li id="${commit.id}">${link(local(`${releaseRoute}commit-${commit.ordinal}/`), commit.subject)} · ${commit.files.length} file changes</li>`).join("")}</ol>`, true);
+            const releaseLinks = `${sourceLink(release)} · ${link(release.url, "Release notes")}`;
+            await page(releaseRoute, releaseTitle, releaseOverview(release, series, local), true);
             for (const commit of series.commits) {
                 const commitRoute = `${releaseRoute}commit-${commit.ordinal}/`;
                 const commitEntry = { id: commit.id, ordinal: commit.ordinal, originalCommit: commit.originalCommit,
@@ -107,7 +106,7 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
                         route: local(fileRoute), pageCount: rendered.pages.length || 1 };
                     commitEntry.files.push(fileEntry);
                     const fileHeader = `<p>${link(local(releaseRoute), release.tag)} · ${link(local(commitRoute), `Commit ${commit.ordinal}: ${commit.subject}`)}</p>
-<h1 id="${file.id}">${e(file.path ?? "Unsupported file path")}</h1>
+<h1 class="patch-file-heading" id="${file.id}">${e(file.path ?? "Unsupported file path")}</h1>
 <p>Before: <code>${e(file.oldPath ?? "/dev/null")}</code> · After: <code>${e(file.newPath ?? "/dev/null")}</code></p>
 ${file.metadata.length ? `<details><summary>File metadata</summary><pre>${e(file.metadata.join("\n"))}</pre></details>` : ""}<p>${releaseLinks}</p>`;
                     if (!rendered.pages.length) {
@@ -122,7 +121,9 @@ ${file.metadata.length ? `<details><summary>File metadata</summary><pre>${e(file
                             const route = `${fileRoute}${view === "side-by-side" ? "side-by-side/" : ""}${index ? `page-${index + 1}/` : ""}`;
                             const navigation = fileNavigation({ fileRoute: local(fileRoute), page: index + 1, pageCount: rendered.pages.length, view });
                             await page(route, file.path, `${fileHeader}${navigation}<p>Diff rows ${part.start + 1}–${part.end} of ${rendered.lineCount}. Line numbers refer to the original before/after files.</p>
-<section class="patch-diff" tabindex="0" aria-label="${view === "unified" ? "Unified" : "Side by side"} code diff">${view === "unified" ? part.unified : part.sideBySide}</section>${navigation}`);
+<p class="patch-diff-legend"><span class="patch-added">+ Added</span><span class="patch-removed">− Removed</span><span>Unmarked lines are context.</span></p>
+<p class="patch-scroll-hint" id="patch-scroll-hint">Scroll the code area horizontally to read long lines. ${view === "side-by-side" ? "Before is on the left; after is on the right. Unified view fits narrow screens more easily." : "The two line-number columns refer to before and after."}</p>
+<section class="patch-diff" tabindex="0" aria-describedby="patch-scroll-hint" aria-label="${view === "unified" ? "Unified" : "Side by side"} code diff">${view === "side-by-side" ? '<div class="patch-side-headings" aria-hidden="true"><span>Before</span><span>After</span></div>' : ""}${view === "unified" ? part.unified : part.sideBySide}</section>${navigation}`);
                         }
                     }
                 }

@@ -9,9 +9,11 @@
   "scripts": {
     "releases:prepare": "node scripts/prepare-releases.mjs",
     "patches:render": "node scripts/render-patches.mjs",
+    "patches:check": "node scripts/check-patch-html.mjs",
+    "patches:smoke": "node scripts/check-patch-browser.mjs",
     "docs:prepare": "node scripts/generate-doc-catalog.mjs",
     "dev": "npm run docs:prepare && vitepress dev",
-    "build": "npm run docs:prepare && vitepress build && npm run patches:render && node scripts/check-static-html.mjs",
+    "build": "npm run docs:prepare && vitepress build && npm run patches:render && npm run patches:check && node scripts/check-static-html.mjs",
     "preview": "vitepress preview",
     "test": "npm run docs:prepare && node --test .vitepress/tests/*.test.mjs"
   },
