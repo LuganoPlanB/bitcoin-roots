@@ -5,11 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -18,26 +18,61 @@ concurrency:
 jobs:
   build:
     name: Build documentation
+    if: github.repository == 'LuganoPlanB/bitcoin-roots' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      changed: ${{ steps.inventory.outputs.changed }}
+    env:
+      DOCS_BASE: /${{ github.event.repository.name }}/
+      THEME_REVISION: b969923b3407fb85a46cf45a8e18385d239cf79e
     steps:
       - name: Check out Bitcoin Roots
+        id: roots
         uses: actions/checkout@v6
         with:
+          # Resolve current trusted main after the workflow concurrency lock.
+          # Older queued events must not build an older event SHA or release tag.
+          ref: main
           path: bitcoin-roots
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Node.js for the lightweight inventory check
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Check complete public inventory against deployed receipt
+        id: inventory
+        run: node scripts/website-publication.mjs check
+        working-directory: bitcoin-roots/doc/website
+        env:
+          SITE_REVISION: ${{ steps.roots.outputs.commit }}
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+
+      - name: Report unchanged publication
+        if: steps.inventory.outputs.changed == 'false'
+        run: printf '%s\n' 'Public catalogue and site revision unchanged; installation, build and deployment skipped.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out the Plan B Vite theme
+        if: steps.inventory.outputs.changed == 'true'
         uses: actions/checkout@v6
         with:
           repository: LuganoPlanB/vite-theme
           ref: b969923b3407fb85a46cf45a8e18385d239cf79e
           path: vite-theme
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+          persist-credentials: false
 
       - name: Set up Node.js
+        if: steps.inventory.outputs.changed == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -45,20 +80,43 @@ jobs:
           cache-dependency-path: bitcoin-roots/doc/website/package-lock.json
 
       - name: Install website dependencies
+        if: steps.inventory.outputs.changed == 'true'
         run: npm ci
         working-directory: bitcoin-roots/doc/website
 
       - name: Test website
+        if: steps.inventory.outputs.changed == 'true'
         run: npm test
         working-directory: bitcoin-roots/doc/website
 
-      - name: Build website
+      - name: Restore verified release inputs and renderer output
+        if: steps.inventory.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            bitcoin-roots/doc/website/.vitepress/release-inputs/assets
+            bitcoin-roots/doc/website/.vitepress/patch-cache
+          key: website-patches-v1-${{ runner.os }}-${{ steps.inventory.outputs.fingerprint }}
+          restore-keys: |
+            website-patches-v1-${{ runner.os }}-
+
+      - name: Fetch and verify checked release snapshot
+        if: steps.inventory.outputs.changed == 'true'
+        run: node scripts/website-publication.mjs prepare
+        working-directory: bitcoin-roots/doc/website
+
+      - name: Build website and render bounded patch pages
+        if: steps.inventory.outputs.changed == 'true'
         run: npm run build
         working-directory: bitcoin-roots/doc/website
-        env:
-          DOCS_BASE: /${{ github.event.repository.name }}/
+
+      - name: Add validated deployment receipt
+        if: steps.inventory.outputs.changed == 'true'
+        run: node scripts/website-publication.mjs receipt
+        working-directory: bitcoin-roots/doc/website
 
       - name: Upload GitHub Pages artifact
+        if: steps.inventory.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v4
         with:
           path: bitcoin-roots/doc/website/.vitepress/dist
@@ -66,8 +124,12 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
+    if: needs.build.outputs.changed == 'true' && github.repository == 'LuganoPlanB/bitcoin-roots' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

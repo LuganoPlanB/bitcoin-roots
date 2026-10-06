@@ -8,8 +8,8 @@ export const defaultInputDir = fileURLToPath(new URL("../.vitepress/release-inpu
 
 // Publish only a complete verified snapshot. A failed refresh leaves the last
 // catalogue intact; individually verified cache objects remain reusable.
-export async function prepareReleases({ inputDir = defaultInputDir, api, fetchImpl } = {}) {
-    const catalogue = await discoverReleases({ api });
+export async function prepareReleases({ inputDir = defaultInputDir, api, fetchImpl, catalogue } = {}) {
+    catalogue ??= await discoverReleases({ api });
     const verified = await verifyCatalogueAssets(catalogue, { cacheDir: join(inputDir, "assets"), fetchImpl });
     await mkdir(inputDir, { recursive: true });
     const output = join(inputDir, "catalogue.json");

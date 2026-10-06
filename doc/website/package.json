@@ -8,6 +8,7 @@
   },
   "scripts": {
     "releases:prepare": "node scripts/prepare-releases.mjs",
+    "releases:build": "npm run releases:prepare && npm run build",
     "patches:render": "node scripts/render-patches.mjs",
     "patches:check": "node scripts/check-patch-html.mjs",
     "patches:smoke": "node scripts/check-patch-browser.mjs",
