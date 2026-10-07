@@ -17,7 +17,6 @@ from test_framework.mempool_util import (
 )
 from test_framework.messages import (
     CInv,
-    COIN,
     COutPoint,
     CTransaction,
     CTxIn,

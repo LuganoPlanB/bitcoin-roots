@@ -7,7 +7,6 @@
 from decimal import Decimal
 
 from test_framework.mempool_util import (
-    DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
 )
 from test_framework.p2p import P2PTxInvStore
