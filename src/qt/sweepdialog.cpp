@@ -36,7 +36,8 @@ public:
         SecureString result{encoded.constData(), static_cast<size_t>(encoded.size())};
         if (!encoded.isEmpty()) memory_cleanse(encoded.data(), encoded.size());
         // QLineEdit does not expose its internal buffer for cleansing. Replace
-        // its contents before clearing so the widget no longer retains the WIF.
+        // its visible contents before clearing; Qt does not guarantee physical
+        // erasure of every internal QString or undo-buffer copy.
         setText(QString(text().size(), QChar{' '}));
         clear();
         return result;
@@ -118,7 +119,7 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
         m_request_generation = 0;
         const QSignalBlocker block{m_private_key};
         m_private_key->clear();
-        m_private_key_cache.clear();
+        clearPrivateKeyCache();
         m_preview_txid.clear();
         setBusy(false);
         m_preview_current = false;
@@ -130,6 +131,15 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
 
 SweepDialog::~SweepDialog() { clearSensitive(); }
 
+void SweepDialog::clearPrivateKeyCache()
+{
+    // clear() alone retains storage, including the old secret beyond size().
+    // Wipe live bytes first, including short-string storage, then release any
+    // allocation through secure_allocator's cleansing deallocator.
+    if (!m_private_key_cache.empty()) memory_cleanse(m_private_key_cache.data(), m_private_key_cache.size());
+    SecureString{}.swap(m_private_key_cache);
+}
+
 void SweepDialog::invalidate()
 {
     if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
@@ -137,7 +147,7 @@ void SweepDialog::invalidate()
         return;
     }
     m_request_generation = 0;
-    m_private_key_cache.clear();
+    clearPrivateKeyCache();
     m_preview_txid.clear();
     m_preview_current = false;
     m_broadcast->setEnabled(false);
@@ -162,6 +172,7 @@ void SweepDialog::setResult(const QString& text, bool can_broadcast)
 
 void SweepDialog::preview()
 {
+    clearPrivateKeyCache();
     const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
     if (!IsValidDestination(destination)) { setResult(tr("Enter a valid destination address."), false); return; }
     const QSignalBlocker block{m_private_key};
@@ -170,7 +181,11 @@ void SweepDialog::preview()
     setBusy(true);
     m_result->setText(tr("Scanning for eligible coins and preparing a preview…"));
     m_request_generation = m_wallet_model->requestSweep(m_private_key_cache, destination, false);
-    if (m_request_generation == 0) setResult(tr("Another sweep broadcast is already being submitted."), false);
+    if (m_request_generation == 0) {
+        clearPrivateKeyCache();
+        setBusy(false);
+        setResult(tr("Another sweep broadcast is already being submitted."), false);
+    }
 }
 
 void SweepDialog::broadcast()
@@ -182,12 +197,20 @@ void SweepDialog::broadcast()
     if (answer != QMessageBox::Yes) return;
     const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
     const auto expected_txid{Txid::FromHex(m_preview_txid.toStdString())};
-    if (!expected_txid) { setResult(tr("The preview is no longer valid. Create a fresh preview."), false); return; }
+    if (!expected_txid) {
+        clearPrivateKeyCache();
+        setResult(tr("The preview is no longer valid. Create a fresh preview."), false);
+        return;
+    }
     setBusy(true);
     m_preview_current = false;
     m_result->setText(tr("Rechecking the preview and broadcasting the sweep…"));
     m_request_generation = m_wallet_model->requestSweep(m_private_key_cache, destination, true, expected_txid);
-    if (m_request_generation == 0) setResult(tr("Sweep broadcast submission has already started. Wait for its result."), false);
+    if (m_request_generation == 0) {
+        clearPrivateKeyCache();
+        setBusy(false);
+        setResult(tr("Sweep broadcast submission has already started. Wait for its result."), false);
+    }
 }
 
 void SweepDialog::reject()
@@ -211,7 +234,7 @@ void SweepDialog::handleSweepFinished(uint64_t generation, bool broadcast, bool 
         setResult(broadcast
                 ? tr("Broadcast failed: %1. Create a fresh preview before trying again.").arg(error)
                 : tr("Preview failed: %1").arg(error), false);
-        m_private_key_cache.clear();
+        clearPrivateKeyCache();
         m_preview_txid.clear();
         return;
     }
@@ -237,7 +260,7 @@ void SweepDialog::clearSensitive()
     m_request_generation = 0;
     const QSignalBlocker block{m_private_key};
     m_private_key->clear();
-    m_private_key_cache.clear();
+    clearPrivateKeyCache();
     m_preview_txid.clear();
     m_preview_current = false;
     setBusy(false);
