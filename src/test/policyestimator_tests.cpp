@@ -22,6 +22,7 @@ BOOST_AUTO_TEST_CASE(BypassedPolicyIsNotEstimated)
     CBlockPolicyEstimator estimator{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
     CMutableTransaction tx;
     tx.vin.resize(1);
+    tx.vin[0].prevout.n = 0;
     tx.vout.emplace_back(COIN, CScript{});
     for (const auto& ignored : {empty_ignore_rejects, ignore_rejects_type{"mempool full"}}) {
         const auto txref{MakeTransactionRef(tx)};
