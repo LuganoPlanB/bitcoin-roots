@@ -13,6 +13,7 @@
 
 #include <boost/test/unit_test.hpp>
 #include <array>
+#include <barrier>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -26,6 +27,7 @@ BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
     CScheduler scheduler;
     auto opts{MemPoolOptionsForTest(m_node)};
     opts.scheduler = &scheduler;
+    opts.signals = nullptr;
     opts.dust_relay_target = 1;
     opts.dust_relay_multiplier = 1000;
     opts.dust_relay_feerate = CFeeRate{3000};
@@ -47,13 +49,25 @@ BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
     // Exercise the scheduler's writer concurrently with the public snapshot
     // reader. The guarded state also exposes unsynchronized access to Clang's
     // thread-safety analysis and race-detecting builds.
+    std::barrier start{2};
     std::thread updater{[&] {
-        for (int i{0}; i < 1000; ++i) pool.UpdateDynamicDustFeerate();
+        start.arrive_and_wait();
+        for (int i{0}; i < 1000; ++i) {
+            WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
+            pool.UpdateDynamicDustFeerate();
+            AddToMempool(pool, TestMemPoolEntryHelper{}.Fee(fee).FromTx(txref));
+            pool.UpdateDynamicDustFeerate();
+        }
     }};
     bool consistent{true};
-    for (int i{0}; i < 1000; ++i) consistent &= pool.GetDustRelayFee() == expected;
+    start.arrive_and_wait();
+    for (int i{0}; i < 1000; ++i) {
+        const CFeeRate rate{pool.GetDustRelayFee()};
+        consistent &= rate == expected || rate == opts.dust_relay_feerate;
+    }
     updater.join();
     BOOST_CHECK(consistent);
+    BOOST_CHECK(pool.GetDustRelayFee() == expected);
     WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
     pool.UpdateDynamicDustFeerate();
     BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
