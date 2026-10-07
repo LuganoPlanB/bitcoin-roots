@@ -872,7 +872,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     std::string reason;
-    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.m_opts, reason, ignore_rejects)) {
+    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.GetStandardnessOptions(), reason, ignore_rejects)) {
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, reason);
     }
 
@@ -1047,7 +1047,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         }
     }
 
-    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view, m_pool.m_opts, "bad-txns-input-", reason, ignore_rejects)) {
+    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view, m_pool.GetStandardnessOptions(), "bad-txns-input-", reason, ignore_rejects)) {
         return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, reason);
     }
 
