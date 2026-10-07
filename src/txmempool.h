@@ -487,6 +487,7 @@ public:
 
     void UpdateDynamicDustFeerate();
     CFeeRate GetDustRelayFee() const;
+    StandardnessOptions GetStandardnessOptions() const;
 
     /** Affect CreateNewBlock prioritisation of transactions */
     void PrioritiseTransaction(const Txid& hash, double dPriorityDelta, const CAmount& nFeeDelta);

@@ -796,6 +796,14 @@ CFeeRate CTxMemPool::GetDustRelayFee() const
     return m_dust_relay_feerate;
 }
 
+StandardnessOptions CTxMemPool::GetStandardnessOptions() const
+{
+    LOCK(cs);
+    StandardnessOptions options{m_opts};
+    options.dust_relay_feerate = m_dust_relay_feerate;
+    return options;
+}
+
 #ifndef BUILDING_FOR_LIBBITCOINKERNEL
 void CTxMemPool::UpdateDynamicDustFeerate()
 {

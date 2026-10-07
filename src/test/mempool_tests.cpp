@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <addresstype.h>
 #include <common/system.h>
 #include <policy/policy.h>
 #include <scheduler.h>
@@ -31,6 +32,7 @@ BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
     opts.dust_relay_target = 1;
     opts.dust_relay_multiplier = 1000;
     opts.dust_relay_feerate = CFeeRate{3000};
+    opts.permitephemeral_send = false;
     bilingual_str error;
     CTxMemPool pool{opts, error};
     BOOST_REQUIRE(error.empty());
@@ -45,6 +47,14 @@ BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
     BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
     pool.UpdateDynamicDustFeerate();
     BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), expected.GetFeePerK());
+    CMutableTransaction probe;
+    probe.vin.resize(1);
+    const CScript destination{GetScriptForDestination(PKHash{})};
+    probe.vout.emplace_back(GetDustThreshold(CTxOut{0, destination}, opts.dust_relay_feerate), destination);
+    std::string reason;
+    BOOST_CHECK(IsStandardTx(CTransaction{probe}, opts, reason));
+    BOOST_CHECK(!IsStandardTx(CTransaction{probe}, pool.GetStandardnessOptions(), reason));
+    BOOST_CHECK_EQUAL(reason, "dust-nonanchor");
 
     // Exercise the scheduler's writer concurrently with the public snapshot
     // reader. The guarded state also exposes unsynchronized access to Clang's
@@ -71,6 +81,8 @@ BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
     WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
     pool.UpdateDynamicDustFeerate();
     BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
+    reason.clear();
+    BOOST_CHECK(IsStandardTx(CTransaction{probe}, pool.GetStandardnessOptions(), reason));
 }
 
 BOOST_AUTO_TEST_CASE(MempoolExtraWeightBoundary)
