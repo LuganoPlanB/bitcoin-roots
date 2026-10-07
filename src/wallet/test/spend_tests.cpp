@@ -105,6 +105,61 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
     BOOST_CHECK(committed_authorization.BroadcastStarted());
 }
 
+BOOST_FIXTURE_TEST_CASE(sweep_transaction_uses_one_fee_snapshot, TestChain100Setup)
+{
+    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    auto wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey);
+    const CKey key{GenerateRandomKey()};
+    const CScript script{GetScriptForDestination(PKHash{key.GetPubKey()})};
+    const std::map<COutPoint, Coin> coins{{COutPoint{Txid{}, 1}, Coin{CTxOut{COIN, script}, 1, false}}};
+    const CFeeRate initial_rate{1000};
+    const CFeeRate changed_rate{10000};
+    WITH_LOCK(wallet->cs_wallet, wallet->m_pay_tx_fee = initial_rate);
+
+    // Change the wallet setting when signing the fee-adjusted transaction,
+    // after the operation has selected its fee rate. This deterministically
+    // models a concurrent settxfee without timing-sensitive threads.
+    class FeeChangingProvider final : public SigningProvider
+    {
+        CWallet& m_wallet;
+        FlatSigningProvider m_provider;
+        CFeeRate m_changed_rate;
+
+    public:
+        mutable int key_requests{0};
+        FeeChangingProvider(CWallet& wallet, const CKey& key, CFeeRate changed_rate)
+            : m_wallet{wallet}, m_changed_rate{changed_rate}
+        {
+            m_provider.keys.emplace(key.GetPubKey().GetID(), key);
+            m_provider.pubkeys.emplace(key.GetPubKey().GetID(), key.GetPubKey());
+        }
+        bool GetKey(const CKeyID& id, CKey& key_out) const override
+        {
+            AssertLockNotHeld(m_wallet.cs_wallet);
+            if (++key_requests == 2) {
+                WITH_LOCK(m_wallet.cs_wallet, m_wallet.m_pay_tx_fee = m_changed_rate);
+            }
+            return m_provider.GetKey(id, key_out);
+        }
+        bool GetPubKey(const CKeyID& id, CPubKey& pubkey) const override
+        {
+            return m_provider.GetPubKey(id, pubkey);
+        }
+    } provider{*wallet, key, changed_rate};
+
+    interfaces::SweepAuthorization authorization;
+    auto result{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) {
+        AssertLockNotHeld(wallet->cs_wallet);
+        return true;
+    }, authorization)};
+    BOOST_REQUIRE(result);
+    BOOST_CHECK_GE(provider.key_requests, 2);
+    BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->m_pay_tx_fee == changed_rate));
+    const auto vsize{GetVirtualTransactionSize(*result->tx)};
+    BOOST_CHECK_GE(result->fee, initial_rate.GetFee(vsize));
+    BOOST_CHECK_LT(result->fee, changed_rate.GetFee(vsize));
+}
+
 BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
 {
     CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
@@ -224,7 +279,7 @@ BOOST_FIXTURE_TEST_CASE(manual_coin_control_honors_selection_and_rbf, TestChain1
     BOOST_CHECK(rbf->tx->vin.front().prevout == selected_coin.outpoint);
     BOOST_CHECK_EQUAL(rbf->tx->vin.front().nSequence, MAX_BIP125_RBF_SEQUENCE);
 
-    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(selected_coin.outpoint));
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(selected_coin.outpoint, /*persist=*/false));
     const auto available_after_lock{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).All())};
     BOOST_CHECK(std::none_of(available_after_lock.cbegin(), available_after_lock.cend(),
                              [&selected_coin](const COutput& coin) { return coin.outpoint == selected_coin.outpoint; }));

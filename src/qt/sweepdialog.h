@@ -31,6 +31,8 @@ private Q_SLOTS:
                              qint64 amount, qint64 fee, quint64 inputs, qint64 vsize, bool rbf, const QString& txid);
 
 private:
+    friend struct SweepDialogTestAccess;
+    void clearPrivateKeyCache();
     void setResult(const QString& text, bool can_broadcast);
     void setBusy(bool busy);
     WalletModel* m_wallet_model;

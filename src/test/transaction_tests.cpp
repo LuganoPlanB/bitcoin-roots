@@ -17,6 +17,7 @@
 #include <key.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
+#include <primitives/transaction_identifier.h>
 #include <script/script.h>
 #include <script/script_error.h>
 #include <script/sigcache.h>
@@ -30,7 +31,6 @@
 #include <test/util/transaction_utils.h>
 #include <util/strencodings.h>
 #include <util/string.h>
-#include <util/transaction_identifier.h>
 #include <validation.h>
 
 #include <functional>
@@ -569,7 +569,7 @@ BOOST_AUTO_TEST_CASE(test_big_witness_transaction)
     // check all inputs concurrently, with the cache
     PrecomputedTransactionData txdata(tx);
     CCheckQueue<CScriptCheck> scriptcheckqueue(/*batch_size=*/128, /*worker_threads_num=*/20);
-    CCheckQueueControl<CScriptCheck> control(&scriptcheckqueue);
+    CCheckQueueControl<CScriptCheck> control(scriptcheckqueue);
 
     std::vector<Coin> coins;
     for(uint32_t i = 0; i < mtx.vin.size(); i++) {
@@ -798,14 +798,18 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     CKey key = GenerateRandomKey();
     t.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
 
-    constexpr auto CheckIsStandard = [](const auto& t) {
+    constexpr auto CheckIsStandard = [](const auto& t, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY, const ignore_rejects_type& ignore_rejects = empty_ignore_rejects) {
         std::string reason;
-        BOOST_CHECK(IsStandardTx(CTransaction{t}, g_mempool_opts, reason));
+        auto opts = g_mempool_opts;
+        opts.max_datacarrier_bytes = max_op_return_relay;
+        BOOST_CHECK(IsStandardTx(CTransaction{t}, opts, reason, ignore_rejects));
         BOOST_CHECK(reason.empty());
     };
-    constexpr auto CheckIsNotStandard = [](const auto& t, const std::string& reason_in) {
+    constexpr auto CheckIsNotStandard = [](const auto& t, const std::string& reason_in, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY, const ignore_rejects_type& ignore_rejects = empty_ignore_rejects) {
         std::string reason;
-        BOOST_CHECK(!IsStandardTx(CTransaction{t}, g_mempool_opts, reason));
+        auto opts = g_mempool_opts;
+        opts.max_datacarrier_bytes = max_op_return_relay;
+        BOOST_CHECK(!IsStandardTx(CTransaction{t}, opts, reason, ignore_rejects));
         BOOST_CHECK_EQUAL(reason_in, reason);
     };
 
@@ -911,7 +915,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     // MAX_OP_RETURN_RELAY+1-byte TxoutType::NULL_DATA (non-standard)
     t.vout[0].scriptPubKey << OP_0;
     BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY + 1, t.vout[0].scriptPubKey.size());
-    CheckIsNotStandard(t, "scriptpubkey");
+    CheckIsNotStandard(t, "datacarrier");
 
     // Data payload can be encoded in any way...
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << ""_hex;
@@ -933,24 +937,37 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     t.vout[0].scriptPubKey = CScript() << OP_RETURN;
     CheckIsStandard(t);
 
-    // Only one TxoutType::NULL_DATA permitted in all cases
+    // Multiple carriers require an explicit local policy relaxation
     t.vout.resize(2);
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[0].nValue = 0;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[1].nValue = 0;
-    CheckIsNotStandard(t, "multi-op-return");
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
 
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN;
-    CheckIsNotStandard(t, "multi-op-return");
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
 
-    // Test permitbaredatacarrier
-    g_mempool_opts.permitbaredatacarrier = false;
-    t.vout[1].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
-    t.vout[1].nValue = COIN;
-    CheckIsStandard(t);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    t.vout[1].scriptPubKey = CScript() << OP_RETURN;
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
+
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
+    t.vout[1].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
+    const auto datacarrier_size = t.vout[0].scriptPubKey.size() + t.vout[1].scriptPubKey.size();
+    CheckIsNotStandard(t, "datacarrier");
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"}); // Explicit generous aggregate limit
+    CheckIsStandard(t, /*max_op_return_relay=*/datacarrier_size, {"multi-op-return"});
+    CheckIsNotStandard(t, "datacarrier", /*max_op_return_relay=*/datacarrier_size-1, {"multi-op-return"});
+
+    // Bare carrier transactions still require explicit permission.
     t.vout.resize(1);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    g_mempool_opts.permitbaredatacarrier = false;
     CheckIsNotStandard(t, "bare-datacarrier");
     g_mempool_opts.permitbaredatacarrier = true;
     CheckIsStandard(t);
@@ -1094,7 +1111,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     }
 
     // Check anchor outputs
-    t.vout[0].scriptPubKey = CScript() << OP_1 << std::vector<unsigned char>{0x4e, 0x73};
+    t.vout[0].scriptPubKey = CScript() << OP_1 << ANCHOR_BYTES;
     BOOST_CHECK(t.vout[0].scriptPubKey.IsPayToAnchor());
     t.vout[0].nValue = 240;
     CheckIsStandard(t);

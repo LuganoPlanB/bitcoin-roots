@@ -27,8 +27,8 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 # Project / Package metadata
 #=============================
 set(CLIENT_NAME "Bitcoin Roots")
-set(CLIENT_VERSION_MAJOR 29)
-set(CLIENT_VERSION_MINOR 4)
+set(CLIENT_VERSION_MAJOR 30)
+set(CLIENT_VERSION_MINOR 3)
 set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
 set(CLIENT_VERSION_IS_RELEASE "true")
@@ -62,12 +62,21 @@ set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 # Keep the user-visible Roots release name separate from the numeric protocol
-# version. A normal v29.4-roots.1 Git tag still takes precedence in build info.
+# version. Release builders supply CLIENT_VERSION_TAG even when Git metadata
+# is unavailable; a clean Git tag still takes precedence in build info.
 set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
 if(CLIENT_VERSION_RC GREATER 0)
   string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
 endif()
-string(APPEND CLIENT_VERSION_STRING "-roots.1")
+if(DEFINED CLIENT_VERSION_TAG)
+  string(REPLACE "." "\\." client_version_tag_base_pattern "${CLIENT_VERSION_STRING}")
+  if(NOT CLIENT_VERSION_TAG MATCHES "^v${client_version_tag_base_pattern}-roots\\.[1-9][0-9]*$")
+    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${CLIENT_VERSION_STRING}.")
+  endif()
+  string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
+else()
+  string(APPEND CLIENT_VERSION_STRING "-roots.1")
+endif()
 
 #=============================
 # Language setup
@@ -97,13 +106,14 @@ endif()
 #=============================
 include(CMakeDependentOption)
 # When adding a new option, end the <help_text> with a full stop for consistency.
+option(BUILD_BITCOIN_BIN "Build bitcoin executable." ON)
 option(BUILD_DAEMON "Build bitcoind executable." ON)
 option(BUILD_GUI "Build bitcoin-qt executable." OFF)
-set(WITH_QT_VERSION "5" CACHE STRING "Choose 5 or 6.")
+set(WITH_QT_VERSION "6" CACHE STRING "Choose 5 or 6.")
 set_property(CACHE WITH_QT_VERSION PROPERTY STRINGS "5" "6")
 option(BUILD_CLI "Build bitcoin-cli executable." ON)
 
-option(BUILD_TESTS "Build test_bitcoin executable." ON)
+option(BUILD_TESTS "Build test_bitcoin and other unit test executables." ON)
 option(BUILD_TX "Build bitcoin-tx executable." ${BUILD_TESTS})
 option(BUILD_UTIL "Build bitcoin-util executable." ${BUILD_TESTS})
 
@@ -125,7 +135,7 @@ if(WITH_SYSTEM_LIBSECP256K1)
   pkg_check_modules(libsecp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)
   add_library(secp256k1 ALIAS PkgConfig::libsecp256k1)
 
-  if(NOT (libsecp256k1_HAS_SECP256K1_ELLSWIFT_CREATE AND libsecp256k1_HAS_SECP256K1_XONLY_PUBKEY_PARSE AND libsecp256k1_HAS_SECP256K1_ECDSA_RECOVER AND libsecp256k1_HAS_SECP256K1_SCHNORRSIG_VERIFY))
+  if(NOT (libsecp256k1_HAS_SECP256K1_ELLSWIFT_CREATE AND libsecp256k1_HAS_SECP256K1_XONLY_PUBKEY_PARSE AND libsecp256k1_HAS_SECP256K1_ECDSA_RECOVER AND libsecp256k1_HAS_SECP256K1_SCHNORRSIG_VERIFY AND libsecp256k1_HAS_SECP256K1_MUSIG_PUBKEY_AGG))
     include(CheckSymbolExists)
     include(CMakePushCheckState)
     cmake_push_check_state(RESET)
@@ -149,6 +159,7 @@ if(WITH_SYSTEM_LIBSECP256K1)
     check_secp256k1_module(extrakeys secp256k1_xonly_pubkey_parse)
     check_secp256k1_module(recovery secp256k1_ecdsa_recover)
     check_secp256k1_module(schnorrsig secp256k1_schnorrsig_verify)
+    check_secp256k1_module(musig secp256k1_musig_pubkey_agg)
     list(POP_BACK CMAKE_MESSAGE_INDENT)
     if(missing_modules)
       list(JOIN missing_modules ", " missing_modules)
@@ -160,8 +171,7 @@ if(WITH_SYSTEM_LIBSECP256K1)
 endif()  # WITH_SYSTEM_LIBSECP256K1
 
 option(ENABLE_WALLET "Enable wallet." ON)
-option(WITH_SQLITE "Enable SQLite wallet support." ${ENABLE_WALLET})
-if(WITH_SQLITE)
+if(ENABLE_WALLET)
   if(VCPKG_TARGET_TRIPLET)
     # Use of the `unofficial::` namespace is a vcpkg package manager convention.
     find_package(unofficial-sqlite3 CONFIG REQUIRED)
@@ -172,27 +182,9 @@ if(WITH_SQLITE)
       add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
     endif()
   endif()
-  set(USE_SQLITE ON)
-endif()
-option(WITH_BDB "Enable Berkeley DB (BDB) wallet support." OFF)
-cmake_dependent_option(WARN_INCOMPATIBLE_BDB "Warn when using a Berkeley DB (BDB) version other than 4.8." ON "WITH_BDB" OFF)
-if(WITH_BDB)
-  find_package(BerkeleyDB 4.8 MODULE REQUIRED)
-  set(USE_BDB ON)
-  if(NOT BerkeleyDB_VERSION VERSION_EQUAL 4.8)
-    message(WARNING "Found Berkeley DB (BDB) other than 4.8.\n"
-                    "BDB (legacy) wallets opened by this build will not be portable!"
-    )
-    if(WARN_INCOMPATIBLE_BDB)
-      message(FATAL_ERROR "If this is intended, pass \"-DWARN_INCOMPATIBLE_BDB=OFF\".\n"
-                      "Passing \"-DWITH_BDB=OFF\" will suppress this warning."
-      )
-    endif()
-  endif()
 endif()
 cmake_dependent_option(BUILD_WALLET_TOOL "Build bitcoin-wallet tool." ${BUILD_TESTS} "ENABLE_WALLET" OFF)
 
-option(ENABLE_HARDENING "Attempt to harden the resulting executables." ON)
 option(REDUCE_EXPORTS "Attempt to reduce exported symbols in the resulting executables." OFF)
 option(WERROR "Treat compiler warnings as errors." OFF)
 option(WITH_CCACHE "Attempt to use ccache for compiling." ON)
@@ -226,8 +218,9 @@ cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAM
 
 cmake_dependent_option(WITH_TASKBAR_PROGRESS "Enable GUI taskbar progress." ON "CMAKE_SYSTEM_NAME STREQUAL \"Windows\" AND BUILD_GUI" OFF)
 
-set(WITH_MULTIPROCESS OFF)
-if(WITH_MULTIPROCESS)
+cmake_dependent_option(ENABLE_IPC "Build multiprocess bitcoin-node and bitcoin-gui executables in addition to monolithic bitcoind and bitcoin-qt executables." ON "NOT WIN32" OFF)
+cmake_dependent_option(WITH_EXTERNAL_LIBMULTIPROCESS "Build with external libmultiprocess library instead of with local git subtree when ENABLE_IPC is enabled. This is not normally recommended, but can be useful for developing libmultiprocess itself." OFF "ENABLE_IPC" OFF)
+if(ENABLE_IPC AND WITH_EXTERNAL_LIBMULTIPROCESS)
   find_package(Libmultiprocess REQUIRED COMPONENTS Lib)
   find_package(LibmultiprocessNative REQUIRED COMPONENTS Bin
     NAMES Libmultiprocess
@@ -255,9 +248,9 @@ if(BUILD_GUI)
       COMPONENTS ${qt_components}
     )
   else()  # ! Qt 6
-  find_package(Qt 5.11.3 MODULE REQUIRED
-    COMPONENTS ${qt_components}
-  )
+    find_package(Qt 5.11.3 MODULE REQUIRED
+      COMPONENTS ${qt_components}
+    )
   endif()  # Qt 6
   unset(qt_components)
 endif()
@@ -296,6 +289,7 @@ target_link_libraries(core_interface INTERFACE
 
 if(BUILD_FOR_FUZZING)
   message(WARNING "BUILD_FOR_FUZZING=ON will disable all other targets and force BUILD_FUZZ_BINARY=ON.")
+  set(BUILD_BITCOIN_BIN OFF)
   set(BUILD_DAEMON OFF)
   set(BUILD_CLI OFF)
   set(BUILD_TX OFF)
@@ -310,6 +304,7 @@ if(BUILD_FOR_FUZZING)
   set(BUILD_TESTS OFF)
   set(BUILD_GUI_TESTS OFF)
   set(BUILD_BENCH OFF)
+  set(ENABLE_IPC OFF)
   set(BUILD_FUZZ_BINARY ON)
 
   target_compile_definitions(core_interface INTERFACE
@@ -382,6 +377,10 @@ if(WIN32)
       /Zc:__cplusplus
       /sdl
     )
+    target_link_options(core_interface INTERFACE
+      # We embed our own manifests.
+      /MANIFEST:NO
+    )
     # Improve parallelism in MSBuild.
     # See: https://devblogs.microsoft.com/cppblog/improved-parallelism-in-msbuild/.
     list(APPEND CMAKE_VS_GLOBALS "UseMultiToolTask=true")
@@ -447,13 +446,28 @@ target_link_libraries(core_interface INTERFACE
   Threads::Threads
 )
 
+# Define sanitize_interface with -fsanitize flags intended to apply to all
+# libraries and executables.
 add_library(sanitize_interface INTERFACE)
 target_link_libraries(core_interface INTERFACE sanitize_interface)
 if(SANITIZERS)
+  # Transform list of sanitizers into -fsanitize flags, replacing "fuzzer" with
+  # "fuzzer-no-link" in sanitize_interface flags, and moving "fuzzer" to
+  # fuzzer_interface flags. If -DSANITIZERS=fuzzer is specified, the fuzz test
+  # binary should be built with -fsanitize=fuzzer (so it can use libFuzzer's
+  # main function), but libraries should be built with -fsanitize=fuzzer-no-link
+  # (so they can be linked into other executables that have their own main
+  # functions).
+  string(REGEX REPLACE "(^|,)fuzzer($|,)" "\\1fuzzer-no-link\\2" sanitize_opts "${SANITIZERS}")
+  set(fuzz_flag "")
+  if(NOT sanitize_opts STREQUAL SANITIZERS)
+    set(fuzz_flag "-fsanitize=fuzzer")
+  endif()
+
   # First check if the compiler accepts flags. If an incompatible pair like
   # -fsanitize=address,thread is used here, this check will fail. This will also
   # fail if a bad argument is passed, e.g. -fsanitize=undfeined
-  try_append_cxx_flags("-fsanitize=${SANITIZERS}" TARGET sanitize_interface
+  try_append_cxx_flags("-fsanitize=${sanitize_opts}" TARGET sanitize_interface
     RESULT_VAR cxx_supports_sanitizers
     SKIP_LINK
   )
@@ -466,12 +480,11 @@ if(SANITIZERS)
   # flag. This is a separate check so we can give a better error message when
   # the sanitize flags are supported by the compiler but the actual sanitizer
   # libs are missing.
-  try_append_linker_flag("-fsanitize=${SANITIZERS}" VAR SANITIZER_LDFLAGS
+  try_append_linker_flag("-fsanitize=${sanitize_opts}" VAR SANITIZER_LDFLAGS
     SOURCE "
       #include <cstdint>
       #include <cstddef>
       extern \"C\" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) { return 0; }
-      __attribute__((weak)) // allow for libFuzzer linking
       int main() { return 0; }
     "
     RESULT_VAR linker_supports_sanitizers
@@ -483,8 +496,10 @@ if(SANITIZERS)
 endif()
 target_link_options(sanitize_interface INTERFACE ${SANITIZER_LDFLAGS})
 
+# Define fuzzer_interface with flags intended to apply to the fuzz test binary,
+# and perform a test compilation to determine correct value of
+# FUZZ_BINARY_LINKS_WITHOUT_MAIN_FUNCTION.
 if(BUILD_FUZZ_BINARY)
-  target_link_libraries(core_interface INTERFACE ${FUZZ_LIBS})
   include(CheckSourceCompilesWithFlags)
   check_cxx_source_compiles_with_flags("
       #include <cstdint>
@@ -492,9 +507,12 @@ if(BUILD_FUZZ_BINARY)
       extern \"C\" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) { return 0; }
       // No main() function.
     " FUZZ_BINARY_LINKS_WITHOUT_MAIN_FUNCTION
-    LDFLAGS ${SANITIZER_LDFLAGS}
+    LDFLAGS ${SANITIZER_LDFLAGS} ${fuzz_flag}
     LINK_LIBRARIES ${FUZZ_LIBS}
   )
+  add_library(fuzzer_interface INTERFACE)
+  target_link_options(fuzzer_interface INTERFACE ${fuzz_flag})
+  target_link_libraries(fuzzer_interface INTERFACE ${FUZZ_LIBS})
 endif()
 
 include(AddBoostIfNeeded)
@@ -535,6 +553,7 @@ else()
   try_append_cxx_flags("-Wvla" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wshadow-field" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wthread-safety" TARGET warn_interface SKIP_LINK)
+  try_append_cxx_flags("-Wthread-safety-pointer" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wloop-analysis" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wredundant-decls" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wunused-member-function" TARGET warn_interface SKIP_LINK)
@@ -569,14 +588,8 @@ configure_file(contrib/filter-lcov.py filter-lcov.py USE_SOURCE_PERMISSIONS COPY
 # Don't allow extended (non-ASCII) symbols in identifiers. This is easier for code review.
 try_append_cxx_flags("-fno-extended-identifiers" TARGET core_interface SKIP_LINK)
 
-# Avoiding the `-ffile-prefix-map` compiler option because it implies
-# `-fcoverage-prefix-map` on Clang or `-fprofile-prefix-map` on GCC,
-# which can cause issues with coverage builds, particularly when using
-# Clang in the OSS-Fuzz environment due to its use of other options
-# and a third party script, or with GCC.
-try_append_cxx_flags("-fdebug-prefix-map=A=B" TARGET core_interface SKIP_LINK
-  IF_CHECK_PASSED "-fdebug-prefix-map=${PROJECT_SOURCE_DIR}/src=."
-)
+# Set `-fmacro-prefix-map`, so that source file names are expanded without the
+# src prefix.
 try_append_cxx_flags("-fmacro-prefix-map=A=B" TARGET core_interface SKIP_LINK
   IF_CHECK_PASSED "-fmacro-prefix-map=${PROJECT_SOURCE_DIR}/src=."
 )
@@ -587,62 +600,70 @@ try_append_cxx_flags("-fmacro-prefix-map=A=B" TARGET core_interface SKIP_LINK
 # -fstack-reuse=none for all gcc builds. (Only gcc understands this flag).
 try_append_cxx_flags("-fstack-reuse=none" TARGET core_interface)
 
-if(ENABLE_HARDENING)
-  add_library(hardening_interface INTERFACE)
-  target_link_libraries(core_interface INTERFACE hardening_interface)
-  if(MSVC)
-    try_append_linker_flag("/DYNAMICBASE" TARGET hardening_interface)
-    try_append_linker_flag("/HIGHENTROPYVA" TARGET hardening_interface)
-    try_append_linker_flag("/NXCOMPAT" TARGET hardening_interface)
-  else()
+if(MSVC)
+  try_append_linker_flag("/DYNAMICBASE" TARGET core_interface)
+  try_append_linker_flag("/HIGHENTROPYVA" TARGET core_interface)
+  try_append_linker_flag("/NXCOMPAT" TARGET core_interface)
+else()
 
-    # _FORTIFY_SOURCE requires that there is some level of optimization,
-    # otherwise it does nothing and just creates a compiler warning.
-    try_append_cxx_flags("-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3"
-      RESULT_VAR cxx_supports_fortify_source
-      SOURCE "int main() {
-              # if !defined __OPTIMIZE__ || __OPTIMIZE__ <= 0
-                #error
-              #endif
-              }"
+  # _FORTIFY_SOURCE requires that there is some level of optimization,
+  # otherwise it does nothing and just creates a compiler warning.
+  try_append_cxx_flags("-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3"
+    RESULT_VAR cxx_supports_fortify_source
+    SOURCE "int main() {
+            # if !defined __OPTIMIZE__ || __OPTIMIZE__ <= 0
+              #error
+            #endif
+            }"
+  )
+  if(cxx_supports_fortify_source)
+    target_compile_options(core_interface INTERFACE
+      -U_FORTIFY_SOURCE
+      -D_FORTIFY_SOURCE=3
     )
-    if(cxx_supports_fortify_source)
-      target_compile_options(hardening_interface INTERFACE
-        -U_FORTIFY_SOURCE
-        -D_FORTIFY_SOURCE=3
-      )
-    endif()
-    unset(cxx_supports_fortify_source)
+  endif()
+  unset(cxx_supports_fortify_source)
 
-    try_append_cxx_flags("-Wstack-protector" TARGET hardening_interface SKIP_LINK)
-    try_append_cxx_flags("-fstack-protector-all" TARGET hardening_interface)
-    try_append_cxx_flags("-fcf-protection=full" TARGET hardening_interface)
+  try_append_cxx_flags("-Wstack-protector" TARGET core_interface SKIP_LINK)
+  try_append_cxx_flags("-fstack-protector-all" TARGET core_interface)
+  try_append_cxx_flags("-fcf-protection=full" TARGET core_interface)
 
-    if(MINGW)
-      # stack-clash-protection is a no-op for Windows.
-      # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90458 for more details.
-    else()
-      try_append_cxx_flags("-fstack-clash-protection" TARGET hardening_interface)
-    endif()
+  if(MINGW)
+    # stack-clash-protection is a no-op for Windows.
+    # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90458 for more details.
+  else()
+    try_append_cxx_flags("-fstack-clash-protection" TARGET core_interface)
+  endif()
 
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-      if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        try_append_cxx_flags("-mbranch-protection=bti" TARGET hardening_interface SKIP_LINK)
-      else()
-        try_append_cxx_flags("-mbranch-protection=standard" TARGET hardening_interface SKIP_LINK)
-      endif()
-    endif()
-
-    try_append_linker_flag("-Wl,--enable-reloc-section" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,--dynamicbase" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,--nxcompat" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,--high-entropy-va" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,-z,relro" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,-z,now" TARGET hardening_interface)
-    try_append_linker_flag("-Wl,-z,separate-code" TARGET hardening_interface)
+  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-      try_append_linker_flag("-Wl,-fixup_chains" TARGET hardening_interface)
+      try_append_cxx_flags("-mbranch-protection=bti" TARGET core_interface SKIP_LINK)
+    else()
+      try_append_cxx_flags("-mbranch-protection=standard" TARGET core_interface SKIP_LINK)
     endif()
+  endif()
+
+  try_append_linker_flag("-Wl,--enable-reloc-section" TARGET core_interface)
+  try_append_linker_flag("-Wl,--dynamicbase" TARGET core_interface)
+  try_append_linker_flag("-Wl,--nxcompat" TARGET core_interface)
+  try_append_linker_flag("-Wl,--high-entropy-va" TARGET core_interface)
+  try_append_linker_flag("-Wl,-z,relro" TARGET core_interface)
+  try_append_linker_flag("-Wl,-z,now" TARGET core_interface)
+  # TODO: This can be dropped once Bitcoin Core no longer supports
+  #       NetBSD 10.0 or if upstream fix is backported.
+  # NetBSD's dynamic linker ld.elf_so < 11.0 supports exactly 2
+  # `PT_LOAD` segments and binaries linked with `-z separate-code`
+  # have 4 `PT_LOAD` segments.
+  # Relevant discussions:
+  # - https://github.com/bitcoin/bitcoin/pull/28724#issuecomment-2589347934
+  # - https://mail-index.netbsd.org/tech-userlevel/2023/01/05/msg013666.html
+  if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD" AND CMAKE_SYSTEM_VERSION VERSION_LESS 11.0)
+    try_append_linker_flag("-Wl,-z,noseparate-code" TARGET core_interface)
+  else()
+    try_append_linker_flag("-Wl,-z,separate-code" TARGET core_interface)
+  endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    try_append_linker_flag("-Wl,-fixup_chains" TARGET core_interface)
   endif()
 endif()
 
@@ -676,13 +697,11 @@ mark_as_advanced(Python3_FIND_FRAMEWORK Python3_FIND_UNVERSIONED_NAMES)
 if(BUILD_GUI)
   find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 else()
-find_package(Python3 3.10 COMPONENTS Interpreter)
+  find_package(Python3 3.10 COMPONENTS Interpreter)
 endif()
-if(Python3_EXECUTABLE)
-  set(PYTHON_COMMAND ${Python3_EXECUTABLE})
-else()
+if(NOT TARGET Python3::Interpreter)
   list(APPEND configure_warnings
-    "Minimum required Python not found. Utils and rpcauth tests are disabled."
+    "Minimum required Python not found."
   )
 endif()
 
@@ -725,8 +744,6 @@ add_subdirectory(doc)
 
 add_subdirectory(src)
 
-include(cmake/tests.cmake)
-
 include(Maintenance)
 setup_split_debug_script()
 add_maintenance_targets()
@@ -737,27 +754,21 @@ message("\n")
 message("Configure summary")
 message("=================")
 message("Executables:")
+message("  bitcoin ............................. ${BUILD_BITCOIN_BIN}")
 message("  bitcoind ............................ ${BUILD_DAEMON}")
-if(BUILD_DAEMON AND WITH_MULTIPROCESS)
+if(BUILD_DAEMON AND ENABLE_IPC)
   set(bitcoin_daemon_status ON)
 else()
   set(bitcoin_daemon_status OFF)
 endif()
-if(BUILD_GUI)
-  if("${WITH_QT_VERSION}" STREQUAL "6")
-    set(bitcoin_qt_status "ON (Qt 6)")
-  else()
-    set(bitcoin_qt_status "ON (Qt 5)")
-  endif()
-else()
-  set(bitcoin_qt_status "OFF")
-endif()
-message("  bitcoin-qt (GUI) .................... ${bitcoin_qt_status}")
-if(BUILD_GUI AND WITH_MULTIPROCESS)
+message("  bitcoin-node (multiprocess) ......... ${bitcoin_daemon_status}")
+message("  bitcoin-qt (GUI) .................... ${BUILD_GUI} (Qt ${WITH_QT_VERSION})")
+if(BUILD_GUI AND ENABLE_IPC)
   set(bitcoin_gui_status ON)
 else()
   set(bitcoin_gui_status OFF)
 endif()
+message("  bitcoin-gui (GUI, multiprocess) ..... ${bitcoin_gui_status}")
 message("  bitcoin-cli ......................... ${BUILD_CLI}")
 message("  bitcoin-tx .......................... ${BUILD_TX}")
 message("  bitcoin-util ........................ ${BUILD_UTIL}")
@@ -766,14 +777,20 @@ message("  bitcoin-chainstate (experimental) ... ${BUILD_UTIL_CHAINSTATE}")
 message("  libbitcoinkernel (experimental) ..... ${BUILD_KERNEL_LIB}")
 message("Optional features:")
 message("  wallet support ...................... ${ENABLE_WALLET}")
-if(ENABLE_WALLET)
-  message("   - descriptor wallets (SQLite) ...... ${WITH_SQLITE}")
-  message("   - legacy wallets (Berkeley DB) ..... ${WITH_BDB}")
-endif()
 message("  external signer ..................... ${ENABLE_EXTERNAL_SIGNER}")
 message("  tor subprocess ...................... ${ENABLE_TOR_SUBPROCESS}")
 message("  port mapping using UPnP ............. ${WITH_MINIUPNPC}")
 message("  ZeroMQ .............................. ${WITH_ZMQ}")
+if(ENABLE_IPC)
+  if (WITH_EXTERNAL_LIBMULTIPROCESS)
+    set(ipc_status "ON (with external libmultiprocess)")
+  else()
+    set(ipc_status ON)
+  endif()
+else()
+  set(ipc_status OFF)
+endif()
+message("  IPC ................................. ${ipc_status}")
 message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
@@ -792,7 +809,6 @@ message("Cross compiling ....................... ${cross_status}")
 message("C++ compiler .......................... ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}, ${CMAKE_CXX_COMPILER}")
 include(FlagsSummary)
 flags_summary()
-message("Attempt to harden executables ......... ${ENABLE_HARDENING}")
 message("Treat compiler warnings as errors ..... ${WERROR}")
 message("Use ccache for compiling .............. ${WITH_CCACHE}")
 message("\n")

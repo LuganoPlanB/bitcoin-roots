@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,8 +19,8 @@
 #include <vector>
 
 namespace wallet {
-bool operator<(BytePrefix a, Span<const std::byte> b) { return std::ranges::lexicographical_compare(a.prefix, b.subspan(0, std::min(a.prefix.size(), b.size()))); }
-bool operator<(Span<const std::byte> a, BytePrefix b) { return std::ranges::lexicographical_compare(a.subspan(0, std::min(a.size(), b.prefix.size())), b.prefix); }
+bool operator<(BytePrefix a, std::span<const std::byte> b) { return std::ranges::lexicographical_compare(a.prefix, b.subspan(0, std::min(a.prefix.size(), b.size()))); }
+bool operator<(std::span<const std::byte> a, BytePrefix b) { return std::ranges::lexicographical_compare(a.subspan(0, std::min(a.size(), b.prefix.size())), b.prefix); }
 
 std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wallet_dir)
 {
@@ -39,7 +39,8 @@ std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wall
                                         data_dir / "indexes",
                                         data_dir / "regtest",
                                         data_dir / "signet",
-                                        data_dir / "testnet3"
+                                        data_dir / "testnet3",
+                                        data_dir / "testnet4"
                                         };
 
     std::vector<std::pair<fs::path, std::string>> paths;
@@ -186,8 +187,6 @@ void ReadDatabaseArgs(const ArgsManager& args, DatabaseOptions& options)
 {
     // Override current options with args values, if any were specified
     options.use_unsafe_sync = args.GetBoolArg("-unsafesqlitesync", options.use_unsafe_sync);
-    options.use_shared_memory = !args.GetBoolArg("-privdb", !options.use_shared_memory);
-    options.max_log_mb = args.GetIntArg("-dblogsize", options.max_log_mb);
 }
 
 } // namespace wallet

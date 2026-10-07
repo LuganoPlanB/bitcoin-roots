@@ -6,6 +6,7 @@
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import unittest
 
 
@@ -16,16 +17,62 @@ RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 
 
 class ReleaseVersionTest(unittest.TestCase):
-    def test_l7_version_and_release_tag_name_agree(self):
+    def configure_release_version(self, tag=None):
         build_config = BUILD_CONFIG.read_text(encoding="utf-8")
-        self.assertIn("set(CLIENT_VERSION_MAJOR 29)", build_config)
-        self.assertIn("set(CLIENT_VERSION_MINOR 4)", build_config)
+        version_start = re.search(r'^set\(CLIENT_VERSION_STRING ', build_config, re.MULTILINE)
+        self.assertIsNotNone(version_start, "Release version configuration must be executable CMake")
+        version_block = build_config[version_start.start():].split('#=============================', 1)[0]
+        with tempfile.TemporaryDirectory(prefix="roots-release-version-") as directory:
+            source = Path(directory)
+            metadata = "\n".join(
+                re.search(rf"set\({name} [^)]+\)", build_config).group(0)
+                for name in ("CLIENT_VERSION_MAJOR", "CLIENT_VERSION_MINOR", "CLIENT_VERSION_RC")
+            )
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.22)\n"
+                "project(ReleaseVersionTest LANGUAGES NONE)\n"
+                + metadata + "\n" + version_block
+                + f'configure_file("{ROOT / "cmake/bitcoin-build-config.h.in"}" '
+                '"${CMAKE_BINARY_DIR}/bitcoin-build-config.h" @ONLY)\n',
+                encoding="utf-8",
+            )
+            command = ["cmake", "-S", str(source), "-B", str(source / "build")]
+            if tag is not None:
+                command.append(f"-DCLIENT_VERSION_TAG={tag}")
+            result = subprocess.run(command, capture_output=True, text=True)
+            header = source / "build/bitcoin-build-config.h"
+            return result, header.read_text(encoding="utf-8") if header.exists() else ""
+
+    def test_release_tag_sets_compiled_version_without_git_metadata(self):
+        for tag in ("v30.3-roots.2", "v30.3-roots.4"):
+            with self.subTest(tag=tag):
+                result, header = self.configure_release_version(tag)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f'#define CLIENT_VERSION_STRING "{tag[1:]}"', header)
+                self.assertNotIn("Manually-specified variables were not used", result.stderr)
+
+    def test_release_tag_rejects_wrong_base_and_invalid_roots_version(self):
+        for tag in ("v30.0-roots.4", "v30x3-roots.4", "v30.3-roots.0", "v30.3-knots.4", ""):
+            with self.subTest(tag=tag):
+                result, _ = self.configure_release_version(tag)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("CLIENT_VERSION_TAG must be a Roots release tag", result.stderr)
+
+    def test_untagged_build_keeps_default_roots_version(self):
+        result, header = self.configure_release_version()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('#define CLIENT_VERSION_STRING "30.3-roots.1"', header)
+
+    def test_version_and_release_tag_name_agree(self):
+        build_config = BUILD_CONFIG.read_text(encoding="utf-8")
+        self.assertIn("set(CLIENT_VERSION_MAJOR 30)", build_config)
+        self.assertIn("set(CLIENT_VERSION_MINOR 3)", build_config)
         self.assertIn('string(APPEND CLIENT_VERSION_STRING "-roots.1")', build_config)
         result = subprocess.run(
-            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v29.4-roots.1"],
+            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v30.3-roots.1"],
             capture_output=True, text=True, check=True,
         )
-        self.assertEqual(result.stdout.strip(), "bitcoin-roots-29.4-roots.1")
+        self.assertEqual(result.stdout.strip(), "bitcoin-roots-30.3-roots.1")
 
     def test_workflow_builds_tags_and_rehearses_explicit_canonical_commits(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -80,7 +127,6 @@ class ReleaseVersionTest(unittest.TestCase):
                 "actions/upload-artifact@v4",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",
-                "./.github/actions/setup-windows-gui-tools",
             },
         )
 

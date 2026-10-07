@@ -1,44 +1,44 @@
 {
-  "$comment": "The builtin-baseline corresponds to 2024.09.30 Release",
+  "$comment": "The builtin-baseline corresponds to 2025.03.19 Release",
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "builtin-baseline": "c82f74667287d3dc386bce81e44964370c91a289",
+  "builtin-baseline": "b02e341c927f16d991edbd915d8ea43eac52096c",
   "dependencies": [
     "boost-multi-index",
     "boost-signals2",
     "libevent"
   ],
   "default-features": [
+    "qt",
     "miniupnpc",
-    "qt5",
     "tests",
     "wallet",
     "zeromq"
   ],
   "features": {
-    "berkeleydb": {
-      "description": "Enable Berkeley DB wallet support",
-      "dependencies": [
-        "berkeleydb"
-      ]
-    },
     "miniupnpc": {
       "description": "Enable UPnP",
-      "dependencies": [
-        "miniupnpc"
-      ]
+      "dependencies": ["miniupnpc"]
     },
     "qt5": {
       "description": "Build GUI, Qt 5",
-      "dependencies": [
-        "qt5-base",
-        "qt5-tools",
-        "libqrencode"
-      ]
+      "dependencies": ["qt5-base", "qt5-tools", "libqrencode"]
     },
-    "sqlite": {
-      "description": "Enable SQLite wallet support",
+    "qt": {
+      "description": "Build GUI, Qt 6",
       "dependencies": [
-        "sqlite3"
+        {
+          "name": "qtbase",
+          "default-features": false,
+          "features": [
+            "gui",
+            "network",
+            "png",
+            "testlib",
+            "widgets"
+          ]
+        },
+        "qttools",
+        "libqrencode"
       ]
     },
     "tests": {
@@ -48,9 +48,8 @@
       ]
     },
     "wallet": {
-      "description": "Enable wallet",
+      "description": "Enable wallet (SQLite)",
       "dependencies": [
-        "berkeleydb",
         "sqlite3"
       ]
     },
@@ -62,10 +61,6 @@
     }
   },
   "overrides": [
-    {
-      "name": "miniupnpc",
-      "version": "2.3.2"
-    },
     {
       "$comment": "Newer unreleased libevent versions cause https://github.com/bitcoin/bitcoin/issues/30096",
       "name": "libevent",

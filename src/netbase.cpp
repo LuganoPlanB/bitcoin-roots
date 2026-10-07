@@ -266,17 +266,17 @@ enum SOCKS5Command: uint8_t {
     UDP_ASSOCIATE = 0x03
 };
 
-/** Values defined for REP in RFC1928 */
+/** Values defined for REP in RFC1928 and https://spec.torproject.org/socks-extensions.html */
 enum SOCKS5Reply: uint8_t {
-    SUCCEEDED = 0x00,        //!< Succeeded
-    GENFAILURE = 0x01,       //!< General failure
-    NOTALLOWED = 0x02,       //!< Connection not allowed by ruleset
-    NETUNREACHABLE = 0x03,   //!< Network unreachable
-    HOSTUNREACHABLE = 0x04,  //!< Network unreachable
-    CONNREFUSED = 0x05,      //!< Connection refused
-    TTLEXPIRED = 0x06,       //!< TTL expired
-    CMDUNSUPPORTED = 0x07,   //!< Command not supported
-    ATYPEUNSUPPORTED = 0x08, //!< Address type not supported
+    SUCCEEDED = 0x00,                  //!< RFC1928: Succeeded
+    GENFAILURE = 0x01,                 //!< RFC1928: General failure
+    NOTALLOWED = 0x02,                 //!< RFC1928: Connection not allowed by ruleset
+    NETUNREACHABLE = 0x03,             //!< RFC1928: Network unreachable
+    HOSTUNREACHABLE = 0x04,            //!< RFC1928: Network unreachable
+    CONNREFUSED = 0x05,                //!< RFC1928: Connection refused
+    TTLEXPIRED = 0x06,                 //!< RFC1928: TTL expired
+    CMDUNSUPPORTED = 0x07,             //!< RFC1928: Command not supported
+    ATYPEUNSUPPORTED = 0x08,           //!< RFC1928: Address type not supported
     TOR_HS_DESC_NOT_FOUND = 0xf0,      //!< Tor: Onion service descriptor can not be found
     TOR_HS_DESC_INVALID = 0xf1,        //!< Tor: Onion service descriptor is invalid
     TOR_HS_INTRO_FAILED = 0xf2,        //!< Tor: Onion service introduction failed
@@ -799,7 +799,7 @@ std::unique_ptr<Sock> ConnectThroughProxy(const Proxy& proxy,
     }
 
     // do socks negotiation
-    if (proxy.m_randomize_credentials) {
+    if (proxy.m_tor_stream_isolation) {
         static TorStreamIsolationCredentialsGenerator generator;
         ProxyCredentials random_auth{generator.Generate()};
         if (!Socks5(dest, port, &random_auth, *sock)) {
@@ -829,10 +829,9 @@ CSubNet LookupSubNet(const std::string& subnet_str)
         addr = static_cast<CNetAddr>(MaybeFlipIPv6toCJDNS(CService{addr.value(), /*port=*/0}));
         if (slash_pos != subnet_str.npos) {
             const std::string netmask_str{subnet_str.substr(slash_pos + 1)};
-            uint8_t netmask;
-            if (ParseUInt8(netmask_str, &netmask)) {
+            if (const auto netmask{ToIntegral<uint8_t>(netmask_str)}) {
                 // Valid number; assume CIDR variable-length subnet masking.
-                subnet = CSubNet{addr.value(), netmask};
+                subnet = CSubNet{addr.value(), *netmask};
             } else {
                 // Invalid number; try full netmask syntax. Never allow lookup for netmask.
                 const std::optional<CNetAddr> full_netmask{LookupHost(netmask_str, /*fAllowLookup=*/false)};

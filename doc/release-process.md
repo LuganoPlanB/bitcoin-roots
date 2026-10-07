@@ -1,22 +1,6 @@
 Release Process
 ====================
 
-## Bitcoin Roots releases
-
-Use the [Roots maintainer workflow](../contrib/roots/README.md) for Roots ports,
-promotions, release rehearsal, tagging, artifact verification and publication.
-The canonical release source is `roots/<core-version>`, based directly on the
-matching official Core tag. `main` contains the promoted product plus reviewed
-repository-only files. Release tags point to canonical commits.
-
-The instructions below are inherited Bitcoin Core release-engineering
-reference material. They are not the Roots release checklist. A Roots port
-consumes an already released Core tag; it does not independently refresh Core
-chain parameters, seeds, translations or version policy as a release chore.
-Only make such changes through separately justified product review.
-
-## Upstream Bitcoin Core reference
-
 ## Branch updates
 
 ### Before every release candidate
@@ -127,7 +111,7 @@ For the period during which the notes are being edited on the wiki, the version 
 
 Generate list of authors:
 
-    git log --format='- %aN' v(current version, e.g. 25.0)..v(new version, e.g. 25.1) | grep -v 'merge-script' | sort -fiu
+    git log --format='- %aN' v(current version, e.g. 29.0)..v(new version, e.g. 30.0) | grep -v 'merge-script' | sort -fiu
 
 ### Setup and perform Guix builds
 

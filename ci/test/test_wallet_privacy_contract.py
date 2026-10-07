@@ -50,11 +50,11 @@ class WalletPrivacyContractTest(unittest.TestCase):
         release_notes = (ROOT / "doc/release-notes.md").read_text(encoding="utf-8")
 
         for document in (catalog, guide, release_notes):
-            self.assertIn("v29.4-roots.3", document)
+            self.assertIn("v30.3-roots.1", document)
             self.assertIn("candidate", document)
-        self.assertIn("candidate documentation for the intended `v29.4-roots.3` release", release_notes)
-        self.assertNotIn("v29.4-roots.3 is now available", release_notes)
-        self.assertNotIn("v29.4-roots.3 has been released", release_notes)
+        self.assertIn("candidate documentation for the intended `v30.3-roots.1` release", release_notes)
+        self.assertNotIn("v30.3-roots.1 is now available", release_notes)
+        self.assertNotIn("v30.3-roots.1 has been released", release_notes)
         self.assertIn("bitcoin-cli help sweepprivkeys", guide)
         self.assertIn("bitcoin-cli --version", guide)
         self.assertIn("no wallet-format migration", release_notes)

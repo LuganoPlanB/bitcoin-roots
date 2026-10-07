@@ -15,9 +15,8 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSortFilterProxyModel>
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 #include <QRegularExpression>
-#else
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QRegExp>
 #endif
 
@@ -47,7 +46,7 @@ protected:
 
         auto address = model->index(row, AddressTableModel::Address, parent);
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         const auto pattern = filterRegularExpression();
 #else
         const auto pattern = filterRegExp();

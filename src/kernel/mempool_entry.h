@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,11 +17,11 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <set>
-#include <stddef.h>
-#include <stdint.h>
 
 class CBlockIndex;
 
@@ -190,7 +190,7 @@ public:
     const CAmount& GetFee() const { return nFee; }
     int32_t GetTxSize() const
     {
-        return GetVirtualTransactionSize(nTxWeight + m_extra_weight, sigOpCost, ::nBytesPerSigOp);
+        return GetVirtualTransactionSize(int64_t{nTxWeight} + m_extra_weight, sigOpCost, ::nBytesPerSigOp);
     }
     int32_t GetTxWeight() const { return nTxWeight; }
     std::chrono::seconds GetTime() const { return std::chrono::seconds{nTime}; }
@@ -199,7 +199,7 @@ public:
     int32_t GetExtraWeight() const { return m_extra_weight; }
     int64_t GetSigOpCost() const { return sigOpCost; }
     CAmount GetModifiedFee() const { return m_modified_fee; }
-    size_t DynamicMemoryUsage() const { return nUsageSize; }
+    size_t DynamicMemoryUsage() const { return nUsageSize + memusage::DynamicUsage(mapSPK); }
     const LockPoints& GetLockPoints() const { return lockPoints; }
 
     // Adjusts the descendant state.
@@ -277,8 +277,7 @@ struct RemovedMempoolTransactionInfo {
 struct NewMempoolTransactionInfo {
     TransactionInfo info;
     /*
-     * This boolean indicates whether the transaction was added
-     * without enforcing mempool fee limits.
+     * Nonempty when the transaction bypassed configured mempool policy checks.
      */
     const ignore_rejects_type m_ignore_rejects;
     /* This boolean indicates whether the transaction is part of a package. */
@@ -301,14 +300,6 @@ struct NewMempoolTransactionInfo {
           m_submitted_in_package{submitted_in_package},
           m_chainstate_is_current{chainstate_is_current},
           m_has_no_mempool_parents{has_no_mempool_parents} {}
-
-    NewMempoolTransactionInfo(const CTransactionRef& tx, const CAmount& fee,
-                              const int64_t vsize, const unsigned int height,
-                              const bool mempool_limit_bypassed, const bool submitted_in_package,
-                              const bool chainstate_is_current, const bool has_no_mempool_parents)
-        : NewMempoolTransactionInfo(tx, fee, vsize, height,
-                                    empty_ignore_rejects,
-                                    submitted_in_package, chainstate_is_current, has_no_mempool_parents) {}
 };
 
 #endif // BITCOIN_KERNEL_MEMPOOL_ENTRY_H

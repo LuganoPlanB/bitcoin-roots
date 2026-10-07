@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from test_framework.address import key_to_p2pkh, key_to_p2sh_p2wpkh, key_to_p2wpkh
+from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet_util import generate_keypair
@@ -11,11 +12,9 @@ from test_framework.wallet_util import generate_keypair
 COIN = Decimal(100_000_000)
 
 class SweepPrivKeysTest(BitcoinTestFramework):
-    def add_options(self, parser):
-        self.add_wallet_options(parser)
-
     def set_test_params(self):
         self.num_nodes = 2
+        self.extra_args = [['-deprecatedrpc=settxfee'], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -83,7 +82,7 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         assert_raises_rpc_error(-4, 'Destination is not controlled', wallet.sweepprivkeys, [wif], other.getnewaddress())
         node.createwallet(wallet_name='watch', disable_private_keys=True)
         watch = node.get_wallet_rpc('watch')
-        watch.importpubkey(wallet.getaddressinfo(destination)['pubkey'])
+        watch.importdescriptors([{'desc': descsum_create(f"wpkh({wallet.getaddressinfo(destination)['pubkey']})"), 'timestamp': 'now'}])
         assert_raises_rpc_error(-4, 'Destination is not controlled', watch.sweepprivkeys, [wif], destination)
 
         wallet.settxfee(Decimal('0.00001000'))

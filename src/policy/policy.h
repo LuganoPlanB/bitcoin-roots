@@ -112,8 +112,7 @@ static constexpr unsigned int DEFAULT_DESCENDANT_SIZE_LIMIT_KVB{101};
 /** Default for -datacarrier */
 static const bool DEFAULT_ACCEPT_DATACARRIER = true;
 /**
- * Default setting for -datacarriersize. 80 bytes of data, +1 for OP_RETURN,
- * +2 for the pushdata opcodes.
+ * Default setting for -datacarriersize in vbytes.
  */
 /** Default for -permitbaredatacarrier */
 static const bool DEFAULT_PERMITBAREDATACARRIER{false};
@@ -199,7 +198,7 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFee);
 
 bool IsDust(const CTxOut& txout, const CFeeRate& dustRelayFee);
 
-bool IsStandard(const CScript& scriptPubKey, const std::optional<unsigned>& max_datacarrier_bytes, TxoutType& whichType);
+bool IsStandard(const CScript& scriptPubKey, TxoutType& whichType);
 
 /** Get the vout index numbers of all dust outputs */
 std::vector<uint32_t> GetDust(const CTransaction& tx, CFeeRate dust_relay_rate);
@@ -207,6 +206,7 @@ std::vector<uint32_t> GetDust(const CTransaction& tx, CFeeRate dust_relay_rate);
 // Changing the default transaction version requires a two step process: first
 // adapting relay policy by bumping TX_MAX_STANDARD_VERSION, and then later
 // allowing the new transaction version in the wallet/RPC.
+static constexpr decltype(CTransaction::version) TX_MIN_STANDARD_VERSION{1};
 static constexpr decltype(CTransaction::version) TX_MAX_STANDARD_VERSION{3};
 
 /**
@@ -216,7 +216,7 @@ static constexpr decltype(CTransaction::version) TX_MAX_STANDARD_VERSION{3};
 bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::string& out_reason, const ignore_rejects_type& ignore_rejects=empty_ignore_rejects);
 // Compatibility entry point for existing unit tests. Production admission uses
 // the StandardnessOptions overload above so every policy setting is explicit.
-bool IsStandardTx(const CTransaction& tx, unsigned int max_datacarrier_bytes, bool permit_bare_multisig, const CFeeRate& dust_relay_feerate, std::string& out_reason);
+bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_datacarrier_bytes, bool permit_bare_multisig, const CFeeRate& dust_relay_feerate, std::string& out_reason);
 /**
 * Check for standard transaction types
 * @param[in] mapInputs       Map of previous transactions that have outputs we're spending

@@ -69,6 +69,11 @@ int main(int argc, char* argv[])
     #endif
 
 
+    // Keep GUI settings inside the disposable test data directory.
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                       QString::fromStdString(fs::PathToString(gArgs.GetDataDirBase())));
+
     QCoreApplication::setOrganizationName(QAPP_ORG_NAME);
     QCoreApplication::setApplicationName(QAPP_APP_NAME_DEFAULT "-test");
 

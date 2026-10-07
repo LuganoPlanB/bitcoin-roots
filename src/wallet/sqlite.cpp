@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 The Bitcoin Core developers
+// Copyright (c) 2020-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,15 +10,15 @@
 #include <crypto/common.h>
 #include <logging.h>
 #include <sync.h>
-#include <util/fs_helpers.h>
 #include <util/check.h>
+#include <util/fs_helpers.h>
 #include <util/strencodings.h>
 #include <util/translation.h>
 #include <wallet/db.h>
 
 #include <sqlite3.h>
-#include <stdint.h>
 
+#include <cstdint>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -26,7 +26,7 @@
 namespace wallet {
 static constexpr int32_t WALLET_SCHEMA_VERSION = 0;
 
-static Span<const std::byte> SpanFromBlob(sqlite3_stmt* stmt, int col)
+static std::span<const std::byte> SpanFromBlob(sqlite3_stmt* stmt, int col)
 {
     return {reinterpret_cast<const std::byte*>(sqlite3_column_blob(stmt, col)),
             static_cast<size_t>(sqlite3_column_bytes(stmt, col))};
@@ -60,7 +60,7 @@ static int TraceSqlCallback(unsigned code, void* context, void* param1, void* pa
 
 static bool BindBlobToStatement(sqlite3_stmt* stmt,
                                 int index,
-                                Span<const std::byte> blob,
+                                std::span<const std::byte> blob,
                                 const std::string& description)
 {
     // Pass a pointer to the empty string "" below instead of passing the
@@ -116,8 +116,8 @@ SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_pa
 {
     {
         LOCK(g_sqlite_mutex);
-        LogPrintf("Using SQLite Version %s\n", SQLiteDatabaseVersion());
-        LogPrintf("Using wallet %s\n", fs::PathToString(m_dir_path));
+        LogInfo("Using SQLite Version %s", SQLiteDatabaseVersion());
+        LogInfo("Using wallet %s", fs::PathToString(m_dir_path));
 
         if (++g_sqlite_count == 1) {
             // Setup logging
@@ -340,7 +340,7 @@ void SQLiteDatabase::Open()
     }
 }
 
-bool SQLiteDatabase::Rewrite(const char* skip)
+bool SQLiteDatabase::Rewrite()
 {
     // Rewrite the database using the VACUUM command: https://sqlite.org/lang_vacuum.html
     int ret = sqlite3_exec(m_db, "VACUUM", nullptr, nullptr, nullptr);
@@ -394,7 +394,7 @@ int SQliteExecHandler::Exec(SQLiteDatabase& database, const std::string& stateme
     return sqlite3_exec(database.m_db, statement.data(), nullptr, nullptr, nullptr);
 }
 
-std::unique_ptr<DatabaseBatch> SQLiteDatabase::MakeBatch(bool flush_on_close)
+std::unique_ptr<DatabaseBatch> SQLiteDatabase::MakeBatch()
 {
     // We ignore flush_on_close because we don't do manual flushing for SQLite
     return std::make_unique<SQLiteBatch>(*this);
@@ -449,7 +449,7 @@ void SQLiteBatch::Close()
         try {
             m_database.Open();
             // If TxnAbort failed and we refreshed the connection, the semaphore was not released, so release it here to avoid deadlocks on future writes.
-            m_database.m_write_semaphore.post();
+            m_database.m_write_semaphore.release();
         } catch (const std::runtime_error&) {
             // If open fails, cleanup this object and rethrow the exception
             m_database.Close();
@@ -502,7 +502,7 @@ bool SQLiteBatch::WriteKey(DataStream&& key, DataStream&& value, bool overwrite)
     if (!BindBlobToStatement(stmt, 2, value, "value")) return false;
 
     // Acquire semaphore if not previously acquired when creating a transaction.
-    if (!m_txn) m_database.m_write_semaphore.wait();
+    if (!m_txn) m_database.m_write_semaphore.acquire();
 
     // Execute
     int res = sqlite3_step(stmt);
@@ -512,12 +512,12 @@ bool SQLiteBatch::WriteKey(DataStream&& key, DataStream&& value, bool overwrite)
         LogWarning("Unable to execute write statement: %s", sqlite3_errstr(res));
     }
 
-    if (!m_txn) m_database.m_write_semaphore.post();
+    if (!m_txn) m_database.m_write_semaphore.release();
 
     return res == SQLITE_DONE;
 }
 
-bool SQLiteBatch::ExecStatement(sqlite3_stmt* stmt, Span<const std::byte> blob)
+bool SQLiteBatch::ExecStatement(sqlite3_stmt* stmt, std::span<const std::byte> blob)
 {
     if (!m_database.m_db) return false;
     assert(stmt);
@@ -526,7 +526,7 @@ bool SQLiteBatch::ExecStatement(sqlite3_stmt* stmt, Span<const std::byte> blob)
     if (!BindBlobToStatement(stmt, 1, blob, "key")) return false;
 
     // Acquire semaphore if not previously acquired when creating a transaction.
-    if (!m_txn) m_database.m_write_semaphore.wait();
+    if (!m_txn) m_database.m_write_semaphore.acquire();
 
     // Execute
     int res = sqlite3_step(stmt);
@@ -536,7 +536,7 @@ bool SQLiteBatch::ExecStatement(sqlite3_stmt* stmt, Span<const std::byte> blob)
         LogWarning("Unable to execute exec statement: %s", sqlite3_errstr(res));
     }
 
-    if (!m_txn) m_database.m_write_semaphore.post();
+    if (!m_txn) m_database.m_write_semaphore.release();
 
     return res == SQLITE_DONE;
 }
@@ -546,7 +546,7 @@ bool SQLiteBatch::EraseKey(DataStream&& key)
     return ExecStatement(m_delete_stmt, key);
 }
 
-bool SQLiteBatch::ErasePrefix(Span<const std::byte> prefix)
+bool SQLiteBatch::ErasePrefix(std::span<const std::byte> prefix)
 {
     return ExecStatement(m_delete_prefix_stmt, prefix);
 }
@@ -610,7 +610,7 @@ std::unique_ptr<DatabaseCursor> SQLiteBatch::GetNewCursor()
     return cursor;
 }
 
-std::unique_ptr<DatabaseCursor> SQLiteBatch::GetNewPrefixCursor(Span<const std::byte> prefix)
+std::unique_ptr<DatabaseCursor> SQLiteBatch::GetNewPrefixCursor(std::span<const std::byte> prefix)
 {
     if (!m_database.m_db) return nullptr;
 
@@ -655,12 +655,12 @@ std::unique_ptr<DatabaseCursor> SQLiteBatch::GetNewPrefixCursor(Span<const std::
 bool SQLiteBatch::TxnBegin()
 {
     if (!m_database.m_db || m_txn) return false;
-    m_database.m_write_semaphore.wait();
+    m_database.m_write_semaphore.acquire();
     Assert(!m_database.HasActiveTxn());
     int res = Assert(m_exec_handler)->Exec(m_database, "BEGIN TRANSACTION");
     if (res != SQLITE_OK) {
         LogWarning("SQLiteBatch: Failed to begin the transaction");
-        m_database.m_write_semaphore.post();
+        m_database.m_write_semaphore.release();
     } else {
         m_txn = true;
     }
@@ -676,7 +676,7 @@ bool SQLiteBatch::TxnCommit()
         LogWarning("SQLiteBatch: Failed to commit the transaction");
     } else {
         m_txn = false;
-        m_database.m_write_semaphore.post();
+        m_database.m_write_semaphore.release();
     }
     return res == SQLITE_OK;
 }
@@ -690,7 +690,7 @@ bool SQLiteBatch::TxnAbort()
         LogWarning("SQLiteBatch: Failed to abort the transaction");
     } else {
         m_txn = false;
-        m_database.m_write_semaphore.post();
+        m_database.m_write_semaphore.release();
     }
     return res == SQLITE_OK;
 }

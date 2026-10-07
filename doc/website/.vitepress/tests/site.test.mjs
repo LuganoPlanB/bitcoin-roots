@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -9,6 +9,21 @@ import { documentationCount, documentationGroups } from "../generated/catalog.mj
 const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repositoryRoot = resolve(siteRoot, "../..");
 const workflowPath = resolve(repositoryRoot, ".github/workflows/deploy-docs.yml");
+
+test("documentation mirror symlinks target existing source paths", async () => {
+  async function checkDirectory(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = resolve(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        await access(path);
+      } else if (entry.isDirectory()) {
+        await checkDirectory(path);
+      }
+    }
+  }
+
+  await checkDirectory(resolve(siteRoot, "content"));
+});
 
 test("the catalog exposes every discovered source document exactly once", async () => {
   const documents = documentationGroups.flatMap((group) => group.documents);

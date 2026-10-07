@@ -45,13 +45,7 @@ bool ExternalSignerScriptPubKeyMan::SetupDescriptor(WalletBatch& batch, std::uni
     return true;
 }
 
-ExternalSigner ExternalSignerScriptPubKeyMan::GetExternalSigner() {
-    auto signer{GetExternalSigner2()};
-    if (!signer) throw std::runtime_error(util::ErrorString(signer).original);
-    return *signer;
-}
-
-util::Result<ExternalSigner> ExternalSignerScriptPubKeyMan::GetExternalSigner2() {
+ util::Result<ExternalSigner> ExternalSignerScriptPubKeyMan::GetExternalSigner() {
     const std::string command = gArgs.GetArg("-signer", "");
     if (command == "") return util::Error{Untranslated("restart bitcoind with -signer=<cmd>")};
     std::vector<ExternalSigner> signers;
@@ -85,7 +79,7 @@ util::Result<void> ExternalSignerScriptPubKeyMan::DisplayAddress(const CTxDestin
 }
 
 // If sign is true, transaction must previously have been filled
-std::optional<PSBTError> ExternalSignerScriptPubKeyMan::FillPSBT(PartiallySignedTransaction& psbt, const PrecomputedTransactionData& txdata, int sighash_type, bool sign, bool bip32derivs, int* n_signed, bool finalize) const
+std::optional<PSBTError> ExternalSignerScriptPubKeyMan::FillPSBT(PartiallySignedTransaction& psbt, const PrecomputedTransactionData& txdata, std::optional<int> sighash_type, bool sign, bool bip32derivs, int* n_signed, bool finalize) const
 {
     if (!sign) {
         return DescriptorScriptPubKeyMan::FillPSBT(psbt, txdata, sighash_type, false, bip32derivs, n_signed, finalize);
@@ -99,7 +93,7 @@ std::optional<PSBTError> ExternalSignerScriptPubKeyMan::FillPSBT(PartiallySigned
     }
     if (complete) return {};
 
-    auto signer{GetExternalSigner2()};
+    auto signer{GetExternalSigner()};
     if (!signer) {
         LogWarning("%s", util::ErrorString(signer).original);
         return PSBTError::EXTERNAL_SIGNER_NOT_FOUND;

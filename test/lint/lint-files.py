@@ -26,6 +26,9 @@ ALLOWED_SOURCE_FILENAME_EXCEPTION_REGEXP = (
 ALLOWED_PERMISSION_NON_EXECUTABLES = 0o644
 ALLOWED_PERMISSION_EXECUTABLES = 0o755
 ALLOWED_EXECUTABLE_SHEBANG = {
+    # https://github.com/dylanaraps/pure-bash-bible#shebang:
+    # `#!/bin/bash` assumes it is always installed to /bin/ which can cause issues;
+    # `#!/usr/bin/env bash` searches the user's PATH to find the bash binary.
     "py": [b"#!/usr/bin/env python3"],
     "sh": [b"#!/usr/bin/env bash", b"#!/bin/sh"],
 }
@@ -37,8 +40,8 @@ class FileMeta(object):
         # 100755 5a150d5f8031fcd75e80a4dd9843afa33655f579 0       ci/test/00_setup_env.sh
         meta, self.file_path = file_spec.split('\t', 2)
         meta = meta.split()
-        # Regular files use Git's executable bit (0644 or 0755); preserve
-        # the complete mode as well so tracked symlinks can be recognized.
+        # The octal file permission of the file. Internally, git only
+        # keeps an 'executable' bit, so this will always be 0o644 or 0o755.
         self.git_mode = int(meta[0], 8)
         self.permissions = self.git_mode & 0o7777
         # We don't currently care about the other fields

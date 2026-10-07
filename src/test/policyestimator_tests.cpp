@@ -17,6 +17,23 @@
 
 BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, ChainTestingSetup)
 
+BOOST_AUTO_TEST_CASE(BypassedPolicyIsNotEstimated)
+{
+    CBlockPolicyEstimator estimator{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout.n = 0;
+    tx.vout.emplace_back(COIN, CScript{});
+    for (const auto& ignored : {empty_ignore_rejects, ignore_rejects_type{"mempool full"}}) {
+        const auto txref{MakeTransactionRef(tx)};
+        const NewMempoolTransactionInfo info{txref, 1000, GetVirtualTransactionSize(*txref), 0,
+                                             ignored, false, true, true};
+        estimator.processTransaction(info);
+        BOOST_CHECK_EQUAL(estimator.removeTx(txref->GetHash()), ignored.empty());
+        ++tx.vin[0].prevout.n;
+    }
+}
+
 BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
 {
     CBlockPolicyEstimator feeEst{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
@@ -37,7 +54,7 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     // added to the mempool by their associate fee
     // txHashes[j] is populated with transactions either of
     // fee = basefee * (j+1)
-    std::vector<uint256> txHashes[10];
+    std::vector<Txid> txHashes[10];
 
     // Create a transaction template
     CScript garbage;
@@ -71,14 +88,13 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      /*mempool_limit_bypassed=*/false,
+                                                                                      empty_ignore_rejects,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};
                     m_node.validation_signals->TransactionAddedToMempool(tx_info, mpool.GetAndIncrementSequence());
                 }
-                uint256 hash = tx.GetHash();
-                txHashes[j].push_back(hash);
+                txHashes[j].push_back(tx.GetHash());
             }
         }
         //Create blocks where higher fee txs are included more often
@@ -172,14 +188,13 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      /*mempool_limit_bypassed=*/false,
+                                                                                      empty_ignore_rejects,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};
                     m_node.validation_signals->TransactionAddedToMempool(tx_info, mpool.GetAndIncrementSequence());
                 }
-                uint256 hash = tx.GetHash();
-                txHashes[j].push_back(hash);
+                txHashes[j].push_back(tx.GetHash());
             }
         }
         {
@@ -236,14 +251,13 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      /*mempool_limit_bypassed=*/false,
+                                                                                      empty_ignore_rejects,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};
                     m_node.validation_signals->TransactionAddedToMempool(tx_info, mpool.GetAndIncrementSequence());
                 }
-                uint256 hash = tx.GetHash();
-                CTransactionRef ptx = mpool.get(hash);
+                CTransactionRef ptx = mpool.get(tx.GetHash());
                 if (ptx)
                     block.push_back(ptx);
 
