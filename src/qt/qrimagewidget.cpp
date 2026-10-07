@@ -98,8 +98,9 @@ bool QRImageWidget::setQR(const QString& data, const QString& text, const QFont&
             QRect padded_rect{qrAddrImage.rect()};
             padded_rect.setHeight(padded_rect.height() - QR_IMAGE_TEXT_MARGIN);
             QString text_wrapped{text};
-            const int chars_per_line{(text.size() + text_lines - 1) / text_lines};
-            for (int line{1}, pos{0}; line < text_lines; ++line) {
+            const auto chars_per_line{(text.size() + text_lines - 1) / text_lines};
+            decltype(text.size()) pos{0};
+            for (int line{1}; line < text_lines; ++line) {
                 pos += chars_per_line;
                 text_wrapped.insert(pos, QChar{'\n'});
             }
