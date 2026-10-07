@@ -533,7 +533,7 @@ static RPCHelpMan prioritisetransaction()
 
     // Non-0 fee dust transactions are not allowed for entry, and modification not allowed afterwards
     const auto& tx = mempool.get(txid);
-    if (mempool.m_opts.require_standard && tx && !GetDust(*tx, mempool.m_opts.dust_relay_feerate).empty()) {
+    if (mempool.m_opts.require_standard && tx && !GetDust(*tx, mempool.GetDustRelayFee()).empty()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Priority is not supported for transactions with dust outputs.");
     }
 

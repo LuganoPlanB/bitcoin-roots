@@ -4,6 +4,7 @@
 
 #include <common/system.h>
 #include <policy/policy.h>
+#include <scheduler.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
 #include <util/time.h>
@@ -13,11 +14,50 @@
 #include <boost/test/unit_test.hpp>
 #include <array>
 #include <limits>
+#include <thread>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
 
 static constexpr auto REMOVAL_REASON_DUMMY = MemPoolRemovalReason::REPLACED;
+
+BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
+{
+    CScheduler scheduler;
+    auto opts{MemPoolOptionsForTest(m_node)};
+    opts.scheduler = &scheduler;
+    opts.dust_relay_target = 1;
+    opts.dust_relay_multiplier = 1000;
+    opts.dust_relay_feerate = CFeeRate{3000};
+    bilingual_str error;
+    CTxMemPool pool{opts, error};
+    BOOST_REQUIRE(error.empty());
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(COIN, CScript{} << std::vector<unsigned char>(1100, 0));
+    const auto txref{MakeTransactionRef(tx)};
+    const CAmount fee{100000};
+    AddToMempool(pool, TestMemPoolEntryHelper{}.Fee(fee).FromTx(txref));
+    const auto vsize{WITH_LOCK(pool.cs, return pool.GetEntry(txref->GetHash())->GetTxSize())};
+    const CFeeRate expected{fee * 1000 / vsize};
+    BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
+    pool.UpdateDynamicDustFeerate();
+    BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), expected.GetFeePerK());
+
+    // Exercise the scheduler's writer concurrently with the public snapshot
+    // reader. The guarded state also exposes unsynchronized access to Clang's
+    // thread-safety analysis and race-detecting builds.
+    std::thread updater{[&] {
+        for (int i{0}; i < 1000; ++i) pool.UpdateDynamicDustFeerate();
+    }};
+    bool consistent{true};
+    for (int i{0}; i < 1000; ++i) consistent &= pool.GetDustRelayFee() == expected;
+    updater.join();
+    BOOST_CHECK(consistent);
+    WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
+    pool.UpdateDynamicDustFeerate();
+    BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
+}
 
 BOOST_AUTO_TEST_CASE(MempoolExtraWeightBoundary)
 {

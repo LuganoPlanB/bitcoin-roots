@@ -467,7 +467,7 @@ static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, bilingual_str& 
 }
 
 CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
-    : m_opts{Flatten(std::move(opts), error)}
+    : m_opts{Flatten(std::move(opts), error)}, m_dust_relay_feerate{m_opts.dust_relay_feerate}
 {
     Assert(m_opts.scheduler || !m_opts.dust_relay_target);
     m_opts.dust_relay_feerate_floor = m_opts.dust_relay_feerate;
@@ -790,6 +790,12 @@ void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigne
     blockSinceLastRollingFeeBump = true;
 }
 
+CFeeRate CTxMemPool::GetDustRelayFee() const
+{
+    LOCK(cs);
+    return m_dust_relay_feerate;
+}
+
 #ifndef BUILDING_FOR_LIBBITCOINKERNEL
 void CTxMemPool::UpdateDynamicDustFeerate()
 {
@@ -815,9 +821,10 @@ void CTxMemPool::UpdateDynamicDustFeerate()
         est_feerate = m_opts.dust_relay_feerate_floor;
     }
 
-    if (m_opts.dust_relay_feerate != est_feerate) {
+    LOCK(cs);
+    if (m_dust_relay_feerate != est_feerate) {
         LogDebug(BCLog::MEMPOOL, "Updating dust feerate to %s\n", est_feerate.ToString(FeeEstimateMode::SAT_VB));
-        m_opts.dust_relay_feerate = est_feerate;
+        m_dust_relay_feerate = est_feerate;
     }
 }
 #endif

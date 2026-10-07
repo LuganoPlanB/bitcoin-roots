@@ -1110,7 +1110,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (m_pool.m_opts.subdustfeepenalty) {
         CAmount dust_penalty{0};
         for (const auto& txout : tx.vout) {
-            const CAmount dust_threshold = GetDustThreshold(txout, m_pool.m_opts.dust_relay_feerate);
+            const CAmount dust_threshold = GetDustThreshold(txout, m_pool.GetDustRelayFee());
             if (txout.nValue < dust_threshold) {
                 dust_penalty = SaturatingAdd(dust_penalty, dust_threshold - txout.nValue);
             }
@@ -1125,7 +1125,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     // Enforces 0-fee for dust transactions, no incentive to be mined alone
     if (m_pool.m_opts.require_standard && !ignore_rejects.count("dust")) {
-        if (!PreCheckEphemeralTx(*ptx, m_pool.m_opts.dust_relay_feerate, ws.m_base_fees, ws.m_modified_fees, state)) {
+        if (!PreCheckEphemeralTx(*ptx, m_pool.GetDustRelayFee(), ws.m_base_fees, ws.m_modified_fees, state)) {
             return false; // state filled in by PreCheckEphemeralTx
         }
     }
@@ -1745,7 +1745,7 @@ MempoolAcceptResult MemPoolAccept::AcceptSingleTransaction(const CTransactionRef
 
     if (m_pool.m_opts.require_standard) {
         Wtxid dummy_wtxid;
-        if (!CheckEphemeralSpends(/*package=*/{ptx}, m_pool.m_opts.dust_relay_feerate, m_pool, ws.m_state, dummy_wtxid)) {
+        if (!CheckEphemeralSpends(/*package=*/{ptx}, m_pool.GetDustRelayFee(), m_pool, ws.m_state, dummy_wtxid)) {
             return MempoolAcceptResult::Failure(ws.m_state);
         }
     }
@@ -1906,7 +1906,7 @@ PackageMempoolAcceptResult MemPoolAccept::AcceptMultipleTransactions(const std::
     if (m_pool.m_opts.require_standard && !(args.m_ignore_rejects.count("dust") || args.m_ignore_rejects.count("unspent-dust") || args.m_ignore_rejects.count("missing-ephemeral-spends"))) {
         TxValidationState child_state;
         Wtxid child_wtxid;
-        if (!CheckEphemeralSpends(txns, m_pool.m_opts.dust_relay_feerate, m_pool, child_state, child_wtxid)) {
+        if (!CheckEphemeralSpends(txns, m_pool.GetDustRelayFee(), m_pool, child_state, child_wtxid)) {
             package_state.Invalid(PackageValidationResult::PCKG_TX, "unspent-dust");
             results.emplace(child_wtxid, MempoolAcceptResult::Failure(child_state));
             return PackageMempoolAcceptResult(package_state, std::move(results));
