@@ -181,6 +181,89 @@ class PrepareReleaseTest(unittest.TestCase):
                     )
                     self.assertNotEqual(result.returncode, 0)
 
+    def validate_zip_links(self, links, files):
+        root = "bitcoin-roots-30.3-roots.1"
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            archive = Path(temporary_dir) / "framework.zip"
+            with zipfile.ZipFile(archive, mode="w") as package:
+                for name in files:
+                    info = zipfile.ZipInfo(f"{root}/{name}")
+                    info.create_system = 3
+                    info.external_attr = (0o40755 << 16) | 0x10 if name.endswith("/") else 0o100755 << 16
+                    package.writestr(info, b"" if name.endswith("/") else b"payload")
+                for name, target in links.items():
+                    info = zipfile.ZipInfo(f"{root}/{name}")
+                    info.create_system = 3
+                    info.external_attr = 0o120777 << 16
+                    package.writestr(info, target)
+            return subprocess.run(
+                ["python3", ARCHIVE_TOOL, "validate", archive, root],
+                capture_output=True, text=True,
+            )
+
+    def test_accepts_internal_macos_framework_symlink_chains(self):
+        framework = "Bitcoin-Qt.app/Contents/Frameworks/QtGui.framework"
+        result = self.validate_zip_links(
+            {f"{framework}/Versions/Current": "A",
+             f"{framework}/Resources": "Versions/Current/Resources",
+             f"{framework}/QtGui": "Versions/Current/QtGui"},
+            ["Bitcoin-Qt.app/", "Bitcoin-Qt.app/Contents/", "Bitcoin-Qt.app/Contents/Frameworks/",
+             f"{framework}/", f"{framework}/Versions/", f"{framework}/Versions/A/",
+             f"{framework}/Versions/A/Resources/", f"{framework}/Versions/A/Resources/Info.plist",
+             f"{framework}/Versions/A/QtGui"],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_accepts_repeated_noncyclic_symlink_traversal(self):
+        result = self.validate_zip_links(
+            {"alias": "dir", "link": "alias/../alias/file"}, ["dir/", "dir/file"],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_unsafe_dangling_and_cyclic_zip_symlinks(self):
+        cases = [
+            {"link": "/tmp/outside"},
+            {"link": "../outside"},
+            {"link": "C:/outside"},
+            {"link": "..\\outside"},
+            {"link": "outside\0"},
+            {"link": ""},
+            {"link": b"\xff"},
+            {"link": "x" * 4097},
+            {"link": "missing"},
+            {"link": "other", "other": "link"},
+            # Resolve alias before ..; lexical normalization alone misses this escape.
+            {"alias": ".", "link": "alias/../outside"},
+        ]
+        for links in cases:
+            with self.subTest(links=links):
+                result = self.validate_zip_links(links, ["bin/bitcoind", "outside"])
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_symlinks_alone_do_not_count_as_release_payload(self):
+        result = self.validate_zip_links({"link": "."}, [])
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_duplicate_and_special_zip_members(self):
+        root = "bitcoin-roots-30.3-roots.1"
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            for kind in ("duplicate", "fifo", "device"):
+                with self.subTest(kind=kind):
+                    archive = Path(temporary_dir) / f"{kind}.zip"
+                    with zipfile.ZipFile(archive, mode="w") as package:
+                        package.writestr(f"{root}/bin/bitcoind", b"payload")
+                        info = zipfile.ZipInfo(f"{root}/bin/bitcoind" if kind == "duplicate" else f"{root}/special")
+                        info.create_system = 3
+                        mode = {"duplicate": 0o100755, "fifo": 0o10755, "device": 0o20755}[kind]
+                        info.external_attr = mode << 16
+                        package.writestr(info, b"payload")
+                    result = subprocess.run(
+                        ["python3", ARCHIVE_TOOL, "validate", archive, root],
+                        capture_output=True, text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Duplicate archive member" if kind == "duplicate" else "Unsupported archive member", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
