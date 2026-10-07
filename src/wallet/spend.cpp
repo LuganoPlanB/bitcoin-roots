@@ -45,7 +45,7 @@ TRACEPOINT_SEMAPHORE(coin_selection, attempting_aps_create_tx);
 TRACEPOINT_SEMAPHORE(coin_selection, aps_create_tx_internal);
 
 namespace wallet {
-util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, FlatSigningProvider& provider,
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, const SigningProvider& provider,
                                                             const std::map<COutPoint, Coin>& coins,
                                                             const CScript& destination, const SweepBroadcastFn& broadcast,
                                                             interfaces::SweepAuthorization& authorization)
@@ -61,16 +61,20 @@ util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, Fla
     tx.vout.emplace_back(amount, destination);
     std::map<int, bilingual_str> errors;
     if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+    // Fee settings can change while the UTXO scan runs. Take one synchronized
+    // snapshot for every signing iteration without holding the wallet lock
+    // during signing or broadcast.
+    const CFeeRate fee_rate{WITH_LOCK(wallet.cs_wallet, return GetMinimumFeeRate(wallet, CCoinControl{}, nullptr))};
     CAmount fee{0};
     for (int attempts{0}; attempts < 10; ++attempts) {
-        fee = GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr);
+        fee = fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}));
         if (fee >= amount) return util::Error{Untranslated("Fee exceeds swept value")};
         tx.vout[0].nValue = amount - fee;
         errors.clear();
         if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
-        if (fee >= GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr)) break;
+        if (fee >= fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) break;
     }
-    if (fee < GetMinimumFee(wallet, GetVirtualTransactionSize(CTransaction{tx}), CCoinControl{}, nullptr)) {
+    if (fee < fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) {
         return util::Error{Untranslated("Unable to calculate a stable sweep fee")};
     }
     if (IsDust(tx.vout[0], wallet.chain().relayMinFee())) return util::Error{Untranslated("Swept output would be dust")};

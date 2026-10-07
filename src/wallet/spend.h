@@ -23,7 +23,7 @@
 class COutPoint;
 class Coin;
 class CScript;
-struct FlatSigningProvider;
+class SigningProvider;
 
 namespace interfaces {
 class SweepAuthorization;
@@ -40,7 +40,7 @@ struct SweepTransactionResult
 };
 
 using SweepBroadcastFn = std::function<bool(const CTransactionRef&, std::string&)>;
-util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, FlatSigningProvider& provider,
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, const SigningProvider& provider,
                                                             const std::map<COutPoint, Coin>& coins,
                                                             const CScript& destination, const SweepBroadcastFn& broadcast,
                                                             interfaces::SweepAuthorization& authorization);
