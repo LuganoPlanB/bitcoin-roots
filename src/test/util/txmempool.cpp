@@ -146,7 +146,7 @@ void CheckMempoolEphemeralInvariants(const CTxMemPool& tx_pool)
     for (const auto& tx_info : tx_pool.infoAll()) {
         const auto& entry = *Assert(tx_pool.GetEntry(tx_info.tx->GetHash()));
 
-        std::vector<uint32_t> dust_indexes = GetDust(*tx_info.tx, tx_pool.m_opts.dust_relay_feerate);
+        std::vector<uint32_t> dust_indexes = GetDust(*tx_info.tx, tx_pool.GetDustRelayFee());
 
         Assert(dust_indexes.size() < 2);
 

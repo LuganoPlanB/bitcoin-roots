@@ -436,6 +436,11 @@ public:
 
     Options m_opts;
 
+private:
+    //! Current dynamic rate; configured options are not runtime policy state.
+    CFeeRate m_dust_relay_feerate GUARDED_BY(cs);
+
+public:
     /** Create a new CTxMemPool.
      * Sanity checks will be off by default for performance, because otherwise
      * accepting transactions becomes O(N^2) where N is the number of transactions
@@ -481,6 +486,7 @@ public:
     void UpdateDependentPriorities(const CTransaction &tx, unsigned int nBlockHeight, bool addToChain);
 
     void UpdateDynamicDustFeerate();
+    CFeeRate GetDustRelayFee() const;
 
     /** Affect CreateNewBlock prioritisation of transactions */
     void PrioritiseTransaction(const Txid& hash, double dPriorityDelta, const CAmount& nFeeDelta);
