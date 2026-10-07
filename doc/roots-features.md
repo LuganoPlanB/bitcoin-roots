@@ -6,7 +6,7 @@ operator and local-policy work whose historical lineage includes Bitcoin Knots
 tree is not a list of shipped features.
 
 This page is the public inventory for Roots-specific work. The published
-`v29.4-roots.2` release is the historical baseline. This checkout is the
+`v29.4-roots.4` release is the historical baseline. This checkout is the
 unreleased candidate for the intended `v30.3-roots.1` release, ported directly
 onto Bitcoin Core v30.3; candidate wording is not a release announcement.
 Ordinary Bitcoin Core v30.3 functionality is documented in the built help and
@@ -15,8 +15,9 @@ this tree; use `bitcoind -help` as the authority for its exact options.
 
 ## Available in this checkout
 
-Unless explicitly marked as `v30.3-roots.1` candidate work, the items in this
-section were available in the published `v29.4-roots.2` baseline.
+This section describes the current 30.3 checkout. The selected Roots features,
+including sweep and coin control, were already available on the published
+29.4 line; their implementations and tests are adapted to the Core 30.3 base.
 
 ### Conservative, configurable local transaction policy
 
@@ -96,11 +97,11 @@ replacement will be accepted by peers or their local policy. This Roots
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
-### Advanced sweep and coin-control tools (candidate for `v30.3-roots.1`)
+### Advanced sweep and coin-control tools (ported for `v30.3-roots.1`)
 
-The intended `v30.3-roots.1` candidate adds a guarded private-key sweep and
-advanced coin-control views. These tools are not part of the published
-`v29.4-roots.2` release. Their operational contract and limitations are in
+The intended `v30.3-roots.1` candidate preserves the guarded private-key sweep
+and advanced coin-control views already available in the published
+`v29.4-roots.4` release. Their operational contract and limitations are in
 [`doc/wallet-privacy.md`](/doc/wallet-privacy.md); the built
 `bitcoin-cli help sweepprivkeys` output is authoritative for the exact RPC
 schema in a given build.
@@ -113,7 +114,7 @@ The key-handling path uses transient secure storage and clears temporary dialog
 state; it does not promise erasure of every copy a GUI toolkit or host might
 retain. Coin control presents wallet-reported selection, reuse, grouping, fee,
 change, and RBF facts. It provides no privacy score or anonymity guarantee. The
-candidate coverage includes
+retained coverage includes
 [`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
 [`wallet_send.py`](/test/functional/wallet_send.py), and
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp).
@@ -182,9 +183,9 @@ from the presence of a local tag alone.
 
 ## Planned or under review
 
-The sweep and coin-control tools described above are intended
-`v30.3-roots.1` candidate work, not part of the published baseline. The P2P
-and wallet reviews otherwise retained the published-baseline behavior rather
+The intended `v30.3-roots.1` candidate remains unreleased, including its
+Core 30.3 adaptations of the existing sweep and coin-control tools. The P2P
+and wallet reviews retained the published-baseline behavior rather
 than adding hardening or backup features. Cross-feature coverage and catalog
 reconciliation are release-readiness work, not operator features. Any later
 proposal remains under review until it has an accepted implementation and
