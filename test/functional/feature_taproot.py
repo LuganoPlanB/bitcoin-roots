@@ -1417,6 +1417,7 @@ class TaprootTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.extra_args = [[
             "-acceptnonstddatacarrier=1",
+            "-datacarriersize=100000",  # Keep Core30's carrier allowance for randomized script tests.
             "-rejectparasites=0",  # Keep generated Taproot spends focused on script semantics.
         ]]
 
