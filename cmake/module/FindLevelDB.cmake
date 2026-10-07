@@ -53,7 +53,7 @@ function(find_leveldb_libs release_type suffixes _LevelDB_lib_hint)
   _try_leveldb_compile("${LevelDB_LIBRARY_${release_type}}" "LevelDB_memenv_works_without_helper_lib_${release_type}")
   if(LevelDB_memenv_works_without_helper_lib_${release_type})
     set("LevelDB_MemEnv_LIBRARY_${release_type}" "" CACHE STRING "")
-    set(LevelDB_MemEnv_FOUND ON CACHE INTERNAL "")
+    set("LevelDB_MemEnv_LINKABLE_${release_type}" ON PARENT_SCOPE)
   else()
     find_library("LevelDB_MemEnv_LIBRARY_${release_type}"
       NAMES memenv
@@ -63,9 +63,9 @@ function(find_leveldb_libs release_type suffixes _LevelDB_lib_hint)
 
     set(libs ${LevelDB_LIBRARY_${release_type}} ${LevelDB_MemEnv_LIBRARY_${release_type}})
     _try_leveldb_compile("${libs}" "LevelDB_memenv_works_with_helper_lib_${release_type}")
-    if(NOT LevelDB_memenv_works_with_helper_lib_${release_type})
-      set(LevelDB_MemEnv_FOUND OFF CACHE INTERNAL "")
-    endif()
+    set("LevelDB_MemEnv_LINKABLE_${release_type}"
+      "${LevelDB_memenv_works_with_helper_lib_${release_type}}" PARENT_SCOPE
+    )
   endif()
   mark_as_advanced("LevelDB_MemEnv_LIBRARY_${release_type}")
 endfunction()
@@ -81,9 +81,21 @@ include(SelectLibraryConfigurations)
 select_library_configurations(LevelDB)
 select_library_configurations(LevelDB_MemEnv)
 
+# Validate every available configuration, without rejecting a package that
+# supplies only one configuration (SelectLibraryConfigurations supports this).
+set(LevelDB_MemEnv_LINKABLE ON)
+foreach(release_type IN ITEMS RELEASE DEBUG)
+  if(LevelDB_LIBRARY_${release_type} AND NOT LevelDB_MemEnv_LINKABLE_${release_type})
+    set(LevelDB_MemEnv_LINKABLE OFF)
+  endif()
+endforeach()
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(LevelDB
-  REQUIRED_VARS LevelDB_LIBRARY LevelDB_INCLUDE_DIR LevelDB_MemEnv_INCLUDE_DIR LevelDB_MemEnv_FOUND
+  # select_library_configurations sets <name>_FOUND from library presence.
+  # Keep the actual link probes separate so an unusable helper cannot pass.
+  REQUIRED_VARS LevelDB_LIBRARY LevelDB_INCLUDE_DIR LevelDB_MemEnv_INCLUDE_DIR
+    LevelDB_MemEnv_LINKABLE
 )
 
 if(LevelDB_FOUND)
