@@ -113,7 +113,7 @@ void TestPeerRefreshState(RPCConsole* console)
 
 void TestQrQuietZone()
 {
-#ifdef USE_QRCODE
+#if defined(ENABLE_WALLET) && defined(USE_QRCODE)
     QRImageWidget qr;
     QVERIFY(qr.setQR(QStringLiteral("bitcoin:bc1qz0j5w6w8t8d5alw5lp4n4t3g6d7n7ld5cqqqqq")));
     const QImage image{qr.exportImage()};
@@ -127,6 +127,10 @@ void TestQrQuietZone()
 
 void TestRootsResources()
 {
+    const QPixmap icon{QStringLiteral(":/icons/bitcoin")};
+    QVERIFY(!icon.isNull());
+    const QSize expected_icon_size{256, 256};
+    QCOMPARE(icon.size(), expected_icon_size);
     const QPixmap splash{QStringLiteral(":/icons/splash")};
     QVERIFY(!splash.isNull());
     const QSize expected_size{960, 960};

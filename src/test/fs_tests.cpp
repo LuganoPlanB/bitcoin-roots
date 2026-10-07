@@ -8,9 +8,12 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <cstdio>
 #include <fstream>
 #include <ios>
+#include <memory>
 #include <string>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(fs_tests, BasicTestingSetup)
 
@@ -162,5 +165,23 @@ BOOST_AUTO_TEST_CASE(create_directories)
     fs::remove(dir);
 }
 #endif // __MINGW64__
+
+BOOST_AUTO_TEST_CASE(allocate_file_range_preserves_data)
+{
+    const auto path{m_args.GetDataDirBase() / "allocate-range.dat"};
+    const auto close_file{[](FILE* file) { std::fclose(file); }};
+    std::unique_ptr<FILE, decltype(close_file)> file{fsbridge::fopen(path, "w+b"), close_file};
+    BOOST_REQUIRE(file);
+    std::vector<unsigned char> contents(3 * 65536);
+    for (size_t i{0}; i < contents.size(); ++i) contents[i] = static_cast<unsigned char>(i / 65536 + 1);
+    BOOST_REQUIRE_EQUAL(std::fwrite(contents.data(), 1, contents.size(), file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(std::fflush(file.get()), 0);
+
+    AllocateFileRange(file.get(), 0, static_cast<unsigned int>(contents.size() + 256));
+    BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_SET), 0);
+    std::vector<unsigned char> actual(contents.size());
+    BOOST_REQUIRE_EQUAL(std::fread(actual.data(), 1, actual.size(), file.get()), actual.size());
+    BOOST_CHECK(actual == contents);
+}
 
 BOOST_AUTO_TEST_SUITE_END()

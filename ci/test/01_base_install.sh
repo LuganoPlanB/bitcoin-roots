@@ -6,14 +6,14 @@
 
 export LC_ALL=C.UTF-8
 
-set -ex
+set -o errexit -o pipefail -o xtrace
 
 # shellcheck source=apt.sh
 source "$(dirname "${BASH_SOURCE[0]}")/apt.sh"
 
-CFG_DONE="ci.base-install-done"  # Use a global git setting to remember whether this script ran to avoid running it twice
+CFG_DONE="${BASE_ROOT_DIR}/ci.base-install-done"  # Use a global setting to remember whether this script ran to avoid running it twice
 
-if [ "$(git config --global ${CFG_DONE})" == "true" ]; then
+if [ "$( cat "${CFG_DONE}" || true )" == "done" ]; then
   echo "Skip base install"
   exit 0
 fi
@@ -37,7 +37,8 @@ fi
 
 if [[ $CI_IMAGE_NAME_TAG == *centos* ]]; then
   bash -c "dnf -y install epel-release"
-  bash -c "dnf -y --allowerasing install $CI_BASE_PACKAGES $PACKAGES"
+  # The ninja-build package is available in the CRB repository.
+  bash -c "dnf -y --allowerasing --enablerepo crb install $CI_BASE_PACKAGES $PACKAGES"
 elif [ "$CI_OS_NAME" != "macos" ]; then
   if [[ -n "${APPEND_APT_SOURCES_LIST}" ]]; then
     echo "${APPEND_APT_SOURCES_LIST}" >> /etc/apt/sources.list
@@ -91,7 +92,7 @@ mkdir -p "${DEPENDS_DIR}/SDKs" "${DEPENDS_DIR}/sdk-sources"
 OSX_SDK_BASENAME="Xcode-${XCODE_VERSION}-${XCODE_BUILD_ID}-extracted-SDK-with-libcxx-headers"
 
 if [ -n "$XCODE_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${OSX_SDK_BASENAME}" ]; then
-  OSX_SDK_FILENAME="${OSX_SDK_BASENAME}.tar.gz"
+  OSX_SDK_FILENAME="${OSX_SDK_BASENAME}.tar"
   OSX_SDK_PATH="${DEPENDS_DIR}/sdk-sources/${OSX_SDK_FILENAME}"
   if [ ! -f "$OSX_SDK_PATH" ]; then
     ${CI_RETRY_EXE} curl --location --fail "${SDK_URL}/${OSX_SDK_FILENAME}" -o "$OSX_SDK_PATH"
@@ -99,4 +100,4 @@ if [ -n "$XCODE_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${OSX_SDK_BASENAME}" ]
   tar -C "${DEPENDS_DIR}/SDKs" -xf "$OSX_SDK_PATH"
 fi
 
-git config --global ${CFG_DONE} "true"
+echo -n "done" > "${CFG_DONE}"

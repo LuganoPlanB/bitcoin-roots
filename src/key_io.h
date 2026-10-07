@@ -6,12 +6,11 @@
 #ifndef BITCOIN_KEY_IO_H
 #define BITCOIN_KEY_IO_H
 
-#include <support/allocators/secure.h>
-
 #include <addresstype.h>
 #include <chainparams.h>
 #include <key.h>
 #include <pubkey.h>
+#include <support/allocators/secure.h>
 
 #include <string>
 

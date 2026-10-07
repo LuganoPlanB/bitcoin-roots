@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,7 +14,7 @@
 #include <qt/sendcoinsdialog.h>
 #include <qt/transactiontablemodel.h>
 
-#include <common/args.h> // for GetBoolArg
+#include <common/args.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <key_io.h>
@@ -25,10 +25,12 @@
 #include <util/threadnames.h>
 #include <util/rbf.h>
 #include <wallet/coincontrol.h>
-#include <wallet/wallet.h> // for CRecipient
+#include <wallet/wallet.h>
 
-#include <stdint.h>
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <vector>
 
 #include <QDebug>
 #include <QMessageBox>
@@ -47,7 +49,6 @@ WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel
     optionsModel(client_model.getOptionsModel()),
     timer(new QTimer(this))
 {
-    fHaveWatchOnly = m_wallet->haveWatchOnly();
     addressTableModel = new AddressTableModel(this);
     transactionTableModel = new TransactionTableModel(platformStyle, this);
     recentRequestsTableModel = new RecentRequestsTableModel(this);
@@ -77,7 +78,7 @@ bool WalletModel::invalidateSweepRequests()
 }
 
 uint64_t WalletModel::requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
-                                   std::optional<uint256> expected_txid)
+                                   std::optional<Txid> expected_txid)
 {
     if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return 0;
     const uint64_t generation{++m_sweep_request_generation};
@@ -196,12 +197,6 @@ void WalletModel::updateAddressBook(const QString &address, const QString &label
         addressTableModel->updateEntry(address, label, isMine, purpose, status);
 }
 
-void WalletModel::updateWatchOnlyFlag(bool fHaveWatchonly)
-{
-    fHaveWatchOnly = fHaveWatchonly;
-    Q_EMIT notifyWatchonlyChanged(fHaveWatchonly);
-}
-
 bool WalletModel::validateAddress(const QString& address) const
 {
     return IsValidDestinationString(address.toStdString());
@@ -239,8 +234,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
             setAddress.insert(rcp.address);
             ++nAddresses;
 
-            CRecipient recipient{DecodeDestination(rcp.address.toStdString()), rcp.amount, rcp.fSubtractFeeFromAmount};
-            vecSend.push_back(recipient);
+            vecSend.emplace_back(CRecipient{DecodeDestination(rcp.address.toStdString()), rcp.amount, rcp.fSubtractFeeFromAmount});
 
             total += rcp.amount;
         }
@@ -329,7 +323,7 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction)
                 // Check if we have a new address or an updated label
                 std::string name;
                 if (!m_wallet->getAddress(
-                     dest, &name, /* is_mine= */ nullptr, /* purpose= */ nullptr))
+                     dest, &name, /*purpose=*/nullptr))
                 {
                     m_wallet->setAddressBook(dest, strLabel, wallet::AddressPurpose::SEND);
                 }
@@ -446,7 +440,7 @@ static void NotifyAddressBookChanged(WalletModel *walletmodel,
     assert(invoked);
 }
 
-static void NotifyTransactionChanged(WalletModel *walletmodel, const uint256 &hash, ChangeType status)
+static void NotifyTransactionChanged(WalletModel *walletmodel, const Txid& hash, ChangeType status)
 {
     Q_UNUSED(hash);
     Q_UNUSED(status);
@@ -460,13 +454,6 @@ static void ShowProgress(WalletModel *walletmodel, const std::string &title, int
     bool invoked = QMetaObject::invokeMethod(walletmodel, "showProgress", Qt::QueuedConnection,
                               Q_ARG(QString, QString::fromStdString(title)),
                               Q_ARG(int, nProgress));
-    assert(invoked);
-}
-
-static void NotifyWatchonlyChanged(WalletModel *walletmodel, bool fHaveWatchonly)
-{
-    bool invoked = QMetaObject::invokeMethod(walletmodel, "updateWatchOnlyFlag", Qt::QueuedConnection,
-                              Q_ARG(bool, fHaveWatchonly));
     assert(invoked);
 }
 
@@ -484,7 +471,6 @@ void WalletModel::subscribeToCoreSignals()
     m_handler_address_book_changed = m_wallet->handleAddressBookChanged(std::bind(NotifyAddressBookChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5));
     m_handler_transaction_changed = m_wallet->handleTransactionChanged(std::bind(NotifyTransactionChanged, this, std::placeholders::_1, std::placeholders::_2));
     m_handler_show_progress = m_wallet->handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2));
-    m_handler_watch_only_changed = m_wallet->handleWatchOnlyChanged(std::bind(NotifyWatchonlyChanged, this, std::placeholders::_1));
     m_handler_can_get_addrs_changed = m_wallet->handleCanGetAddressesChanged(std::bind(NotifyCanGetAddressesChanged, this));
 }
 
@@ -497,7 +483,6 @@ void WalletModel::unsubscribeFromCoreSignals()
     m_handler_address_book_changed->disconnect();
     m_handler_transaction_changed->disconnect();
     m_handler_show_progress->disconnect();
-    m_handler_watch_only_changed->disconnect();
     m_handler_can_get_addrs_changed->disconnect();
 }
 
@@ -538,7 +523,7 @@ WalletModel::UnlockContext::~UnlockContext()
     }
 }
 
-bool WalletModel::bumpFee(uint256 hash, uint256& new_hash)
+bool WalletModel::bumpFee(Txid hash, Txid& new_hash)
 {
     CCoinControl coin_control;
     coin_control.m_signal_bip125_rbf = true;
@@ -594,7 +579,7 @@ bool WalletModel::bumpFee(uint256 hash, uint256& new_hash)
         // "Create Unsigned" clicked
         PartiallySignedTransaction psbtx(mtx);
         bool complete = false;
-        const auto err{wallet().fillPSBT(SIGHASH_ALL, /*sign=*/false, /*bip32derivs=*/true, nullptr, psbtx, complete)};
+        const auto err{wallet().fillPSBT(std::nullopt, /*sign=*/false, /*bip32derivs=*/true, nullptr, psbtx, complete)};
         if (err || complete) {
             QMessageBox::critical(nullptr, tr("Fee bump error"), tr("Can't draft transaction."));
             return false;
@@ -676,13 +661,7 @@ CAmount WalletModel::getAvailableBalance(const CCoinControl* control)
     // No selected coins, return the cached balance
     if (!control || !control->HasSelected()) {
         const interfaces::WalletBalances& balances = getCachedBalance();
-        CAmount available_balance = balances.balance;
-        // if wallet private keys are disabled, this is a watch-only wallet
-        // so, let's include the watch-only balance.
-        if (balances.have_watch_only && m_wallet->privateKeysDisabled()) {
-            available_balance += balances.watch_only_balance;
-        }
-        return available_balance;
+        return balances.balance;
     }
     // Fetch balance from the wallet, taking into account the selected coins
     return wallet().getAvailableBalance(*control);

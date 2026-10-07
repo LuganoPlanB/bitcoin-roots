@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2023 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -27,17 +27,6 @@
 #include <utility>
 
 #ifndef WIN32
-// for posix_fallocate, in cmake/introspection.cmake we check if it is present after this
-#ifdef __linux__
-
-#ifdef _POSIX_C_SOURCE
-#undef _POSIX_C_SOURCE
-#endif
-
-#define _POSIX_C_SOURCE 200112L
-
-#endif // __linux__
-
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -46,6 +35,11 @@
 #include <shlobj.h> /* For SHGetSpecialFolderPathW */
 #include <windows.h>
 #endif // WIN32
+
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#endif
 
 /** Mutex to protect dir_locks. */
 static GlobalMutex cs_dir_locks;
@@ -262,11 +256,12 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
                 return;
             }
             memset(&buf[rlen], 0, now - rlen);
-            if (0 != fseek(file, -rlen, SEEK_CUR)) {
-                return;
-            }
         }
-        fwrite(buf, 1, now, file); // allowed to fail; this function is advisory anyway
+        // Rewind after every read so allocation preserves existing bytes.
+        if (fseek(file, -static_cast<long>(rlen), SEEK_CUR)) return;
+        if (fwrite(buf, 1, now, file) != now) return; // Advisory allocation may fail.
+        // An update stream needs a positioning operation between writing and reading.
+        if (fseek(file, 0, SEEK_CUR)) return;
         length -= now;
     }
 #endif
@@ -428,6 +423,17 @@ std::optional<fs::perms> InterpretPermString(const std::string& s)
     }
 }
 
+#ifdef __APPLE__
+FSType GetFilesystemType(const fs::path& path)
+{
+    if (struct statfs fs_info; statfs(path.c_str(), &fs_info)) {
+        return FSType::ERROR;
+    } else if (std::string_view{fs_info.f_fstypename} == "exfat") {
+        return FSType::EXFAT;
+    }
+    return FSType::OTHER;
+}
+#endif
 bool IsDirWritable(const fs::path& dir_path)
 {
     // Attempt to create a tmp file in the directory

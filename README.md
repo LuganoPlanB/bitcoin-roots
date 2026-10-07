@@ -15,7 +15,7 @@ interface, which can be optionally built.
 
 Bitcoin Roots is based on Bitcoin Core with selected policy features from the
 Bitcoin Knots `29.3.knots20260507` code line. The Knots reference describes
-feature lineage only; Bitcoin Core v29.4 is the direct base.
+feature lineage only; Bitcoin Core v30.3 is the direct base.
 
 Bitcoin Roots remains compatible with Bitcoin Core consensus. Its conservative
 transaction relay and mempool policy is local and configurable: a transaction
@@ -32,7 +32,7 @@ License
 -------
 
 Bitcoin Roots is released under the terms of the MIT license. See
-[COPYING](COPYING) for more information or https://opensource.org/licenses/MIT.
+[COPYING](COPYING) for more information or https://opensource.org/license/MIT.
 
 Development Process
 -------------------
@@ -65,8 +65,8 @@ in Python.
 These tests can be run (if the [test dependencies](/test) are installed) with: `build/test/functional/test_runner.py`
 (assuming `build` is your build directory).
 
-Continuous integration should ensure that pull requests are built and tested on
-supported platforms.
+Continuous integration builds and tests pull requests on supported platforms.
+Required checks must pass before integration.
 
 ### Manual Quality Assurance (QA) Testing
 

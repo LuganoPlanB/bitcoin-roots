@@ -20,7 +20,7 @@ class UacommentTest(BitcoinTestFramework):
         self.log.info("test multiple -uacomment")
         subversion = self.nodes[0].getnetworkinfo()["subversion"]
         # Roots branding must not alter the BIP14 user-agent identifier.
-        assert_equal(subversion.startswith("/Satoshi:29.4.0("), True)
+        assert_equal(subversion.startswith("/Satoshi:30.3.0("), True)
         test_uacomment = subversion[-12:-1]
         assert_equal(test_uacomment, "(testnode0)")
 

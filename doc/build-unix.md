@@ -54,15 +54,17 @@ Now, you can either build from self-compiled [depends](#dependencies) or install
 
     sudo apt-get install libevent-dev libboost-dev
 
-SQLite is required for the descriptor wallet:
+SQLite is required for the wallet:
 
     sudo apt install libsqlite3-dev
 
-Berkeley DB is only required for the legacy wallet. Ubuntu and Debian have their own `libdb-dev` and `libdb++-dev` packages,
-but these will install Berkeley DB 5.3 or later. This will break binary wallet compatibility with the distributed
-executables, which are based on BerkeleyDB 4.8. Otherwise, you can build Berkeley DB [yourself](#berkeley-db).
+To build Bitcoin Core without the wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
 
-To build Bitcoin Core without wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
+Cap'n Proto is needed for IPC functionality (see [multiprocess.md](multiprocess.md)):
+
+    sudo apt-get install libcapnp-dev capnproto
+
+Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
 
 Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
 
@@ -82,11 +84,11 @@ Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compi
 the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
 Skip if you don't intend to use the GUI.
 
-    sudo apt-get install qtbase5-dev qttools5-dev qttools5-dev-tools librsvg2-bin imagemagick
+    sudo apt-get install qt6-base-dev qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools libgl-dev librsvg2-bin imagemagick
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
-    sudo apt install qtwayland5
+    sudo apt install qt6-wayland
 
 The GUI will be able to encode addresses in QR codes unless this feature is explicitly disabled. To install libqrencode, run:
 
@@ -109,15 +111,11 @@ Now, you can either build from self-compiled [depends](#dependencies) or install
 
     sudo dnf install libevent-devel boost-devel
 
-SQLite is required for the descriptor wallet:
+SQLite is required for the wallet:
 
     sudo dnf install sqlite-devel
 
-Berkeley DB is only required for the legacy wallet. Fedora releases have only `libdb-devel` and `libdb-cxx-devel` packages, but these will install
-Berkeley DB 5.3 or later. This will break binary wallet compatibility with the distributed executables, which
-are based on Berkeley DB 4.8. Otherwise, you can build Berkeley DB [yourself](#berkeley-db).
-
-To build Bitcoin Core without wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
+To build Bitcoin Core without the wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
 
 Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
 
@@ -131,21 +129,70 @@ User-Space, Statically Defined Tracing (USDT) dependencies:
 
     sudo dnf install systemtap-sdt-devel
 
+Cap'n Proto is needed for IPC functionality (see [multiprocess.md](multiprocess.md)):
+
+    sudo dnf install capnproto capnproto-devel
+
+Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
+
 GUI dependencies:
 
 Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
 the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
 Skip if you don't intend to use the GUI.
 
-    sudo dnf install qt5-qttools-devel qt5-qtbase-devel librsvg2-tools ImageMagick
+    sudo dnf install qt6-qtbase-devel qt6-qttools-devel librsvg2-tools ImageMagick
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
-    sudo dnf install qt5-qtwayland
+    sudo dnf install qt6-qtwayland
 
 The GUI will be able to encode addresses in QR codes unless this feature is explicitly disabled. To install libqrencode, run:
 
     sudo dnf install qrencode-devel
+
+Otherwise, if you don't need QR encoding support, use the `-DWITH_QRENCODE=OFF` option to disable this feature in order to compile the GUI.
+
+### Alpine
+
+#### Dependency Build Instructions
+
+Build requirements:
+
+    apk add build-base cmake linux-headers pkgconf python3
+
+Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
+
+    apk add libevent-dev boost-dev
+
+SQLite is required for the wallet:
+
+    apk add sqlite-dev
+
+To build Bitcoin Core without the wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
+
+Cap'n Proto is needed for IPC functionality (see [multiprocess.md](multiprocess.md)):
+
+    apk add capnproto capnproto-dev
+
+Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
+
+ZMQ dependencies (provides ZMQ API):
+
+    apk add zeromq-dev
+
+User-Space, Statically Defined Tracing (USDT) is not supported or tested on Alpine Linux at this time.
+
+GUI dependencies:
+
+Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
+the necessary parts of Qt, the libqrencode and pass `-DBUILD_GUI=ON`. Skip if you don't intend to use the GUI.
+
+    apk add qt6-qtbase-dev  qt6-qttools-dev
+
+The GUI will be able to encode addresses in QR codes unless this feature is explicitly disabled. To install libqrencode, run:
+
+    apk add libqrencode-dev
 
 Otherwise, if you don't need QR encoding support, use the `-DWITH_QRENCODE=OFF` option to disable this feature in order to compile the GUI.
 
@@ -155,27 +202,6 @@ See [dependencies.md](dependencies.md) for a complete overview, and
 [depends](/depends/README.md) on how to compile them yourself, if you wish to
 not use the packages of your Linux distribution.
 
-### Berkeley DB
-
-The legacy wallet uses Berkeley DB. To ensure backwards compatibility it is
-recommended to use Berkeley DB 4.8. If you have to build it yourself, and don't
-want to use any other libraries built in depends, you can do:
-```bash
-make -C depends NO_BOOST=1 NO_LIBEVENT=1 NO_QT=1 NO_SQLITE=1 NO_UPNP=1 NO_ZMQ=1 NO_USDT=1
-...
-to: /path/to/bitcoin/depends/x86_64-pc-linux-gnu
-```
-and configure using the following:
-```bash
-export BDB_PREFIX="/path/to/bitcoin/depends/x86_64-pc-linux-gnu"
-
-cmake -B build -DBerkeleyDB_INCLUDE_DIR:PATH="${BDB_PREFIX}/include" -DWITH_BDB=ON
-```
-
-**Note**: Make sure that `BDB_PREFIX` is an absolute path.
-
-**Note**: You only need Berkeley DB if the legacy wallet is enabled (see [*Disable-wallet mode*](#disable-wallet-mode)).
-
 Disable-wallet mode
 --------------------
 When the intention is to only run a P2P node, without a wallet, Bitcoin Core can
@@ -183,7 +209,7 @@ be compiled in disable-wallet mode with:
 
     cmake -B build -DENABLE_WALLET=OFF
 
-In this case there is no dependency on SQLite or Berkeley DB.
+In this case there is no dependency on SQLite.
 
 Mining is also possible in disable-wallet mode using the `getblocktemplate` RPC call.
 
@@ -191,12 +217,12 @@ Setup and Build Example: Arch Linux
 -----------------------------------
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
-    pacman --sync --needed cmake boost gcc git libevent make python sqlite librsvg imagemagick
+    pacman --sync --needed capnproto cmake boost gcc git libevent make python sqlite librsvg imagemagick
     git clone https://github.com/luganoplanb/bitcoin-roots.git
     cd bitcoin/
     cmake -B build
     cmake --build build
     ctest --test-dir build
     ./build/bin/bitcoind
+    ./build/bin/bitcoin help
 
-If you intend to work with legacy Berkeley DB wallets, see [Berkeley DB](#berkeley-db) section.

@@ -3,7 +3,7 @@ Bitcoin Roots
 
 Setup
 ---------------------
-Bitcoin Roots is a Bitcoin Core v29.4-based full node. It downloads and, by default, stores the entire history of Bitcoin transactions, which requires several hundred gigabytes or more of disk space. Depending on the speed of your computer and network connection, the synchronization process can take anywhere from a few hours to several days or more.
+Bitcoin Roots is a Bitcoin Core v30.3-based full node. It downloads and, by default, stores the entire history of Bitcoin transactions, which requires several hundred gigabytes or more of disk space. Depending on the speed of your computer and network connection, the synchronization process can take anywhere from a few hours to several days or more.
 
 To download Bitcoin Roots, visit [plan-b.foundation/bitcoin-roots](https://plan-b.foundation/bitcoin-roots/).
 
@@ -17,6 +17,9 @@ Unpack the files into a directory and run:
 
 - `bin/bitcoin-qt` (GUI) or
 - `bin/bitcoind` (headless)
+- `bin/bitcoin` (wrapper command)
+
+The `bitcoin` command supports subcommands like `bitcoin gui`, `bitcoin node`, and `bitcoin rpc` exposing different functionality. Subcommands can be listed with `bitcoin help`.
 
 ### Windows
 

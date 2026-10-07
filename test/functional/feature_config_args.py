@@ -18,9 +18,6 @@ from test_framework import util
 
 
 class ConfArgsTest(BitcoinTestFramework):
-    def add_options(self, parser):
-        self.add_wallet_options(parser)
-
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
@@ -30,6 +27,7 @@ class ConfArgsTest(BitcoinTestFramework):
         self.supports_cli = False
         self.wallet_names = []
         self.disable_autoconnect = False
+        self.uses_wallet = None
 
     # Overridden to avoid attempt to sync not yet started nodes.
     def setup_network(self):
@@ -131,7 +129,7 @@ class ConfArgsTest(BitcoinTestFramework):
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('reindex=1\n')
 
-        with self.nodes[0].assert_debug_log(expected_msgs=['reindex=1 is set in the configuration file, which will significantly slow down startup. Consider removing or commenting out this option for better performance, unless there is currently a condition which makes rebuilding the indexes necessary']):
+        with self.nodes[0].assert_debug_log(expected_msgs=['[warning] reindex=1 is set in the configuration file, which will significantly slow down startup. Consider removing or commenting out this option for better performance, unless there is currently a condition which makes rebuilding the indexes necessary']):
             self.start_node(0)
         self.stop_node(0)
 
@@ -231,7 +229,7 @@ class ConfArgsTest(BitcoinTestFramework):
                 )
 
     def test_log_buffer(self):
-        with self.nodes[0].assert_debug_log(expected_msgs=['Parsed potentially confusing double-negative -listen=0']):
+        with self.nodes[0].assert_debug_log(expected_msgs=['[warning] Parsed potentially confusing double-negative -listen=0']):
             self.start_node(0, extra_args=['-nolisten=0'])
         self.stop_node(0)
 

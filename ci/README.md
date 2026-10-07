@@ -78,7 +78,7 @@ to broad coverage.
 | Documentation only | No build job. |
 | Branding or GUI | GUI/resource build and Qt tests. |
 | Wallet | Compatibility, sanitizers, and platform smoke tests. |
-| General C/C++ | Sanitizers, ARM32, Windows, and both native macOS architectures. |
+| General C/C++ | Sanitizers, ARM32, native kernel/chainstate, Windows, and both native macOS architectures. |
 | Critical, build, CI, or unknown | Broad coverage, including GUI and previous-release compatibility. |
 
 The stable `required result` job is the branch-protection check to require. It

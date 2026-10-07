@@ -14,7 +14,7 @@ CI_ROOT = CI_TEST_ROOT.parent
 APT_HELPER = CI_TEST_ROOT / "apt.sh"
 CI_IMAGEFILE = CI_TEST_ROOT.parent / "test_imagefile"
 LINT_IMAGEFILE = CI_ROOT / "lint_imagefile"
-LINT_INSTALL = CI_ROOT / "lint" / "04_install.sh"
+LINT_INSTALL = CI_ROOT / "lint" / "01_install.sh"
 REFRESH_CALLERS = [
     CI_TEST_ROOT / "01_base_install.sh",
     CI_TEST_ROOT / "03_test_script.sh",

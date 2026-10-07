@@ -1,15 +1,13 @@
 afile
 amountIn
-asend
+anc
 blockin
 bu
 cachable
 clen
-crypted
 debbugs
 deques
 fo
-fpr
 hashIn
 hights
 incomin
@@ -19,8 +17,8 @@ mor
 nd
 nin
 optin
+ot
 outIn
-re-use
 requestor
 ser
 siz

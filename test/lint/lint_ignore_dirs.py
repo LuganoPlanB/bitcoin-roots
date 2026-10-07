@@ -1,8 +1,14 @@
+#!/usr/bin/env python3
+#
+# Copyright (c) 2024-present The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or https://opensource.org/license/mit.
+
 SHARED_EXCLUDED_SUBTREES = ["src/leveldb/",
                  "src/crc32c/",
                  "src/secp256k1/",
                  "src/minisketch/",
-                 # VitePress follows this documentation mirror itself. Generic
-                 # repository linters must not recurse through its symlinks.
+                 "src/ipc/libmultiprocess/",
+                 # VitePress owns this documentation mirror and its symlinks.
                  "doc/website/content/",
                 ]

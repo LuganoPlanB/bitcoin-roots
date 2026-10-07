@@ -10,6 +10,8 @@
 #include <util/strencodings.h>
 
 #include <limits>
+#include <map>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -452,6 +454,27 @@ BOOST_AUTO_TEST_CASE(logargs)
     BOOST_CHECK(str.find("Command-line arg: okaylog=\"public\"") != std::string::npos);
     BOOST_CHECK(str.find("dontlog=****") != std::string::npos);
     BOOST_CHECK(str.find("private42") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(fixed_point_settings)
+{
+    BOOST_CHECK(!SettingToFixedPoint(UniValue{}, 3));
+    BOOST_CHECK_EQUAL(*SettingToFixedPoint(UniValue{"1.25"}, 3), 1250);
+    BOOST_CHECK_EQUAL(*SettingToFixedPoint(UniValue{UniValue::VNUM, "0.001"}, 3), 1);
+    BOOST_CHECK_THROW(SettingToFixedPoint(UniValue{"0.0001"}, 3), std::runtime_error);
+    BOOST_CHECK_THROW(SettingToFixedPoint(UniValue{"invalid"}, 3), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(rw_config_stream)
+{
+    std::istringstream input{"# operator settings\nprune=5\n[regtest]\nprune=1\n"};
+    std::ostringstream output;
+    ModifyRWConfigStream(input, output, {{"listen", "0"}, {"prune", "550"}});
+    BOOST_CHECK_EQUAL(output.str(), "# operator settings\nprune=550\nlisten=0\n[regtest]\nprune=1\n");
+
+    std::istringstream empty;
+    std::ostringstream rejected;
+    BOOST_CHECK_THROW(ModifyRWConfigStream(empty, rejected, {{"listen", "0\nprune=0"}}), std::invalid_argument);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

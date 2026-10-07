@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -83,7 +83,7 @@ std::vector<uint32_t> GetDust(const CTransaction& tx, CFeeRate dust_relay_rate)
  * Note this must assign whichType even if returning false, in case
  * IsStandardTx ignores the "scriptpubkey" rejection.
  */
-bool IsStandard(const CScript& scriptPubKey, const std::optional<unsigned>& max_datacarrier_bytes, TxoutType& whichType)
+bool IsStandard(const CScript& scriptPubKey, TxoutType& whichType)
 {
     std::vector<std::vector<unsigned char> > vSolutions;
     whichType = Solver(scriptPubKey, vSolutions);
@@ -98,10 +98,6 @@ bool IsStandard(const CScript& scriptPubKey, const std::optional<unsigned>& max_
             return false;
         if (m < 1 || m > n)
             return false;
-    } else if (whichType == TxoutType::NULL_DATA) {
-        if (!max_datacarrier_bytes || scriptPubKey.size() > *max_datacarrier_bytes) {
-            return false;
-        }
     }
 
     return true;
@@ -210,7 +206,7 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
 {
     const std::string reason_prefix;
 
-    if (tx.version > TX_MAX_STANDARD_VERSION || tx.version < 1) {
+    if (tx.version > TX_MAX_STANDARD_VERSION || tx.version < TX_MIN_STANDARD_VERSION) {
         MaybeReject("version");
     }
 
@@ -245,6 +241,7 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
         }
     }
 
+    unsigned int datacarrier_bytes_left = opts.max_datacarrier_bytes.value_or(0);
     unsigned int nDataOut = 0;
     unsigned int n_dust{0};
     unsigned int n_monetary{0};
@@ -256,7 +253,7 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
             MaybeReject("scriptpubkey-size");
         }
 
-        if (!::IsStandard(txout.scriptPubKey, opts.max_datacarrier_bytes, whichType)) {
+        if (!::IsStandard(txout.scriptPubKey, whichType)) {
             MaybeReject("scriptpubkey");
         }
 
@@ -281,6 +278,13 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
         }
 
         if (whichType == TxoutType::NULL_DATA) {
+            const auto size = txout.scriptPubKey.size();
+            if (size > datacarrier_bytes_left) {
+                MaybeReject("datacarrier");
+                datacarrier_bytes_left = 0;
+            } else {
+                datacarrier_bytes_left -= size;
+            }
             if (txout.scriptPubKey.size() > 2 && txout.scriptPubKey[1] == OP_13 && opts.reject_tokens) {
                 MaybeReject("tokens-runes");
             }
@@ -320,7 +324,7 @@ bool IsStandardTx(const CTransaction& tx, const StandardnessOptions& opts, std::
     return true;
 }
 
-bool IsStandardTx(const CTransaction& tx, unsigned int max_datacarrier_bytes, bool permit_bare_multisig, const CFeeRate& dust_relay_feerate, std::string& out_reason)
+bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_datacarrier_bytes, bool permit_bare_multisig, const CFeeRate& dust_relay_feerate, std::string& out_reason)
 {
     StandardnessOptions opts;
     opts.max_datacarrier_bytes = max_datacarrier_bytes;
@@ -359,20 +363,18 @@ static bool CheckSigopsBIP54(const CTransaction& tx, const CCoinsViewCache& inpu
 }
 
 /**
- * Check transaction inputs to mitigate two
- * potential denial-of-service attacks:
+ * Check transaction inputs.
  *
- * 1. scriptSigs with extra data stuffed into them,
- *    not consumed by scriptPubKey (or P2SH script)
- * 2. P2SH scripts with a crazy number of expensive
- *    CHECKSIG/CHECKMULTISIG operations
- *
- * Why bother? To avoid denial-of-service attacks; an attacker
- * can submit a standard HASH... OP_EQUAL transaction,
- * which will get accepted into blocks. The redemption
- * script can be anything; an attacker could use a very
- * expensive-to-check-upon-redemption script like:
- *   DUP CHECKSIG DROP ... repeated 100 times... OP_1
+ * This does three things:
+ *  * Prevents mempool acceptance of spends of future
+ *    segwit versions we don't know how to validate
+ *  * Mitigates a potential denial-of-service attack with
+ *    P2SH scripts with a crazy number of expensive
+ *    CHECKSIG/CHECKMULTISIG operations.
+ *  * Prevents spends of unknown/irregular scriptPubKeys,
+ *    which mitigates potential denial-of-service attacks
+ *    involving expensive scripts and helps reserve them
+ *    as potential new upgrade hooks.
  *
  * Note that only the non-witness portion of the transaction is checked here.
  *
@@ -520,7 +522,7 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs,
         // - No annexes
         if (witnessversion == 1 && witnessprogram.size() == WITNESS_V1_TAPROOT_SIZE && !p2sh) {
             // Taproot spend (non-P2SH-wrapped, version 1, witness program size 32; see BIP 341)
-            Span stack{tx.vin[i].scriptWitness.stack};
+            std::span stack{tx.vin[i].scriptWitness.stack};
             if (stack.size() >= 2 && !stack.back().empty() && stack.back()[0] == ANNEX_TAG) {
                 // Annexes are nonstandard as long as no semantics are defined for them.
                 MaybeReject("taproot-annex");
@@ -635,7 +637,7 @@ std::pair<CScript, unsigned int> GetScriptForTransactionInput(CScript prevScript
         return std::make_pair(p2sh ? prevScript : txin.scriptSig, WITNESS_SCALE_FACTOR);
     }
 
-    Span stack{txin.scriptWitness.stack};
+    std::span stack{txin.scriptWitness.stack};
 
     if (witnessversion == 0 && witnessprogram.size() == WITNESS_V0_SCRIPTHASH_SIZE) {
         if (stack.empty()) return std::make_pair(CScript(), 0);  // invalid

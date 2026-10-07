@@ -7,32 +7,26 @@
 
 #include <util/overflow.h>
 
-#include <cstdint>
-#include <limits>
 #include <stdexcept>
 
-namespace util::detail {
-template <unsigned SHIFT>
-consteval uint64_t ByteUnitsToBytes(unsigned long long units)
+//! Overflow-safe conversion of MiB to bytes.
+constexpr size_t operator""_MiB(unsigned long long mebibytes)
 {
-    const auto bytes{CheckedLeftShift(units, SHIFT)};
-    if (!bytes || *bytes > std::numeric_limits<uint64_t>::max()) {
-        throw std::overflow_error("Too large");
+    auto bytes{CheckedLeftShift(mebibytes, 20)};
+    if (!bytes || *bytes > std::numeric_limits<size_t>::max()) {
+        throw std::overflow_error("MiB value too large for size_t byte conversion");
     }
     return *bytes;
 }
-} // namespace util::detail
 
-/// Conversion of MiB to bytes.
-consteval uint64_t operator""_MiB(unsigned long long mebibytes)
+//! Overflow-safe conversion of GiB to bytes.
+constexpr size_t operator""_GiB(unsigned long long gibibytes)
 {
-    return util::detail::ByteUnitsToBytes<20>(mebibytes);
-}
-
-/// Conversion of GiB to bytes.
-consteval uint64_t operator""_GiB(unsigned long long gibibytes)
-{
-    return util::detail::ByteUnitsToBytes<30>(gibibytes);
+    const auto bytes{CheckedLeftShift(gibibytes, 30)};
+    if (!bytes || *bytes > std::numeric_limits<size_t>::max()) {
+        throw std::overflow_error("GiB value too large for size_t byte conversion");
+    }
+    return *bytes;
 }
 
 #endif // BITCOIN_UTIL_BYTE_UNITS_H

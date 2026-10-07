@@ -8,12 +8,14 @@ export LC_ALL=C.UTF-8
 
 export CONTAINER_NAME=ci_native_centos
 export CI_IMAGE_NAME_TAG="quay.io/centos/centos:stream10"
-export CI_BASE_PACKAGES="gcc-c++ glibc-devel libstdc++-devel ccache make git python3 python3-pip which patch xz procps-ng rsync coreutils bison e2fsprogs cmake dash"
-export PIP_PACKAGES="pyzmq"
+export CI_BASE_PACKAGES="gcc-c++ glibc-devel libstdc++-devel ccache make ninja-build git python3 python3-pip which patch xz procps-ng rsync coreutils bison e2fsprogs cmake dash"
+export PIP_PACKAGES="pyzmq pycapnp"
+export DEP_OPTS="DEBUG=1"
 export GOAL="install"
 export BITCOIN_CONFIG="\
- -DCMAKE_BUILD_TYPE=Release \
- -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF \
- -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON \
- -DWITH_ZMQ=ON -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DREDUCE_EXPORTS=ON \
+ -DWITH_ZMQ=ON \
+ -DBUILD_GUI=ON -DWITH_QRENCODE=ON \
+ -DREDUCE_EXPORTS=ON \
+ -DCMAKE_BUILD_TYPE=Debug \
 "
+export BITCOIN_CMD="bitcoin -m" # Used in functional tests

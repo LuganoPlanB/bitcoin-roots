@@ -233,7 +233,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           brew install --quiet python@3 || brew link --overwrite python@3
-          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@5 qrencode imagemagick libicns librsvg
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
       - name: Set compiler cache directory
         run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
       - name: Restore compiler cache
@@ -302,7 +302,7 @@ jobs:
       - name: Generate build system
         shell: pwsh
         run: |
-          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON
+          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="wallet" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON
       - name: Build fuzz targets
         working-directory: build
         shell: pwsh

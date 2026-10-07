@@ -49,12 +49,12 @@ dedicated worktrees for mutations.
 
 ## Inspecting a maintenance branch
 
-Start from a clean worktree and name the Core base explicitly. For the v29.4
-work, the peeled Core commit is `3fc0865963a38b871e9f7d94e6151c4953563516`.
+Start from a clean worktree and name the Core base explicitly. For the v30.3
+work, the peeled Core commit is `49faec4f87f5cd19c88db01a82e5c68b087c8227`.
 The following commands inspect history without changing it:
 
 ```sh
-core_base=3fc0865963a38b871e9f7d94e6151c4953563516
+core_base=49faec4f87f5cd19c88db01a82e5c68b087c8227
 git status --short
 git show --no-patch --decorate "$core_base"
 git log --oneline --decorate "$core_base"..HEAD
@@ -67,10 +67,10 @@ using a local name in automation. `git merge-base --is-ancestor A B` succeeds
 only when `A` is an ancestor of `B`; it is preferable to inferring ancestry
 from a graph view. Confirm object identities with `git rev-parse <ref>^{commit}`.
 
-The local v29.4 tag is signed, but its signer public key is not available in
-this checkout. Do not claim that `git verify-tag v29.4` cryptographically
-verified it. Record the peeled commit above and obtain the signer key before
-making such a claim.
+Authenticate the official tag and its signer key through independent trusted
+sources before claiming verification. A missing local signer key is not proof
+of an invalid signature. Run `git verify-tag v30.3` with the authenticated key
+and record both the signature result and its trust basis.
 
 ## Exporting and reviewing a series
 
@@ -170,8 +170,8 @@ Create the promotion in a separate worktree so that the canonical branch stays
 clean:
 
 ```sh
-canonical_ref=origin/roots/29.4
-git switch --create promote/29.4 origin/main
+canonical_ref=origin/roots/30.3
+git switch --create promote/30.3 origin/main
 git merge --no-ff --no-commit "$canonical_ref"
 # Resolve deliberately, then verify the proposed index and worktree.
 git diff --cached --name-status

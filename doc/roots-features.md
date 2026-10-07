@@ -1,23 +1,23 @@
 # Bitcoin Roots feature catalog
 
-Bitcoin Roots is based directly on Bitcoin Core v29.4. It retains selected
+Bitcoin Roots is based directly on Bitcoin Core v30.3. It retains selected
 operator and local-policy work whose historical lineage includes Bitcoin Knots
 `29.3.knots20260507`; Knots is not an upstream dependency and its candidate
 tree is not a list of shipped features.
 
 This page is the public inventory for Roots-specific work. The published
-`v29.4-roots.2` release remains the baseline. The wallet privacy work in this
-checkout is documented as the candidate for the intended
-`v29.4-roots.3` release; that candidate wording is not a release announcement.
-Ordinary Bitcoin Core v29.4 functionality is documented in the built help and
-the manuals in this directory. The commands below describe the binary built
-from this tree; use `bitcoind -help` as the authority for the exact options in a
-given build.
+`v29.4-roots.4` release is the historical baseline. This checkout is the
+unreleased candidate for the intended `v30.3-roots.1` release, ported directly
+onto Bitcoin Core v30.3; candidate wording is not a release announcement.
+Ordinary Bitcoin Core v30.3 functionality is documented in the built help and
+manuals in this directory. The commands below describe the binary built from
+this tree; use `bitcoind -help` as the authority for its exact options.
 
 ## Available in this checkout
 
-Unless explicitly marked as `v29.4-roots.3` candidate work, the items in this
-section were available in the published `v29.4-roots.2` baseline.
+This section describes the current 30.3 checkout. The selected Roots features,
+including sweep and coin control, were already available on the published
+29.4 line; their implementations and tests are adapted to the Core 30.3 base.
 
 ### Conservative, configurable local transaction policy
 
@@ -79,9 +79,9 @@ regression coverage includes
 [`wallet_multiwallet.py`](/test/functional/wallet_multiwallet.py), and wallet
 unit tests under [`src/wallet/test/`](/src/wallet/test/).
 
-Legacy Berkeley DB support is a separate build choice. This catalog makes no
-claim that it has been tested on a particular host library; release-compatible
-legacy testing requires Berkeley DB 4.8.
+Core v30.3 supports descriptor wallets. Legacy wallet files must be migrated
+before using these wallet tools; this port does not restore a Berkeley DB
+build option.
 
 The follow-on review retained these existing wallet boundaries and their
 coverage; it did not add a new database, flush, or backup behavior.
@@ -97,11 +97,11 @@ replacement will be accepted by peers or their local policy. This Roots
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp), including the
 explicit overrides and saved-PSBT signaling; it is not broad coin control.
 
-### Advanced sweep and coin-control tools (candidate for `v29.4-roots.3`)
+### Advanced sweep and coin-control tools (ported for `v30.3-roots.1`)
 
-The intended `v29.4-roots.3` candidate adds a guarded private-key sweep and
-advanced coin-control views. These tools are not part of the published
-`v29.4-roots.2` release. Their operational contract and limitations are in
+The intended `v30.3-roots.1` candidate preserves the guarded private-key sweep
+and advanced coin-control views already available in the published
+`v29.4-roots.4` release. Their operational contract and limitations are in
 [`doc/wallet-privacy.md`](/doc/wallet-privacy.md); the built
 `bitcoin-cli help sweepprivkeys` output is authoritative for the exact RPC
 schema in a given build.
@@ -114,7 +114,7 @@ The key-handling path uses transient secure storage and clears temporary dialog
 state; it does not promise erasure of every copy a GUI toolkit or host might
 retain. Coin control presents wallet-reported selection, reuse, grouping, fee,
 change, and RBF facts. It provides no privacy score or anonymity guarantee. The
-candidate coverage includes
+retained coverage includes
 [`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
 [`wallet_send.py`](/test/functional/wallet_send.py), and
 [`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp).
@@ -151,16 +151,14 @@ has been tested by the current checkout.
 
 ### Roots identity and desktop application
 
-The published baseline's daemon, command-line tools, and Qt application identify
-themselves as Bitcoin Roots `v29.4-roots.2`. The intended
-`v29.4-roots.3` identifier is candidate documentation, not evidence that an
-untagged local build has that release identity; use the built binary's
-`--version` output when verifying an executable.
-The Qt application includes Roots branding and icons. In the receive-request
-dialog, a QR image can be saved as a PNG. On Windows GUI builds where taskbar
-progress is enabled, synchronization progress is reflected in the taskbar. The
-Qt source and tests are in [`src/qt/`](/src/qt/), including QR export coverage
-in [`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
+The daemon, command-line tools, and Qt application identify themselves as
+Bitcoin Roots `v30.3-roots.1`. This checkout is not a published release merely
+because it has that build identity. The Qt application includes Roots branding
+and icons. In the receive-request dialog, a QR image can be saved as a PNG. On
+Windows GUI builds where taskbar progress is enabled, synchronization progress
+is reflected in the taskbar. The Qt source and tests are in
+[`src/qt/`](/src/qt/), including QR export coverage in
+[`src/qt/test/apptests.cpp`](/src/qt/test/apptests.cpp).
 
 The generated manuals and example configuration are available in
 [`doc/man/`](/doc/man/) and
@@ -179,15 +177,15 @@ restore nightly, promotion, frozen-state, or generated-evidence control planes.
 [`contrib/roots/README.md`](/contrib/roots/README.md) documents the Git-native
 workflow: inspect the explicit Core base, use ordinary Git porting or rebase
 operations, review with `git range-diff`, and validate an annotated tag and its
-ancestry before publishing. This repository does not claim local cryptographic
-verification of the Core v29.4 tag because the signer public key is not present
-in this checkout.
+ancestry before publishing. Verify the official Core tag with an independently authenticated signer key
+and record its signature result and trust basis; do not infer verification
+from the presence of a local tag alone.
 
 ## Planned or under review
 
-The sweep and coin-control tools described above are intended
-`v29.4-roots.3` candidate work, not part of the published baseline. The P2P
-and wallet reviews otherwise retained the published-baseline behavior rather
+The intended `v30.3-roots.1` candidate remains unreleased, including its
+Core 30.3 adaptations of the existing sweep and coin-control tools. The P2P
+and wallet reviews retained the published-baseline behavior rather
 than adding hardening or backup features. Cross-feature coverage and catalog
 reconciliation are release-readiness work, not operator features. Any later
 proposal remains under review until it has an accepted implementation and
@@ -199,7 +197,7 @@ Bitcoin Roots remains compatible with Bitcoin Core consensus. It does **not**
 enforce RDTS/BIP110 consensus rules. Policy, relay, mempool, and mining-template
 configuration must not make a consensus-valid block invalid.
 
-Bitcoin Core v29.4 is the direct base. Bitcoin Knots history is useful only as
+Bitcoin Core v30.3 is the direct base. Bitcoin Knots history is useful only as
 provenance for selected policy research; it is not imported as an upstream
 dependency. The historical replay candidate and archived maintenance branch are
 evidence for maintainers, not product specifications.

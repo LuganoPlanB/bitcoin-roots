@@ -10,10 +10,11 @@
 #include <qt/walletmodeltransaction.h>
 
 #include <interfaces/wallet.h>
+#include <primitives/transaction_identifier.h>
 #include <support/allocators/secure.h>
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 #include <QObject>
 #include <QThread>
@@ -131,7 +132,7 @@ public:
 
     UnlockContext requestUnlock();
 
-    bool bumpFee(uint256 hash, uint256& new_hash);
+    bool bumpFee(Txid hash, Txid& new_hash);
     void displayAddress(std::string sAddress) const;
 
     static bool isWalletEnabled();
@@ -159,7 +160,7 @@ public:
 
     bool invalidateSweepRequests();
     uint64_t requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
-                          std::optional<uint256> expected_txid = std::nullopt);
+                          std::optional<Txid> expected_txid = std::nullopt);
 
 private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
@@ -168,12 +169,10 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_address_book_changed;
     std::unique_ptr<interfaces::Handler> m_handler_transaction_changed;
     std::unique_ptr<interfaces::Handler> m_handler_show_progress;
-    std::unique_ptr<interfaces::Handler> m_handler_watch_only_changed;
     std::unique_ptr<interfaces::Handler> m_handler_can_get_addrs_changed;
     ClientModel* m_client_model;
     interfaces::Node& m_node;
 
-    bool fHaveWatchOnly;
     uint64_t m_sweep_request_generation{0};
     std::shared_ptr<interfaces::SweepAuthorization> m_sweep_authorization;
     QObject m_sweep_context;
@@ -221,9 +220,6 @@ Q_SIGNALS:
     // Show progress dialog e.g. for rescan
     void showProgress(const QString &title, int nProgress);
 
-    // Watch-only address added
-    void notifyWatchonlyChanged(bool fHaveWatchonly);
-
     // Signal that wallet is about to be removed
     void unload();
 
@@ -245,8 +241,6 @@ public Q_SLOTS:
     void updateTransaction();
     /* New, updated or removed address book entry */
     void updateAddressBook(const QString &address, const QString &label, bool isMine, wallet::AddressPurpose purpose, int status);
-    /* Watch-only added */
-    void updateWatchOnlyFlag(bool fHaveWatchonly);
     /* Current, immature or unconfirmed balance might have changed - emit 'balanceChanged' if so */
     void pollBalanceChanged();
 };

@@ -1,9 +1,9 @@
-# Advanced wallet privacy tools (`v29.4-roots.3` candidate)
+# Advanced wallet privacy tools (`v30.3-roots.1` candidate)
 
 This guide describes the advanced wallet tools intended for the
-`v29.4-roots.3` candidate. This is candidate documentation, not a release
+`v30.3-roots.1` candidate. This is candidate documentation, not a release
 announcement; the tools are not part of the published `v29.4-roots.2` release.
-Bitcoin Core v29.4 remains the direct upstream base; selected Bitcoin Knots
+Bitcoin Core v30.3 is the direct upstream base; selected Bitcoin Knots
 history is lineage only, not an upstream dependency or product specification.
 
 ## Sweep an external private key
@@ -20,8 +20,8 @@ external key, not routine wallet import or consolidation.
   the RPC request. A destination in another loaded wallet is rejected. The
   supported configuration is a descriptor wallet with local private keys;
   watch-only, private-key-disabled, and external-signer configurations are not
-  eligible destinations. Legacy-wallet behavior is not part of this topic's
-  verified matrix and requires a compatible Berkeley DB build.
+  eligible destinations. Legacy wallets must be migrated to descriptor wallets;
+  this port does not restore a Berkeley DB build option.
 - `broadcast=false` is the default and returns a signed preview with its input
   total, fee, input count, transaction ID, and hex. It does not submit a
   transaction. Review the destination, net amount, and fee; decode the preview
@@ -94,4 +94,4 @@ python3 ci/test/test_wallet_privacy_contract.py
 `bitcoin-cli help sweepprivkeys` and the final transaction preview are the
 authority for a particular binary and transaction. Verify the executable's
 identity separately with `bitcoin-cli --version`; the intended
-`v29.4-roots.3` candidate label in this guide does not replace that check.
+`v30.3-roots.1` candidate label in this guide does not replace that check.

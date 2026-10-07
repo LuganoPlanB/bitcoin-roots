@@ -518,16 +518,16 @@ void TxConfirmStats::removeTx(unsigned int entryHeight, unsigned int nBestSeenHe
     }
 }
 
-bool CBlockPolicyEstimator::removeTx(uint256 hash)
+bool CBlockPolicyEstimator::removeTx(Txid hash)
 {
     LOCK(m_cs_fee_estimator);
     return _removeTx(hash, /*inBlock=*/false);
 }
 
-bool CBlockPolicyEstimator::_removeTx(const uint256& hash, bool inBlock)
+bool CBlockPolicyEstimator::_removeTx(const Txid& hash, bool inBlock)
 {
     AssertLockHeld(m_cs_fee_estimator);
-    std::map<uint256, TxStatsInfo>::iterator pos = mapMemPoolTxs.find(hash);
+    std::map<Txid, TxStatsInfo>::iterator pos = mapMemPoolTxs.find(hash);
     if (pos != mapMemPoolTxs.end()) {
         feeStats->removeTx(pos->second.blockHeight, nBestSeenHeight, pos->second.bucketIndex, inBlock);
         shortStats->removeTx(pos->second.blockHeight, nBestSeenHeight, pos->second.bucketIndex, inBlock);
@@ -560,7 +560,7 @@ CBlockPolicyEstimator::CBlockPolicyEstimator(const fs::path& estimation_filepath
     AutoFile est_file{fsbridge::fopen(m_estimation_filepath, "rb")};
 
     if (est_file.IsNull()) {
-        LogPrintf("%s is not found. Continue anyway.\n", fs::PathToString(m_estimation_filepath));
+        LogInfo("%s is not found. Continue anyway.", fs::PathToString(m_estimation_filepath));
         return;
     }
 
@@ -905,6 +905,14 @@ CFeeRate CBlockPolicyEstimator::estimateSmartFee(int confTarget, FeeCalculation 
      * horizons so we already have monotonically increasing estimates and
      * the purpose of conservative estimates is not to let short term
      * fluctuations lower our estimates by too much.
+     *
+     * Note: In certain rare edge cases, monotonically increasing estimates may
+     * not be guaranteed. Specifically, given two targets N and M, where M > N,
+     * if a sub-estimate for target N fails to return a valid fee rate, while
+     * target M has valid fee rate for that sub-estimate, target M may result
+     * in a higher fee rate estimate than target N.
+     *
+     * See: https://github.com/bitcoin/bitcoin/issues/11800#issuecomment-349697807
      */
     double halfEst = estimateCombinedFee(confTarget/2, HALF_SUCCESS_PCT, true, &tempResult);
     if (feeCalc) {
@@ -957,13 +965,13 @@ bool CBlockPolicyEstimator::FlushFeeEstimates() const
         LogWarning("Failed to write fee estimates to %s. Continue anyway.", fs::PathToString(m_estimation_filepath));
         (void)est_file.fclose();
         return false;
-    } else if (est_file.fclose() != 0) {
-        LogWarning("Failed to close fee estimates file %s: %s. Continuing anyway.", fs::PathToString(m_estimation_filepath), SysErrorString(errno));
-        return false;
-    } else {
-        LogPrintf("Flushed fee estimates to %s.\n", fs::PathToString(m_estimation_filepath.filename()));
-        return true;
     }
+    if (est_file.fclose() != 0) {
+        LogError("Failed to close fee estimates file %s: %s. Continuing anyway.", fs::PathToString(m_estimation_filepath), SysErrorString(errno));
+        return false;
+    }
+    LogInfo("Flushed fee estimates to %s.", fs::PathToString(m_estimation_filepath.filename()));
+    return true;
 }
 
 bool CBlockPolicyEstimator::Write(AutoFile& fileout) const

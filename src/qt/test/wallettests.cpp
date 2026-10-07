@@ -29,6 +29,7 @@
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <script/solver.h>
+#include <support/lockedpool.h>
 #include <test/util/setup_common.h>
 #include <util/rbf.h>
 #include <validation.h>
@@ -71,6 +72,12 @@ using wallet::WalletContext;
 using wallet::WalletDescriptor;
 using wallet::WalletRescanReserver;
 
+struct SweepDialogTestAccess
+{
+    static SecureString& Cache(SweepDialog& dialog) { return dialog.m_private_key_cache; }
+    static void ClearCache(SweepDialog& dialog) { dialog.clearPrivateKeyCache(); }
+};
+
 namespace
 {
 class LogCapture
@@ -106,7 +113,7 @@ void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_ty
 }
 
 //! Send coins to address and return txid.
-uint256 SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDestination& address, CAmount amount, bool rbf,
+Txid SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDestination& address, CAmount amount, bool rbf,
                   QMessageBox::StandardButton confirm_type = QMessageBox::Yes, QString* confirmation_text = nullptr)
 {
     QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
@@ -117,8 +124,8 @@ uint256 SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDe
         ->findChild<QFrame*>("frameFeeSelection")
         ->findChild<QCheckBox*>("optInRBF")
         ->setCheckState(rbf ? Qt::Checked : Qt::Unchecked);
-    uint256 txid;
-    boost::signals2::scoped_connection c(wallet.NotifyTransactionChanged.connect([&txid](const uint256& hash, ChangeType status) {
+    Txid txid;
+    boost::signals2::scoped_connection c(wallet.NotifyTransactionChanged.connect([&txid](const Txid& hash, ChangeType status) {
         if (status == CT_NEW) txid = hash;
     }));
     ConfirmSend(confirmation_text, confirm_type);
@@ -128,7 +135,7 @@ uint256 SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDe
 }
 
 //! Find index of txid in transaction list.
-QModelIndex FindTx(const QAbstractItemModel& model, const uint256& txid)
+QModelIndex FindTx(const QAbstractItemModel& model, const Txid& txid)
 {
     QString hash = QString::fromStdString(txid.ToString());
     int rows = model.rowCount({});
@@ -142,7 +149,7 @@ QModelIndex FindTx(const QAbstractItemModel& model, const uint256& txid)
 }
 
 //! Invoke bumpfee on txid and check results.
-void BumpFee(TransactionView& view, const uint256& txid, bool expectDisabled, std::string expectError, bool cancel)
+void BumpFee(TransactionView& view, const Txid& txid, bool expectDisabled, std::string expectError, bool cancel)
 {
     QTableView* table = view.findChild<QTableView*>("transactionView");
     QModelIndex index = FindTx(*table->selectionModel()->model(), txid);
@@ -220,42 +227,34 @@ void SyncUpWallet(const std::shared_ptr<CWallet>& wallet, interfaces::Node& node
     QVERIFY(result.last_failed_block.IsNull());
 }
 
-std::shared_ptr<CWallet> SetupLegacyWatchOnlyWallet(interfaces::Node& node, TestChain100Setup& test)
-{
-    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockableWalletDatabase());
-    wallet->LoadWallet();
-    {
-        LOCK(wallet->cs_wallet);
-        wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
-        wallet->SetupLegacyScriptPubKeyMan();
-        // Add watched key
-        CPubKey pubKey = test.coinbaseKey.GetPubKey();
-        bool import_keys = wallet->ImportPubKeys({{pubKey.GetID(), false}}, {{pubKey.GetID(), pubKey}} , /*key_origins=*/{}, /*add_keypool=*/false, /*timestamp=*/1);
-        assert(import_keys);
-        wallet->SetLastBlockProcessed(105, WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
-    }
-    SyncUpWallet(wallet, node);
-    return wallet;
-}
-
-std::shared_ptr<CWallet> SetupDescriptorsWallet(interfaces::Node& node, TestChain100Setup& test)
+std::shared_ptr<CWallet> SetupDescriptorsWallet(interfaces::Node& node, TestChain100Setup& test, bool watch_only = false)
 {
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockableWalletDatabase());
     wallet->LoadWallet();
     LOCK(wallet->cs_wallet);
     wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
-    wallet->SetupDescriptorScriptPubKeyMans();
+    if (watch_only) {
+        wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    } else {
+        wallet->SetupDescriptorScriptPubKeyMans();
+    }
 
     // Add the coinbase key
     FlatSigningProvider provider;
     std::string error;
-    auto descs = Parse("combo(" + EncodeSecret(test.coinbaseKey) + ")", provider, error, /* require_checksum=*/ false);
+    std::string key_str;
+    if (watch_only) {
+        key_str = HexStr(test.coinbaseKey.GetPubKey());
+    } else {
+        key_str = EncodeSecret(test.coinbaseKey);
+    }
+    auto descs = Parse("combo(" + key_str + ")", provider, error, /* require_checksum=*/ false);
     assert(!descs.empty());
     assert(descs.size() == 1);
     auto& desc = descs.at(0);
     WalletDescriptor w_desc(std::move(desc), 0, 0, 1, 1);
-    if (!wallet->AddWalletDescriptor(w_desc, provider, "", false)) assert(false);
-    CTxDestination dest = GetDestinationForKey(test.coinbaseKey.GetPubKey(), wallet->m_default_address_type);
+    Assert(wallet->AddWalletDescriptor(w_desc, provider, "", false));
+    const PKHash dest{test.coinbaseKey.GetPubKey()};
     wallet->SetAddressBook(dest, "", wallet::AddressPurpose::RECEIVE);
     wallet->SetLastBlockProcessed(105, WITH_LOCK(node.context()->chainman->GetMutex(), return node.context()->chainman->ActiveChain().Tip()->GetBlockHash()));
     SyncUpWallet(wallet, node);
@@ -320,6 +319,19 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 
     // Verify the guarded sweep dialog contract and asynchronous error path.
     SweepDialog sweep_dialog(&walletModel);
+    auto& sweep_cache{SweepDialogTestAccess::Cache(sweep_dialog)};
+    // Disposal must release locked storage while the dialog stays alive;
+    // observe allocator accounting rather than dereferencing freed memory.
+    const auto locked_bytes_before{LockedPoolManager::Instance().stats().used};
+    sweep_cache.assign(52, 's');
+    QVERIFY(LockedPoolManager::Instance().stats().used > locked_bytes_before);
+    SweepDialogTestAccess::ClearCache(sweep_dialog);
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(LockedPoolManager::Instance().stats().used, locked_bytes_before);
+    sweep_cache.assign(4, 's');
+    SweepDialogTestAccess::ClearCache(sweep_dialog);
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(LockedPoolManager::Instance().stats().used, locked_bytes_before);
     QLineEdit* sweep_key = sweep_dialog.findChild<QLineEdit*>("sweepPrivateKey");
     QLineEdit* sweep_destination = sweep_dialog.findChild<QLineEdit*>("sweepDestination");
     QPushButton* sweep_preview = sweep_dialog.findChild<QPushButton*>("sweepPreview");
@@ -364,6 +376,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(!sweep_key->isEnabled());
     QVERIFY(sweep_key->text().isEmpty());
     QTRY_VERIFY(sweep_key->isEnabled());
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
     QVERIFY(!sweep_result->text().contains(sweep_sentinel));
     QVERIFY(!QString::fromStdString(sweep_logs.output).contains(sweep_sentinel));
 
@@ -374,6 +388,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // A competing wallet update must discard the transient key and preview
     // immediately, rather than relying on broadcast-time stale detection.
     walletModel.updateTransaction();
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
     QVERIFY(sweep_key->isEnabled());
     QVERIFY(sweep_key->text().isEmpty());
     QVERIFY(!sweep_broadcast->isEnabled());
@@ -383,6 +399,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(!sweep_broadcast->isEnabled());
     sweep_dialog.reject();
     QVERIFY(sweep_key->text().isEmpty());
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
 
     const auto settings_contain_sentinel = [&] {
         QSettings settings;
@@ -528,9 +546,9 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(!rbf_checkbox->isChecked());
 
     QString no_rbf_confirmation;
-    uint256 txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Yes, &no_rbf_confirmation);
+    Txid txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Yes, &no_rbf_confirmation);
     QString rbf_confirmation;
-    uint256 txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true, QMessageBox::Yes, &rbf_confirmation);
+    Txid txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true, QMessageBox::Yes, &rbf_confirmation);
     {
         LOCK(wallet->cs_wallet);
         QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid1).tx));
@@ -548,7 +566,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     default_rbf_dialog.setModel(&walletModel);
     QVERIFY(default_rbf_dialog.findChild<QCheckBox*>("optInRBF")->isChecked());
     QString default_on_override_confirmation;
-    uint256 txid3 = SendCoins(*wallet.get(), default_rbf_dialog, PKHash(), COIN, /*rbf=*/false, QMessageBox::Yes, &default_on_override_confirmation);
+    Txid txid3 = SendCoins(*wallet.get(), default_rbf_dialog, PKHash(), COIN, /*rbf=*/false, QMessageBox::Yes, &default_on_override_confirmation);
     {
         LOCK(wallet->cs_wallet);
         QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid3).tx));
@@ -561,12 +579,12 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid3).isValid());
 
-    // Call bumpfee. Test disabled, canceled, enabled, then failing cases.
-    BumpFee(transactionView, txid1, /*expectDisabled=*/true, /*expectError=*/"not BIP 125 replaceable", /*cancel=*/false);
+    // Call bumpfee. Test canceled fullrbf bump, canceled bip-125-rbf bump, passing bump, and then failing bump.
+    BumpFee(transactionView, txid1, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/true, /*expectError=*/"already bumped", /*cancel=*/false);
-    BumpFee(transactionView, txid3, /*expectDisabled=*/true, /*expectError=*/"not BIP 125 replaceable", /*cancel=*/false);
+    BumpFee(transactionView, txid3, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
 
     // Check current balance on OverviewPage
     OverviewPage overviewPage(platformStyle.get());
@@ -659,7 +677,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 
 void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
 {
-    const std::shared_ptr<CWallet>& wallet = SetupLegacyWatchOnlyWallet(node, test);
+    const std::shared_ptr<CWallet>& wallet = SetupDescriptorsWallet(node, test, /*watch_only=*/true);
 
     // Create widgets and init models
     std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
@@ -671,11 +689,11 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
     // Update walletModel cached balance which will trigger an update for the 'labelBalance' QLabel.
     walletModel.pollBalanceChanged();
     // Check balance in send dialog
-    CompareBalance(walletModel, walletModel.wallet().getBalances().watch_only_balance,
+    CompareBalance(walletModel, walletModel.wallet().getBalances().balance,
                    sendCoinsDialog.findChild<QLabel*>("labelBalance"));
 
     // Set change address
-    sendCoinsDialog.getCoinControl()->destChange = GetDestinationForKey(test.coinbaseKey.GetPubKey(), OutputType::LEGACY);
+    sendCoinsDialog.getCoinControl()->destChange = PKHash{test.coinbaseKey.GetPubKey()};
 
     // Time to reject "save" PSBT dialog ('SendCoins' locks the main thread until the dialog receives the event).
     QTimer timer;
@@ -712,7 +730,7 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
 
     SendCoinsDialog rbf_psbt_dialog(platformStyle.get());
     rbf_psbt_dialog.setModel(&walletModel);
-    rbf_psbt_dialog.getCoinControl()->destChange = GetDestinationForKey(test.coinbaseKey.GetPubKey(), OutputType::LEGACY);
+    rbf_psbt_dialog.getCoinControl()->destChange = PKHash{test.coinbaseKey.GetPubKey()};
     QTimer rbf_timer;
     rbf_timer.setInterval(500);
     QObject::connect(&rbf_timer, &QTimer::timeout, [&](){

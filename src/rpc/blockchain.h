@@ -1,28 +1,27 @@
-// Copyright (c) 2017-2022 The Bitcoin Core developers
+// Copyright (c) 2017-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_RPC_BLOCKCHAIN_H
 #define BITCOIN_RPC_BLOCKCHAIN_H
 
+#include <coins.h>
 #include <consensus/amount.h>
 #include <core_io.h>
 #include <interfaces/chain.h>
+#include <script/script.h>
 #include <streams.h>
 #include <sync.h>
 #include <util/fs.h>
 #include <validation.h>
 
-#include <coins.h>
-#include <script/script.h>
-
 #include <any>
 #include <atomic>
+#include <cstdint>
 #include <functional>
-#include <stdint.h>
-#include <vector>
 #include <map>
 #include <set>
+#include <vector>
 
 class CBlock;
 class CBlockIndex;
@@ -72,7 +71,7 @@ void CalculatePercentilesByWeight(CAmount result[NUM_GETBLOCKSTATS_PERCENTILES],
 UniValue CreateUTXOSnapshot(
     node::NodeContext& node,
     Chainstate& chainstate,
-    AutoFile& afile,
+    AutoFile&& afile,
     const fs::path& path,
     const fs::path& tmppath);
 

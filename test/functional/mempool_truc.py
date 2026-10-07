@@ -9,6 +9,7 @@ from test_framework.messages import (
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    assert_not_equal,
     assert_equal,
     assert_greater_than,
     assert_greater_than_or_equal,
@@ -43,7 +44,7 @@ def cleanup(extra_args=None):
 class MempoolTRUC(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-maxscriptsize=100000"]]
+        self.extra_args = [["-maxscriptsize=100000", "-datacarriersize=100000"]]
         self.setup_clean_chain = True
 
     def check_mempool(self, txids):
@@ -52,7 +53,7 @@ class MempoolTRUC(BitcoinTestFramework):
         assert_equal(len(txids), len(mempool_contents))
         assert all([txid in txids for txid in mempool_contents])
 
-    @cleanup(extra_args=["-datacarriersize=20000"])
+    @cleanup()
     def test_truc_max_vsize(self):
         node = self.nodes[0]
         self.log.info("Test TRUC-specific maximum transaction vsize")
@@ -66,7 +67,7 @@ class MempoolTRUC(BitcoinTestFramework):
         tx_v2_heavy = self.wallet.send_self_transfer(from_node=node, target_vsize=TRUC_MAX_VSIZE + 1, version=2)
         self.check_mempool([tx_v2_heavy["txid"]])
 
-    @cleanup(extra_args=["-datacarriersize=1000"])
+    @cleanup()
     def test_truc_acceptance(self):
         node = self.nodes[0]
         self.log.info("Test a child of a TRUC transaction cannot be more than 1000vB")
@@ -198,7 +199,7 @@ class MempoolTRUC(BitcoinTestFramework):
         node.invalidateblock(block["hash"])
         self.check_mempool([tx_v3_block["txid"], tx_v2_block["txid"], tx_v3_block2["txid"], tx_v2_from_v3["txid"], tx_v3_from_v2["txid"], tx_v3_child_large["txid"], tx_chain_1["txid"], tx_chain_2["txid"], tx_chain_3["txid"], tx_chain_4["txid"]])
 
-    @cleanup(extra_args=["-limitdescendantsize=10", "-datacarriersize=40000"])
+    @cleanup(extra_args=["-limitdescendantsize=10"])
     def test_nondefault_package_limits(self):
         """
         Max standard tx size + TRUC rules imply the ancestor/descendant rules (at their default
@@ -251,7 +252,7 @@ class MempoolTRUC(BitcoinTestFramework):
         assert_raises_rpc_error(-26, "too-long-mempool-chain, exceeds ancestor size limit", node.sendrawtransaction, tx_v3_child_large2["hex"])
         self.check_mempool([tx_v3_parent_large2["txid"]])
 
-    @cleanup(extra_args=["-datacarriersize=1000"])
+    @cleanup()
     def test_truc_ancestors_package(self):
         self.log.info("Test that TRUC ancestor limits are checked within the package")
         node = self.nodes[0]
@@ -400,7 +401,7 @@ class MempoolTRUC(BitcoinTestFramework):
         assert_equal(result_package_cpfp["tx-results"][tx_sibling_3['wtxid']]['error'], expected_error_cpfp)
 
 
-    @cleanup(extra_args=["-datacarriersize=1000"])
+    @cleanup()
     def test_truc_package_inheritance(self):
         self.log.info("Test that TRUC inheritance is checked within package")
         node = self.nodes[0]
@@ -496,7 +497,7 @@ class MempoolTRUC(BitcoinTestFramework):
         child_1_conflict = self.wallet.send_self_transfer(from_node=node, version=3, utxo_to_spend=ancestor_tx["new_utxos"][0], fee_rate=Decimal("0.01"))
 
         # Ensure child_1 and child_1_conflict are different transactions
-        assert (child_1_conflict["txid"] != child_1["txid"])
+        assert_not_equal(child_1_conflict["txid"], child_1["txid"])
         self.check_mempool([ancestor_tx["txid"], child_1_conflict["txid"], child_2["txid"]])
         assert_equal(node.getmempoolentry(ancestor_tx["txid"])["descendantcount"], 3)
 
@@ -632,6 +633,10 @@ class MempoolTRUC(BitcoinTestFramework):
                 assert_greater_than(get_fee(tx_v3_0fee_parent["tx"].get_vsize(), minrelayfeerate), 0)
                 # Always need to pay at least 1 satoshi for entry, even if minimum feerate is very low
                 assert_greater_than(total_v3_fee, 0)
+                # Also create a version where the child is at minrelaytxfee
+                tx_v3_child_minrelay = self.wallet.create_self_transfer(utxo_to_spend=tx_v3_0fee_parent["new_utxo"], fee_rate=minrelayfeerate, version=3)
+                result_truc_minrelay = node.submitpackage([tx_v3_0fee_parent["hex"], tx_v3_child_minrelay["hex"]])
+                assert_equal(result_truc_minrelay["package_msg"], "transaction failed")
 
             tx_v2_0fee_parent = self.wallet.create_self_transfer(fee=0, fee_rate=0, confirmed_only=True, version=2)
             tx_v2_child = self.wallet.create_self_transfer(utxo_to_spend=tx_v2_0fee_parent["new_utxo"], fee_rate=high_feerate, version=2)

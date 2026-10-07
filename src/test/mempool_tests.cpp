@@ -2,8 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <addresstype.h>
 #include <common/system.h>
 #include <policy/policy.h>
+#include <scheduler.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
 #include <util/time.h>
@@ -11,13 +13,99 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
-
+#include <array>
+#include <barrier>
 #include <limits>
+#include <thread>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
 
 static constexpr auto REMOVAL_REASON_DUMMY = MemPoolRemovalReason::REPLACED;
+
+BOOST_AUTO_TEST_CASE(DynamicDustFeePublication)
+{
+    CScheduler scheduler;
+    auto opts{MemPoolOptionsForTest(m_node)};
+    opts.scheduler = &scheduler;
+    opts.signals = nullptr;
+    opts.dust_relay_target = 1;
+    opts.dust_relay_multiplier = 1000;
+    opts.dust_relay_feerate = CFeeRate{3000};
+    opts.permitephemeral_send = false;
+    bilingual_str error;
+    CTxMemPool pool{opts, error};
+    BOOST_REQUIRE(error.empty());
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(COIN, CScript{} << std::vector<unsigned char>(1100, 0));
+    const auto txref{MakeTransactionRef(tx)};
+    const CAmount fee{100000};
+    AddToMempool(pool, TestMemPoolEntryHelper{}.Fee(fee).FromTx(txref));
+    const auto vsize{WITH_LOCK(pool.cs, return pool.GetEntry(txref->GetHash())->GetTxSize())};
+    const CFeeRate expected{fee * 1000 / vsize};
+    BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
+    pool.UpdateDynamicDustFeerate();
+    BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), expected.GetFeePerK());
+    CMutableTransaction probe;
+    probe.vin.resize(1);
+    const CScript destination{GetScriptForDestination(PKHash{})};
+    probe.vout.emplace_back(GetDustThreshold(CTxOut{0, destination}, opts.dust_relay_feerate), destination);
+    std::string reason;
+    BOOST_CHECK(IsStandardTx(CTransaction{probe}, opts, reason));
+    BOOST_CHECK(!IsStandardTx(CTransaction{probe}, pool.GetStandardnessOptions(), reason));
+    BOOST_CHECK_EQUAL(reason, "dust-nonanchor");
+
+    // Exercise the scheduler's writer concurrently with the public snapshot
+    // reader. The guarded state also exposes unsynchronized access to Clang's
+    // thread-safety analysis and race-detecting builds.
+    std::barrier start{2};
+    std::thread updater{[&] {
+        start.arrive_and_wait();
+        for (int i{0}; i < 1000; ++i) {
+            WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
+            pool.UpdateDynamicDustFeerate();
+            AddToMempool(pool, TestMemPoolEntryHelper{}.Fee(fee).FromTx(txref));
+            pool.UpdateDynamicDustFeerate();
+        }
+    }};
+    bool consistent{true};
+    start.arrive_and_wait();
+    for (int i{0}; i < 1000; ++i) {
+        const CFeeRate rate{pool.GetDustRelayFee()};
+        consistent &= rate == expected || rate == opts.dust_relay_feerate;
+    }
+    updater.join();
+    BOOST_CHECK(consistent);
+    BOOST_CHECK(pool.GetDustRelayFee() == expected);
+    WITH_LOCK(pool.cs, pool.removeRecursive(*txref, MemPoolRemovalReason::EXPIRY));
+    pool.UpdateDynamicDustFeerate();
+    BOOST_CHECK(pool.GetDustRelayFee() == opts.dust_relay_feerate);
+    reason.clear();
+    BOOST_CHECK(IsStandardTx(CTransaction{probe}, pool.GetStandardnessOptions(), reason));
+}
+
+BOOST_AUTO_TEST_CASE(MempoolExtraWeightBoundary)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(0, CScript{} << OP_RETURN << std::vector<unsigned char>(100, 0));
+    const CTransactionRef txref{MakeTransactionRef(tx)};
+    CCoinsView view;
+    CCoinsViewCache cache{&view};
+    const int32_t max_extra_weight{CalculateExtraTxWeight(*txref, cache, std::numeric_limits<unsigned int>::max())};
+    BOOST_REQUIRE_EQUAL(max_extra_weight, std::numeric_limits<int32_t>::max());
+    const int32_t tx_weight{GetTransactionWeight(*txref)};
+    for (const int32_t extra_weight : std::array<int32_t, 4>{0, 4, max_extra_weight - tx_weight, max_extra_weight}) {
+        const CTxMemPoolEntry entry{txref, 0, 0, 1, 0, COIN_AGE_CACHE_ZERO, false, extra_weight, 0, {}};
+        // Configured carrier cost can reach the clamp; its virtual size must
+        // remain positive and charge every weight unit across INT32_MAX.
+        BOOST_CHECK_EQUAL(entry.GetTxSize(), (int64_t{tx_weight} + extra_weight + 3) / 4);
+        BOOST_CHECK_GT(entry.GetTxSize(), 0);
+        BOOST_CHECK_EQUAL(entry.GetSizeWithAncestors(), entry.GetTxSize());
+        BOOST_CHECK_EQUAL(entry.GetSizeWithDescendants(), entry.GetTxSize());
+    }
+}
 
 class MemPoolTest final : public CTxMemPool
 {
@@ -473,12 +561,12 @@ BOOST_AUTO_TEST_CASE(MempoolSizeLimitTest)
     AddToMempool(pool, entry.Fee(500LL).FromTx(tx2));
 
     pool.TrimToSize(pool.DynamicMemoryUsage()); // should do nothing
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx1.GetHash())));
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx2.GetHash())));
+    BOOST_CHECK(pool.exists(tx1.GetHash()));
+    BOOST_CHECK(pool.exists(tx2.GetHash()));
 
     pool.TrimToSize(pool.DynamicMemoryUsage() * 3 / 4); // should remove the lower-feerate transaction
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx1.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx2.GetHash())));
+    BOOST_CHECK(pool.exists(tx1.GetHash()));
+    BOOST_CHECK(!pool.exists(tx2.GetHash()));
 
     AddToMempool(pool, entry.FromTx(tx2));
     CMutableTransaction tx3 = CMutableTransaction();
@@ -491,14 +579,14 @@ BOOST_AUTO_TEST_CASE(MempoolSizeLimitTest)
     AddToMempool(pool, entry.Fee(2000LL).FromTx(tx3));
 
     pool.TrimToSize(pool.DynamicMemoryUsage() * 3 / 4); // tx3 should pay for tx2 (CPFP)
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx1.GetHash())));
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx2.GetHash())));
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx3.GetHash())));
+    BOOST_CHECK(!pool.exists(tx1.GetHash()));
+    BOOST_CHECK(pool.exists(tx2.GetHash()));
+    BOOST_CHECK(pool.exists(tx3.GetHash()));
 
     pool.TrimToSize(GetVirtualTransactionSize(CTransaction(tx1))); // mempool is limited to tx1's size in memory usage, so nothing fits
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx1.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx2.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx3.GetHash())));
+    BOOST_CHECK(!pool.exists(tx1.GetHash()));
+    BOOST_CHECK(!pool.exists(tx2.GetHash()));
+    BOOST_CHECK(!pool.exists(tx3.GetHash()));
 
     CFeeRate maxFeeRateRemoved(2500, GetVirtualTransactionSize(CTransaction(tx3)) + GetVirtualTransactionSize(CTransaction(tx2)));
     BOOST_CHECK_EQUAL(pool.GetMinFee(1).GetFeePerK(), maxFeeRateRemoved.GetFeePerK() + pool.m_opts.incremental_relay_feerate.GetFeePerK());
@@ -558,19 +646,19 @@ BOOST_AUTO_TEST_CASE(MempoolSizeLimitTest)
 
     // we only require this to remove, at max, 2 txn, because it's not clear what we're really optimizing for aside from that
     pool.TrimToSize(pool.DynamicMemoryUsage() - 1);
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx4.GetHash())));
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx6.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx7.GetHash())));
+    BOOST_CHECK(pool.exists(tx4.GetHash()));
+    BOOST_CHECK(pool.exists(tx6.GetHash()));
+    BOOST_CHECK(!pool.exists(tx7.GetHash()));
 
-    if (!pool.exists(GenTxid::Txid(tx5.GetHash())))
+    if (!pool.exists(tx5.GetHash()))
         AddToMempool(pool, entry.Fee(100LL).FromTx(tx5));
     AddToMempool(pool, entry.Fee(900LL).FromTx(tx7));
 
     pool.TrimToSize(pool.DynamicMemoryUsage() / 2); // should maximize mempool size by only removing 5/7
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx4.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx5.GetHash())));
-    BOOST_CHECK(pool.exists(GenTxid::Txid(tx6.GetHash())));
-    BOOST_CHECK(!pool.exists(GenTxid::Txid(tx7.GetHash())));
+    BOOST_CHECK(pool.exists(tx4.GetHash()));
+    BOOST_CHECK(!pool.exists(tx5.GetHash()));
+    BOOST_CHECK(pool.exists(tx6.GetHash()));
+    BOOST_CHECK(!pool.exists(tx7.GetHash()));
 
     AddToMempool(pool, entry.Fee(100LL).FromTx(tx5));
     AddToMempool(pool, entry.Fee(900LL).FromTx(tx7));

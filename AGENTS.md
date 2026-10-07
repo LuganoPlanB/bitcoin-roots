@@ -6,8 +6,8 @@ applies to the whole tree unless a more specific `AGENTS.md` is added below it.
 ## Project identity and non-negotiable invariants
 
 This repository is **Bitcoin Roots**, not an unmodified Bitcoin Core or Bitcoin
-Knots checkout. It is a C++20 full-node, wallet, GUI, and utility suite based on
-Bitcoin Core with selected policy features inherited from Bitcoin Knots
+Knots checkout. It is a C++20 full-node, wallet, GUI, and utility suite based directly on
+Bitcoin Core v30.3, with selected historical policy features inherited from Bitcoin Knots
 `29.3.knots20260507`.
 
 Read `README.md` before changing behavior. In particular:
@@ -91,14 +91,14 @@ test file, register it in `src/test/CMakeLists.txt`,
 ## Toolchain and dependencies
 
 The minimums documented by this checkout are CMake 3.22, Python 3.10, GCC 11.1
-or Clang 16, Boost 1.73, and libevent 2.1.8. The code is compiled as C++20.
+or Clang 16, Boost 1.74, and libevent 2.1.8. The code is compiled as C++20.
 The default build is `RelWithDebInfo` (`-O2 -g` on typical Unix compilers).
 
 Minimal Debian/Ubuntu setup for a headless descriptor-wallet build:
 
 ```bash
 sudo apt-get install build-essential cmake pkgconf python3 \
-  libevent-dev libboost-dev libsqlite3-dev
+  libevent-dev libboost-dev libsqlite3-dev capnproto libcapnp-dev
 ```
 
 Common optional packages are `python3-zmq`, `libzmq3-dev`,
@@ -106,10 +106,10 @@ Common optional packages are `python3-zmq`, `libzmq3-dev`,
 packages. See `doc/build-unix.md` and `doc/dependencies.md` for the current full
 list and the macOS/BSD/Windows-specific documents under `doc/` for those hosts.
 
-Descriptor wallets use SQLite and are enabled by default. Legacy wallets need
-Berkeley DB and `-DWITH_BDB=ON`; release-compatible legacy wallets require BDB
-4.8, not the newer BDB commonly packaged by Linux distributions. A node-only
-build can avoid both databases with `-DENABLE_WALLET=OFF`.
+Descriptor wallets use SQLite and are enabled by default. Core 30.3 does not
+build Berkeley DB legacy wallets. Migration tests use pinned previous-release
+fixtures where needed. A node-only build avoids the wallet database with
+`-DENABLE_WALLET=OFF`.
 
 Do not install dependencies or run package-manager commands without user
 authorization. Prefer reporting the exact missing dependency. The `depends/`
@@ -138,7 +138,7 @@ cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
 # Headless node without wallet or GUI dependencies
 cmake -B build-node -DENABLE_WALLET=OFF -DBUILD_GUI=OFF
 
-# GUI (Qt 5 by default; use -DWITH_QT_VERSION=6 for Qt 6)
+# GUI (Qt 6 by default; use -DWITH_QT_VERSION=5 for optional Qt 5)
 cmake -B build-gui -DBUILD_GUI=ON
 
 # Treat warnings as errors for CI-like compilation
@@ -156,10 +156,10 @@ cmake --preset dev-mode
 cmake --build build_dev_mode -j 4
 ```
 
-Important current-build nuance: root `CMakeLists.txt` unconditionally sets
-`WITH_MULTIPROCESS` to `OFF`, even though the inherited `dev-mode` preset asks
-for it to be on. Treat the generated CMake summary as truth; do not assume the
-preset succeeded in enabling multiprocess support.
+Native Core IPC/libmultiprocess support is retained. Use `-DENABLE_IPC=OFF`
+for a deliberately limited profile when Cap'n Proto is unavailable; do not
+claim that profile proves IPC functionality. Treat the generated CMake summary
+as truth when checking which optional components a preset enables.
 
 Build only the target needed during iteration, for example:
 
@@ -473,5 +473,6 @@ Before assigning a permanent release tag:
    publication: its upload path can replace existing release assets.
 
 The detailed commands and branch maintenance rules are in
-`contrib/roots/README.md`. The local Bitcoin Core v29.4 tag is signed, but the
-signer public key is absent; do not claim local cryptographic verification.
+`contrib/roots/README.md`. Authenticate the official Core tag and its signer
+key through independent trusted sources, run `git verify-tag v30.3`, and record
+both the signature result and its trust basis before claiming verification.
