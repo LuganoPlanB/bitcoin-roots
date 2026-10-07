@@ -28,7 +28,11 @@ class MempoolUpdateFromBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # Ancestor and descendant limits depend on transaction_graph_test requirements
-        self.extra_args = [['-limitdescendantsize=1000', '-limitancestorsize=1000', f'-limitancestorcount={CUSTOM_ANCESTOR_COUNT}', f'-limitdescendantcount={CUSTOM_DESCENDANT_COUNT}']]
+        # The 100-transaction ancestor graph must fit in one cleanup block;
+        # this fixture tests reorg accounting rather than the Roots template cap.
+        # Large padded parents exercise disconnect-pool byte trimming, not
+        # data-carrier or script-size admission policy.
+        self.extra_args = [['-blockmaxweight=4000000', '-datacarriersize=1000000', '-maxscriptsize=1000000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1', '-limitdescendantsize=1000', '-limitancestorsize=1000', f'-limitancestorcount={CUSTOM_ANCESTOR_COUNT}', f'-limitdescendantcount={CUSTOM_DESCENDANT_COUNT}']]
 
     def create_empty_fork(self, fork_length):
         '''

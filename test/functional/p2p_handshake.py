@@ -83,7 +83,7 @@ class P2PHandshakeTest(BitcoinTestFramework):
             version.strSubVer = P2P_SUBVERSION
             version.nServices = P2P_SERVICES
             version.nStartingHeight = fake_startheight
-            peer.send_message(version)
+            peer.send_without_ping(version)
             peer.wait_for_verack()
             peer_info = node.getpeerinfo()[-1]
             assert_equal(peer_info['startingheight'], fake_startheight)
