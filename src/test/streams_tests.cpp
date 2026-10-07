@@ -95,6 +95,7 @@ BOOST_AUTO_TEST_CASE(autofile_empty_write)
         AutoFile file{fsbridge::fopen(path, "wb")};
         file << std::span{empty};
         file << std::byte{0x2a};
+        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
     }
     {
         AutoFile file{fsbridge::fopen(path, "rb")};
