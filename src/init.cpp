@@ -684,7 +684,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-maxscriptsize=<n>", strprintf("Maximum size of scripts (including the witness stack) we relay and mine (default: %s)", DEFAULT_SCRIPT_SIZE_POLICY_LIMIT), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-maxtxlegacysigops", strprintf("Maximum legacy sigops in transactions we relay and mine (default: %s)", MAX_TX_LEGACY_SIGOPS), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-mempoolfullrbf", strprintf("Accept transaction replace-by-fee without requiring replaceability signaling (default: %u)", DEFAULT_MEMPOOL_RBF_POLICY == RBFPolicy::Always), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-mempoolreplacement", "Set RBF policy: 0 disables, fee,optin honors signaling, and fee,-optin enables full RBF (default: fee,-optin)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempoolreplacement", "Set RBF policy: 0 disables, fee,optin honors signaling or TRUC/v3 replaceability, and fee,-optin enables full RBF (default: fee,-optin)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-mempooltruc", "Set TRUC policy: reject, accept, or enforce (default: enforce)", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaycoinblocks=<n>", strprintf("Minimum coin blocks a transaction must spend to be relayed (default: %s)", DEFAULT_MINRELAYCOINBLOCKS), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaymaturity=<n>", strprintf("Minimum input maturity before relay (default: %s)", DEFAULT_MINRELAYMATURITY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
