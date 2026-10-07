@@ -29,6 +29,7 @@
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <script/solver.h>
+#include <support/lockedpool.h>
 #include <test/util/setup_common.h>
 #include <util/rbf.h>
 #include <validation.h>
@@ -70,6 +71,12 @@ using wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS;
 using wallet::WalletContext;
 using wallet::WalletDescriptor;
 using wallet::WalletRescanReserver;
+
+struct SweepDialogTestAccess
+{
+    static SecureString& Cache(SweepDialog& dialog) { return dialog.m_private_key_cache; }
+    static void ClearCache(SweepDialog& dialog) { dialog.clearPrivateKeyCache(); }
+};
 
 namespace
 {
@@ -312,6 +319,19 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 
     // Verify the guarded sweep dialog contract and asynchronous error path.
     SweepDialog sweep_dialog(&walletModel);
+    auto& sweep_cache{SweepDialogTestAccess::Cache(sweep_dialog)};
+    // Disposal must release locked storage while the dialog stays alive;
+    // observe allocator accounting rather than dereferencing freed memory.
+    const auto locked_bytes_before{LockedPoolManager::Instance().stats().used};
+    sweep_cache.assign(52, 's');
+    QVERIFY(LockedPoolManager::Instance().stats().used > locked_bytes_before);
+    SweepDialogTestAccess::ClearCache(sweep_dialog);
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(LockedPoolManager::Instance().stats().used, locked_bytes_before);
+    sweep_cache.assign(4, 's');
+    SweepDialogTestAccess::ClearCache(sweep_dialog);
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(LockedPoolManager::Instance().stats().used, locked_bytes_before);
     QLineEdit* sweep_key = sweep_dialog.findChild<QLineEdit*>("sweepPrivateKey");
     QLineEdit* sweep_destination = sweep_dialog.findChild<QLineEdit*>("sweepDestination");
     QPushButton* sweep_preview = sweep_dialog.findChild<QPushButton*>("sweepPreview");
@@ -356,6 +376,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(!sweep_key->isEnabled());
     QVERIFY(sweep_key->text().isEmpty());
     QTRY_VERIFY(sweep_key->isEnabled());
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
     QVERIFY(!sweep_result->text().contains(sweep_sentinel));
     QVERIFY(!QString::fromStdString(sweep_logs.output).contains(sweep_sentinel));
 
@@ -366,6 +388,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // A competing wallet update must discard the transient key and preview
     // immediately, rather than relying on broadcast-time stale detection.
     walletModel.updateTransaction();
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
     QVERIFY(sweep_key->isEnabled());
     QVERIFY(sweep_key->text().isEmpty());
     QVERIFY(!sweep_broadcast->isEnabled());
@@ -375,6 +399,8 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(!sweep_broadcast->isEnabled());
     sweep_dialog.reject();
     QVERIFY(sweep_key->text().isEmpty());
+    QVERIFY(sweep_cache.empty());
+    QCOMPARE(sweep_cache.capacity(), SecureString{}.capacity());
 
     const auto settings_contain_sentinel = [&] {
         QSettings settings;
