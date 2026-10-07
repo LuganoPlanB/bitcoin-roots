@@ -4,10 +4,13 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from pathlib import Path
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -73,6 +76,37 @@ class ReleaseVersionTest(unittest.TestCase):
             capture_output=True, text=True, check=True,
         )
         self.assertEqual(result.stdout.strip(), "bitcoin-roots-30.3-roots.1")
+
+    def test_macos_deployment_verifies_the_branded_archive(self):
+        script = (ROOT / "ci/test/03_test_script.sh").read_text(encoding="utf-8")
+        start = script.index('if [[ "$CI_OS_NAME" == "macos"')
+        block = script[start:script.index('if [ "$RUN_UNIT_TESTS"', start)]
+        client_name = re.search(r'set\(CLIENT_NAME "([^"]+)"\)', BUILD_CONFIG.read_text()).group(1)
+        with tempfile.TemporaryDirectory(prefix="roots-macos-deployment-") as directory:
+            build = Path(directory)
+            with zipfile.ZipFile(build / f"{client_name.replace(' ', '-')}.zip", "w") as archive:
+                archive.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", "fixture")
+            tools = build / "tools"
+            tools.mkdir()
+            codesign = tools / "codesign"
+            codesign.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" > "$CODESIGN_LOG"\nexit "$CODESIGN_STATUS"\n',
+                encoding="utf-8",
+            )
+            codesign.chmod(0o755)
+            log = build / "codesign.log"
+            for status in (0, 1):
+                with self.subTest(codesign_status=status):
+                    shutil.rmtree(build / "deploy", ignore_errors=True)
+                    result = subprocess.run(
+                        ["bash", "-ec", block],
+                        env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                             "BASE_BUILD_DIR": str(build), "CI_OS_NAME": "macos", "GOAL": "install deploy",
+                             "CODESIGN_LOG": str(log), "CODESIGN_STATUS": str(status)},
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    self.assertEqual(log.read_text().strip(), f"--verify {build}/deploy/Bitcoin-Qt.app")
 
     def test_workflow_builds_tags_and_rehearses_explicit_canonical_commits(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
