@@ -277,8 +277,7 @@ struct RemovedMempoolTransactionInfo {
 struct NewMempoolTransactionInfo {
     TransactionInfo info;
     /*
-     * This boolean indicates whether the transaction was added
-     * without enforcing mempool fee limits.
+     * Nonempty when the transaction bypassed configured mempool policy checks.
      */
     const ignore_rejects_type m_ignore_rejects;
     /* This boolean indicates whether the transaction is part of a package. */
@@ -301,14 +300,6 @@ struct NewMempoolTransactionInfo {
           m_submitted_in_package{submitted_in_package},
           m_chainstate_is_current{chainstate_is_current},
           m_has_no_mempool_parents{has_no_mempool_parents} {}
-
-    NewMempoolTransactionInfo(const CTransactionRef& tx, const CAmount& fee,
-                              const int64_t vsize, const unsigned int height,
-                              const bool mempool_limit_bypassed, const bool submitted_in_package,
-                              const bool chainstate_is_current, const bool has_no_mempool_parents)
-        : NewMempoolTransactionInfo(tx, fee, vsize, height,
-                                    empty_ignore_rejects,
-                                    submitted_in_package, chainstate_is_current, has_no_mempool_parents) {}
 };
 
 #endif // BITCOIN_KERNEL_MEMPOOL_ENTRY_H
