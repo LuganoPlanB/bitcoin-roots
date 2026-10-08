@@ -21,6 +21,10 @@ if [[ ! -f "$manifest" ]]; then
     exit 1
 fi
 if [[ -z "${BITCOIN_ROOTS_GPG_SK:-}" ]]; then
+    if [[ "${REQUIRE_RELEASE_SIGNATURE:-0}" == 1 ]]; then
+        printf 'Required release signing key is not configured\n' >&2
+        exit 1
+    fi
     printf 'BITCOIN_ROOTS_GPG_SK is not configured; publishing an unsigned manifest\n' >&2
     exit 0
 fi

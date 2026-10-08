@@ -6,6 +6,7 @@
 import hashlib
 import io
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tarfile
@@ -119,7 +120,7 @@ class PrepareReleaseTest(unittest.TestCase):
                     subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
                                     "--copying", ROOT / "COPYING"], check=True)
 
-    def test_actual_unix_workflow_intermediate_repacks_and_prepares(self):
+    def test_actual_unix_workflow_stages_notices_and_prepares(self):
         lines = (ROOT / ".github/workflows/release.yml").read_text().splitlines()
         def packaging_block(name):
             start = lines.index(f"      - name: {name}")
@@ -137,7 +138,7 @@ class PrepareReleaseTest(unittest.TestCase):
                     out = work / "out"
                     out.mkdir()
                     environment = {**os.environ, "RUNNER_TEMP": str(work / "runner"),
-                                   "BASE_OUTDIR": str(out), "ARTIFACT_NAME": f"bitcoin-roots-{platform}",
+                                   "BASE_OUTDIR": str(out), "BASE_BUILD_DIR": str(work / "runner"), "ARTIFACT_NAME": f"bitcoin-roots-{platform}",
                                    "RELEASE_TAG": "v30.3-roots.1", "GITHUB_WORKSPACE": str(work)}
                     if platform.startswith("linux"):
                         (out / "payload").write_bytes(b"binary fixture")
@@ -148,6 +149,8 @@ class PrepareReleaseTest(unittest.TestCase):
                         with zipfile.ZipFile(deploy / "Bitcoin-Roots.zip", mode="w") as package:
                             package.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", b"binary fixture")
                         block = packaging_block("Stage release package")
+                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
+                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "runner/release-notices/notices")
                     subprocess.run(["bash", "-c", block], cwd=ROOT, env=environment, check=True)
                     archive = next((work / "runner/release-packages").iterdir())
                     member = "bitcoin-roots-30.3-roots.1/COPYING"
@@ -160,13 +163,12 @@ class PrepareReleaseTest(unittest.TestCase):
                             notice = package.read(member)
                             self.assertEqual(package.read("bitcoin-roots-30.3-roots.1/Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt"), b"binary fixture")
                     self.assertEqual(notice, (ROOT / "COPYING").read_bytes())
-                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
-                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "notice-inputs")
+                    subprocess.run(["python3", ROOT / "ci/release/notices.py", "validate", archive,
+                                    "bitcoin-roots-30.3-roots.1", platform], check=True)
                     downloads = work / "assembled-downloads"
                     downloads.mkdir()
                     assembled = downloads / archive.name
-                    subprocess.run(["python3", notice_fixtures.REPACK_TOOL, archive, assembled,
-                                    "bitcoin-roots-30.3-roots.1", work / "notice-inputs/index.json", platform], check=True)
+                    shutil.copyfile(archive, assembled)
                     (downloads / "series.patch").write_text("patch\n")
                     subprocess.run([SCRIPT, downloads, work / "release-assets", PUBLIC_KEY,
                                     "v30.3-roots.1", "1"], check=True)

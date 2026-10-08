@@ -454,22 +454,28 @@ series contains inherited CRLF files, apply the released mbox with
 
 Before assigning a permanent release tag:
 
-1. Merge the reviewed promotion PR and verify its tree equals the canonical tip.
-2. Dispatch `Release artifacts` from `main` with the future Roots tag and the
-   full 40-hex `origin/roots/<core-version>` commit.
-3. Require all five platform builds and independently inspect the packages and
-   patch. Assemble and review platform-specific notices and the final asset
-   packet using `ci/release/README.md` before tagging. Manual rehearsal must
-   create neither a remote tag nor a release.
-4. Re-fetch refs, create one annotated tag at the unchanged canonical tip, run
-   the release-source validator, and push only that tag. Never move it.
-5. Permanent tags do not start builds or create a draft. Use
-   `ci/release/create-draft.py` with the approved commit, asset manifest and notes
-   digests to validate the permanent remote tag and create a new draft. Verify
-   downloaded draft packages, patch, checksums, notes and actual signing status
-   before publishing the unchanged draft under separate authority.
-6. Repeat tag, asset, checksum, and signature-if-present verification through an
-   unauthenticated client after publication.
+1. Complete independent source review and merge the reviewed promotion. Verify
+   canonical product equality and enumerate repository-only main exceptions.
+2. A manual `Release artifacts` dispatch may rehearse an absent future tag at
+   its full canonical commit. It builds all five platforms and their exact
+   runner dependency notices with read-only permissions; it cannot sign or
+   create a release.
+3. Review the source, required CI and rehearsal evidence. Keep the canonical
+   tip stable. Re-fetch refs, create one annotated tag explicitly at the reviewed
+   canonical commit, run the release-source validator and push only that tag.
+4. The tag push builds all five platforms anew, captures installed dependency
+   notices in each runner and generates/replays the portable patch. Only the
+   tag-only `release` environment job receives the organization signing secret.
+   It requires a manifest signature with the checked-in release-key fingerprint,
+   verifies exactly eight assets and creates only a new draft. Missing signing
+   capability or an existing draft/public release fails; no clobber or deletion.
+5. Independently download all eight draft assets. Verify tag/source, checksums,
+   signature trust, archives, notices, patch replay, contributor credit and
+   separate Git-tag/platform-code signing disclosures. Public visibility needs
+   separate authority after this concrete verification.
+6. Repeat verification through an unauthenticated client after publication.
+   Never replace a published tag or asset. Interrupted draft creation requires
+   operator inspection, not an automatic create/upload retry.
 
 The detailed commands and branch maintenance rules are in
 `contrib/roots/README.md`. Authenticate the official Core tag and its signer

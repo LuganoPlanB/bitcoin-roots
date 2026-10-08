@@ -243,29 +243,24 @@ git check-ref-format "refs/tags/$release_tag"
 git fetch origin roots/30.3
 git fetch https://github.com/bitcoin/bitcoin.git \
     refs/tags/v30.3:refs/tags/v30.3
-git tag --annotate "$release_tag" -m "Bitcoin Roots $release_tag"
+release_commit=$(git rev-parse origin/roots/30.3^{commit})
+git tag --annotate "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
 git rev-parse "$release_tag^{commit}"
 test "$(git rev-parse "$release_tag^{commit}")" = \
     "$(git rev-parse origin/roots/30.3^{commit})"
 ci/release/validate-release-source.sh "$release_tag"
 ```
 
-Run the retained release metadata tests before pushing:
+Run the retained CI/release metadata tests before pushing (this includes signing,
+portable-patch replay, runner notices and signed-draft gates):
 
 ```sh
-python3 ci/test/test_prepare_release.py
-python3 ci/test/test_release_notices.py
-python3 ci/test/test_create_release_draft.py
-python3 ci/test/test_prepare_release_source.py
-python3 ci/test/test_create_patch_series.py
-python3 ci/test/test_sign_manifest.py
-python3 ci/test/test_validate_release_tag.py
-python3 ci/test/test_validate_release_source.py
-python3 ci/test/test_release_version.py
+python3 -m unittest discover -s ci/test
 ```
 
 A release tag does not need to be reachable from `main`. Permanent tag pushes
-do not dispatch builds or upload assets. Release validation requires the tag
+start fresh five-platform builds and a tag-only signed-draft job; manual
+dispatch remains a read-only rehearsal. Release validation requires the tag
 target to match its canonical `roots/<core-version>` branch. The release patch
 is generated from the Core tag and canonical commits at release time and is not
 checked into the repository. It deliberately excludes `.github/**`: Roots'
@@ -288,22 +283,28 @@ The series contains inherited CRLF files. Apply the released mbox with
 those bytes. Replay verification uses the same command and checks tree equality
 outside `.github/**`.
 
-The read-only manual workflow builds Linux x86_64/aarch64, macOS x86_64/arm64
-and Windows x86_64 intermediates plus the portable patch. Assemble the reviewed
-notices and final assets through `ci/release/README.md` before tagging. Pin the
-exact candidate commit, six asset checksums, manifest digest and curated notes
-digest in the release review. A packaging-only correction must reconcile the
-source/patch and disclose the original build source; it must not relabel older
-executables as newly built.
+Both workflow paths build Linux x86_64/aarch64, macOS x86_64/arm64 and Windows
+x86_64 packages, collecting exact installed dependency notices in each runner
+before archive upload. Linux uses pinned verified depends sources, macOS uses
+matching installed Homebrew receipts/source hashes and actual bundle linkage,
+and Windows uses installed static-triplet port copyrights/versions. Missing or
+mismatched evidence fails. See `ci/release/README.md` for the collection interface.
 
-After an explicitly authorized immutable annotated tag is pushed, use the
-verified-assets draft helper documented in `ci/release/README.md`. It rechecks
-the remote canonical/tag identities, notices, checksums and exact replayed
-patch, and refuses any existing release. It does not build or publish. The
-current helper accepts an unsigned seven-file packet; describe manifest, tag
-and platform signing separately and accurately. The existing
-`sign-manifest.sh` interface remains available for separately authorized signing,
-but signed packets require a separate reviewed handoff. Independently download
-and verify the draft's archives, patch, checksums, notes, tag target and source
-before changing only its visibility under publication authority. Never replace
-published tags/assets or use `--clobber`.
+The tag-only `release` environment job waits for all five builds and the patch,
+downloads only its own run's outputs and runs `prepare-release.sh`. It requires
+the existing organization secret `BITCOIN_ROOTS_GPG_SK`, confined to the signing
+step, and verifies checked-in public-key fingerprint
+`5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`. Missing signing capability fails.
+`create-ci-draft.py` independently verifies the detached manifest signature,
+packet/source/patch and fresh remote identities, and creates only a new draft
+with exactly eight assets: five archives, patch, SHA512SUMS and SHA512SUMS.asc.
+Every existing draft/public release blocks creation. There is no update,
+clobber, deletion or replacement branch; interrupted creation requires operator
+inspection, never an automatic retry that replaces partial assets.
+
+Curated notes retain contributor credit, including #24/#25, and the CI draft
+adds the actual fresh run/source identity and signing disclosures. Manifest
+signing is separate from Git-tag and platform-code signing. Independently
+download and verify all eight draft assets and notes before separately authorized
+visibility-only publication. Verify the public release again unauthenticated.
+Never replace published tags/assets; maintenance uses a reviewed new release.
