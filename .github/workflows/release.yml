@@ -138,8 +138,9 @@ jobs:
           package_dir="${RUNNER_TEMP}/release-packages"
           archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
           mkdir -p "$package_dir"
+          python3 ci/release/archive.py stage-copying "$BASE_OUTDIR"
           tar -C "$BASE_OUTDIR" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
-          python3 ci/release/archive.py validate "$archive" "$archive_root"
+          python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -216,8 +217,10 @@ jobs:
           if (-not (Test-Path -PathType Leaf (Join-Path $installDir "bin\bitcoin-qt.exe"))) {
             throw "Installed Windows GUI does not exist"
           }
+          & python ci/release/archive.py stage-copying $installDir
+          if ($LASTEXITCODE -ne 0) { throw "Failed to stage COPYING" }
           Compress-Archive -Path $installDir -DestinationPath $archive
-          & python ci/release/archive.py validate $archive $archiveRoot
+          & python ci/release/archive.py validate $archive $archiveRoot --copying COPYING
           if ($LASTEXITCODE -ne 0) { throw "Invalid Windows release archive" }
 
       - name: Upload unsigned release package
@@ -306,9 +309,10 @@ jobs:
           trap 'rm -rf -- "$staging_parent"' EXIT
           mkdir -p "${staging_parent}/${archive_root}" "$package_dir"
           unzip -q "${packages[0]}" -d "${staging_parent}/${archive_root}"
+          python3 ci/release/archive.py stage-copying "${staging_parent}/${archive_root}"
           archive="${package_dir}/${ARTIFACT_NAME}.zip"
           (cd "$staging_parent" && zip -qry "$archive" "$archive_root")
-          python3 ci/release/archive.py validate "$archive" "$archive_root"
+          python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -318,6 +322,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # Platform outputs are intermediate until reviewed notices are assembled.
+  # prepare-release.sh requires platform-specific notices before producing a
+  # manifest; this draft path fails closed on unassembled build artifacts.
+  # See ci/release/README.md for the explicit reviewed-input assembly interface.
   publish-release:
     name: Create draft release
     if: github.event_name == 'push'
