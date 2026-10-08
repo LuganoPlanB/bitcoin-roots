@@ -19,7 +19,7 @@ import notices
 
 
 def run(*command):
-    return subprocess.check_output(command, text=True).strip()
+    return subprocess.check_output(command, text=True, encoding='utf8').strip()
 
 
 def sha256(path):
