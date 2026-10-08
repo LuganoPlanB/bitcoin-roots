@@ -255,6 +255,25 @@ git push --force-with-lease origin HEAD:<branch>
 
 Never force-push release tags. Preserve archival branches.
 
+## Reusing canonical CI for a pure main promotion
+
+Run ordinary fix CI, review it and integrate the canonical topic by fast-forward
+before opening/updating its main promotion PR. Preserve a two-parent promotion
+with current main first and the exact current canonical tip second.
+`verify-promotion-ci.py` checks blob/mode/symlink parity outside the reviewed
+main-only website/guidance/lint exceptions; CI and release workflows are never
+exceptions. It requires the latest complete successful PR Tests run at the exact
+candidate, in this repository, targeting its canonical branch, with successful
+classifier, lint and required-result jobs. Claimed promotion proof mismatches
+fail; they do not waive tests. Ordinary PRs retain normal CI.
+
+A proven promotion reuses compiled-test results, while its classifier/regression
+suite, lint and applicable independent main docs/site checks still run. Explicit
+`ci:full` or other `ci:*` coverage labels keep requested fresh tests. Open the
+promotion after source CI passes so no duplicate matrix is scheduled while
+candidate evidence is incomplete. Optional checks do not claim reproducible
+binaries, and existing release tags cannot be manually rehearsed.
+
 ## Release handoff
 
 Complete independent review of the canonical implementation before assigning a
@@ -264,15 +283,20 @@ review; they cannot replace it.
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
 Before creating a permanent tag, merge the reviewed promotion so the trusted
-workflow is present on the default branch. Then dispatch `Release artifacts`
-with the future tag name and the full 40-hex canonical commit. Manual dispatch
+workflow is present on the default branch. The default path tags the reviewed
+canonical source once; the tag runs fresh five-platform builds, required
+manifest signing and new-draft creation. Independently verify that draft before
+separate publication approval.
+
+An optional `Release artifacts` manual dispatch rehearses an absent future tag
+at the full 40-hex canonical commit. Manual dispatch
 fetches the official Core tag from the Bitcoin Core repository, verifies the
 commit against `origin/roots/<core-version>`, creates an annotated tag only in
 each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
 
-Coordinate a stable canonical tip through rehearsal, immutable tagging and
+Coordinate a stable canonical tip through required CI, immutable tagging and
 signed CI draft verification. Each build job and the CI draft helper refreshes
 canonical-tip equality; pinned inputs alone do not prevent branch advancement
 from invalidating a gate. If source changes before tagging, renew source review
@@ -286,10 +310,10 @@ scripts from that tagged source, builds all five platforms anew, then signs the
 manifest and creates a new draft in the `release` environment. Require the
 workflow and script interfaces to agree between reviewed main and canonical
 revisions. Include necessary workflow fixes on the canonical branch before
-promotion and rehearsal. Public publication still needs separate approval after
-independent signed-draft verification.
+promotion and tagging (and any optional rehearsal). Public publication still
+needs separate approval after independent signed-draft verification.
 
-For example (substitute the actual reviewed candidate):
+For an explicitly requested optional rehearsal (substitute the reviewed candidate):
 
 ```sh
 release_tag=v30.3-roots.1
@@ -299,12 +323,16 @@ gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
 ```
 
-Download and inspect that run's five packages and patch artifact before
-assigning the permanent version. After the rehearsal passes, fetch again and
-verify the annotated tag target and ancestry immediately before pushing it:
+When requested, download and inspect the optional rehearsal's packages and
+patch. It does not replace the final tag run or establish binary reproducibility.
+Corrections renew source review, required CI and affected final-build verification.
+An optional rehearsal remains optional; repeat it only when explicitly requested.
+A failed final build requires diagnosis and renewed affected verification.
+Fetch again and verify the annotated tag target and ancestry
+immediately before pushing:
 
 ```sh
-# In a dedicated release worktree, retain the reviewed rehearsal commit.
+# In a dedicated release worktree, retain the reviewed canonical commit.
 release_tag=v30.3-roots.1
 release_commit=REPLACE_WITH_REVIEWED_40_HEX_COMMIT
 git check-ref-format "refs/tags/$release_tag"
@@ -357,11 +385,11 @@ those bytes. Replay verification uses the same command and checks tree equality
 outside `.github/**`.
 
 Both workflow paths build Linux x86_64/aarch64, macOS x86_64/arm64 and Windows
-x86_64 packages, collecting exact installed dependency notices in each runner
-before archive upload. Linux uses pinned verified depends sources, macOS uses
-matching installed Homebrew receipts/source hashes and actual bundle linkage,
-and Windows uses installed static-triplet port copyrights/versions. Missing or
-mismatched evidence fails. See `ci/release/README.md` for the collection interface.
+x86_64 packages, preserving existing project license files and staging canonical
+`COPYING` before archive upload. The user deferred expanded dependency
+copyright/REUSE coverage to future releases. Dependency notice collection and
+its schema are optional tooling, not a current release gate; no complete
+coverage claim is made. See `ci/release/README.md` for that optional interface.
 
 The tag-only `release` environment job waits for all five builds and the patch,
 downloads only its own run's outputs and runs `prepare-release.sh`. It requires

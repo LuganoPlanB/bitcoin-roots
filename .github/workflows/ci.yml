@@ -47,11 +47,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
       - name: Run classifier regression tests
         run: |
           python3 ci/test/test_change_classifier.py
+          python3 ci/test/test_promotion_ci.py
           python3 ci/test/test_gui_qrencode.py
           python3 ci/test/test_fuzz_workflows.py
           python3 ci/test/test_sanitizer_workflows.py
@@ -100,16 +101,29 @@ jobs:
             }
             fs.writeFileSync('changed-files.json', JSON.stringify([...files]));
             core.setOutput('error', error ? 'true' : 'false');
+      - name: Verify canonical CI reuse for pure promotion
+        id: promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ci/verify-promotion-ci.py
       - name: Select CI groups
         id: classify
         env:
           LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
           FILES_ERROR: ${{ steps.files.outputs.error }}
+          REUSE_CANONICAL_CI: ${{ steps.promotion.outputs.reuse }}
         run: |
           set -Eeuo pipefail
           args=()
+          if [[ "${REUSE_CANONICAL_CI}" == "true" && "${FILES_ERROR}" == "true" ]]; then
+            printf 'Promotion changed-file inventory is incomplete\n' >&2
+            exit 1
+          fi
           if [[ "${FILES_ERROR}" == "true" ]]; then
             args+=(--error --truncated)
+          fi
+          if [[ "${REUSE_CANONICAL_CI}" == "true" && "${FILES_ERROR}" != "true" ]]; then
+            args+=(--reuse-canonical-ci)
           fi
           python3 ci/change-classifier.py \
             --files-json "$(<changed-files.json)" \

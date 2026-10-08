@@ -50,7 +50,7 @@ def classify_path(path, policy):
     return "unknown"
 
 
-def result_for(files, labels, truncated, error, policy):
+def result_for(files, labels, truncated, error, policy, reuse_canonical_ci=False):
     complete = (isinstance(files, list) and isinstance(labels, list) and
                 all(isinstance(label, str) for label in labels) and
                 not truncated and not error)
@@ -88,6 +88,11 @@ def result_for(files, labels, truncated, error, policy):
             selected[label.removeprefix("ci:")] = True
     if selected["nightly_full"]:
         selected.update({name: False for name in OPTIONAL_SELECTION if name != "nightly_full"})
+    if reuse_canonical_ci and complete and "unknown" not in categories and not labels:
+        # The caller has verified exact canonical CI and promotion tree parity.
+        # Baseline lint/classifier and separate main documentation checks remain.
+        selected.update({name: False for name in BROAD_SELECTION})
+        broad = False
     return {
         "version": policy["version"],
         "categories": [category for category in KNOWN_CATEGORIES if category in categories],
@@ -118,6 +123,8 @@ def main():
     parser.add_argument("--truncated", action="store_true", help="Fail open because the file list is incomplete")
     parser.add_argument("--error", action="store_true", help="Fail open because file retrieval failed")
     parser.add_argument("--github-output", help="Path to append GitHub Actions outputs")
+    parser.add_argument("--reuse-canonical-ci", action="store_true",
+                        help="Suppress duplicate compiled jobs after verified promotion proof")
     args = parser.parse_args()
     try:
         files = load_json(args.files_json, "--files-json")
@@ -128,7 +135,8 @@ def main():
                 tuple(policy["labels"]) != KNOWN_LABELS or
                 set(policy["defaults"]) != {"baseline", *KNOWN_CATEGORIES}):
             raise ValueError("policy has an unsupported schema")
-        result = result_for(files, labels, args.truncated, args.error, policy)
+        result = result_for(files, labels, args.truncated, args.error, policy,
+                            args.reuse_canonical_ci)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         # The script itself must fail open if its API or policy interface changes.
         result = result_for(None, None, True, True, SAFE_POLICY)

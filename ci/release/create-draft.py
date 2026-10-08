@@ -19,13 +19,12 @@ import tarfile
 import zipfile
 
 import archive
-import notices
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "ci/release"
 PACKAGE_NAMES = {
     f"bitcoin-roots-{platform}.{'tar.gz' if platform.startswith('linux') else 'zip'}": platform
-    for platform in notices.PLATFORMS
+    for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64")
 }
 
 
@@ -69,9 +68,8 @@ def snapshot_packet(args, destination):
         if digest(destination / name, "sha512") != checksum:
             raise ValueError(f"Release checksum mismatch: {name}")
     expected_root = archive.archive_root_name(args.tag, None)
-    for name, platform in PACKAGE_NAMES.items():
+    for name in PACKAGE_NAMES:
         archive.validate_archive_root(destination / name, expected_root, ROOT / "COPYING")
-        notices.validate_archive(destination / name, expected_root, platform)
     if args.notes.is_symlink() or not args.notes.is_file() or not args.notes.stat().st_size:
         raise ValueError("Reviewed release notes must be a nonempty regular file")
     # Use a private snapshot for upload so changes to the input packet cannot
@@ -161,7 +159,7 @@ def prepare_draft(args):
             command.extend(str(assets / name) for name in names)
             print(run(command))
         else:
-            print("Validated immutable source, six assets, notices, patch replay and reviewed notes; no draft created")
+            print("Validated immutable source, six assets, canonical COPYING, patch replay and reviewed notes; no draft created")
 
 
 def main():

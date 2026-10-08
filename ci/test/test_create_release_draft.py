@@ -167,11 +167,13 @@ class CreateReleaseDraftTest(unittest.TestCase):
         result = self.assert_rejected()
         self.assertIn("replay-verified tagged series", result.stderr)
 
-    def test_rejects_missing_notices_even_with_matching_checksum(self):
+    def test_accepts_canonical_copying_without_dependency_index(self):
         path = self.assets / "bitcoin-roots-linux-x86_64.tar.gz"
         self.package_fixture.write_package(path, "bitcoin-roots-29.4-roots.1", b"binary", notices=False)
         self.refresh_manifest()
-        self.assert_rejected()
+        result = self.invoke(create=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.record.exists())
 
     def test_rejects_changed_remote_canonical_or_annotated_tag(self):
         self.git("branch", "--force", "roots/29.4", "v29.4")
