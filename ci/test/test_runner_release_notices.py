@@ -81,7 +81,14 @@ class RunnerNoticeTest(unittest.TestCase):
                    'versions': {'stable': '1.88.0'}, 'urls': {'stable': {'url': 'https://example.invalid/source', 'checksum': checksum}}}
         def execute(*args):
             if args[:2] == ('brew', 'deps'):
-                return 'boost\nca-certificates\nqt\nqtbase\nqtwebengine'
+                # Homebrew recurses by default; multi-formula intersection
+                # drops dependencies that only one requested formula needs.
+                self.assertEqual(args, ('brew', 'deps', '--installed', '--union',
+                                       'qt@6', 'boost', 'libevent', 'zeromq',
+                                       'qrencode', 'miniupnpc', 'capnp'))
+                required = runner.notices.required_components('darwin-arm64') - {'qt', 'sqlite', 'openssl', 'icu'}
+                return '\n'.join(sorted(required | {'ca-certificates', 'qt', 'qtbase',
+                                                     'qtwebengine', 'openssl@3', 'icu4c@78'}))
             if args[:2] == ('brew', 'info'):
                 if args[-1] == 'boost':
                     return json.dumps({'formulae': [formula]})
@@ -96,6 +103,7 @@ class RunnerNoticeTest(unittest.TestCase):
             receipt = json.loads(Path(result['boost']['evidence']).read_text())
             self.assertTrue(receipt['installed_receipt']['built_as_bottle'])
             self.assertEqual(result['sqlite']['role'], 'system-library')
+            self.assertTrue(runner.notices.required_components('darwin-arm64') <= result.keys())
             self.assertIn('qt', result)
             self.assertNotIn('ca-certificates', result)
             self.assertNotIn('qtwebengine', result)

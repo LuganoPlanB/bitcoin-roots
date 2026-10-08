@@ -117,7 +117,7 @@ def depends_notices(depends, host, destination):
 
 def brew_notices(destination, bundle=None):
     requested = ['qt@6', 'boost', 'libevent', 'zeromq', 'qrencode', 'miniupnpc', 'capnp']
-    dependencies = run('brew', 'deps', '--installed', '--recursive', *requested).splitlines()
+    dependencies = run('brew', 'deps', '--installed', '--union', *requested).splitlines()
     names = sorted(set(requested + dependencies))
     formulae = [formula for name in names for formula in json.loads(run('brew', 'info', '--json=v2', name))['formulae']]
     required = notices.required_components('darwin-arm64') - {'sqlite'}
