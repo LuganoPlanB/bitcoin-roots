@@ -5,9 +5,6 @@
 name: Release artifacts
 
 on:
-  push:
-    tags:
-      - 'v[0-9]*-roots.[0-9]*'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -23,14 +20,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+  group: release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1
-  RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
-  RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_commit || '' }}
-  RELEASE_SOURCE_REF: ${{ github.event_name == 'push' && format('refs/tags/{0}', github.ref_name) || inputs.release_commit }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  RELEASE_COMMIT: ${{ inputs.release_commit }}
+  RELEASE_SOURCE_REF: ${{ inputs.release_commit }}
 
 jobs:
   release-metadata-tests:
@@ -57,6 +54,8 @@ jobs:
           python3 ci/test/test_create_patch_series.py
           python3 ci/test/test_prepare_release_source.py
           python3 ci/test/test_prepare_release.py
+          python3 ci/test/test_release_notices.py
+          python3 ci/test/test_create_release_draft.py
           python3 ci/test/test_sign_manifest.py
           python3 ci/test/test_validate_release_tag.py
           python3 ci/test/test_validate_release_source.py
@@ -138,8 +137,9 @@ jobs:
           package_dir="${RUNNER_TEMP}/release-packages"
           archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
           mkdir -p "$package_dir"
+          python3 ci/release/archive.py stage-copying "$BASE_OUTDIR"
           tar -C "$BASE_OUTDIR" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
-          python3 ci/release/archive.py validate "$archive" "$archive_root"
+          python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -216,8 +216,10 @@ jobs:
           if (-not (Test-Path -PathType Leaf (Join-Path $installDir "bin\bitcoin-qt.exe"))) {
             throw "Installed Windows GUI does not exist"
           }
+          & python ci/release/archive.py stage-copying $installDir
+          if ($LASTEXITCODE -ne 0) { throw "Failed to stage COPYING" }
           Compress-Archive -Path $installDir -DestinationPath $archive
-          & python ci/release/archive.py validate $archive $archiveRoot
+          & python ci/release/archive.py validate $archive $archiveRoot --copying COPYING
           if ($LASTEXITCODE -ne 0) { throw "Invalid Windows release archive" }
 
       - name: Upload unsigned release package
@@ -306,9 +308,10 @@ jobs:
           trap 'rm -rf -- "$staging_parent"' EXIT
           mkdir -p "${staging_parent}/${archive_root}" "$package_dir"
           unzip -q "${packages[0]}" -d "${staging_parent}/${archive_root}"
+          python3 ci/release/archive.py stage-copying "${staging_parent}/${archive_root}"
           archive="${package_dir}/${ARTIFACT_NAME}.zip"
           (cd "$staging_parent" && zip -qry "$archive" "$archive_root")
-          python3 ci/release/archive.py validate "$archive" "$archive_root"
+          python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -318,78 +321,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-release:
-    name: Create draft release
-    if: github.event_name == 'push'
-    needs:
-      - release-metadata-tests
-      - linux-release
-      - windows-release
-      - macos-release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    environment: release
-    permissions:
-      actions: read
-      contents: write
-    env:
-      EXPECTED_FINGERPRINT: 5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32
-      EXPECTED_PACKAGE_COUNT: 5
-      PUBLIC_KEY_FILE: contrib/release/bitcoin-roots-release-key.asc
-    steps:
-      - name: Check out release source
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_SOURCE_REF }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Prepare and validate release source
-        run: |
-          set -Eeuo pipefail
-          ci/release/prepare-release-source.sh \
-            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v5
-        with:
-          pattern: bitcoin-roots-*-${{ env.RELEASE_TAG }}
-          path: downloaded-artifacts
-
-      - name: Prepare release assets and manifest
-        run: |
-          set -Eeuo pipefail
-          ci/release/prepare-release.sh downloaded-artifacts release-assets \
-            "$PUBLIC_KEY_FILE" "$RELEASE_TAG" "$EXPECTED_PACKAGE_COUNT"
-
-      - name: Optionally sign and verify manifest
-        env:
-          BITCOIN_ROOTS_GPG_SK: ${{ secrets.BITCOIN_ROOTS_GPG_SK }}
-        run: |
-          set -Eeuo pipefail
-          ci/release/sign-manifest.sh release-assets/SHA512SUMS \
-            "$PUBLIC_KEY_FILE" "$EXPECTED_FINGERPRINT"
-
-      - name: Create or update draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          shopt -s nullglob
-          release_assets=(release-assets/*)
-          expected_unsigned="$((EXPECTED_PACKAGE_COUNT + 2))"
-          if (( ${#release_assets[@]} < expected_unsigned || ${#release_assets[@]} > expected_unsigned + 1 )); then
-            printf 'Expected %s or %s release assets, found %s\n' \
-              "$expected_unsigned" "$((expected_unsigned + 1))" "${#release_assets[@]}" >&2
-            exit 1
-          fi
-          release_options=(--draft --title "Bitcoin Roots ${RELEASE_TAG}" --verify-tag)
-          if [[ "$RELEASE_TAG" == *rc[0-9]*-roots.* ]]; then
-            release_options+=(--prerelease)
-          fi
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" --clobber "${release_assets[@]}"
-          else
-            gh release create "$RELEASE_TAG" --generate-notes \
-              "${release_options[@]}" "${release_assets[@]}"
-          fi
+  # These read-only build outputs require reviewed notice assembly.
+  # Permanent tags do not dispatch builds or publish assets.
+  # Use ci/release/create-draft.py for the explicit verified-assets handoff.

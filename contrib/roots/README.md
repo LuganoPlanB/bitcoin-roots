@@ -272,14 +272,18 @@ each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
 
-Coordinate a stable canonical tip from rehearsal through tag builds and draft
-verification. Each release job fetches the branch again and requires tip
-equality; advancing it during a run can fail later jobs even though the input
-commit was pinned. If it changes before tagging, review and rehearse the new
-candidate. After tagging, never move the tag to repair a failed run.
+Coordinate a stable canonical tip through rehearsal, reviewed notice assembly,
+immutable tagging and explicit draft verification. Each build job and the draft
+helper refreshes canonical-tip equality; pinned inputs alone do not prevent
+branch advancement from invalidating a gate. If source changes before tagging,
+renew review/source/artifact gates. A reviewed packaging-only change may retain
+prior builds only after source/patch reconciliation and proof that every built
+payload byte remains unchanged. After tagging, never move the tag to repair a
+failed handoff.
 
 The manual workflow comes from `main`, but build scripts are checked out from
-the requested canonical commit; the tag-triggered workflow comes from the tag.
+the requested canonical commit. The draft helper runs from the clean tagged
+source checkout; permanent tag pushes do not dispatch any workflow.
 Require the release workflow and its script interface to agree between the
 reviewed main revision and the candidate. Include necessary workflow fixes on
 the canonical branch before promotion and rehearsal.
@@ -324,6 +328,8 @@ Run the retained release metadata tests before pushing:
 
 ```sh
 python3 ci/test/test_prepare_release.py
+python3 ci/test/test_release_notices.py
+python3 ci/test/test_create_release_draft.py
 python3 ci/test/test_prepare_release_source.py
 python3 ci/test/test_create_patch_series.py
 python3 ci/test/test_sign_manifest.py
@@ -332,8 +338,8 @@ python3 ci/test/test_validate_release_source.py
 python3 ci/test/test_release_version.py
 ```
 
-GitHub Actions tag workflows check out the tagged commit; a release tag does not
-need to be reachable from `main`. Release validation instead requires the tag
+A release tag does not need to be reachable from `main`. Permanent tag pushes
+do not dispatch builds or upload assets. Release validation requires the tag
 target to match its canonical `roots/<core-version>` branch. The release patch
 is generated from the Core tag and canonical commits at release time and is not
 checked into the repository. It deliberately excludes `.github/**`: Roots'
@@ -356,25 +362,38 @@ The series contains inherited CRLF files. Apply the released mbox with
 those bytes. Replay verification uses the same command and checks tree equality
 outside `.github/**`.
 
-Pushing the annotated tag builds Linux x86_64, Linux aarch64, macOS x86_64,
-macOS arm64, and Windows x86_64 archives. The draft release also contains the
-Git-am-compatible patch series and `SHA512SUMS`; `SHA512SUMS.asc` is included
-when the release environment has a matching signing key configured. The
-tag-triggered workflow creates a draft, not an immediately public release.
-Independently verify the draft's archives, patch, checksums, optional signature,
-tag target, and source tree before changing only the draft's visibility.
+The read-only manual workflow builds Linux x86_64/aarch64, macOS x86_64/arm64
+and Windows x86_64 intermediates plus the portable patch. Assemble the reviewed
+notices and final assets through `ci/release/README.md` before tagging. Pin the
+exact candidate commit, six asset checksums, manifest digest and curated notes
+digest in the release review. A packaging-only correction must reconcile the
+source/patch and disclose the original build source; it must not relabel older
+executables as newly built.
+
+After an explicitly authorized immutable annotated tag is pushed, use the
+verified-assets draft helper documented in `ci/release/README.md`. It rechecks
+the remote canonical/tag identities, notices, checksums and exact replayed
+patch, and refuses any existing release. It does not build or publish. The
+current helper accepts an unsigned seven-file packet; describe manifest, tag
+and platform signing separately and accurately. The existing
+`sign-manifest.sh` interface remains available for separately authorized signing,
+but signed packets require a separate reviewed handoff. Independently download
+and verify the draft's archives, patch, checksums, notes, tag target and source
+before changing only its visibility under publication authority. Never replace
+published tags/assets or use `--clobber`.
 
 
 Before publication, verify the release notes and contributor acknowledgements.
-Generated GitHub notes can miss changes ported from an earlier generation, and
-updating an existing draft only uploads assets; it does not regenerate notes.
+Generated GitHub notes can miss changes ported from an earlier generation.
+Include the reviewed curated notes in explicit draft creation; the helper
+refuses any existing draft and never replaces its body or assets.
 Prepare notes before approving publication, then publish the inspected draft
 without rebuilding or replacing its assets.
 
-Do not rerun a tag release workflow after publication: its existing-release
-path uploads with `--clobber` and can replace public assets. Diagnose failed
-pre-publication runs against the immutable tag; never move a tag or rewrite a
-public release to hide a failure. Once the canonical branch advances, its tip
+Never replace public release tags or assets, use `--clobber`, or repeat a
+release operation to rewrite public assets. Diagnose a failed pre-publication
+handoff against the immutable tag; the helper refuses an existing draft/public
+release. Once the canonical branch advances, its tip
 is no longer evidence for an older release. Historical verification uses the
 immutable tag, authenticated upstream base, public checksums/signatures and
 clean patch replay, rather than requiring the old tag to equal today's tip.
@@ -401,7 +420,6 @@ scheduling delay, to catch missed dispatches. Release events use tag refs and
 `GITHUB_TOKEN` publication can suppress follow-on event workflows; refresh does
 not rely on either. A failed website run preserves the last successful site and
 does not invalidate the binary release. Retry `deploy-docs.yml` after diagnosis;
-never rerun the published tag's release workflow, replace assets or move the tag
-to repair website visibility. The website-owned
+never replace published assets or move the tag to repair website visibility. The website-owned
 [backfill, cache, verification and recovery guide](../../doc/website/RELEASE-INPUTS.md)
 documents the single local build command and publication diagnostics.

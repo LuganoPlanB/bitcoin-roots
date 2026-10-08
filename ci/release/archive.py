@@ -8,6 +8,7 @@ from collections import deque
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import tarfile
 import zipfile
@@ -39,7 +40,7 @@ def archive_members(archive):
     raise ValueError(f"Unsupported release archive: {archive.name}")
 
 
-def validate_archive_root(archive, expected_root):
+def validate_archive_root(archive, expected_root, copying=None):
     members = archive_members(archive)
     if not members:
         raise ValueError(f"Release archive is empty: {archive.name}")
@@ -47,6 +48,7 @@ def validate_archive_root(archive, expected_root):
     has_payload = False
     paths = set()
     symlinks = {}
+    license_member = None
     for member in members:
         name = member.name if isinstance(member, tarfile.TarInfo) else member.filename
         normalized = name.rstrip("/")
@@ -68,12 +70,14 @@ def validate_archive_root(archive, expected_root):
                 raise ValueError(f"Unsupported archive member in {archive.name}: {name}")
             if member_type == 0o120000:
                 symlinks[normalized] = member
-            is_regular_file = not member.is_dir() and member_type != 0o120000
+            is_regular_file = not member.is_dir() and member_type in {0, 0o100000}
         if parts[0] != expected_root:
             raise ValueError(
                 f"Expected root directory {expected_root} in {archive.name}, found: {name}"
             )
         has_payload |= len(parts) > 1 and is_regular_file
+        if normalized == f"{expected_root}/COPYING" and is_regular_file:
+            license_member = member
 
     if symlinks:
         with zipfile.ZipFile(archive) as package:
@@ -130,6 +134,30 @@ def validate_archive_root(archive, expected_root):
 
     if not has_payload:
         raise ValueError(f"Release archive has no files below {expected_root}: {archive.name}")
+    if copying is not None:
+        if license_member is None:
+            raise ValueError(f"Release archive is missing regular COPYING: {archive.name}")
+        expected_notice = copying.read_bytes()
+        notice_size = license_member.size if isinstance(license_member, tarfile.TarInfo) else license_member.file_size
+        if notice_size != len(expected_notice):
+            raise ValueError(f"Release archive COPYING differs from canonical notice: {archive.name}")
+        if isinstance(license_member, tarfile.TarInfo):
+            with tarfile.open(archive, mode="r:gz") as package:
+                notice = package.extractfile(license_member).read()
+        else:
+            with zipfile.ZipFile(archive) as package:
+                notice = package.read(license_member)
+        if notice != expected_notice:
+            raise ValueError(f"Release archive COPYING differs from canonical notice: {archive.name}")
+
+
+def stage_copying(directory):
+    if not directory.is_dir():
+        raise ValueError(f"License staging directory does not exist: {directory}")
+    destination = directory / "COPYING"
+    if destination.is_symlink():
+        raise ValueError(f"License staging refuses a COPYING symlink: {directory}")
+    shutil.copyfile(Path(__file__).resolve().parents[2] / "COPYING", destination)
 
 
 def main():
@@ -143,13 +171,19 @@ def main():
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("archive", type=Path)
     validate_parser.add_argument("expected_root")
+    validate_parser.add_argument("--copying", type=Path)
+
+    copying_parser = subparsers.add_parser("stage-copying")
+    copying_parser.add_argument("directory", type=Path)
 
     args = parser.parse_args()
     try:
         if args.command == "root-name":
             print(archive_root_name(args.tag, args.sha))
+        elif args.command == "stage-copying":
+            stage_copying(args.directory)
         else:
-            validate_archive_root(args.archive, args.expected_root)
+            validate_archive_root(args.archive, args.expected_root, args.copying)
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
         print(error, file=sys.stderr)
         return 1

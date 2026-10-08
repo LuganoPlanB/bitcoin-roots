@@ -1,0 +1,15 @@
+Roboto Mono Bold (embedded GUI font)
+Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)
+Licensed under the Apache License, Version 2.0.
+
+The embedded font's name table records version 3.000 and the Apache-2.0 license.
+Bitcoin Core imported these exact font bytes in commit
+89e421918ee8b9c8439317f747e5c37f0733d94b; contrib/debian/copyright also
+identifies this font as Apache-2.0.
+
+The accompanying full Apache-2.0 text was preserved from the matching
+Roboto Mono 3.000 family release in the primary Google Fonts repository:
+https://github.com/google/fonts/blob/4df0b673c9b316ad5e8de8fa70b0768ab66c87d6/apache/robotomono/LICENSE.txt
+That source snapshot establishes the license text and family/version;
+its upstream TTF is not claimed byte-identical to the embedded font.
+Embedded TTF SHA256: 44f1d7d596d51c9e0a57805d4bfa7698e74184b3f96e9f95284c84a2ee3727d7

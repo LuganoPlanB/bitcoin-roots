@@ -5,12 +5,15 @@
 
 import hashlib
 import io
+import os
 from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
 import unittest
 import zipfile
+
+import test_release_notices as notice_fixtures
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,16 +23,186 @@ PUBLIC_KEY = ROOT / "contrib/release/bitcoin-roots-release-key.asc"
 
 
 class PrepareReleaseTest(unittest.TestCase):
-    def write_package(self, path, root, content):
+    def write_package(self, path, root, content, copying=None, notices=True):
         member = f"{root}/bin/bitcoind"
+        copying = (ROOT / "COPYING").read_bytes() if copying is None else copying
+        notice_members = {}
+        platform = path.name.removeprefix("bitcoin-roots-").removesuffix(".tar.gz").removesuffix(".zip")
+        if notices and platform in notice_fixtures.NOTICES.PLATFORMS:
+            with tempfile.TemporaryDirectory() as temporary_dir:
+                work = Path(temporary_dir)
+                descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
+                notice_fixtures.NOTICES.collect(platform, descriptor, work / "collected")
+                notice_members = {f"{root}/notices/{file.relative_to(work / 'collected').as_posix()}": file.read_bytes()
+                                  for file in (work / "collected").rglob("*") if file.is_file()}
         if path.name.endswith(".tar.gz"):
             with tarfile.open(path, mode="w:gz") as package:
                 info = tarfile.TarInfo(member)
                 info.size = len(content)
                 package.addfile(info, io.BytesIO(content))
+                if copying:
+                    info = tarfile.TarInfo(f"{root}/COPYING")
+                    info.size = len(copying)
+                    package.addfile(info, io.BytesIO(copying))
+                for name, data in notice_members.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    package.addfile(info, io.BytesIO(data))
         else:
             with zipfile.ZipFile(path, mode="w") as package:
                 package.writestr(member, content)
+                if copying:
+                    package.writestr(f"{root}/COPYING", copying)
+                for name, data in notice_members.items():
+                    package.writestr(name, data)
+
+    def test_final_gate_rejects_missing_faulty_or_wrong_platform_notices(self):
+        for fault in ("missing", "faulty-index", "wrong-platform"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary_dir:
+                downloads = Path(temporary_dir) / "downloads"
+                downloads.mkdir()
+                archive = downloads / "bitcoin-roots-darwin-arm64.zip"
+                root = "bitcoin-roots-30.3-roots.1"
+                self.write_package(archive, root, b"binary", notices=False)
+                if fault != "missing":
+                    work = Path(temporary_dir)
+                    platform = "darwin-x86_64" if fault == "wrong-platform" else "darwin-arm64"
+                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
+                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "collected")
+                    with zipfile.ZipFile(archive, "a") as package:
+                        for file in (work / "collected").rglob("*"):
+                            if file.is_file():
+                                content = b'{}' if fault == "faulty-index" and file.name == "index.json" else file.read_bytes()
+                                package.writestr(f"{root}/notices/{file.relative_to(work / 'collected').as_posix()}", content)
+                (downloads / "series.patch").write_text("patch\n")
+                output = Path(temporary_dir) / "output"
+                result = subprocess.run([SCRIPT, downloads, output, PUBLIC_KEY, "v30.3-roots.1", "1"],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((output / "SHA512SUMS").exists())
+                self.assertFalse((output / archive.name).exists())
+
+    def test_explicit_assembly_rejects_intermediate_package(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            downloads = work / "downloaded-artifacts"
+            downloads.mkdir()
+            self.write_package(downloads / "bitcoin-roots-linux-x86_64.tar.gz",
+                               "bitcoin-roots-30.3-roots.1", b"binary", notices=False)
+            (downloads / "series.patch").write_text("patch\n")
+            result = subprocess.run([SCRIPT, downloads, work / "release-assets", PUBLIC_KEY,
+                                     "v30.3-roots.1", "1"], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((work / "release-assets/SHA512SUMS").exists())
+
+    def test_stages_copying_for_every_platform_archive(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        # Both Linux and both macOS matrix jobs share their platform's block.
+        self.assertEqual(workflow.count("ci/release/archive.py stage-copying"), 3)
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64"):
+                with self.subTest(platform=platform):
+                    root = work / platform / "bitcoin-roots-30.3-roots.1"
+                    root.mkdir(parents=True)
+                    (root / "payload").write_bytes(b"executable fixture")
+                    subprocess.run(["python3", ARCHIVE_TOOL, "stage-copying", root], check=True)
+                    self.assertEqual((root / "COPYING").read_bytes(), (ROOT / "COPYING").read_bytes())
+                    archive = root.parent / ("package.tar.gz" if platform.startswith("linux") else "package.zip")
+                    if platform.startswith("linux"):
+                        with tarfile.open(archive, mode="w:gz") as package:
+                            package.add(root, arcname=root.name)
+                    else:
+                        with zipfile.ZipFile(archive, mode="w") as package:
+                            for path in root.iterdir():
+                                package.write(path, f"{root.name}/{path.name}")
+                    subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
+                                    "--copying", ROOT / "COPYING"], check=True)
+
+    def test_actual_unix_workflow_intermediate_repacks_and_prepares(self):
+        lines = (ROOT / ".github/workflows/release.yml").read_text().splitlines()
+        def packaging_block(name):
+            start = lines.index(f"      - name: {name}")
+            start = lines.index("        run: |", start) + 1
+            end = start
+            while end < len(lines) and (lines[end].startswith("          ") or not lines[end]):
+                end += 1
+            return "\n".join(line[10:] for line in lines[start:end])
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64"):
+                with self.subTest(platform=platform):
+                    work = Path(temporary_dir) / platform
+                    (work / "runner").mkdir(parents=True)
+                    out = work / "out"
+                    out.mkdir()
+                    environment = {**os.environ, "RUNNER_TEMP": str(work / "runner"),
+                                   "BASE_OUTDIR": str(out), "ARTIFACT_NAME": f"bitcoin-roots-{platform}",
+                                   "RELEASE_TAG": "v30.3-roots.1", "GITHUB_WORKSPACE": str(work)}
+                    if platform.startswith("linux"):
+                        (out / "payload").write_bytes(b"binary fixture")
+                        block = packaging_block("Package release artifacts")
+                    else:
+                        deploy = work / "ci/scratch/build-fixture"
+                        deploy.mkdir(parents=True)
+                        with zipfile.ZipFile(deploy / "Bitcoin-Roots.zip", mode="w") as package:
+                            package.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", b"binary fixture")
+                        block = packaging_block("Stage release package")
+                    subprocess.run(["bash", "-c", block], cwd=ROOT, env=environment, check=True)
+                    archive = next((work / "runner/release-packages").iterdir())
+                    member = "bitcoin-roots-30.3-roots.1/COPYING"
+                    if platform.startswith("linux"):
+                        with tarfile.open(archive) as package:
+                            notice = package.extractfile(member).read()
+                            self.assertEqual(package.extractfile("bitcoin-roots-30.3-roots.1/payload").read(), b"binary fixture")
+                    else:
+                        with zipfile.ZipFile(archive) as package:
+                            notice = package.read(member)
+                            self.assertEqual(package.read("bitcoin-roots-30.3-roots.1/Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt"), b"binary fixture")
+                    self.assertEqual(notice, (ROOT / "COPYING").read_bytes())
+                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
+                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "notice-inputs")
+                    downloads = work / "assembled-downloads"
+                    downloads.mkdir()
+                    assembled = downloads / archive.name
+                    subprocess.run(["python3", notice_fixtures.REPACK_TOOL, archive, assembled,
+                                    "bitcoin-roots-30.3-roots.1", work / "notice-inputs/index.json", platform], check=True)
+                    (downloads / "series.patch").write_text("patch\n")
+                    subprocess.run([SCRIPT, downloads, work / "release-assets", PUBLIC_KEY,
+                                    "v30.3-roots.1", "1"], check=True)
+                    self.assertTrue((work / "release-assets/SHA512SUMS").exists())
+
+    def test_release_preparation_rejects_missing_or_mismatched_copying(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            for suffix in ("tar.gz", "zip"):
+                for content in (b"", b"wrong notice"):
+                    with self.subTest(suffix=suffix, copying=content):
+                        downloads = work / f"{suffix}-{len(content)}"
+                        downloads.mkdir()
+                        self.write_package(downloads / f"package.{suffix}", "bitcoin-roots-30.3-roots.1", b"payload", copying=content)
+                        (downloads / "series.patch").write_text("patch\n")
+                        result = subprocess.run([SCRIPT, downloads, downloads / "output", PUBLIC_KEY,
+                                                 "v30.3-roots.1", "1"], capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("COPYING", result.stderr)
+
+    def test_copying_cannot_be_a_symlink_or_directory(self):
+        root = "bitcoin-roots-30.3-roots.1"
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            for kind in ("symlink", "directory", "directory_without_slash"):
+                with self.subTest(kind=kind):
+                    archive = Path(temporary_dir) / f"{kind}.zip"
+                    with zipfile.ZipFile(archive, mode="w") as package:
+                        package.writestr(f"{root}/notice", (ROOT / "COPYING").read_bytes())
+                        info = zipfile.ZipInfo(f"{root}/COPYING" + ("/" if kind == "directory" else ""))
+                        info.create_system = 3
+                        info.external_attr = (0o120777 if kind == "symlink" else 0o40755) << 16
+                        package.writestr(info, "notice" if kind == "symlink" else (ROOT / "COPYING").read_bytes())
+                    result = subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root,
+                                             "--copying", ROOT / "COPYING"], capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("COPYING", result.stderr)
 
     def test_prepares_sorted_manifest(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
