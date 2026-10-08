@@ -58,6 +58,8 @@ jobs:
           python3 ci/test/test_wallet_privacy_contract.py
           python3 ci/test/test_release_version.py
           python3 ci/test/test_release_notices.py
+          python3 ci/test/test_runner_release_notices.py
+          python3 ci/test/test_create_ci_release_draft.py
           python3 ci/test/test_create_release_draft.py
           python3 ci/test/test_windows_gui_workflows.py
       - name: Retrieve changed files
