@@ -462,20 +462,20 @@ For canonical CI, main promotion and release tagging:
    Missing or mismatched promotion proof fails. Explicit ci:* labels request
    fresh coverage. Merge the reviewed promotion with its main exceptions.
 2. Optional manual `Release artifacts` dispatch may rehearse an absent future
-   tag at its full canonical commit. It builds all five platforms and their exact
-   runner dependency notices with read-only permissions; it cannot sign or
+   tag at its full canonical commit. It builds all five platforms with read-only
+   permissions; it cannot sign or
    create a release. It is not a prerequisite for the normal tag release.
 3. Review the source, required CI and any optional rehearsal evidence. Keep the
    canonical tip stable. Re-fetch refs, create one annotated tag at the reviewed
    canonical commit, run the release-source validator and push only that tag.
-4. The tag push builds all five platforms anew, captures installed dependency
-   notices in each runner and generates/replays the portable patch. Only the
+4. The tag push builds all five platforms anew, stages canonical COPYING and
+   generates/replays the portable patch. Only the
    tag-only `release` environment job receives the organization signing secret.
    It requires a manifest signature with the checked-in release-key fingerprint,
    verifies exactly eight assets and creates only a new draft. Missing signing
    capability or an existing draft/public release fails; no clobber or deletion.
 5. Independently download all eight draft assets. Verify tag/source, checksums,
-   signature trust, archives, notices, patch replay, contributor credit and
+   signature trust, archive safety/COPYING, patch replay, contributor credit and
    separate Git-tag/platform-code signing disclosures. Public visibility needs
    separate authority after this concrete verification.
 6. Repeat verification through an unauthenticated client after publication.
@@ -486,3 +486,7 @@ The detailed commands and branch maintenance rules are in
 `contrib/roots/README.md`. Authenticate the official Core tag and its signer
 key through independent trusted sources, run `git verify-tag v30.3`, and record
 both the signature result and its trust basis before claiming verification.
+
+For this release, the user deferred expanded dependency copyright/REUSE coverage
+to future releases. The normal pipeline retains project license files and
+canonical COPYING; optional notice tools do not establish complete coverage.

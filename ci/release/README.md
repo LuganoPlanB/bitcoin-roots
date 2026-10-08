@@ -1,4 +1,4 @@
-# Release notice assembly
+# Release assembly and optional notice tooling
 
 `release.yml` runs the five-platform pipeline on a permanent Roots tag push;
 optional manual dispatch rehearses an absent future tag with read-only
@@ -7,11 +7,19 @@ draft and independently verifies it before separate publication approval.
 Manual rehearsal is not required, cannot run against an existing remote tag,
 and does not establish binary reproducibility. Source corrections require
 renewed review/CI and affected build evidence.
-Both paths capture notices from each new build runner before packaging. Only
-the tag path enters the `release` environment and requires a signed manifest
-before creating a new draft. Public publication remains a separate approval.
-Unassembled packages fail before upload or final preparation. No old local
-notice bundle or prior binary is substituted for a fresh build.
+Both paths preserve existing project license files and stage canonical `COPYING`
+before packaging. The user deferred expanded dependency copyright/REUSE
+coverage to future releases; the default release does not require dependency
+notice collection or its index schema. No complete coverage claim is made.
+Only the tag path enters the `release` environment and requires a signed
+manifest before creating a new draft. Public publication needs separate approval.
+Unsafe or unassembled packages fail before upload or final preparation. No
+prior binary is substituted for a fresh build.
+
+## Optional dependency notice tooling
+
+The following interface remains available for future coverage work. It is not
+a prerequisite for this release's CI pipeline or draft validation.
 
 The supported assembly interface uses explicitly reviewed inputs:
 
@@ -61,9 +69,9 @@ The supported assembly interface uses explicitly reviewed inputs:
    ```
 
    This final gate derives each expected platform from its exact asset filename,
-   requires canonical `COPYING`, checks notice index/platform/content hashes,
-   and validates every package before copying assets or creating `SHA512SUMS`.
-   No flag bypasses notices. `notices.py validate ARCHIVE ROOT PLATFORM` and
+   requires canonical `COPYING` and archive safety, and validates every package
+   before copying assets or creating `SHA512SUMS`. Dependency indexes are not
+   required by this gate. `notices.py validate ARCHIVE ROOT PLATFORM` and
    `notices.py stage DIRECTORY INDEX PLATFORM` expose the same caller-pinned
    validation for explicit assembly.
 
@@ -73,9 +81,10 @@ it does not turn an old run into a build of the new commit. Signing, permanent
 tagging and publication remain separate reviewed actions. These checks verify
 notice contents and provenance, not general legal compliance.
 
-## Runner collection and signed CI draft
+## Optional runner collection
 
-`runner-notices.py` feeds the existing descriptor/collection format above:
+`runner-notices.py` can feed the descriptor/collection format above for future
+coverage work. It is not invoked by the current release workflow:
 
 - Linux runs inside the build container after the new build, while installed
   `depends` toolchains/recipes and verified source archives remain available.
@@ -89,14 +98,16 @@ notice contents and provenance, not general legal compliance.
   copyrights. Boost split ports form one logical Boost notice with every exact
   installed version/copyright; the pinned manifest baseline remains evidence.
 
-The platform archive is staged and validated in the same job before upload.
+## Signed CI draft
+
+The platform archive and canonical COPYING are validated before upload.
 The tag-only final job downloads only its own run's five archives and patch,
 runs `prepare-release.sh`, and requires signing through `sign-manifest.sh` with
 `REQUIRE_RELEASE_SIGNATURE=1`. The real secret is passed only to that step;
 never copy it to local tooling or build jobs. A missing/mismatched key fails.
 
 `create-ci-draft.py` requires exactly eight regular nonempty assets. It reuses
-the packet/source/notice/patch replay guards, independently imports only the
+the packet/source/archive/COPYING/patch replay guards, independently imports only the
 checked-in public key and verifies `SHA512SUMS.asc` with the expected fingerprint.
 It snapshots the checked bytes and curated notes, refreshes remote tag/canonical
 identities and paginated release inventory, then calls only
@@ -111,7 +122,7 @@ shares its fail-closed guards with the signed CI path. It is not the normal
 release publication route. Never use it to bypass required CI signing.
 
 Download all eight draft assets independently and check the manifest signature,
-six asset checksums, package notices, immutable source/tag, patch replay and
+six asset checksums, archive safety/COPYING, immutable source/tag, patch replay and
 notes before visibility-only publication under separate authority. Repeat the
 consumer checks unauthenticated after publication. Interrupted creation needs
 operator inspection of the partial draft; reruns cannot replace it.

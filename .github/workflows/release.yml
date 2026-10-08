@@ -126,14 +126,8 @@ jobs:
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
 
-      - name: Build release artifacts and collect dependency notices in the runner
-        env:
-          RELEASE_PLATFORM: ${{ matrix.artifact-name }}
-        run: |
-          set -Eeuo pipefail
-          export RELEASE_NOTICE_PLATFORM="${RELEASE_PLATFORM#bitcoin-roots-}"
-          ./ci/test_run_all.sh
-          test -s "${BASE_BUILD_DIR}/release-notices/notices/index.json"
+      - name: Build release artifacts
+        run: ./ci/test_run_all.sh
 
       - name: Package release artifacts
         env:
@@ -149,12 +143,8 @@ jobs:
           archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
           mkdir -p "$package_dir"
           python3 ci/release/archive.py stage-copying "$BASE_OUTDIR"
-          platform="${ARTIFACT_NAME#bitcoin-roots-}"
-          python3 ci/release/notices.py stage "$BASE_OUTDIR" \
-            "${BASE_BUILD_DIR}/release-notices/notices/index.json" "$platform"
           tar -C "$BASE_OUTDIR" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
           python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
-          python3 ci/release/notices.py validate "$archive" "$archive_root" "$platform"
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -216,13 +206,6 @@ jobs:
             -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON `
             -DBUILD_WALLET_TOOL=ON -DREDUCE_EXPORTS=ON -DWERROR=ON
 
-      - name: Collect installed dependency notices
-        shell: pwsh
-        run: |
-          & python ci/release/runner-notices.py windows-x86_64 "$env:RUNNER_TEMP/release-notices" `
-            --vcpkg-installed "build/vcpkg_installed"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to collect Windows dependency notices" }
-
       - name: Build and package
         shell: pwsh
         run: |
@@ -240,13 +223,9 @@ jobs:
           }
           & python ci/release/archive.py stage-copying $installDir
           if ($LASTEXITCODE -ne 0) { throw "Failed to stage COPYING" }
-          & python ci/release/notices.py stage $installDir "$env:RUNNER_TEMP/release-notices/notices/index.json" windows-x86_64
-          if ($LASTEXITCODE -ne 0) { throw "Failed to stage Windows dependency notices" }
           Compress-Archive -Path $installDir -DestinationPath $archive
           & python ci/release/archive.py validate $archive $archiveRoot --copying COPYING
           if ($LASTEXITCODE -ne 0) { throw "Invalid Windows release archive" }
-          & python ci/release/notices.py validate $archive $archiveRoot windows-x86_64
-          if ($LASTEXITCODE -ne 0) { throw "Invalid Windows dependency notices" }
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
@@ -317,17 +296,6 @@ jobs:
       - name: Build release package
         run: ./ci/test_run_all.sh
 
-      - name: Collect installed dependency notices
-        env:
-          RELEASE_PLATFORM: ${{ matrix.artifact-name }}
-        run: |
-          set -Eeuo pipefail
-          shopt -s nullglob
-          bundles=("${GITHUB_WORKSPACE}"/ci/scratch/build-*/deploy/Bitcoin-Qt.app)
-          test "${#bundles[@]}" -eq 1
-          python3 ci/release/runner-notices.py "${RELEASE_PLATFORM#bitcoin-roots-}" \
-            "${RUNNER_TEMP}/release-notices" --bundle "${bundles[0]}"
-
       - name: Stage release package
         env:
           ARTIFACT_NAME: ${{ matrix.artifact-name }}
@@ -346,13 +314,9 @@ jobs:
           mkdir -p "${staging_parent}/${archive_root}" "$package_dir"
           unzip -q "${packages[0]}" -d "${staging_parent}/${archive_root}"
           python3 ci/release/archive.py stage-copying "${staging_parent}/${archive_root}"
-          platform="${ARTIFACT_NAME#bitcoin-roots-}"
-          python3 ci/release/notices.py stage "${staging_parent}/${archive_root}" \
-            "${RUNNER_TEMP}/release-notices/notices/index.json" "$platform"
           archive="${package_dir}/${ARTIFACT_NAME}.zip"
           (cd "$staging_parent" && zip -qry "$archive" "$archive_root")
           python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
-          python3 ci/release/notices.py validate "$archive" "$archive_root" "$platform"
 
       - name: Upload unsigned release package
         uses: actions/upload-artifact@v4

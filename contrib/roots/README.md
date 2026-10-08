@@ -280,7 +280,7 @@ ci/release/validate-release-source.sh "$release_tag"
 ```
 
 Run the retained CI/release metadata tests before pushing (this includes signing,
-portable-patch replay, runner notices and signed-draft gates):
+portable-patch replay, archive/COPYING and signed-draft gates):
 
 ```sh
 python3 -m unittest discover -s ci/test
@@ -312,11 +312,11 @@ those bytes. Replay verification uses the same command and checks tree equality
 outside `.github/**`.
 
 Both workflow paths build Linux x86_64/aarch64, macOS x86_64/arm64 and Windows
-x86_64 packages, collecting exact installed dependency notices in each runner
-before archive upload. Linux uses pinned verified depends sources, macOS uses
-matching installed Homebrew receipts/source hashes and actual bundle linkage,
-and Windows uses installed static-triplet port copyrights/versions. Missing or
-mismatched evidence fails. See `ci/release/README.md` for the collection interface.
+x86_64 packages, preserving existing project license files and staging canonical
+`COPYING` before archive upload. The user deferred expanded dependency
+copyright/REUSE coverage to future releases. Dependency notice collection and
+its schema are optional tooling, not a current release gate; no complete
+coverage claim is made. See `ci/release/README.md` for that optional interface.
 
 The tag-only `release` environment job waits for all five builds and the patch,
 downloads only its own run's outputs and runs `prepare-release.sh`. It requires

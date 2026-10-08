@@ -202,19 +202,15 @@ class RunnerNoticeTest(unittest.TestCase):
         self.assertNotIn('BITCOIN_ROOTS_GPG_SK', text)
         self.assertNotIn('fixture-never-export', text)
 
-    def test_all_runner_workflow_blocks_stage_and_validate_before_upload(self):
+    def test_current_release_stages_copying_without_mandatory_notice_collection(self):
         workflow = (ROOT / '.github/workflows/release.yml').read_text()
+        self.assertNotIn('runner-notices.py', workflow)
+        self.assertNotIn('ci/release/notices.py', workflow)
+        self.assertNotIn('RELEASE_NOTICE_PLATFORM', workflow)
         for job, following in [('linux-release', 'windows-release'), ('windows-release', 'macos-release'), ('macos-release', 'publish-release')]:
             block = workflow.split(f'  {job}:', 1)[1].split(f'  {following}:', 1)[0]
-            if job == 'linux-release':
-                self.assertIn('export RELEASE_NOTICE_PLATFORM=', block)
-                hook = (ROOT / 'ci/test/03_test_script.sh').read_text()
-                self.assertIn('if [[ -n "${RELEASE_NOTICE_PLATFORM:-}" ]]', hook)
-                self.assertIn('--depends "$DEPENDS_DIR" --host "$HOST"', hook)
-            else:
-                self.assertLess(block.index('ci/release/runner-notices.py'), block.index('ci/release/notices.py stage'))
-            self.assertLess(block.index('ci/release/notices.py stage'), block.index('ci/release/notices.py validate'))
-            self.assertLess(block.index('ci/release/notices.py validate'), block.index('uses: actions/upload-artifact'))
+            self.assertLess(block.index('ci/release/archive.py stage-copying'), block.index('ci/release/archive.py validate'))
+            self.assertLess(block.index('ci/release/archive.py validate'), block.index('uses: actions/upload-artifact'))
 
 
 if __name__ == '__main__':

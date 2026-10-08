@@ -82,14 +82,11 @@ for package_path in "${package_paths[@]}"; do
     package_name=${package_path##*/}
     python3 "$archive_tool" validate "$package_path" "$archive_root" --copying "$script_dir/../../COPYING"
     case "$package_name" in
-        bitcoin-roots-linux-x86_64.tar.gz) platform=linux-x86_64 ;;
-        bitcoin-roots-linux-aarch64.tar.gz) platform=linux-aarch64 ;;
-        bitcoin-roots-darwin-x86_64.zip) platform=darwin-x86_64 ;;
-        bitcoin-roots-darwin-arm64.zip) platform=darwin-arm64 ;;
-        bitcoin-roots-windows-x86_64.zip) platform=windows-x86_64 ;;
+        bitcoin-roots-linux-x86_64.tar.gz|bitcoin-roots-linux-aarch64.tar.gz|\
+        bitcoin-roots-darwin-x86_64.zip|bitcoin-roots-darwin-arm64.zip|\
+        bitcoin-roots-windows-x86_64.zip) ;;
         *) printf 'Unknown release package platform: %s\n' "$package_name" >&2; exit 1 ;;
     esac
-    python3 "$script_dir/notices.py" validate "$package_path" "$archive_root" "$platform"
 done
 for package_path in "${package_paths[@]}"; do
     package_name=${package_path##*/}
