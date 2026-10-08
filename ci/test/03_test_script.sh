@@ -246,3 +246,11 @@ if [ "$RUN_FUZZ_TESTS" = "true" ]; then
     "${DIR_FUZZ_IN}" \
     --empty_min_time=60
 fi
+
+# Release runners retain exact dependency notices before the container exits.
+# Ordinary test jobs do not collect notices or change their build behavior.
+if [[ -n "${RELEASE_NOTICE_PLATFORM:-}" ]]; then
+  cd "${BASE_ROOT_DIR}"
+  python3 ci/release/runner-notices.py "$RELEASE_NOTICE_PLATFORM" \
+    "${BASE_BUILD_DIR}/release-notices" --depends "$DEPENDS_DIR" --host "$HOST"
+fi

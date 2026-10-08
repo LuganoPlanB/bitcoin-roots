@@ -31,6 +31,7 @@ def main():
     settings.update([
         "BASE_BUILD_DIR",
         "CI_FAILFAST_TEST_LEAVE_DANGLING",
+        "RELEASE_NOTICE_PLATFORM",
     ])
 
     # Append $USER to /tmp/env to support multi-user systems and $CONTAINER_NAME

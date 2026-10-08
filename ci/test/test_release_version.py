@@ -108,22 +108,25 @@ class ReleaseVersionTest(unittest.TestCase):
                     self.assertEqual(result.returncode, status, result.stderr)
                     self.assertEqual(log.read_text().strip(), f"--verify {build}/deploy/Bitcoin-Qt.app")
 
-    def test_workflow_only_rehearses_explicit_canonical_commits(self):
+    def test_workflow_tags_build_signed_drafts_and_dispatch_only_rehearses(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertNotIn("  push:", workflow)
-        self.assertNotIn("publish-release:", workflow)
-        self.assertNotIn("contents: write", workflow)
-        self.assertNotIn("gh release", workflow)
-        self.assertIn("RELEASE_TAG: ${{ inputs.release_tag }}", workflow)
-        self.assertIn("RELEASE_COMMIT: ${{ inputs.release_commit }}", workflow)
+        self.assertIn("  push:", workflow)
+        self.assertIn("RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}", workflow)
         self.assertIn("ref: ${{ env.RELEASE_SOURCE_REF }}", workflow)
-        self.assertEqual(workflow.count("ci/release/prepare-release-source.sh"), 4)
-        self.assertNotIn("origin main:refs/remotes/origin/main", workflow)
+        self.assertEqual(workflow.count("ci/release/prepare-release-source.sh"), 5)
+        publish = workflow.split("  publish-release:", 1)[1]
+        self.assertIn("if: github.event_name == 'push'", publish)
+        self.assertIn("contents: write", publish)
+        self.assertIn("REQUIRE_RELEASE_SIGNATURE: '1'", publish)
+        self.assertIn("test -s", publish)
+        self.assertNotIn("secrets.", workflow.split("  publish-release:", 1)[0])
+        self.assertNotIn("--clobber", workflow)
         for metadata_workflow in (RELEASE_WORKFLOW, ROOT / ".github/workflows/ci.yml"):
             metadata = metadata_workflow.read_text()
-            self.assertIn("python3 ci/test/test_release_notices.py", metadata)
-            self.assertIn("python3 ci/test/test_create_release_draft.py", metadata)
+            for test in ("test_release_notices.py", "test_create_release_draft.py",
+                         "test_runner_release_notices.py", "test_create_ci_release_draft.py"):
+                self.assertIn("python3 ci/test/" + test, metadata)
 
     def test_workflow_builds_complete_artifact_matrix_and_patch(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -136,7 +139,7 @@ class ReleaseVersionTest(unittest.TestCase):
         ]:
             self.assertIn(artifact, workflow)
         self.assertIn("ci/release/create-patch-series.sh", workflow)
-        self.assertIn("ci/release/create-draft.py", workflow)
+        self.assertIn("ci/release/create-ci-draft.py", workflow)
 
     def test_workflow_references_only_present_local_release_files(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -153,6 +156,7 @@ class ReleaseVersionTest(unittest.TestCase):
             {
                 "actions/checkout@v6",
                 "actions/upload-artifact@v4",
+                "actions/download-artifact@v5",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",
             },
