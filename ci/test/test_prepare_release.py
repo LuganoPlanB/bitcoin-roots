@@ -129,6 +129,30 @@ class PrepareReleaseTest(unittest.TestCase):
                                    "RELEASE_TAG": "v30.3-roots.1", "GITHUB_WORKSPACE": str(work)}
                     if platform.startswith("linux"):
                         (out / "payload").write_bytes(b"binary fixture")
+                        # Model the non-writable Docker-owned mount. Privilege
+                        # escalation is unavailable locally; this narrow sudo
+                        # fixture grants write access only around the command.
+                        out.chmod(0o555)
+                        if os.geteuid() != 0:
+                            denied = subprocess.run(["python3", ARCHIVE_TOOL, "stage-copying", out],
+                                                    capture_output=True, text=True)
+                            self.assertNotEqual(denied.returncode, 0)
+                            self.assertIn("Permission denied", denied.stderr)
+                        tools = work / "tools"
+                        tools.mkdir()
+                        sudo = tools / "sudo"
+                        sudo.write_text('#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+                                        'printf "%s\\n" "$@" > "$SUDO_RECORD"\n'
+                                        'test "$#" -eq 4\n'
+                                        'test "$1" = python3\n'
+                                        'test "$2" = ci/release/archive.py\n'
+                                        'test "$3" = stage-copying\n'
+                                        'chmod u+w "$4"\n'
+                                        "trap 'chmod u-w \"$4\"' EXIT\n"
+                                        '"$@"\n')
+                        sudo.chmod(0o755)
+                        environment.update(PATH=f"{tools}:{os.environ['PATH']}",
+                                           SUDO_RECORD=str(work / "sudo-record"))
                         block = packaging_block("Package release artifacts")
                     else:
                         deploy = work / "ci/scratch/build-fixture"
@@ -148,6 +172,12 @@ class PrepareReleaseTest(unittest.TestCase):
                             notice = package.read(member)
                             self.assertEqual(package.read("bitcoin-roots-30.3-roots.1/Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt"), b"binary fixture")
                     self.assertEqual(notice, (ROOT / "COPYING").read_bytes())
+                    if platform.startswith("linux"):
+                        self.assertEqual((work / "sudo-record").read_text().splitlines(),
+                                         ["python3", "ci/release/archive.py", "stage-copying", str(out)])
+                        self.assertEqual(out.stat().st_mode & 0o777, 0o555)
+                        # Permit fixture cleanup, preserving the archived mode.
+                        out.chmod(0o755)
                     downloads = work / "assembled-downloads"
                     downloads.mkdir()
                     assembled = downloads / archive.name
