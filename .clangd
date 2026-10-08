@@ -1,0 +1,5 @@
+CompileFlags:
+  # GCC-only flags unsupported by clangd; compilation still uses the original flags.
+  Remove:
+    - -fno-extended-identifiers
+    - -fstack-reuse=none

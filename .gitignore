@@ -17,6 +17,10 @@
 
 /CMakeUserPresets.json
 
+# Generated C++ tooling metadata and clangd index.
+compile_commands.json
+/.cache/clangd/
+
 # Previous releases
 /releases
 
