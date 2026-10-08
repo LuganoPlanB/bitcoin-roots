@@ -66,6 +66,8 @@ class CreateCIDraftTest(unittest.TestCase):
         self.assertIn(self.fingerprint, record['notes'])
         self.assertIn(self.fixture.commit, record['notes'])
         self.assertIn('/actions/runs/123', record['notes'])
+        self.assertIn('Packages include the project COPYING file.', record['notes'])
+        self.assertNotIn('notices were collected', record['notes'])
         self.assertIn('--draft', record['args'])
         self.assertNotIn('--clobber', record['args'])
 

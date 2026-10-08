@@ -452,28 +452,33 @@ product patch, and verifies replay onto the matching Core base. Because the
 series contains inherited CRLF files, apply the released mbox with
 `git am -3 --keep-cr <bitcoin-roots-*.patch>`.
 
-Before assigning a permanent release tag:
+For canonical CI, main promotion and release tagging:
 
-1. Complete independent source review, then merge the reviewed promotion PR.
-   Verify product equality with the canonical tip and enumerate approved
-   repository-only exceptions as described in `contrib/roots/README.md`;
-   require full tree equality when none exist.
-2. A manual `Release artifacts` dispatch may rehearse an absent future tag at
-   its full canonical commit. It builds all five platforms and their exact
-   runner dependency notices with read-only permissions; it cannot sign or
-   create a release.
-3. Review the source, required CI and rehearsal evidence. Keep the canonical
-   tip stable. Re-fetch refs, check out the reviewed commit in a dedicated
-   release worktree and create one annotated tag explicitly at that commit.
+1. Complete independent source review and required candidate CI, then integrate
+   canonical by fast-forward. Open the main promotion only after that exact
+   candidate CI succeeds. The promotion verifies canonical-tip/tree/workflow
+   parity and exact successful canonical-target CI before reusing compiled
+   test results; classifier/lint and applicable main docs/site checks remain.
+   Missing or mismatched promotion proof fails. Explicit ci:* labels request
+   fresh coverage. Merge the reviewed promotion with its enumerated main-only
+   exceptions as described in `contrib/roots/README.md`; require full tree
+   equality when none exist.
+2. Optional manual `Release artifacts` dispatch may rehearse an absent future
+   tag at its full canonical commit. It builds all five platforms with read-only
+   permissions; it cannot sign or
+   create a release. It is not a prerequisite for the normal tag release.
+3. Review the source, required CI and any optional rehearsal evidence. Keep the
+   canonical tip stable. Re-fetch refs, check out the reviewed commit in a
+   dedicated release worktree and create one annotated tag explicitly there.
    Run the release-source validator and push only that tag. Never move it.
-4. The tag push builds all five platforms anew, captures installed dependency
-   notices in each runner and generates/replays the portable patch. Only the
+4. The tag push builds all five platforms anew, stages canonical COPYING and
+   generates/replays the portable patch. Only the
    tag-only `release` environment job receives the organization signing secret.
    It requires a manifest signature with the checked-in release-key fingerprint,
    verifies exactly eight assets and creates only a new draft. Missing signing
    capability or an existing draft/public release fails; no clobber or deletion.
 5. Independently download all eight draft assets. Verify tag/source, checksums,
-   signature trust, archives, notices, patch replay, contributor credit and
+   signature trust, archive safety/COPYING, patch replay, contributor credit and
    separate Git-tag/platform-code signing disclosures. Public visibility needs
    separate authority after this concrete verification.
 6. Repeat verification through an unauthenticated client after publication.
@@ -484,3 +489,7 @@ The detailed commands and branch maintenance rules are in
 `contrib/roots/README.md`. Authenticate the official Core tag and its signer
 key through independent trusted sources, run `git verify-tag v30.3`, and record
 both the signature result and its trust basis before claiming verification.
+
+For this release, the user deferred expanded dependency copyright/REUSE coverage
+to future releases. The normal pipeline retains project license files and
+canonical COPYING; optional notice tools do not establish complete coverage.

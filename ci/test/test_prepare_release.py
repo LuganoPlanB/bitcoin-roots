@@ -57,31 +57,18 @@ class PrepareReleaseTest(unittest.TestCase):
                 for name, data in notice_members.items():
                     package.writestr(name, data)
 
-    def test_final_gate_rejects_missing_faulty_or_wrong_platform_notices(self):
-        for fault in ("missing", "faulty-index", "wrong-platform"):
-            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary_dir:
-                downloads = Path(temporary_dir) / "downloads"
-                downloads.mkdir()
-                archive = downloads / "bitcoin-roots-darwin-arm64.zip"
-                root = "bitcoin-roots-30.3-roots.1"
-                self.write_package(archive, root, b"binary", notices=False)
-                if fault != "missing":
-                    work = Path(temporary_dir)
-                    platform = "darwin-x86_64" if fault == "wrong-platform" else "darwin-arm64"
-                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
-                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "collected")
-                    with zipfile.ZipFile(archive, "a") as package:
-                        for file in (work / "collected").rglob("*"):
-                            if file.is_file():
-                                content = b'{}' if fault == "faulty-index" and file.name == "index.json" else file.read_bytes()
-                                package.writestr(f"{root}/notices/{file.relative_to(work / 'collected').as_posix()}", content)
-                (downloads / "series.patch").write_text("patch\n")
-                output = Path(temporary_dir) / "output"
-                result = subprocess.run([SCRIPT, downloads, output, PUBLIC_KEY, "v30.3-roots.1", "1"],
-                                        capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertFalse((output / "SHA512SUMS").exists())
-                self.assertFalse((output / archive.name).exists())
+    def test_final_gate_accepts_canonical_copying_without_dependency_index(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            downloads = Path(temporary_dir) / "downloads"
+            downloads.mkdir()
+            archive = downloads / "bitcoin-roots-darwin-arm64.zip"
+            self.write_package(archive, "bitcoin-roots-30.3-roots.1", b"binary", notices=False)
+            (downloads / "series.patch").write_text("patch\n")
+            output = Path(temporary_dir) / "output"
+            result = subprocess.run([SCRIPT, downloads, output, PUBLIC_KEY, "v30.3-roots.1", "1"],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output / "SHA512SUMS").exists())
 
     def test_explicit_assembly_rejects_intermediate_package(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -89,7 +76,7 @@ class PrepareReleaseTest(unittest.TestCase):
             downloads = work / "downloaded-artifacts"
             downloads.mkdir()
             self.write_package(downloads / "bitcoin-roots-linux-x86_64.tar.gz",
-                               "bitcoin-roots-30.3-roots.1", b"binary", notices=False)
+                               "bitcoin-roots-30.3-roots.1", b"binary", copying=b"", notices=False)
             (downloads / "series.patch").write_text("patch\n")
             result = subprocess.run([SCRIPT, downloads, work / "release-assets", PUBLIC_KEY,
                                      "v30.3-roots.1", "1"], capture_output=True, text=True)
@@ -120,7 +107,7 @@ class PrepareReleaseTest(unittest.TestCase):
                     subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
                                     "--copying", ROOT / "COPYING"], check=True)
 
-    def test_actual_unix_workflow_stages_notices_and_prepares(self):
+    def test_actual_unix_workflow_stages_copying_without_dependency_index_and_prepares(self):
         lines = (ROOT / ".github/workflows/release.yml").read_text().splitlines()
         def packaging_block(name):
             start = lines.index(f"      - name: {name}")
@@ -149,8 +136,6 @@ class PrepareReleaseTest(unittest.TestCase):
                         with zipfile.ZipFile(deploy / "Bitcoin-Roots.zip", mode="w") as package:
                             package.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", b"binary fixture")
                         block = packaging_block("Stage release package")
-                    descriptor = notice_fixtures.ReleaseNoticesTest().descriptor(work, platform)
-                    notice_fixtures.NOTICES.collect(platform, descriptor, work / "runner/release-notices/notices")
                     subprocess.run(["bash", "-c", block], cwd=ROOT, env=environment, check=True)
                     archive = next((work / "runner/release-packages").iterdir())
                     member = "bitcoin-roots-30.3-roots.1/COPYING"
@@ -163,8 +148,6 @@ class PrepareReleaseTest(unittest.TestCase):
                             notice = package.read(member)
                             self.assertEqual(package.read("bitcoin-roots-30.3-roots.1/Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt"), b"binary fixture")
                     self.assertEqual(notice, (ROOT / "COPYING").read_bytes())
-                    subprocess.run(["python3", ROOT / "ci/release/notices.py", "validate", archive,
-                                    "bitcoin-roots-30.3-roots.1", platform], check=True)
                     downloads = work / "assembled-downloads"
                     downloads.mkdir()
                     assembled = downloads / archive.name

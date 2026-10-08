@@ -57,7 +57,7 @@ def create(args):
         notes.write_text(template + '\n## CI build and signing provenance\n\n'
                          f'All five platform packages were built from `{args.commit}` in '
                          f'[GitHub Actions run {args.run_id}](https://github.com/{args.repository}/actions/runs/{args.run_id}). '
-                         'Dependency notices were collected from each build runner.\n\n'
+                         'Packages include the project COPYING file.\n\n'
                          f'`SHA512SUMS.asc` signs the SHA512 manifest with release key `{args.fingerprint}`. '
                          'This checksum signature is separate from Git-tag and platform-code signing. '
                          'The annotated Git tag is unsigned. macOS applications retain ad-hoc signatures, '
@@ -69,7 +69,7 @@ def create(args):
         snapshot = temporary / 'snapshot'
         snapshot.mkdir()
         names, patch, snapshot_notes = draft.snapshot_packet(args, snapshot)
-        # snapshot_packet validates every checksum, COPYING and platform notice index.
+        # snapshot_packet validates every checksum, canonical COPYING and archive safety.
         signature = snapshot / 'SHA512SUMS.asc'
         shutil.copyfile(Path(args.original_assets) / signature.name, signature)
         verify_signature(snapshot / 'SHA512SUMS', signature, args.public_key, args.fingerprint, temporary / 'verify-home')
