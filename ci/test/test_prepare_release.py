@@ -82,26 +82,16 @@ class PrepareReleaseTest(unittest.TestCase):
                 self.assertFalse((output / "SHA512SUMS").exists())
                 self.assertFalse((output / archive.name).exists())
 
-    def test_draft_workflow_assembly_step_rejects_intermediate_package(self):
-        lines = (ROOT / ".github/workflows/release.yml").read_text().splitlines()
-        start = lines.index("      - name: Prepare release assets and manifest")
-        start = lines.index("        run: |", start) + 1
-        end = start
-        while end < len(lines) and (lines[end].startswith("          ") or not lines[end]):
-            end += 1
-        block = "\n".join(line[10:] for line in lines[start:end])
+    def test_explicit_assembly_rejects_intermediate_package(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             work = Path(temporary_dir)
-            (work / "ci").symlink_to(ROOT / "ci", target_is_directory=True)
             downloads = work / "downloaded-artifacts"
             downloads.mkdir()
             self.write_package(downloads / "bitcoin-roots-linux-x86_64.tar.gz",
                                "bitcoin-roots-30.3-roots.1", b"binary", notices=False)
             (downloads / "series.patch").write_text("patch\n")
-            environment = {**os.environ, "PUBLIC_KEY_FILE": str(PUBLIC_KEY),
-                           "RELEASE_TAG": "v30.3-roots.1", "EXPECTED_PACKAGE_COUNT": "1"}
-            result = subprocess.run(["bash", "-c", block], cwd=work, env=environment,
-                                    capture_output=True, text=True)
+            result = subprocess.run([SCRIPT, downloads, work / "release-assets", PUBLIC_KEY,
+                                     "v30.3-roots.1", "1"], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((work / "release-assets/SHA512SUMS").exists())
 

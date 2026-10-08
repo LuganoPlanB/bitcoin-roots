@@ -458,11 +458,16 @@ Before assigning a permanent release tag:
 2. Dispatch `Release artifacts` from `main` with the future Roots tag and the
    full 40-hex `origin/roots/<core-version>` commit.
 3. Require all five platform builds and independently inspect the packages and
-   patch. Manual rehearsal must create neither a remote tag nor a release.
+   patch. Assemble and review platform-specific notices and the final asset
+   packet using `ci/release/README.md` before tagging. Manual rehearsal must
+   create neither a remote tag nor a release.
 4. Re-fetch refs, create one annotated tag at the unchanged canonical tip, run
    the release-source validator, and push only that tag. Never move it.
-5. Verify the tag-triggered draft's packages, patch, `SHA512SUMS`, optional
-   signature, tag target, and source tree before publishing the unchanged draft.
+5. Permanent tags do not start builds or create a draft. Use
+   `ci/release/create-draft.py` with the approved commit, asset manifest and notes
+   digests to validate the permanent remote tag and create a new draft. Verify
+   downloaded draft packages, patch, checksums, notes and actual signing status
+   before publishing the unchanged draft under separate authority.
 6. Repeat tag, asset, checksum, and signature-if-present verification through an
    unauthenticated client after publication.
 

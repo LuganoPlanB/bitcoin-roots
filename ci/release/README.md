@@ -2,10 +2,11 @@
 
 Platform build artifacts are intermediate packages. A green build proves the
 built product, but its package must also pass notice assembly before becoming a
-release asset. The workflow's draft job runs `prepare-release.sh` before signing
-or uploading anything. It fails closed if the downloaded packages lack valid
-platform-specific notices. Automatic discovery or acquisition of dependency
-notice inputs is not part of release execution.
+release asset. `release.yml` is a read-only `workflow_dispatch` build/rehearsal;
+permanent tag pushes do not start builds or create a draft. Maintainers explicitly
+assemble reviewed platform notices, validate the final packet and use the draft
+helper below. Unassembled packages are rejected before upload. Automatic discovery
+or acquisition of dependency notice inputs is not part of release execution.
 
 The supported assembly interface uses explicitly reviewed inputs:
 
@@ -66,3 +67,50 @@ source correction requires a reviewed source/portable-patch reconciliation;
 it does not turn an old run into a build of the new commit. Signing, permanent
 tagging and publication remain separate reviewed actions. These checks verify
 notice contents and provenance, not general legal compliance.
+
+## Immutable reviewed-assets draft
+
+Complete source review, canonical/main integration and asset review first.
+Authorize the exact annotated tag target and push only that tag; no tag-triggered
+build or draft job runs. The canonical tip must remain unchanged. Release assets
+must be outside the clean tagged source checkout and contain exactly the five
+platform archives, `bitcoin-roots-<version>.patch` and `SHA512SUMS`. Record the
+manifest's SHA512 digest and curated notes' SHA256 digest in the review; passing
+newly calculated digests is not a substitute for acceptance of those bytes.
+
+From the clean checkout at the approved commit, validate the complete handoff:
+
+```sh
+python3 ci/release/create-draft.py \
+  --tag v30.3-roots.1 --commit <approved-40-hex-commit> \
+  --repository LuganoPlanB/bitcoin-roots \
+  --assets /absolute/path/to/reviewed-release-assets \
+  --notes /absolute/path/to/reviewed-release-notes.md \
+  --manifest-sha512 <reviewed-128-hex-digest> \
+  --notes-sha256 <reviewed-64-hex-digest>
+```
+
+The default validates without a remote write. After explicit draft authority,
+repeat the same command with `--create-draft`. The helper copies the exact packet
+and notes into a private temporary snapshot, verifies all six checksums, archive
+roots/COPYING/platform notice indexes, local annotated tag/source/linear ancestry,
+and the exact portable patch regenerated and replayed from that tag. It then
+refreshes remote canonical/tag object/peeled identities and checks every page of
+the release inventory. Network/API failure or any existing draft/public release
+blocks creation. The only write is `gh release create --draft --verify-tag` with
+those seven immutable assets and the reviewed notes; it never updates, clobbers
+or publishes an existing release. An interrupted upload requires independent
+inspection of its partial draft, not an automatic helper retry or replacement.
+
+This initial handoff accepts unsigned manifests only. `SHA512SUMS.asc` or any
+unexpected file is rejected. Do not infer signing from the inherited public-key
+comment in SHA512SUMS. Optional use of `sign-manifest.sh` remains a separate
+signing operation, with signed-packet upload requiring its own reviewed path;
+never access signing secrets for unsigned draft creation. State the actual Git
+tag, manifest and platform-code signature status in the notes.
+
+Independently download and verify the newly created draft, including notes and
+contributor credit, before separately authorized visibility-only publication.
+After publication verify all public assets unauthenticated. The helper requires
+canonical-tip equality before draft creation; later consumer verification uses
+the immutable release tag when the canonical branch has advanced.

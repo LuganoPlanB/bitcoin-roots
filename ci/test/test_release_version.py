@@ -108,22 +108,22 @@ class ReleaseVersionTest(unittest.TestCase):
                     self.assertEqual(result.returncode, status, result.stderr)
                     self.assertEqual(log.read_text().strip(), f"--verify {build}/deploy/Bitcoin-Qt.app")
 
-    def test_workflow_builds_tags_and_rehearses_explicit_canonical_commits(self):
+    def test_workflow_only_rehearses_explicit_canonical_commits(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("tags:", workflow)
-        self.assertIn("'v[0-9]*-roots.[0-9]*'", workflow)
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertNotIn("branches:", workflow)
-        self.assertIn("github.event_name == 'push' && github.ref_name || inputs.release_tag", workflow)
-        self.assertIn("release_commit:", workflow)
-        self.assertIn("inputs.release_commit", workflow)
+        self.assertNotIn("  push:", workflow)
+        self.assertNotIn("publish-release:", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("gh release", workflow)
+        self.assertIn("RELEASE_TAG: ${{ inputs.release_tag }}", workflow)
+        self.assertIn("RELEASE_COMMIT: ${{ inputs.release_commit }}", workflow)
         self.assertIn("ref: ${{ env.RELEASE_SOURCE_REF }}", workflow)
-        self.assertIn("if: github.event_name == 'push'", workflow)
-        self.assertIn("ci/release/prepare-release-source.sh", workflow)
-        self.assertEqual(workflow.count("ci/release/prepare-release-source.sh"), 5)
-        self.assertEqual(workflow.count("contents: write"), 1)
+        self.assertEqual(workflow.count("ci/release/prepare-release-source.sh"), 4)
         self.assertNotIn("origin main:refs/remotes/origin/main", workflow)
-        self.assertIn("environment: release", workflow)
+        for metadata_workflow in (RELEASE_WORKFLOW, ROOT / ".github/workflows/ci.yml"):
+            metadata = metadata_workflow.read_text()
+            self.assertIn("python3 ci/test/test_release_notices.py", metadata)
+            self.assertIn("python3 ci/test/test_create_release_draft.py", metadata)
 
     def test_workflow_builds_complete_artifact_matrix_and_patch(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -135,13 +135,8 @@ class ReleaseVersionTest(unittest.TestCase):
             "bitcoin-roots-windows-x86_64",
         ]:
             self.assertIn(artifact, workflow)
-        self.assertIn("EXPECTED_PACKAGE_COUNT: 5", workflow)
         self.assertIn("ci/release/create-patch-series.sh", workflow)
-        self.assertIn("ci/release/prepare-release.sh", workflow)
-        self.assertIn("ci/release/sign-manifest.sh", workflow)
-        self.assertIn("SHA512SUMS", workflow)
-        self.assertIn("gh release upload", workflow)
-        self.assertIn("gh release create", workflow)
+        self.assertIn("ci/release/create-draft.py", workflow)
 
     def test_workflow_references_only_present_local_release_files(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -157,7 +152,6 @@ class ReleaseVersionTest(unittest.TestCase):
             actions,
             {
                 "actions/checkout@v6",
-                "actions/download-artifact@v5",
                 "actions/upload-artifact@v4",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",

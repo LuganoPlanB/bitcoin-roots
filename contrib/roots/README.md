@@ -254,6 +254,8 @@ Run the retained release metadata tests before pushing:
 
 ```sh
 python3 ci/test/test_prepare_release.py
+python3 ci/test/test_release_notices.py
+python3 ci/test/test_create_release_draft.py
 python3 ci/test/test_prepare_release_source.py
 python3 ci/test/test_create_patch_series.py
 python3 ci/test/test_sign_manifest.py
@@ -262,8 +264,8 @@ python3 ci/test/test_validate_release_source.py
 python3 ci/test/test_release_version.py
 ```
 
-GitHub Actions tag workflows check out the tagged commit; a release tag does not
-need to be reachable from `main`. Release validation instead requires the tag
+A release tag does not need to be reachable from `main`. Permanent tag pushes
+do not dispatch builds or upload assets. Release validation requires the tag
 target to match its canonical `roots/<core-version>` branch. The release patch
 is generated from the Core tag and canonical commits at release time and is not
 checked into the repository. It deliberately excludes `.github/**`: Roots'
@@ -286,10 +288,22 @@ The series contains inherited CRLF files. Apply the released mbox with
 those bytes. Replay verification uses the same command and checks tree equality
 outside `.github/**`.
 
-Pushing the annotated tag builds Linux x86_64, Linux aarch64, macOS x86_64,
-macOS arm64, and Windows x86_64 archives. The draft release also contains the
-Git-am-compatible patch series and `SHA512SUMS`; `SHA512SUMS.asc` is included
-when the release environment has a matching signing key configured. The
-tag-triggered workflow creates a draft, not an immediately public release.
-Independently verify the draft's archives, patch, checksums, optional signature,
-tag target, and source tree before changing only the draft's visibility.
+The read-only manual workflow builds Linux x86_64/aarch64, macOS x86_64/arm64
+and Windows x86_64 intermediates plus the portable patch. Assemble the reviewed
+notices and final assets through `ci/release/README.md` before tagging. Pin the
+exact candidate commit, six asset checksums, manifest digest and curated notes
+digest in the release review. A packaging-only correction must reconcile the
+source/patch and disclose the original build source; it must not relabel older
+executables as newly built.
+
+After an explicitly authorized immutable annotated tag is pushed, use the
+verified-assets draft helper documented in `ci/release/README.md`. It rechecks
+the remote canonical/tag identities, notices, checksums and exact replayed
+patch, and refuses any existing release. It does not build or publish. The
+current helper accepts an unsigned seven-file packet; describe manifest, tag
+and platform signing separately and accurately. The existing
+`sign-manifest.sh` interface remains available for separately authorized signing,
+but signed packets require a separate reviewed handoff. Independently download
+and verify the draft's archives, patch, checksums, notes, tag target and source
+before changing only its visibility under publication authority. Never replace
+published tags/assets or use `--clobber`.
