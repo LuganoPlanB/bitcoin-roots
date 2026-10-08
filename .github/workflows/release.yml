@@ -142,7 +142,8 @@ jobs:
           package_dir="${RUNNER_TEMP}/release-packages"
           archive="${package_dir}/${ARTIFACT_NAME}.tar.gz"
           mkdir -p "$package_dir"
-          python3 ci/release/archive.py stage-copying "$BASE_OUTDIR"
+          # Docker installs as root in this mounted directory. Elevate only license staging.
+          sudo python3 ci/release/archive.py stage-copying "$BASE_OUTDIR"
           tar -C "$BASE_OUTDIR" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
           python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
 
