@@ -202,6 +202,44 @@ class PrepareReleaseTest(unittest.TestCase):
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn("COPYING", result.stderr)
 
+    def test_copying_staging_normalizes_windows_checkout(self):
+        canonical = (ROOT / "COPYING").read_bytes().replace(b"\r\n", b"\n")
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            helper = work / "ci/release/archive.py"
+            helper.parent.mkdir(parents=True)
+            shutil.copyfile(ARCHIVE_TOOL, helper)
+            (work / "COPYING").write_bytes(canonical.replace(b"\n", b"\r\n"))
+            out = work / "out"
+            out.mkdir()
+            subprocess.run(["python3", helper, "stage-copying", out], check=True)
+            self.assertEqual((out / "COPYING").read_bytes(), canonical)
+
+    def test_copying_accepts_only_exact_uniform_lf_or_crlf(self):
+        canonical = (ROOT / "COPYING").read_bytes().replace(b"\r\n", b"\n")
+        crlf = canonical.replace(b"\n", b"\r\n")
+        cases = [(canonical, True), (crlf, True),
+                 (canonical.replace(b"\n", b"\r\n", 1), False),
+                 (canonical.replace(b"\n", b"\r"), False),
+                 (crlf.replace(b"Bitcoin", b"Bitcoim", 1), False)]
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            # The validator itself may run from either checkout convention.
+            for expected in (canonical, crlf):
+                reference = work / "reference"
+                reference.write_bytes(expected)
+                for suffix in ("tar.gz", "zip"):
+                    for notice, accepted in cases:
+                        with self.subTest(suffix=suffix, expected=expected == crlf,
+                                          content=notice, accepted=accepted):
+                            archive = work / f"package.{suffix}"
+                            self.write_package(archive, "bitcoin-roots-30.3-roots.1", b"payload",
+                                               copying=notice, notices=False)
+                            result = subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive,
+                                                     "bitcoin-roots-30.3-roots.1", "--copying", reference],
+                                                    capture_output=True, text=True)
+                            self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
     def test_copying_cannot_be_a_symlink_or_directory(self):
         root = "bitcoin-roots-30.3-roots.1"
         with tempfile.TemporaryDirectory() as temporary_dir:

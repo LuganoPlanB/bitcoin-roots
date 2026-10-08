@@ -8,7 +8,6 @@ from collections import deque
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 import tarfile
 import zipfile
@@ -137,9 +136,12 @@ def validate_archive_root(archive, expected_root, copying=None):
     if copying is not None:
         if license_member is None:
             raise ValueError(f"Release archive is missing regular COPYING: {archive.name}")
-        expected_notice = copying.read_bytes()
+        # Git checkouts may use CRLF on Windows. Accept only the exact
+        # canonical text in uniform LF or CRLF form, without changing payloads.
+        expected_notice = copying.read_bytes().replace(b"\r\n", b"\n")
+        accepted_notices = (expected_notice, expected_notice.replace(b"\n", b"\r\n"))
         notice_size = license_member.size if isinstance(license_member, tarfile.TarInfo) else license_member.file_size
-        if notice_size != len(expected_notice):
+        if notice_size not in {len(notice) for notice in accepted_notices}:
             raise ValueError(f"Release archive COPYING differs from canonical notice: {archive.name}")
         if isinstance(license_member, tarfile.TarInfo):
             with tarfile.open(archive, mode="r:gz") as package:
@@ -147,7 +149,7 @@ def validate_archive_root(archive, expected_root, copying=None):
         else:
             with zipfile.ZipFile(archive) as package:
                 notice = package.read(license_member)
-        if notice != expected_notice:
+        if notice not in accepted_notices:
             raise ValueError(f"Release archive COPYING differs from canonical notice: {archive.name}")
 
 
@@ -157,7 +159,8 @@ def stage_copying(directory):
     destination = directory / "COPYING"
     if destination.is_symlink():
         raise ValueError(f"License staging refuses a COPYING symlink: {directory}")
-    shutil.copyfile(Path(__file__).resolve().parents[2] / "COPYING", destination)
+    # Stage the same LF bytes regardless of the runner checkout convention.
+    destination.write_bytes((Path(__file__).resolve().parents[2] / "COPYING").read_bytes().replace(b"\r\n", b"\n"))
 
 
 def main():

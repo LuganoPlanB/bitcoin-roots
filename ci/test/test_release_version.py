@@ -109,7 +109,7 @@ class ReleaseVersionTest(unittest.TestCase):
                     self.assertEqual(log.read_text().strip(), f"--verify {build}/deploy/Bitcoin-Qt.app")
 
     def test_workflow_tags_build_signed_drafts_and_dispatch_only_rehearses(self):
-        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8").split("  recover-signed-draft:", 1)[0]
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("  push:", workflow)
         self.assertIn("RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}", workflow)

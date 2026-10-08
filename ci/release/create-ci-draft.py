@@ -36,6 +36,25 @@ def verify_signature(manifest, signature, public_key, fingerprint, home):
         raise ValueError('Manifest signature does not match expected release key')
 
 
+def bind_source(args):
+    if args.source_dir is not None:
+        # One-off recovery tooling stays outside the immutable tagged checkout.
+        if (args.tag != 'v30.3-roots.1' or args.run_id != '37849202986'
+                or args.commit != '17e1d484aba2a881be03b8928fba3c0125e027a2'
+                or not args.assembly_run_id):
+            raise ValueError('Source binding is restricted to the pinned one-off recovery')
+        source = args.source_dir.resolve()
+        if (Path(draft.run(['git', 'rev-parse', '--show-toplevel'])).resolve() != source
+                or draft.run(['git', 'status', '--porcelain'])):
+            raise ValueError('Recovery source must be its clean tagged checkout')
+        if draft.run(['git', 'rev-parse', 'refs/tags/v30.3-roots.1^{tag}']) != 'd04b1e37b4da40dade3be1c5f29349e4c2235d3c':
+            raise ValueError('Recovery source tag object differs')
+        draft.ROOT = source
+        draft.SCRIPTS = draft.ROOT / 'ci/release'
+    elif args.assembly_run_id:
+        raise ValueError('Assembly provenance requires the pinned recovery source binding')
+
+
 def create(args):
     expected = {*draft.PACKAGE_NAMES, f'bitcoin-roots-{args.tag[1:]}.patch', 'SHA512SUMS', 'SHA512SUMS.asc'}
     if not args.assets.is_dir() or args.assets.is_symlink() or set(p.name for p in args.assets.iterdir()) != expected:
@@ -46,6 +65,7 @@ def create(args):
     if not re.fullmatch(r'[1-9][0-9]*', args.run_id):
         raise ValueError('CI run identity must be a positive integer')
     args.commit = draft.run(['git', 'rev-parse', 'HEAD^{commit}'])
+    bind_source(args)
     with tempfile.TemporaryDirectory(prefix='roots-signed-ci-draft-') as temporary_dir:
         temporary = Path(temporary_dir)
         unsigned = temporary / 'unsigned'
@@ -62,6 +82,14 @@ def create(args):
                          'This checksum signature is separate from Git-tag and platform-code signing. '
                          'The annotated Git tag is unsigned. macOS applications retain ad-hoc signatures, '
                          'without Developer ID signing or notarization; Windows executables have no Authenticode signature.\n')
+        if args.assembly_run_id:
+            if not re.fullmatch(r'[1-9][0-9]*', args.assembly_run_id):
+                raise ValueError('Invalid recovery assembly run identity')
+            with notes.open('a') as stream:
+                stream.write(f'\nThe unchanged packages and patch from build run `{args.run_id}` were '
+                             f'assembled and signed in [recovery run {args.assembly_run_id}]'
+                             f'(https://github.com/{args.repository}/actions/runs/{args.assembly_run_id}). '
+                             'The recovery did not rebuild or modify the downloaded archives.\n')
         args.assets = unsigned
         args.notes = notes
         args.manifest_sha512 = draft.digest(unsigned / 'SHA512SUMS', 'sha512')
@@ -87,6 +115,8 @@ def create(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source-dir', type=Path)
+    parser.add_argument('--assembly-run-id')
     for name in ('tag', 'repository', 'fingerprint', 'run-id'):
         parser.add_argument('--' + name, required=True)
     for name in ('assets', 'notes', 'public-key'):

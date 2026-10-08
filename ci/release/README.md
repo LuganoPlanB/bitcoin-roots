@@ -126,3 +126,27 @@ six asset checksums, archive safety/COPYING, immutable source/tag, patch replay 
 notes before visibility-only publication under separate authority. Repeat the
 consumer checks unauthenticated after publication. Interrupted creation needs
 operator inspection of the partial draft; reruns cannot replace it.
+
+## Isolated one-off CI draft recovery
+
+This unmerged `recovery/30.3-ci-draft` branch handles only original tag build
+run `37849202986`, annotated tag object `d04b1e37b4da40dade3be1c5f29349e4c2235d3c`
+at source `17e1d484aba2a881be03b8928fba3c0125e027a2`. All five builds passed;
+final assembly rejected Windows COPYING solely because it used CRLF. The
+recovery validator accepts only exact canonical text in uniform LF or CRLF.
+It preserves original archive bytes. Job-scoped format.signature=2.55.0 reproduces the
+original producer mail footer while retaining strict patch-byte comparison.
+It verifies the pinned producer/artifact
+identities, source/promotion CI, live refs and release absence before signing.
+
+After independent review and separate dispatch authorization, run existing
+`release.yml` at this isolated branch with `recovery_run=37849202986`,
+`release_tag=v30.3-roots.1`, `release_commit=17e1d484aba2a881be03b8928fba3c0125e027a2`.
+Normal build jobs skip only for nonempty recovery input; invalid recovery input
+or branch fails preflight. The clean tagged source checkout stays separate from
+reviewed recovery tooling. The existing release environment confines the real
+key to signing; the creator verifies the public fingerprint and creates only a
+new eight-asset draft. Notes distinguish original build and recovery signing
+runs. No clobber, public publication, product ref change or new build is included.
+Never merge this one-off branch into canonical/main. Interrupted creation needs
+operator inspection; do not rerun upload blindly.

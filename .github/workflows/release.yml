@@ -4,12 +4,19 @@
 
 name: Release artifacts
 
+# Isolated one-off recovery of run37849202986; never merge this branch into
+# canonical/main. Normal push and default rehearsal behavior stay unchanged.
 on:
   push:
     tags:
       - 'v[0-9]*-roots.[0-9]*'
   workflow_dispatch:
     inputs:
+      recovery_run:
+        description: 'One-off recovery only: 37849202986 on recovery/30.3-ci-draft'
+        required: false
+        default: ''
+        type: string
       release_tag:
         description: Future Roots tag name to rehearse without publishing
         required: true
@@ -34,6 +41,7 @@ env:
 
 jobs:
   release-metadata-tests:
+    if: github.event_name != 'workflow_dispatch' || inputs.recovery_run == ''
     name: Release metadata and patch series
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -83,6 +91,7 @@ jobs:
           retention-days: 30
 
   linux-release:
+    if: github.event_name != 'workflow_dispatch' || inputs.recovery_run == ''
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -156,6 +165,7 @@ jobs:
           retention-days: 30
 
   windows-release:
+    if: github.event_name != 'workflow_dispatch' || inputs.recovery_run == ''
     name: Windows x86_64 release
     runs-on: windows-2022
     timeout-minutes: 180
@@ -237,6 +247,7 @@ jobs:
           retention-days: 30
 
   macos-release:
+    if: github.event_name != 'workflow_dispatch' || inputs.recovery_run == ''
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -384,3 +395,94 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --assets "${RUNNER_TEMP}/release-assets" \
             --public-key "$PUBLIC_KEY_FILE" --fingerprint "$EXPECTED_FINGERPRINT" \
             --notes contrib/release/release-notes.md --run-id "$GITHUB_RUN_ID"
+
+  recover-signed-draft:
+    name: Recover signed draft from pinned successful builds
+    if: github.event_name == 'workflow_dispatch' && inputs.recovery_run != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    defaults:
+      run:
+        working-directory: source
+    env:
+      # Match only the original producer's Git mail footer for strict patch cmp.
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: format.signature
+      GIT_CONFIG_VALUE_0: '2.55.0'
+      RECOVERY_RUN: ${{ inputs.recovery_run }}
+      EXPECTED_FINGERPRINT: 5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32
+      PUBLIC_KEY_FILE: contrib/release/bitcoin-roots-release-key.asc
+    steps:
+      - name: Check out isolated recovery tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: recovery-tools
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out immutable release source separately
+        uses: actions/checkout@v6
+        with:
+          ref: 17e1d484aba2a881be03b8928fba3c0125e027a2
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify pinned original run, producers, artifacts and live refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ../recovery-tools/ci/release/recover-ci-draft.py
+
+      - name: Validate immutable tagged source
+        run: |
+          set -Eeuo pipefail
+          ci/release/prepare-release-source.sh v30.3-roots.1 '' push
+          cmp COPYING ../recovery-tools/COPYING
+          test -z "$(git status --porcelain)"
+
+      - name: Download only the six pinned original artifacts
+        uses: actions/download-artifact@v5
+        with:
+          artifact-ids: 11584717786,11583260428,11582653048,11582291666,11581911271,11580919490
+          run-id: 37849202986
+          repository: LuganoPlanB/bitcoin-roots
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/recovery-downloads
+
+      - name: Assemble unchanged assets and replay original patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          ../recovery-tools/ci/release/prepare-release.sh "$RUNNER_TEMP/recovery-downloads" \
+            "$RUNNER_TEMP/recovery-assets" "$PUBLIC_KEY_FILE" v30.3-roots.1 5
+          ci/release/create-patch-series.sh v30.3-roots.1 "$RUNNER_TEMP/recovery-expected.patch"
+          cmp "$RUNNER_TEMP/recovery-expected.patch" "$RUNNER_TEMP/recovery-assets/bitcoin-roots-30.3-roots.1.patch"
+          python3 ../recovery-tools/ci/release/recover-ci-draft.py
+
+      - name: Require manifest signing with configured release key
+        env:
+          BITCOIN_ROOTS_GPG_SK: ${{ secrets.BITCOIN_ROOTS_GPG_SK }}
+          REQUIRE_RELEASE_SIGNATURE: '1'
+        run: |
+          set -Eeuo pipefail
+          ci/release/sign-manifest.sh "$RUNNER_TEMP/recovery-assets/SHA512SUMS" \
+            "$PUBLIC_KEY_FILE" "$EXPECTED_FINGERPRINT"
+          test -s "$RUNNER_TEMP/recovery-assets/SHA512SUMS.asc"
+
+      - name: Create only the new signed draft with original build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 ../recovery-tools/ci/release/recover-ci-draft.py
+          python3 ../recovery-tools/ci/release/create-ci-draft.py --tag v30.3-roots.1 \
+            --repository "$GITHUB_REPOSITORY" --assets "$RUNNER_TEMP/recovery-assets" \
+            --public-key "$PUBLIC_KEY_FILE" --fingerprint "$EXPECTED_FINGERPRINT" \
+            --notes contrib/release/release-notes.md --run-id 37849202986 \
+            --source-dir "$PWD" --assembly-run-id "$GITHUB_RUN_ID"
