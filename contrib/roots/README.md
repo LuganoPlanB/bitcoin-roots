@@ -211,20 +211,44 @@ git push --force-with-lease origin HEAD:<branch>
 
 Never force-push release tags. Preserve archival branches.
 
+## Reusing canonical CI for a pure main promotion
+
+Run ordinary fix CI, review it and integrate the canonical topic by fast-forward
+before opening/updating its main promotion PR. Preserve a two-parent promotion
+with current main first and the exact current canonical tip second.
+`verify-promotion-ci.py` checks blob/mode/symlink parity outside the reviewed
+main-only website/guidance/lint exceptions; CI and release workflows are never
+exceptions. It requires the latest complete successful PR Tests run at the exact
+candidate, in this repository, targeting its canonical branch, with successful
+classifier, lint and required-result jobs. Claimed promotion proof mismatches
+fail; they do not waive tests. Ordinary PRs retain normal CI.
+
+A proven promotion reuses compiled-test results, while its classifier/regression
+suite, lint and applicable independent main docs/site checks still run. Explicit
+`ci:full` or other `ci:*` coverage labels keep requested fresh tests. Open the
+promotion after source CI passes so no duplicate matrix is scheduled while
+candidate evidence is incomplete. Optional checks do not claim reproducible
+binaries, and existing release tags cannot be manually rehearsed.
+
 ## Release handoff
 
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
 Before creating a permanent tag, merge the reviewed promotion so the trusted
-workflow is present on the default branch. Then dispatch `Release artifacts`
-with the future tag name and the full 40-hex canonical commit. Manual dispatch
+workflow is present on the default branch. The default path tags the reviewed
+canonical source once; the tag runs fresh five-platform builds, required
+manifest signing and new-draft creation. Independently verify that draft before
+separate publication approval.
+
+An optional `Release artifacts` manual dispatch rehearses an absent future tag
+at the full 40-hex canonical commit. Manual dispatch
 fetches the official Core tag from the Bitcoin Core repository, verifies the
 commit against `origin/roots/<core-version>`, creates an annotated tag only in
 each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
 
-For example:
+For an explicitly requested optional rehearsal:
 
 ```sh
 release_tag=v30.3-roots.1
@@ -233,9 +257,13 @@ gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
 ```
 
-Download and inspect that run's five packages and patch artifact before
-assigning the permanent version. After the rehearsal passes, fetch again and
-verify the annotated tag target and ancestry immediately before pushing it:
+When requested, download and inspect the optional rehearsal's packages and
+patch. It does not replace the final tag run or establish binary reproducibility.
+Corrections renew source review, required CI and affected final-build verification.
+An optional rehearsal remains optional; repeat it only when explicitly requested.
+A failed final build requires diagnosis and renewed affected verification.
+Fetch again and verify the annotated tag target and ancestry
+immediately before pushing:
 
 ```sh
 release_tag=v30.3-roots.1

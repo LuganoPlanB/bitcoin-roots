@@ -452,16 +452,21 @@ product patch, and verifies replay onto the matching Core base. Because the
 series contains inherited CRLF files, apply the released mbox with
 `git am -3 --keep-cr <bitcoin-roots-*.patch>`.
 
-Before assigning a permanent release tag:
+For canonical CI, main promotion and release tagging:
 
-1. Complete independent source review and merge the reviewed promotion. Verify
-   canonical product equality and enumerate repository-only main exceptions.
-2. A manual `Release artifacts` dispatch may rehearse an absent future tag at
-   its full canonical commit. It builds all five platforms and their exact
+1. Complete independent source review and required candidate CI, then integrate
+   canonical by fast-forward. Open the main promotion only after that exact
+   candidate CI succeeds. The promotion verifies canonical-tip/tree/workflow
+   parity and exact successful canonical-target CI before reusing compiled
+   test results; classifier/lint and applicable main docs/site checks remain.
+   Missing or mismatched promotion proof fails. Explicit ci:* labels request
+   fresh coverage. Merge the reviewed promotion with its main exceptions.
+2. Optional manual `Release artifacts` dispatch may rehearse an absent future
+   tag at its full canonical commit. It builds all five platforms and their exact
    runner dependency notices with read-only permissions; it cannot sign or
-   create a release.
-3. Review the source, required CI and rehearsal evidence. Keep the canonical
-   tip stable. Re-fetch refs, create one annotated tag explicitly at the reviewed
+   create a release. It is not a prerequisite for the normal tag release.
+3. Review the source, required CI and any optional rehearsal evidence. Keep the
+   canonical tip stable. Re-fetch refs, create one annotated tag at the reviewed
    canonical commit, run the release-source validator and push only that tag.
 4. The tag push builds all five platforms anew, captures installed dependency
    notices in each runner and generates/replays the portable patch. Only the

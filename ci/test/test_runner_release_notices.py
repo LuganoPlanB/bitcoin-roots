@@ -52,6 +52,8 @@ class RunnerNoticeTest(unittest.TestCase):
         def execute(*args):
             if args[0] == 'git':
                 return 'a' * 40
+            if 'print-boost_download_path' in args:
+                self.assertIn('--eval=print-boost_download_path: package=boost', args)
             return '\n'.join(x.removeprefix('print-') + '=' + values[x.removeprefix('print-')]
                              for x in args if x.startswith('print-'))
         with patch.object(runner, 'run', side_effect=execute):
@@ -64,13 +66,40 @@ class RunnerNoticeTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 runner.depends_notices(depends, 'aarch64-linux-gnu', self.work / 'missing')
 
+    def test_actual_depends_print_uses_selected_package_version(self):
+        output = runner.run('make', '--no-print-directory', '-C', str(ROOT / 'depends'),
+                            'HOST=x86_64-linux-gnu',
+                            '--eval=print-boost_download_path: package=boost',
+                            'print-boost_version', 'print-boost_download_path')
+        values = dict(line.split('=', 1) for line in output.splitlines())
+        self.assertEqual(values['boost_download_path'],
+                         'https://github.com/boostorg/boost/releases/download/boost-' + values['boost_version'])
+
     def test_source_hash_and_unsafe_member_fail_closed(self):
         source, checksum = self.archive()
         with self.assertRaisesRegex(ValueError, 'hash mismatch'):
             runner.source_notices(source, '0' * 64, self.work / 'bad')
-        source, checksum = self.archive('../LICENSE')
-        with self.assertRaisesRegex(ValueError, 'Unsafe'):
-            runner.source_notices(source, checksum, self.work / 'bad')
+        for name in ('../LICENSE', '/LICENSE', 'source/C:/LICENSE', 'source\\LICENSE'):
+            source, checksum = self.archive(name)
+            with self.assertRaisesRegex(ValueError, 'Unsafe'):
+                runner.source_notices(source, checksum, self.work / 'bad')
+
+    def test_irrelevant_systemtap_manpage_names_are_not_written_or_followed(self):
+        source = self.work / 'systemtap.tar'
+        with tarfile.open(source, 'w') as out:
+            for name in ('systemtap-4.8/COPYING',
+                         'systemtap-4.8/doc/man3/function::HZ.3stap',
+                         '../irrelevant-test-data', '/absolute-test-data'):
+                entry = tarfile.TarInfo(name)
+                entry.size = 7
+                out.addfile(entry, io.BytesIO(b'license'))
+            link = tarfile.TarInfo('systemtap-4.8/LICENSE-link')
+            link.type = tarfile.SYMTYPE
+            link.linkname = '/outside/LICENSE'
+            out.addfile(link)
+        files = runner.source_notices(source, runner.sha256(source), self.work / 'selected')
+        self.assertEqual([p.relative_to(self.work / 'selected').as_posix() for p in files],
+                         ['systemtap-4.8/COPYING'])
 
     def test_brew_retains_actual_receipt_matching_version_and_source(self):
         source, checksum = self.archive()

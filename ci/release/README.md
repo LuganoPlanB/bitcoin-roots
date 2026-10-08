@@ -1,7 +1,12 @@
 # Release notice assembly
 
 `release.yml` runs the five-platform pipeline on a permanent Roots tag push;
-manual dispatch rehearses an absent future tag with read-only permissions.
+optional manual dispatch rehearses an absent future tag with read-only
+permissions. The normal release builds once on the tag push, signs/creates a
+draft and independently verifies it before separate publication approval.
+Manual rehearsal is not required, cannot run against an existing remote tag,
+and does not establish binary reproducibility. Source corrections require
+renewed review/CI and affected build evidence.
 Both paths capture notices from each new build runner before packaging. Only
 the tag path enters the `release` environment and requires a signed manifest
 before creating a new draft. Public publication remains a separate approval.

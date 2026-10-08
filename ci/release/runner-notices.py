@@ -47,14 +47,17 @@ def source_notices(archive, expected_hash, destination):
             if not member.isfile():
                 continue
             path = PurePosixPath(member.name)
-            if path.is_absolute() or '..' in path.parts or '\\' in member.name or ':' in member.name:
-                raise ValueError('Unsafe source archive member')
-            name = path.name.lower()
+            scan_path = PurePosixPath(member.name.replace('\\', '/'))
+            name = scan_path.name.lower()
             selected = bool(re.fullmatch(r'(?:copying|licen[cs]e|copyright|notice)(?:[._-].*)?', name))
-            selected |= 'LICENSES' in path.parts or name in {'ftl.txt', 'gplv2.txt'}
-            header = name == 'sqlite3.c' or path.as_posix().endswith('/keysyms/keysyms.c')
+            selected |= 'LICENSES' in scan_path.parts or name in {'ftl.txt', 'gplv2.txt'}
+            header = name == 'sqlite3.c' or scan_path.as_posix().endswith('/keysyms/keysyms.c')
             if not selected and not header:
                 continue
+            # Source tarballs can contain irrelevant manpage names such as
+            # SystemTap's function::HZ.3stap. Never write those members.
+            if path.is_absolute() or '..' in path.parts or '\\' in member.name or ':' in member.name:
+                raise ValueError(f'Unsafe source archive notice: {archive.name}: {member.name}')
             data = package.extractfile(member).read()
             if header:
                 data = data.split(b'*/', 1)[0] + b'*/\n'
@@ -80,9 +83,16 @@ def acquire(url, checksum, destination):
 
 
 def depends_notices(depends, host, destination):
-    def variables(names):
+    def variables(names, packages=()):
+        bindings = []
+        for name in names:
+            package = next((p for p in sorted(packages, key=len, reverse=True)
+                            if name.startswith(p + '_')), None)
+            if package:
+                # Recipes defer $(package)-based expansion until a target runs.
+                bindings.append(f'--eval=print-{name}: package={package}')
         output = run('make', '--no-print-directory', '-C', str(depends), f'HOST={host}',
-                     *[f'print-{name}' for name in names])
+                     *bindings, *[f'print-{name}' for name in names])
         return dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
     selected = variables(['packages', 'host_prefix', 'SOURCES_PATH'])
     if not (Path(selected['host_prefix']) / 'toolchain.cmake').is_file():
@@ -90,7 +100,7 @@ def depends_notices(depends, host, destination):
     packages = selected['packages'].split()
     names = [f'{p}_{suffix}' for p in packages for suffix in
              ('version', 'source', 'sha256_hash', 'download_path', 'download_file', 'extra_sources')]
-    values = variables(names)
+    values = variables(names, packages)
     result = {}
     for package in packages:
         source = Path(values[f'{package}_source'])
@@ -100,7 +110,7 @@ def depends_notices(depends, host, destination):
         # Qt translations/tools are separately fetched and bundled by the recipe.
         if package == 'qt':
             extras = variables(['qt_qttranslations_file_name', 'qt_qttranslations_sha256_hash',
-                                'qt_qttools_file_name', 'qt_qttools_sha256_hash'])
+                                'qt_qttools_file_name', 'qt_qttools_sha256_hash'], ['qt'])
             for part in ('qttranslations', 'qttools'):
                 filename = extras[f'qt_{part}_file_name']
                 extra_hash = extras[f'qt_{part}_sha256_hash']
