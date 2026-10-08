@@ -156,6 +156,39 @@ int main()
 }
 ```
 
+### C++ navigation with clangd
+
+Generate a local compilation database so clangd-based tools, including Serena,
+can use the project's include paths, compiler definitions, and C++ standard.
+Install the dependencies for your selected build configuration first; see the
+[Unix build instructions](build-unix.md). From the repository root, configure
+an out-of-source build with a Makefile or Ninja generator:
+
+```sh
+cmake -S . -B build-serena -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_WALLET=ON -DENABLE_IPC=ON
+```
+
+On initial setup, expose the database at the repository root for discovery:
+
+```sh
+ln -s build-serena/compile_commands.json compile_commands.json
+```
+
+If a database or symlink already exists there, keep it pointed at the intended
+build configuration. Reconfigure after changing build options. GUI navigation
+requires configuring with `-DBUILD_GUI=ON` and installing its dependencies;
+disabled components are not covered by the database. Build the relevant target
+if diagnostics report missing build-generated headers.
+
+The committed `.clangd` removes GCC-only flags that clangd cannot parse, without
+changing compilation flags used by the build. The compilation database contains
+machine-specific paths and must remain local, including any convenience symlink.
+It and `.cache/clangd/` are ignored by Git.
+
+Before relying on semantic navigation, check diagnostics and verify a known
+cross-file definition and its callers against current source. An empty reference
+result can mean indexing is still incomplete.
+
 ### Running clang-tidy
 
 To run clang-tidy on Ubuntu/Debian, install the dependencies:
