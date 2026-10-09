@@ -123,6 +123,95 @@ with its owner instead of recreating or overwriting it. Pin the source Roots
 tip and account for every source commit as kept, adapted, adopted upstream, or
 intentionally dropped. Include implementation, tests, help and recent fixes.
 
+### The semantic review unit
+
+Each new port commit should carry one independently maintainable behavior and
+the tests, help and documentation needed to maintain it. File count is not the
+criterion: a behavior can cross several libraries, while two unrelated options
+in one file may need separate commits. Keep unrelated cleanup out of the port.
+For each retained behavior, the commit message and port PR must identify:
+
+- the operator-visible behavior, its owner and why Roots still needs it;
+- the full source commit IDs, including follow-up fixes and original attribution;
+- which source changes are kept unchanged, adapted, adopted upstream, or
+  deliberately dropped, with reasons and destination commit IDs or upstream
+  references;
+- relevant upstream API or ownership changes and how adaptations preserve the
+  intended behavior and policy/consensus boundary;
+- the owning focused test commands and results, plus help/default checks and
+  any broader verification required by the affected paths.
+
+Account for every source change, not just every source commit: a mixed source
+commit may contain all four dispositions. Put retained/adapted provenance in
+the destination commit messages; put omitted changes and their reasons in the
+port PR. The PR ties those messages together as a review index. Do not create a
+checked-in inventory, generated manifest, or patch database alongside Git.
+
+If a cross-cutting change cannot be separated without breaking its invariant,
+document the dependency, the inseparable behavior and its combined checks in
+the message and PR. Reviewers should be able to explain why the unit belongs
+together; do not force an artificial split or impose an arbitrary size limit.
+
+For example, historical `1b73fe3d21` combines policy/network controls across 78
+files and `85257a0986` combines runtime controls across 44. Inspect their full
+IDs, messages and touched paths before planning a future port:
+
+```sh
+git rev-parse 1b73fe3d21^{commit} 85257a0986^{commit}
+git show --stat --oneline 1b73fe3d21
+git show --stat --oneline 85257a0986
+git show --format=fuller 1b73fe3d21 -- src/policy test/functional
+```
+
+These published commits are reference inputs, not candidates for rewriting.
+A future port can separate independently owned datacarrier, sigop and other
+controls, include their focused tests/help in each new unit, and cite the same
+old commit in each adapted message. Account explicitly for the remaining
+changes rather than treating the source commit as wholly retained.
+
+### Comparing dispositions across generations
+
+Pin both Core bases and Roots tips as full commit IDs before review; branches
+can advance. After substituting those four reviewed IDs, these checks are
+read-only:
+
+```sh
+old_core=REPLACE_WITH_OLD_CORE_40_HEX_COMMIT
+old_tip=REPLACE_WITH_OLD_ROOTS_40_HEX_COMMIT
+new_core=REPLACE_WITH_NEW_CORE_40_HEX_COMMIT
+new_tip=REPLACE_WITH_NEW_ROOTS_40_HEX_COMMIT
+git merge-base --is-ancestor "$old_core" "$old_tip"
+git merge-base --is-ancestor "$new_core" "$new_tip"
+git log --reverse --format='%H %s' "$old_core..$old_tip"
+git log --reverse --format='%H %s' "$new_core..$new_tip"
+git rev-list --merges "$new_core..$new_tip" # Must print nothing.
+git range-diff "$old_core..$old_tip" "$new_core..$new_tip"
+git diff --check "$new_core..$new_tip"
+```
+
+In range-diff, `=` denotes a matched unchanged patch, `!` a matched changed
+patch, `<` an unmatched old commit and `>` an unmatched new commit. Matching
+is heuristic: it does not prove semantic preservation or reliably label a
+one-to-many split. For a split, the PR must map the full old ID to every new
+ID and explain the scope of each. For `<`, explain adoption upstream or a
+deliberate drop; for `>`, explain a split, adaptation or justified new work.
+Inspect the actual patches and owning tests alongside this comparison.
+
+Use the earlier `git cherry-pick -x` example only for actual faithful picks.
+For a material adaptation or split, edit the new implementation and its tests
+on an unpublished topic branch, then create each semantic commit normally:
+
+```sh
+git diff --check
+git add -- path/to/behavior path/to/owning-test path/to/help
+git diff --cached
+git commit # Name source IDs, dispositions, adaptation and verification.
+```
+
+These are placeholders for the reviewed paths, not commands to run against
+the historical ports. Perform any split or rebase only in unpublished review
+history; preserve published canonical commits and tags.
+
 A new branch at the upstream tag initially lacks Roots CI support. Port the
 reviewed workflow and the scripts it invokes together before relying on Roots
 PR checks. Some jobs use the PR workflow while explicitly checking out its head;
@@ -214,6 +303,15 @@ consensus-valid transaction locally, test both sides of the boundary:
 
 1. the configured node rejects it from admission, relay, or template selection;
 2. a consensus-valid block containing it is still accepted.
+
+For Core ports and changes affecting policy, validation or serialization,
+include the source-pinned paired block/state evidence described in the
+[compatibility review contract](compatibility/README.md). Name expected local
+admission differences separately from block acceptance and chain state.
+The contract defines smoke/full profiles for external qualification tooling;
+this documentation alone does not establish that the tooling has run.
+Docs-only changes state why runtime evidence is inapplicable and need no node
+build. Keep the existing feature-owned tests and required CI checks.
 
 Never add RDTS/BIP110 consensus enforcement. Audit every essential touch to
 `src/consensus/`, `src/script/`, or validation code, and make no incidental
