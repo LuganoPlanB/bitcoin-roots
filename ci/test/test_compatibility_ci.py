@@ -6,6 +6,7 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,6 +28,8 @@ class CompatibilityCITest(unittest.TestCase):
         self.roots = self.directory / "roots"
         self.roots.mkdir()
         subprocess.run(["git", "init", "-q", self.roots], check=True)
+        # Detached maintenance can outlive a commit and race temporary cleanup.
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.name", "Compatibility test")
         self.git("config", "user.email", "compatibility@example.invalid")
         (self.roots / "core").write_text("core")
@@ -36,7 +39,7 @@ class CompatibilityCITest(unittest.TestCase):
         self.core_sha = self.git("rev-parse", "HEAD")
         self.git("tag", "v30.3")
         self.core = self.directory / "core"
-        subprocess.run(["git", "clone", "-q", str(self.roots), str(self.core)], check=True)
+        subprocess.run(["git", "clone", "-q", "-c", "maintenance.auto=false", str(self.roots), str(self.core)], check=True)
         subprocess.run(["git", "-C", str(self.core), "remote", "set-url", "origin", ci.OFFICIAL_CORE + ".git"], check=True)
         for name in ("compare.py", "fixtures.py", "build.py"):
             destination = self.roots / "contrib/roots/compatibility" / name
@@ -52,6 +55,19 @@ class CompatibilityCITest(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.check_output(["git", "-C", str(self.roots), *args], text=True, encoding="utf8").strip()
+
+    def test_temporary_repositories_do_not_spawn_automatic_maintenance(self):
+        trace = self.directory / "git-trace.json"
+        fixture = CompatibilityCITest("test_committed_metadata_cannot_select_wrong_or_ambiguous_generation")
+        result = unittest.TestResult()
+        with patch.dict(os.environ, {"GIT_TRACE2_EVENT": str(trace)}):
+            fixture.run(result)
+            ci.git(self.core, "fetch", str(self.roots), "HEAD")
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+        events = [json.loads(line) for line in trace.read_text().splitlines()]
+        children = [event["argv"] for event in events if event["event"] == "child_start"]
+        self.assertTrue(any(event["event"] == "start" and "commit" in event.get("argv", []) for event in events))
+        self.assertFalse([argv for argv in children if "maintenance" in argv or "gc" in argv])
 
     def resolve(self, **changes):
         args = dict(roots_source=self.roots, core_source=self.core, candidate=self.candidate,
