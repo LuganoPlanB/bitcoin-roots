@@ -440,13 +440,19 @@ def compare(args):
                 try:
                     node.stop()
                     record["cleanup"] = node.cleanup_result
+                    if not exit_code and (record["cleanup"].get("stopped") is not True
+                                          or record["cleanup"].get("returncode") != 0):
+                        report["status"] = "failed"
+                        report["error"] = "owned process cleanup failed"
+                        exit_code = 1
                     if exit_code:
                         record["diagnostic"] = node.diagnostic()
                 except (OSError, subprocess.TimeoutExpired) as error:
                     record["cleanup"] = {"stopped": False, "error": type(error).__name__}
                     report["status"] = "failed"
-                    report["error"] = "owned process cleanup failed"
-                    exit_code = 1
+                    if not exit_code:
+                        report["error"] = "owned process cleanup failed"
+                        exit_code = 1
             for record in report["nodes"].values():
                 if "binary" in record:
                     try:

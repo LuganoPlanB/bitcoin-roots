@@ -282,9 +282,7 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         self.assertEqual(report["error"], "qualification requires verified pinned-source build provenance")
         self.assertFalse(self.track.exists())
 
-    def test_in_run_builds_record_source_tree_and_fresh_commands(self):
-        (self.repo / "README.md").write_text("This uncommitted product edit must not enter the build.\n")
-        (self.repo / "untracked-input.txt").write_text("Not an immutable input.\n")
+    def simulated_build_comparison(self):
         args = comparison.parser().parse_args(self.arguments(["--build-from-source", "--qualification"]))
         args.core_bitcoind = args.roots_bitcoind = None
         original_command = comparison.command
@@ -312,8 +310,14 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
 
         with patch.object(comparison, "command", simulated_cmake), patch.object(comparison, "run_cases", self.successful_cases):
             code = comparison.compare(args)
-            self.assertEqual(code, 0, json.loads(self.output.read_text()).get("error"))
-        report = json.loads(self.output.read_text())
+        self.assert_cleaned()
+        return code, json.loads(self.output.read_text())
+
+    def test_in_run_builds_record_source_tree_and_fresh_commands(self):
+        (self.repo / "README.md").write_text("This uncommitted product edit must not enter the build.\n")
+        (self.repo / "untracked-input.txt").write_text("Not an immutable input.\n")
+        code, report = self.simulated_build_comparison()
+        self.assertEqual(code, 0, report.get("error"))
         self.assertTrue(report["qualified"])
         for node in report["nodes"].values():
             self.assertFalse(node["source"]["clean"])
@@ -322,6 +326,31 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
             self.assertEqual(node["build"]["binary_sha256"], node["binary"]["sha256"])
             self.assertEqual(node["build"]["commands"][0]["argv"][3], "archive")
         self.assert_cleaned()
+
+    def test_forced_shutdown_cannot_qualify_in_run_builds(self):
+        self.core = self.fake("core", "ignore-stop")
+        code, report = self.simulated_build_comparison()
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "failed")
+        self.assertFalse(report["qualified"])
+        self.assertEqual(report["error"], "owned process cleanup failed")
+        self.assertEqual(report["nodes"]["core"]["cleanup"],
+                         {"stopped": True, "method": "kill", "returncode": -signal.SIGKILL})
+        self.assertEqual(report["nodes"]["roots"]["cleanup"]["returncode"], 0)
+
+    def test_nonzero_cleanup_preserves_original_failure_and_cancellation(self):
+        for failure, expected_code in ((comparison.ComparisonError("original fixture failure"), 1),
+                                       (comparison.Cancelled(), 130)):
+            def failed_cases(nodes, _args, _report):
+                nodes[0].process.kill()
+                nodes[0].process.wait(timeout=5)
+                raise failure
+            with self.subTest(failure=type(failure).__name__):
+                code, report = self.run_comparison(cases=failed_cases)
+                self.assertEqual(code, expected_code)
+                self.assertEqual(report["error"], "cancelled" if expected_code == 130 else str(failure))
+                self.assertFalse(report["qualified"])
+                self.assertEqual(report["nodes"]["core"]["cleanup"]["returncode"], -signal.SIGKILL)
 
     def test_build_failure_and_cancellation_leave_report_and_no_artifacts(self):
         args = comparison.parser().parse_args(self.arguments(["--build-from-source", "--qualification"]))
@@ -398,7 +427,7 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         try:
             self.core = self.fake("core", "ignore-stop")
             code, report = self.run_comparison(cases=self.successful_cases)
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 1)
             self.assertEqual(report["nodes"]["core"]["cleanup"]["method"], "kill")
             self.assertIsNone(unrelated.poll())
         finally:

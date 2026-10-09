@@ -35,6 +35,10 @@ def shell(body, environment):
 
 
 class CompatibilityWorkflowsTest(unittest.TestCase):
+    def test_pr_runs_harness_failure_path_regressions(self):
+        classify = job("ci.yml", "classify")
+        self.assertRegex(classify, r"(?m)^          python3 ci/test/test_roots_compatibility\.py$")
+
     def test_all_workflow_environment_profiles_exist(self):
         for workflow in (ROOT / ".github/workflows").glob("*.yml"):
             profiles = set(re.findall(r"ci/test/00_setup_env_[A-Za-z0-9_-]+\.sh", workflow.read_text()))
