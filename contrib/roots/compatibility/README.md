@@ -1,5 +1,128 @@
 # Core and Roots compatibility review contract
 
+## Comparison command
+
+`compare.py` accepts explicit binary paths, source directories and full source
+commit identities. Its process/RPC layer starts separate disposable regtest
+nodes and always publishes a versioned JSON report, including partial failures.
+Smoke executes all three required block cases. Full additionally executes sigop
+and sub-dust boundaries, disconnect/reconnect and restart with control-mempool
+persistence. A successful run with caller-supplied local binaries is exploratory
+evidence; its `qualified` field is false.
+
+```sh
+python3 contrib/roots/compatibility/compare.py \
+  --core-bitcoind /path/to/core-build/bin/bitcoind \
+  --roots-bitcoind /path/to/roots-build/bin/bitcoind \
+  --core-source /path/to/core --roots-source /path/to/roots \
+  --core-commit "$CORE_SHA" --roots-commit "$ROOTS_SHA" \
+  --core-build-config 'node-only; caller supplied' \
+  --roots-build-config 'node-only; caller supplied' \
+  --profile smoke --startup-timeout 30 --rpc-timeout 10 \
+  --case-timeout 120 --output /path/to/run/report.json
+```
+
+Timeouts must be finite, positive and no greater than 3600 seconds. `--work-dir`
+selects a parent directory for owned temporary data; it never selects an existing
+node datadir. Nodes ignore external configuration/settings, disable wallets and
+peer networking, bind RPC to loopback and authenticate with their own cookies.
+The harness sends `stop`, then bounds graceful shutdown and escalates to signals
+only for process groups it started. SIGINT/SIGTERM return exit 130 after cleanup;
+other comparison failures return exit 1. Reports contain bounded sanitized
+diagnostics, never the cookie file or RPC authorization header. Reports belong
+outside Git.
+
+Source HEAD and source cleanliness are separate fields. A matching immutable
+HEAD does not imply a clean working tree or authenticate an executable. Local
+binaries and caller build descriptions are recorded as **unverified**. The
+`qualified` field stays false for those inputs. `--qualification` fails closed
+on identical resolved binary paths/digests or absent verified pinned-source build
+provenance. Merely supplying a configuration string cannot make it pass.
+
+For strict qualification, `--build-from-source` exports each pinned Git commit,
+builds it in a fresh owned out-of-source CMake directory, and runs those exact
+binaries. Supply the source/commit arguments above, omit the binary arguments,
+and add `--build-from-source --qualification`. `--build-jobs` is bounded to 1–4
+(default 2); `--build-timeout` is the total per-source export/configure/build
+budget (default 1800 seconds, maximum 3600). `--work-dir` also selects the parent
+for these owned builds. The command removes its build snapshots/binaries at the
+end; the JSON report carries their identity and evidence.
+
+The fixed profile disables wallet, GUI, IPC, application tests, benchmarks and
+fuzzing; it uses Release and disables compiler caches/launchers. Reports record
+Git commit/tree, export SHA256, exact commands, CMake cache/configuration,
+compiler versions, builder hash, binary digests and bounded command tails.
+Serialization is imported from the same exported Roots snapshot. Uncommitted
+or ignored files in the caller source checkout never enter these builds; their
+observed checkout cleanliness remains a separate report field. A successful
+all-executed in-run build comparison sets `qualified=true`. The report establishes
+this pinned-source build relationship, not official-tag signer authentication.
+There is no caller-provided manifest or flag that authenticates an existing
+binary, and there are no reused compiled-binary directories/caches.
+
+Infrastructure regression tests use actual fake-node processes and loopback
+HTTP endpoints; they do not establish product compatibility:
+
+```sh
+python3 -m unittest discover -s ci/test -p 'test_roots_compatibility.py'
+```
+
+### Fixture interpretations
+
+The harness creates 110 deterministic regtest funding blocks at fixed historical
+timestamps, with deterministic Taproot `OP_TRUE` script-path outputs. It imports
+the serialization framework only from the explicit `--roots-source` path and
+records that source commit and imported file hashes. Each block is serialized
+once and those exact bytes go to both nodes. Every accepted block is checked
+against the expected tip/height and both nodes' normalized fixture-output UTXOs;
+reports include block/transaction digests, admission results and state snapshots.
+
+Both nodes initially use explicit `-acceptnonstdtxn=0` to exercise standard
+policy, including on regtest. Expectations are pinned to Core 30.3:
+
+| Case | Boundary and expected admission |
+| --- | --- |
+| Ordinary | Both admit the control transaction. |
+| Datacarrier | Both admit one 83-byte carrier. Two 42-byte carriers exceed Roots' 83-byte aggregate: Roots rejects with `datacarrier`, Core admits. Roots' separate multi-OP_RETURN restriction is reached later; this fixture observes the aggregate rejection. |
+| Legacy sigop | Both admit 2490 legacy input sigops and reject 2505. Core 30.3 shares the 2500 input-sigop policy; reject text is recorded separately. Both accept the rejected transaction's block. |
+| Sub-dust | Under `subdust-standardness-exception`, both nodes use `-acceptnonstdtxn=1`; Roots also explicitly sets its default `-subdustfeepenalty=1`. This is one deviation from Roots defaults, permitting the output form while retaining its fee penalty. A zero-value P2TR output incurs 330 sats plus the relay minimum: Roots rejects one sat below and admits at the threshold; Core admits both. The below-threshold transaction goes into the paired valid block. |
+| Invalid block | A coinbase overpaying the subsidy by one sat is rejected by both; the prior tip and fixture UTXOs remain unchanged. |
+
+Admission is tested before block construction using `testmempoolaccept`; equality
+of human-readable rejection strings is never required. The at/below transactions
+spend the same confirmed input and are dry runs, avoiding mempool conflicts.
+Full switches to the named sub-dust profile only after its standard-policy cases.
+All profiles/configuration changes are recorded; required cases cannot be skipped.
+
+Full then invalidates the selected datacarrier and sub-dust blocks individually,
+checks the expected historical tip and fixture UTXOs, reconsiders them and checks
+the original accepted tip/UTXOs. It records mempool contents independently at
+each transition. Under `compatible-p2tr-control-persistence`, a high-fee ordinary
+P2TR control is submitted to both nodes; explicit `-persistmempool=1` accompanies
+both profiles. Both processes stop and restart using their same owned datadirs.
+The accepted fixture state must remain identical and the control transaction
+must appear in each reloaded mempool. Equality of other mempool entries is not
+required. Reports include every transition and launch configuration.
+
+Comparable local node-only builds can use separate clean pinned source worktrees
+and separate out-of-source directories:
+
+```sh
+cmake -S "$CORE_SOURCE" -B "$CORE_BUILD" \
+  -DCMAKE_BUILD_TYPE=Release -DENABLE_WALLET=OFF -DENABLE_IPC=OFF \
+  -DBUILD_GUI=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF
+cmake -S "$ROOTS_SOURCE" -B "$ROOTS_BUILD" \
+  -DCMAKE_BUILD_TYPE=Release -DENABLE_WALLET=OFF -DENABLE_IPC=OFF \
+  -DBUILD_GUI=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF
+cmake --build "$CORE_BUILD" --target bitcoind -j 2
+cmake --build "$ROOTS_BUILD" --target bitcoind -j 2
+```
+
+Record these commands, revisions, compiler/configuration and executable digests
+with the run. These deliberately limited builds do not exercise wallet, GUI or
+IPC functionality. Caller descriptions still do not authenticate a binary; use
+trusted pinned-source build evidence for qualification.
+
 This contract defines the evidence expected from external paired-node
 qualification tooling. It is a specification for that tooling, not a report
 that the profiles below have already run. Read the
