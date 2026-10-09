@@ -35,6 +35,20 @@ def shell(body, environment):
 
 
 class CompatibilityWorkflowsTest(unittest.TestCase):
+    def test_all_workflow_environment_profiles_exist(self):
+        for workflow in (ROOT / ".github/workflows").glob("*.yml"):
+            profiles = set(re.findall(r"ci/test/00_setup_env_[A-Za-z0-9_-]+\.sh", workflow.read_text()))
+            for profile in profiles:
+                with self.subTest(workflow=workflow.name, profile=profile):
+                    self.assertTrue((ROOT / profile).is_file())
+        nightly = job("nightly.yml", "gate")
+        self.assertEqual(nightly.count("00_setup_env_i686_no_ipc.sh"), 2)
+        self.assertIn('"name":"i686 Debug"', nightly)
+        profile = (ROOT / "ci/test/00_setup_env_i686_no_ipc.sh").read_text()
+        self.assertIn("HOST=i686-pc-linux-gnu", profile)
+        self.assertIn("DEBUG=1 NO_IPC=1", profile)
+        self.assertIn("-DCMAKE_BUILD_TYPE=Debug", profile)
+
     def test_pr_selection_and_immutable_inputs(self):
         lane = job("ci.yml", "block-compatibility")
         self.assertEqual(needs(lane), ["classify"])
