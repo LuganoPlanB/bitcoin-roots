@@ -69,6 +69,7 @@ jobs:
           python3 ci/test/test_windows_gui_workflows.py
           python3 ci/test/test_compatibility_ci.py
           python3 ci/test/test_compatibility_workflows.py
+          python3 ci/test/test_roots_compatibility.py
       - name: Retrieve changed files
         id: files
         uses: actions/github-script@v8
