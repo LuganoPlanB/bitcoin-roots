@@ -50,7 +50,7 @@ if "-version" in sys.argv:
     raise SystemExit(0)
 args = dict(arg[1:].split("=", 1) for arg in sys.argv[1:] if "=" in arg)
 datadir = Path(args["datadir"])
-with open(TRACK, "a") as stream:
+with open(TRACK, "a", encoding="utf8") as stream:
     stream.write(str(os.getpid()) + "\n")
 if MODE == "exit":
     raise SystemExit(7)
@@ -122,7 +122,7 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         self.roots = self.fake("roots", "normal")
 
     def git(self, *args):
-        return subprocess.check_output(["git", "-C", str(self.repo), *args], text=True, stderr=subprocess.DEVNULL)
+        return subprocess.check_output(["git", "-C", str(self.repo), *args], text=True, encoding="utf8", stderr=subprocess.DEVNULL)
 
     def fake(self, label, mode):
         path = self.directory / label

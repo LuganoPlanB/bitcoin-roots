@@ -51,7 +51,7 @@ class CompatibilityCITest(unittest.TestCase):
         self.git("update-ref", "refs/remotes/origin/roots/30.3", self.candidate)
 
     def git(self, *args):
-        return subprocess.check_output(["git", "-C", str(self.roots), *args], text=True).strip()
+        return subprocess.check_output(["git", "-C", str(self.roots), *args], text=True, encoding="utf8").strip()
 
     def resolve(self, **changes):
         args = dict(roots_source=self.roots, core_source=self.core, candidate=self.candidate,
@@ -238,6 +238,12 @@ class CompatibilityCITest(unittest.TestCase):
             self.resolve(release_tag="v30.3-roots.1")
         self.git("tag", "-a", "v30.3-roots.1", "-m", "release fixture")
         self.assertEqual(self.resolve(release_tag="v30.3-roots.1")["candidate_sha"], self.candidate)
+
+    def test_core_rc_names_remain_explicitly_unsupported_by_final_release_fixtures(self):
+        with self.assertRaisesRegex(ValueError, "release-candidate fixture expectations are not supported"):
+            self.resolve(release_tag="v30.3rc1-roots.1")
+        with self.assertRaisesRegex(ValueError, "release-candidate fixture expectations are not supported"):
+            ci.generation("roots/30.3rc1")
 
     def test_malformed_missing_and_oversize_reports(self):
         path = self.directory / "report.json"

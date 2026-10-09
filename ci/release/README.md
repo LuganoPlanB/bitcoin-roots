@@ -34,6 +34,10 @@ in-run binary/build provenance and configuration alongside source validation,
 patch replay and five-platform/signature checks. Failed evidence requires repair
 and a complete rerun. The corpus proves named fixture/configuration outcomes only;
 it does not prove exhaustive consensus equivalence or tag-signer authentication.
+The existing release-source validator still accepts Core RC tag forms. This
+comparison currently qualifies final Core 30.3 only, so RC and new-generation
+rehearsal/release attempts fail explicitly until reviewed matching-base fixtures
+are added. An RC cannot reuse comparison against the final Core tag.
 See the [maintainer handoff](../../contrib/roots/README.md#release-handoff) for
 artifact inspection commands and the separate publication authority boundary.
 
