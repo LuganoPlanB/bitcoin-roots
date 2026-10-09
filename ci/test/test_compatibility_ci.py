@@ -77,17 +77,41 @@ class CompatibilityCITest(unittest.TestCase):
                             "build_configuration": list(builder.CMAKE_OPTIONS),
                             "cleanup": {"stopped": True, "returncode": 0}}
         cases = []
+        outpoint = "e" * 64 + ":0"
+        def state(number, height):
+            tip = str(number) * 64
+            return {"bestblockhash": tip, "height": height,
+                    "utxos": {outpoint: {"bestblock": tip, "value_sats": 1, "coinbase": False,
+                                         "confirmations": 1, "script_hex": "51"}}}
+        snapshots = {"ordinary": [state(1, 111)], "datacarrier": [state(2, 112)],
+                     "invalid-block": [state(2, 112)], "sigop": [state(3, 113), state(4, 114)],
+                     "subdust": [state(5, 115)], "lifecycle": []}
         for name in ci.CASES[profile]:
             valid = name != "invalid-block"
-            case = {"id": name, "status": "passed", "states": [{"height": 111}],
-                    "admission": [{"name": title, "expected_allowed": {"core": core, "roots": roots},
+            case = {"id": name, "status": "passed", "states": snapshots[name],
+                    "admission": [{"name": title, "txid": "f" * 64, "expected_allowed": {"core": core, "roots": roots},
                                    "observed": {"core": {"allowed": core}, "roots": {"allowed": roots}}}
                                   for title, core, roots in ci.ADMISSIONS[name]],
-                    "blocks": [{"expected_valid": valid, "outcomes": {"core": None if valid else "invalid", "roots": None if valid else "invalid"}}]
-                              * {"sigop": 2, "lifecycle": 0}.get(name, 1)}
+                    "blocks": [{"hash": snapshot["bestblockhash"] if valid else "9" * 64,
+                                "expected_valid": valid, "outcomes": {"core": None if valid else "invalid", "roots": None if valid else "invalid"}}
+                               for snapshot in snapshots[name]]}
+            if name in ("datacarrier", "subdust"):
+                case["selected_block"] = case["blocks"][-1]["hash"]
             if name == "lifecycle":
-                case.update(transitions=[{"fixture": "datacarrier"}, {"fixture": "subdust"}],
-                            restart={"control_persisted": True, "same_owned_datadirs": True})
+                # The real harness leaves top-level states/blocks empty here;
+                # observations belong to invalidate/reconsider and restart.
+                transitions = []
+                for fixture, parent in (("datacarrier", "ordinary"), ("subdust", "sigop")):
+                    transitions.append({"fixture": fixture, "block": snapshots[fixture][-1]["bestblockhash"],
+                                        "steps": [{"action": action, "state": copy.deepcopy(snapshot),
+                                                   "mempools": {"core": [], "roots": []}}
+                                                  for action, snapshot in (("invalidate", snapshots[parent][-1]),
+                                                                           ("reconsider", snapshots["subdust"][-1]))]})
+                case.update(transitions=transitions,
+                            control_profile={"name": "compatible-p2tr-control-persistence", "persistmempool": True, "txid": "f" * 64},
+                            restart={"control_persisted": True, "same_owned_datadirs": True, "state": copy.deepcopy(snapshots["subdust"][-1]),
+                                     "mempools_before": {"core": ["f" * 64], "roots": ["f" * 64]},
+                                     "mempools_after": {"core": ["f" * 64], "roots": ["f" * 64]}})
             cases.append(case)
         return {"schema_version": 1, "status": "passed", "qualified": True, "profile": profile,
                 "required_cases": ci.CASES[profile], "cases": cases, "nodes": nodes,
@@ -208,6 +232,35 @@ class CompatibilityCITest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate(report, "full")
 
+    def test_real_lifecycle_shape_requires_nested_transition_and_restart_evidence(self):
+        good = self.report("full")
+        self.assertEqual(good["cases"][-1]["states"], [])
+        self.assertEqual(good["cases"][-1]["blocks"], [])
+        self.validate(good, "full")
+        mutations = [lambda life: life["transitions"][0]["steps"].pop(),
+                     lambda life: life["transitions"][0]["steps"][0].update(action="reconsider"),
+                     lambda life: life["transitions"][0]["steps"][0]["state"].update(height=115),
+                     lambda life: life["transitions"][0]["steps"][0]["state"]["utxos"]["e" * 64 + ":0"].update(value_sats=2),
+                     lambda life: life["transitions"][1].update(block="0" * 64),
+                     lambda life: life["restart"].update(state={}),
+                     lambda life: life["restart"]["mempools_after"].update(roots=[]),
+                     lambda life: life["control_profile"].update(txid="0" * 64)]
+        for index, mutate in enumerate(mutations):
+            report = copy.deepcopy(good)
+            mutate(report["cases"][-1])
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.validate(report, "full")
+
+    def test_block_fixtures_still_require_nonempty_state_and_utxo_evidence(self):
+        for field in ("states", "utxos"):
+            report = self.report("full")
+            if field == "states":
+                report["cases"][0]["states"] = []
+            else:
+                report["cases"][0]["states"][0]["utxos"] = {}
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.validate(report, "full")
+
     def test_wrong_fixture_and_serialization_revisions(self):
         good = self.report()
         mutations = [lambda r: r.update(harness_sha256="0" * 64),
@@ -273,6 +326,17 @@ class CompatibilityCITest(unittest.TestCase):
         result = (output / "report.json").read_text()
         self.assertIn("safe error", result)
         self.assertNotIn("secret", result)
+
+    def test_artifacts_preserve_utxo_outpoints_without_preserving_credentials(self):
+        report = self.directory / "outpoints.json"
+        outpoint = "a" * 64 + ":0"
+        report.write_text(json.dumps({"state": {"utxos": {outpoint: {"value_sats": 42}}},
+                                      "Authorization": "Basic secret"}), encoding="utf8")
+        output = self.directory / "outpoint-artifacts"
+        ci.prepare_artifacts(report, output)
+        sanitized = json.loads((output / "report.json").read_text())
+        self.assertEqual(sanitized["state"]["utxos"][outpoint], {"value_sats": 42})
+        self.assertNotIn("Authorization", sanitized)
 
     def test_cli_missing_report_is_failure(self):
         result = subprocess.run(["python3", str(ROOT / "ci/compatibility.py"), "report", "--candidate-sha", self.candidate,
