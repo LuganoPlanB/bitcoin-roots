@@ -113,7 +113,7 @@ jobs:
           SUITE: ${{ inputs.suite || 'all' }}
         run: |
           set -Eeuo pipefail
-          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
+          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
           sanitizers='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}'
           case "${SUITE}" in
             all) value="${all}"; sanitizer_value="${sanitizers}" ;;
@@ -121,7 +121,7 @@ jobs:
             msan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}' ;;
             sanitizers) value='{"include":[]}'; sanitizer_value="${sanitizers}" ;;
             tidy) value='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360}]}' ;;
-            i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240}]}' ;;
+            i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240}]}' ;;
             previous-releases) value='{"include":[{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300}]}' ;;
             extended-functional) value='{"include":[{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}' ;;
             block-compatibility|fuzz|macos-fuzz|windows-fuzz) value='{"include":[]}' ;;

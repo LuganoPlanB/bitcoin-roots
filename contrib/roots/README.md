@@ -395,6 +395,9 @@ gh workflow run nightly.yml --ref topic/30.3/release-methodology \
     -f suite=block-compatibility -f context-ref=roots/30.3
 ```
 
+The separate nightly `i686 Debug` selection uses the existing 32-bit Debug
+profile with `NO_IPC=1`; it does not establish multiprocess/IPC coverage.
+
 The workflow derives the official Core tag commit from the reviewed generation
 branch convention and verifies its ancestry in candidate and canonical source.
 For `main`, committed package metadata narrows the generation, then official tag
