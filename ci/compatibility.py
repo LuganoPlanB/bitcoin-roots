@@ -166,6 +166,70 @@ def load_report(path):
                       parse_constant=lambda _: require(False, "nonfinite report number"))
 
 
+def validate_state(state):
+    require(isinstance(state, dict) and re.fullmatch(r"[0-9a-f]{64}", state.get("bestblockhash", ""))
+            and type(state.get("height")) is int and state["height"] >= 0, "invalid paired chain state")
+    utxos = state.get("utxos")
+    require(isinstance(utxos, dict) and utxos, "missing paired UTXO evidence")
+    for outpoint, value in utxos.items():
+        require(re.fullmatch(r"[0-9a-f]{64}:[0-9]+", outpoint), "invalid UTXO outpoint")
+        require(value is None or isinstance(value, dict), "invalid normalized UTXO")
+        if value is not None:
+            require(value.get("bestblock") == state["bestblockhash"]
+                    and type(value.get("value_sats")) is int and value["value_sats"] >= 0
+                    and type(value.get("coinbase")) is bool
+                    and type(value.get("confirmations")) is int and value["confirmations"] > 0
+                    and isinstance(value.get("script_hex"), str)
+                    and re.fullmatch(r"(?:[0-9a-f]{2})+", value["script_hex"]), "invalid normalized UTXO fields")
+
+
+def validate_mempools(pools):
+    require(isinstance(pools, dict) and set(pools) == {"core", "roots"}, "missing node mempool observations")
+    require(all(isinstance(pool, list) and all(isinstance(txid, str) and re.fullmatch(r"[0-9a-f]{64}", txid)
+                                              for txid in pool) for pool in pools.values()), "invalid mempool observations")
+
+
+def validate_lifecycle(cases):
+    lifecycle = cases[-1]
+    require(lifecycle.get("states") == [], "lifecycle state belongs in transition/restart records")
+    transitions = lifecycle.get("transitions", [])
+    require([step.get("fixture") for step in transitions] == ["datacarrier", "subdust"], "missing lifecycle transitions")
+    accepted = cases[-2]["states"][-1]
+    for transition, selected, parent in ((transitions[0], cases[1], cases[0]["states"][-1]),
+                                          (transitions[1], cases[-2], cases[3]["states"][-1])):
+        require(transition.get("block") == selected.get("selected_block")
+                and transition["block"] in [block["hash"] for block in selected["blocks"]], "wrong lifecycle fixture block")
+        steps = transition.get("steps", [])
+        require([step.get("action") for step in steps] == ["invalidate", "reconsider"], "missing lifecycle actions")
+        for step in steps:
+            validate_state(step.get("state"))
+            validate_mempools(step.get("mempools"))
+        disconnected, reconnected = (step["state"] for step in steps)
+        require(disconnected["bestblockhash"] == parent["bestblockhash"] and disconnected["height"] == parent["height"],
+                "wrong historical disconnect state")
+        # Later fixture outpoints remain tracked after disconnect, but must be
+        # absent. Earlier snapshots predate those keys, so missing means None.
+        require(set(parent["utxos"]) <= set(disconnected["utxos"])
+                and all(parent["utxos"].get(outpoint) == value for outpoint, value in disconnected["utxos"].items()),
+                "disconnect UTXOs differ from historical fixture state")
+        require(reconnected == accepted, "reconnection changed accepted fixture state")
+    restart = lifecycle.get("restart", {})
+    require(restart.get("control_persisted") is True and restart.get("same_owned_datadirs") is True,
+            "restart verification incomplete")
+    validate_state(restart.get("state"))
+    require(restart["state"] == accepted, "restart changed accepted fixture state")
+    control = lifecycle.get("control_profile", {})
+    require(control.get("name") == "compatible-p2tr-control-persistence" and control.get("persistmempool") is True,
+            "missing compatible persistence profile")
+    txid = control.get("txid", "")
+    require(re.fullmatch(r"[0-9a-f]{64}", txid) and lifecycle["admission"][0].get("txid") == txid,
+            "persistence control identity mismatch")
+    for field in ("mempools_before", "mempools_after"):
+        pools = restart.get(field)
+        validate_mempools(pools)
+        require(all(txid in pool for pool in pools.values()), "persistence control missing from node mempool")
+
+
 def validate_report(report, roots_source, core_source, candidate, core_sha, profile):
     identity(candidate)
     identity(core_sha)
@@ -178,7 +242,10 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
     require([case.get("id") for case in cases] == CASES[profile]
             and all(case.get("status") == "passed" for case in cases), "missing, skipped or failed cases")
     for case in cases:
-        require(case.get("states"), "missing paired chain state")
+        if case["id"] != "lifecycle":
+            require(len(case.get("states", [])) == (2 if case["id"] == "sigop" else 1), "missing paired chain state")
+            for state in case["states"]:
+                validate_state(state)
         require(len(case.get("blocks", [])) == {"sigop": 2, "lifecycle": 0}.get(case["id"], 1),
                 "missing block observations")
         expected = ADMISSIONS[case["id"]]
@@ -196,11 +263,7 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
             require(all((outcome is None) if block["expected_valid"] else isinstance(outcome, str) and bool(outcome)
                         for outcome in block["outcomes"].values()), "divergent block acceptance")
     if profile == "full":
-        lifecycle = cases[-1]
-        require([step["fixture"] for step in lifecycle["transitions"]] == ["datacarrier", "subdust"],
-                "missing lifecycle transitions")
-        require(lifecycle["restart"]["control_persisted"] is True
-                and lifecycle["restart"]["same_owned_datadirs"] is True, "restart verification incomplete")
+        validate_lifecycle(cases)
     spec = importlib.util.spec_from_file_location("compatibility_build", ROOT / "contrib/roots/compatibility/build.py")
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
@@ -278,7 +341,8 @@ def prepare_artifacts(report_path, output):
             require(depth <= 30, "report nesting exceeds limit")
             if isinstance(value, dict):
                 return {key: sanitize(item, depth + 1) for key, item in value.items()
-                        if re.fullmatch(r"[A-Za-z0-9_./-]{1,160}", key)
+                        if (re.fullmatch(r"[A-Za-z0-9_./-]{1,160}", key)
+                            or re.fullmatch(r"[0-9a-f]{64}:[0-9]+", key))
                         and not re.search(r"(?i)(authorization|password|rpcauth|cookie|token|secret)", key)}
             if isinstance(value, list):
                 return [sanitize(item, depth + 1) for item in value]
