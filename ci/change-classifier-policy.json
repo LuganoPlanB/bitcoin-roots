@@ -29,6 +29,7 @@
     "unknown": "broad"
   },
   "fail_open": ["unknown-path", "ambiguous-path", "empty-file-list", "truncated-file-list", "api-error", "invalid-policy"],
+  "block_compatibility_prefixes": ["src/tx", "src/coins", "contrib/roots/compatibility/"],
   "path_rules": [
     {"category": "build", "prefixes": [".github/", "ci/", "cmake/", "depends/", "contrib/devtools/", "build_msvc/"], "suffixes": ["CMakeLists.txt", ".cmake", ".yml", ".yaml"]},
     {"category": "critical", "prefixes": ["doc/man/", "share/examples/bitcoin.conf", "src/qt/locale/bitcoin_en.ts", "src/consensus/", "src/script/", "src/primitives/", "src/policy/", "src/rpc/", "src/node/", "src/kernel/", "src/net", "src/txmempool", "src/validation", "src/serialize", "src/chain", "test/functional/test_framework/", "test/"], "suffixes": []},

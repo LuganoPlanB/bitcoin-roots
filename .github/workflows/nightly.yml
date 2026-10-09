@@ -13,7 +13,11 @@ on:
         required: false
         default: all
         type: choice
-        options: [all, sanitizers, fuzz, platforms, tsan, msan, tidy, i686, previous-releases, extended-functional, macos-fuzz, windows-fuzz]
+        options: [all, block-compatibility, sanitizers, fuzz, platforms, tsan, msan, tidy, i686, previous-releases, extended-functional, macos-fuzz, windows-fuzz]
+      context-ref:
+        description: Reviewed generation branch (default resolves the selected branch)
+        required: false
+        type: string
   workflow_call:
     inputs:
       ref:
@@ -24,6 +28,11 @@ on:
         description: Assurance suite to run
         required: false
         default: all
+        type: string
+      context-ref:
+        description: Reviewed generation branch for matching-Core qualification
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -47,12 +56,15 @@ jobs:
       reason: ${{ steps.decision.outputs.reason }}
       linux-matrix: ${{ steps.matrix.outputs.value }}
       sanitizer-matrix: ${{ steps.matrix.outputs.sanitizers }}
+      compatibility-candidate: ${{ steps.compatibility.outputs.candidate_sha }}
+      compatibility-core: ${{ steps.compatibility.outputs.core_sha }}
+      compatibility-context: ${{ steps.compatibility.outputs.context_ref }}
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
       - name: Retrieve current and immediately preceding scheduled runs
         if: github.event_name == 'schedule'
@@ -112,17 +124,58 @@ jobs:
             i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_multiprocess.sh","timeout":240}]}' ;;
             previous-releases) value='{"include":[{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300}]}' ;;
             extended-functional) value='{"include":[{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}' ;;
-            fuzz|macos-fuzz|windows-fuzz) value='{"include":[]}' ;;
+            block-compatibility|fuzz|macos-fuzz|windows-fuzz) value='{"include":[]}' ;;
             *) echo "Unsupported suite: ${SUITE}" >&2; exit 1 ;;
           esac
           sanitizer_value=${sanitizer_value:-'{"include":[]}'}
           echo "value=${value}" >> "${GITHUB_OUTPUT}"
           echo "sanitizers=${sanitizer_value}" >> "${GITHUB_OUTPUT}"
+      - name: Resolve immutable compatibility sources
+        id: compatibility
+        if: steps.decision.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'block-compatibility')
+        env:
+          CANDIDATE_SHA: ${{ inputs.ref || github.sha }}
+          CONTEXT_REF: ${{ inputs.context-ref || github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          python3 ci/compatibility.py inputs --roots-source "$GITHUB_WORKSPACE" \
+            --candidate-sha "$CANDIDATE_SHA" --context-ref "$CONTEXT_REF" --output "$GITHUB_OUTPUT"
+
+  block-compatibility:
+    name: matching Core full block compatibility
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'block-compatibility')
+    uses: ./.github/workflows/reusable-compatibility.yml
+    with:
+      candidate-sha: ${{ needs.gate.outputs.compatibility-candidate }}
+      core-sha: ${{ needs.gate.outputs.compatibility-core }}
+      context-ref: ${{ needs.gate.outputs.compatibility-context }}
+      profile: full
+
+  compatibility-result:
+    name: required nightly compatibility result
+    if: always()
+    needs: [gate, block-compatibility]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject absent selected compatibility results
+        env:
+          GATE: ${{ needs.gate.result }}
+          RUN: ${{ needs.gate.outputs.run }}
+          SELECTED: ${{ inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'block-compatibility' }}
+          RESULT: ${{ needs.block-compatibility.result }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GATE" == success ]]
+          if [[ "$RUN" == true && "$SELECTED" == true ]]; then
+            [[ "$RESULT" == success ]]
+          fi
 
   linux-assurance:
     name: ${{ matrix.name }}
     needs: gate
-    if: needs.gate.outputs.run == 'true' && inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz'
+    if: needs.gate.outputs.run == 'true' && inputs.suite != 'block-compatibility' && inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz'
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     strategy:
@@ -161,7 +214,7 @@ jobs:
   sanitizers:
     name: ${{ matrix.name }}
     needs: gate
-    if: needs.gate.outputs.run == 'true' && inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz'
+    if: needs.gate.outputs.run == 'true' && inputs.suite != 'block-compatibility' && inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.gate.outputs.sanitizer-matrix) }}

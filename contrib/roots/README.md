@@ -372,6 +372,46 @@ promotion after source CI passes so no duplicate matrix is scheduled while
 candidate evidence is incomplete. Optional checks do not claim reproducible
 binaries, and existing release tags cannot be manually rehearsed.
 
+Matching-Core block compatibility always runs fresh for a promotion candidate.
+The existing source/tree/workflow proof still governs reuse of other compiled
+checks; generic prior CI success does not establish this fixture evidence.
+
+## Matching Core block compatibility in CI
+
+`matching Core block compatibility` is separate from previous-release wallet
+and interoperability checks. PRs select smoke for critical policy, validation,
+kernel, script, consensus and transaction changes, compatibility tooling and
+workflow changes, and unknown/incomplete changed-file inventories. Ordinary
+documentation changes can skip it. `ci:compat` requests both compatibility lanes;
+`ci:full` requests full nightly assurance, including one full block comparison,
+and avoids an overlapping smoke run.
+
+Nightly `all` includes full comparison. The standalone `block-compatibility`
+suite runs it without unrelated assurance matrices. Manual requests run even
+when scheduled assurance would skip an unchanged source:
+
+```sh
+gh workflow run nightly.yml --ref topic/30.3/release-methodology \
+    -f suite=block-compatibility -f context-ref=roots/30.3
+```
+
+The workflow derives the official Core tag commit from the reviewed generation
+branch convention and verifies its ancestry in candidate and canonical source.
+For `main`, committed package metadata narrows the generation, then official tag
+pinning and ancestry confirm its reviewed canonical base; a version string alone
+does not authenticate it. Unknown or ambiguous generations fail; the current fixtures support Core 30.3 only. A new
+Core generation needs reviewed fixture expectations before qualification.
+Official repository/tag commit pinning does not authenticate the tag signer.
+
+Both nodes build in-run from immutable Git exports with the same recorded
+node-only configuration and no compiled-binary cache. Reports account for all
+three smoke or six full cases and record source trees, binary/configuration
+digests, fixture/serialization provenance and cleanup. Missing, skipped,
+malformed, stale or failed selected evidence fails the required result. Review
+bounded sanitized artifacts on failures, fix the cause, then rerun complete
+coverage; never reinterpret a skip as qualification. These are finite fixture
+results, not exhaustive consensus equivalence or wallet/relay interoperability.
+
 ## Release handoff
 
 Complete independent review of the canonical implementation before assigning a
@@ -393,6 +433,29 @@ commit against `origin/roots/<core-version>`, creates an annotated tag only in
 each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
+
+Both manual rehearsal and permanent tag builds require full matching-Core block
+compatibility at the exact resolved release-source commit before any platform
+build. The metadata job retains canonical-source/tag validation and resolves the
+matching official Core base; changed source/configuration/profile requires new
+evidence. Failed or skipped comparison blocks platform builds and draft creation.
+Compatibility evidence is a CI artifact, separate from the eight release assets.
+
+Inspect the run and download its report alongside the existing patch/package
+checks (substitute the run ID and full immutable identities):
+
+```sh
+gh run view "$RUN_ID" --repo LuganoPlanB/bitcoin-roots
+gh run download "$RUN_ID" --repo LuganoPlanB/bitcoin-roots \
+    --name "block-compatibility-full-${ROOTS_SHA}-${CORE_SHA}" --dir compatibility-evidence
+```
+
+Require `status=passed`, `qualified=true`, the full six-case inventory, both
+expected source commits/trees, in-run build provenance and current configuration.
+Inspect `sources.json` and `status.json` for source/run identity and confirm the
+artifact came from the selected run. Sanitized reports retain bounded diagnostics;
+credential-like lines are redacted. A local/mock test does not substitute for an
+actual successful reusable workflow run.
 
 Coordinate a stable canonical tip through required CI, immutable tagging and
 signed CI draft verification. Each build job and the CI draft helper refreshes

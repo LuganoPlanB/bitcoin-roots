@@ -36,6 +36,10 @@ jobs:
       wallet: ${{ steps.classify.outputs.wallet }}
       sanitizers: ${{ steps.classify.outputs.sanitizers }}
       compat: ${{ steps.classify.outputs.compat }}
+      block_compatibility: ${{ steps.classify.outputs.block_compatibility }}
+      compatibility_candidate: ${{ steps.compatibility.outputs.candidate_sha }}
+      compatibility_core: ${{ steps.compatibility.outputs.core_sha }}
+      compatibility_context: ${{ steps.compatibility.outputs.context_ref }}
       platforms: ${{ steps.classify.outputs.platforms }}
       nightly_sanitizers: ${{ steps.classify.outputs.nightly_sanitizers }}
       nightly_fuzz: ${{ steps.classify.outputs.nightly_fuzz }}
@@ -63,6 +67,8 @@ jobs:
           python3 ci/test/test_create_ci_release_draft.py
           python3 ci/test/test_create_release_draft.py
           python3 ci/test/test_windows_gui_workflows.py
+          python3 ci/test/test_compatibility_ci.py
+          python3 ci/test/test_compatibility_workflows.py
       - name: Retrieve changed files
         id: files
         uses: actions/github-script@v8
@@ -130,6 +136,28 @@ jobs:
             --labels-json "${LABELS_JSON}" \
             --github-output "$GITHUB_OUTPUT" \
             "${args[@]}"
+      - name: Resolve immutable matching Core inputs
+        id: compatibility
+        if: steps.classify.outputs.block_compatibility == 'true'
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          CONTEXT_REF: ${{ startsWith(github.head_ref, 'promote/') && github.head_ref || github.base_ref }}
+        run: |
+          set -Eeuo pipefail
+          python3 ci/compatibility.py inputs --roots-source "$GITHUB_WORKSPACE" \
+            --candidate-sha "$CANDIDATE_SHA" --context-ref "$CONTEXT_REF" --output "$GITHUB_OUTPUT"
+
+  block-compatibility:
+    name: matching Core block compatibility
+    needs: classify
+    # ci:full runs this lane once through full nightly assurance instead.
+    if: needs.classify.outputs.block_compatibility == 'true' && needs.classify.outputs.nightly_full != 'true'
+    uses: ./.github/workflows/reusable-compatibility.yml
+    with:
+      candidate-sha: ${{ needs.classify.outputs.compatibility_candidate }}
+      core-sha: ${{ needs.classify.outputs.compatibility_core }}
+      context-ref: ${{ needs.classify.outputs.compatibility_context }}
+      profile: smoke
 
   lint:
     name: lint
@@ -433,11 +461,12 @@ jobs:
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       suite: all
+      context-ref: ${{ needs.classify.outputs.compatibility_context }}
 
   required-result:
     name: required result
     if: always()
-    needs: [classify, lint, gui, sanitizers, compat, arm32, kernel, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
+    needs: [classify, lint, gui, sanitizers, compat, block-compatibility, arm32, kernel, windows-smoke, macos-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -448,6 +477,7 @@ jobs:
           GUI: ${{ needs.gui.result }}
           SANITIZERS: ${{ needs.sanitizers.result }}
           COMPAT: ${{ needs.compat.result }}
+          BLOCK_COMPATIBILITY: ${{ needs.block-compatibility.result }}
           ARM32: ${{ needs.arm32.result }}
           KERNEL: ${{ needs.kernel.result }}
           WINDOWS: ${{ needs.windows-smoke.result }}
@@ -459,6 +489,7 @@ jobs:
           GUI_SELECTED: ${{ needs.classify.outputs.gui }}
           SANITIZERS_SELECTED: ${{ needs.classify.outputs.sanitizers }}
           COMPAT_SELECTED: ${{ needs.classify.outputs.compat == 'true' && needs.classify.outputs.nightly_full != 'true' }}
+          BLOCK_COMPATIBILITY_SELECTED: ${{ needs.classify.outputs.block_compatibility == 'true' && needs.classify.outputs.nightly_full != 'true' }}
           PLATFORMS_SELECTED: ${{ needs.classify.outputs.platforms }}
           NIGHTLY_SANITIZERS_SELECTED: ${{ needs.classify.outputs.nightly_sanitizers }}
           NIGHTLY_FUZZ_SELECTED: ${{ needs.classify.outputs.nightly_fuzz }}
@@ -478,6 +509,7 @@ jobs:
           check_selected "$GUI_SELECTED" "$GUI" gui
           check_selected "$SANITIZERS_SELECTED" "$SANITIZERS" sanitizers
           check_selected "$COMPAT_SELECTED" "$COMPAT" compat
+          check_selected "$BLOCK_COMPATIBILITY_SELECTED" "$BLOCK_COMPATIBILITY" block-compatibility
           check_selected "$PLATFORMS_SELECTED" "$ARM32" arm32
           check_selected "$PLATFORMS_SELECTED" "$KERNEL" kernel
           check_selected "$PLATFORMS_SELECTED" "$WINDOWS" windows-smoke
