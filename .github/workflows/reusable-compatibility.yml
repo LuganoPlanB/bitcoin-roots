@@ -1,0 +1,122 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Matching Core block compatibility
+
+on:
+  workflow_call:
+    inputs:
+      candidate-sha:
+        description: Full immutable Roots candidate commit
+        required: true
+        type: string
+      core-sha:
+        description: Full immutable matching official Core commit
+        required: true
+        type: string
+      context-ref:
+        description: Reviewed roots/topic/integration/promote generation branch
+        required: true
+        type: string
+      profile:
+        description: Required smoke or full fixture profile
+        required: true
+        type: string
+      release-tag:
+        description: Existing annotated release tag for additional source validation
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  block-compatibility:
+    name: block compatibility (${{ inputs.profile }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 135
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+      CORE_SHA: ${{ inputs.core-sha }}
+      CONTEXT_REF: ${{ inputs.context-ref }}
+      PROFILE: ${{ inputs.profile }}
+      RELEASE_TAG: ${{ inputs.release-tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout pinned Roots candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate-sha }}
+          path: roots
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout pinned official Core
+        uses: actions/checkout@v6
+        with:
+          repository: bitcoin/bitcoin
+          ref: ${{ inputs.core-sha }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source identities and generation
+        id: sources
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/block-compatibility"
+          # The artifact name validates all identity/profile inputs before use.
+          name=$(python3 roots/ci/compatibility.py name \
+            --candidate-sha "$CANDIDATE_SHA" --core-sha "$CORE_SHA" --profile "$PROFILE")
+          printf 'artifact-name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+          python3 roots/ci/compatibility.py sources \
+            --roots-source "$GITHUB_WORKSPACE/roots" --core-source "$GITHUB_WORKSPACE/core" \
+            --candidate-sha "$CANDIDATE_SHA" --core-sha "$CORE_SHA" \
+            --context-ref "$CONTEXT_REF" --release-tag "$RELEASE_TAG" \
+            --output "$RUNNER_TEMP/block-compatibility/sources.json"
+      - name: Install bounded node build prerequisites
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build g++ libboost-dev libevent-dev
+      - name: Build pinned nodes and run required cases
+        run: |
+          set -Eeuo pipefail
+          python3 roots/contrib/roots/compatibility/compare.py \
+            --core-source "$GITHUB_WORKSPACE/core" --roots-source "$GITHUB_WORKSPACE/roots" \
+            --core-commit "$CORE_SHA" --roots-commit "$CANDIDATE_SHA" \
+            --build-from-source --qualification --build-jobs 2 --build-timeout 3600 \
+            --profile "$PROFILE" --startup-timeout 60 --rpc-timeout 15 --case-timeout 180 \
+            --work-dir "$RUNNER_TEMP" --output "$RUNNER_TEMP/block-compatibility/report.json"
+      - name: Require complete verified report
+        run: |
+          set -Eeuo pipefail
+          python3 roots/ci/compatibility.py report \
+            --roots-source "$GITHUB_WORKSPACE/roots" --core-source "$GITHUB_WORKSPACE/core" \
+            --candidate-sha "$CANDIDATE_SHA" --core-sha "$CORE_SHA" --profile "$PROFILE" \
+            --report "$RUNNER_TEMP/block-compatibility/report.json"
+      - name: Prepare bounded sanitized evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -f roots/ci/compatibility.py ]]; then
+            python3 roots/ci/compatibility.py artifacts \
+              --candidate-sha "$CANDIDATE_SHA" --core-sha "$CORE_SHA" --profile "$PROFILE" \
+              --report "$RUNNER_TEMP/block-compatibility/report.json" \
+              --output "$RUNNER_TEMP/block-compatibility-artifacts"
+          else
+            # Even a failed candidate checkout produces bounded failure evidence.
+            mkdir -p "$RUNNER_TEMP/block-compatibility-artifacts"
+            printf '{"job_status":"failed","report":"candidate tooling unavailable"}\n' \
+              > "$RUNNER_TEMP/block-compatibility-artifacts/status.json"
+          fi
+      - name: Upload compatibility evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.sources.outputs.artifact-name || format('block-compatibility-failed-{0}-{1}', github.run_id, github.run_attempt) }}
+          path: ${{ runner.temp }}/block-compatibility-artifacts/
+          if-no-files-found: error
+          retention-days: 14

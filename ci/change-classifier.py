@@ -15,7 +15,7 @@ import os
 POLICY_PATH = os.path.join(os.path.dirname(__file__), "change-classifier-policy.json")
 KNOWN_CATEGORIES = ("docs-only", "branding", "gui", "wallet", "build", "critical", "cpp", "unknown")
 KNOWN_LABELS = ("ci:full", "ci:sanitizers", "ci:fuzz", "ci:compat", "ci:platforms")
-BROAD_SELECTION = ("gui", "wallet", "sanitizers", "compat", "platforms")
+BROAD_SELECTION = ("gui", "wallet", "sanitizers", "compat", "platforms", "block_compatibility")
 OPTIONAL_SELECTION = ("nightly_sanitizers", "nightly_fuzz", "nightly_platforms", "nightly_full")
 SAFE_POLICY = {"version": 1, "defaults": {"unknown": "broad"}}
 
@@ -72,6 +72,9 @@ def result_for(files, labels, truncated, error, policy, reuse_canonical_ci=False
         defaults = policy["defaults"][category]
         for name in BROAD_SELECTION if defaults == "broad" else defaults:
             selected[name] = True
+    if complete and any(path.startswith(tuple(policy.get("block_compatibility_prefixes", ()))) for path in files
+                        if isinstance(path, str) and not path_is_ambiguous(path)):
+        selected["block_compatibility"] = True
     for label in labels:
         if label == "ci:full":
             selected.update({name: True for name in BROAD_SELECTION})
@@ -86,12 +89,17 @@ def result_for(files, labels, truncated, error, policy, reuse_canonical_ci=False
             selected["nightly_platforms"] = True
         else:
             selected[label.removeprefix("ci:")] = True
+            if label == "ci:compat":
+                selected["block_compatibility"] = True
     if selected["nightly_full"]:
         selected.update({name: False for name in OPTIONAL_SELECTION if name != "nightly_full"})
     if reuse_canonical_ci and complete and "unknown" not in categories and not labels:
         # The caller has verified exact canonical CI and promotion tree parity.
         # Baseline lint/classifier and separate main documentation checks remain.
-        selected.update({name: False for name in BROAD_SELECTION})
+        selected.update({name: False for name in BROAD_SELECTION if name != "block_compatibility"})
+        # Generic successful canonical CI does not prove matching-Core fixtures.
+        # Require fresh comparison of the exact promotion candidate instead.
+        selected["block_compatibility"] = True
         broad = False
     return {
         "version": policy["version"],

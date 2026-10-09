@@ -170,7 +170,8 @@ class PromotionCITest(unittest.TestCase):
         reused = classifier.result_for(['ci/release/runner-notices.py'], [], False, False, policy, True)
         self.assertTrue(normal['selected']['platforms'])
         self.assertTrue(reused['selected']['baseline'])
-        self.assertFalse(any(reused['selected'][key] for key in classifier.BROAD_SELECTION))
+        self.assertFalse(any(reused['selected'][key] for key in classifier.BROAD_SELECTION if key != 'block_compatibility'))
+        self.assertTrue(reused['selected']['block_compatibility'])
         for label in classifier.KNOWN_LABELS:
             expected = classifier.result_for(['ci/test/fix.py'], [label], False, False, policy)
             actual = classifier.result_for(['ci/test/fix.py'], [label], False, False, policy, True)

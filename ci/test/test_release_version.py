@@ -156,6 +156,7 @@ class ReleaseVersionTest(unittest.TestCase):
             {
                 "actions/checkout@v6",
                 "actions/upload-artifact@v4",
+                "./.github/workflows/reusable-compatibility.yml",
                 "actions/download-artifact@v5",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",

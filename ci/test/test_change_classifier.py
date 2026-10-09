@@ -44,11 +44,11 @@ class ChangeClassifierTest(unittest.TestCase):
             MODULE.write_github_output(result, output)
             self.assertEqual(
                 output.read_text(encoding="utf-8"),
-                "baseline=true\ncompat=false\ndocs=true\ngui=false\n"
+                "baseline=true\nblock_compatibility=false\ncompat=false\ndocs=true\ngui=false\n"
                 "nightly_full=false\nnightly_fuzz=true\nnightly_platforms=false\nnightly_sanitizers=false\nplatforms=false\nsanitizers=false\nwallet=false\nbroad=false\n"
                 "complete=true\ncategories=[\"docs-only\"]\nlabels=[\"ci:fuzz\"]\n"
                 "result={\"broad\":false,\"categories\":[\"docs-only\"],\"complete\":true,"
-                "\"labels\":[\"ci:fuzz\"],\"selected\":{\"baseline\":true,\"compat\":false,"
+                "\"labels\":[\"ci:fuzz\"],\"selected\":{\"baseline\":true,\"block_compatibility\":false,\"compat\":false,"
                 "\"docs\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
                 "\"sanitizers\":false,\"wallet\":false},\"version\":1}\n")
 
@@ -84,6 +84,25 @@ class ChangeClassifierTest(unittest.TestCase):
         self.assertTrue(result["broad"])
         self.assertFalse(result["complete"])
         self.assertEqual(result["categories"], ["unknown"])
+
+    def test_matching_core_selection_is_distinct_and_additive(self):
+        for path in ("src/policy/policy.cpp", "src/validation.cpp", "src/kernel/chain.cpp", "src/consensus/tx_verify.cpp",
+                     "src/script/interpreter.cpp", "src/primitives/transaction.cpp", "src/txrequest.cpp",
+                     "contrib/roots/compatibility/compare.py", ".github/workflows/reusable-compatibility.yml"):
+            with self.subTest(path=path):
+                self.assertTrue(MODULE.result_for([path], [], False, False, self.policy)["selected"]["block_compatibility"])
+        self.assertFalse(MODULE.result_for(["doc/build-unix.md"], [], False, False, self.policy)["selected"]["block_compatibility"])
+        for label in ("ci:compat", "ci:full"):
+            result = MODULE.result_for(["README.md"], [label], False, False, self.policy)
+            self.assertTrue(result["selected"]["compat"])
+            self.assertTrue(result["selected"]["block_compatibility"])
+
+    def test_rename_and_incomplete_inventories_request_comparison(self):
+        for files, truncated, error in ((["doc/new.md", "src/policy/old.cpp"], False, False),
+                                        (["README.md"], True, False), (["README.md"], False, True),
+                                        ([], False, False), (None, False, False)):
+            with self.subTest(files=files, truncated=truncated, error=error):
+                self.assertTrue(MODULE.result_for(files, [], truncated, error, self.policy)["selected"]["block_compatibility"])
 
 
 if __name__ == "__main__":
