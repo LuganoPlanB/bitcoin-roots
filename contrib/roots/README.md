@@ -402,6 +402,10 @@ pinning and ancestry confirm its reviewed canonical base; a version string alone
 does not authenticate it. Unknown or ambiguous generations fail; the current fixtures support Core 30.3 only. A new
 Core generation needs reviewed fixture expectations before qualification.
 Official repository/tag commit pinning does not authenticate the tag signer.
+Core RC tag forms remain valid release-source inputs, but this fixture lane
+supports final Core 30.3 only. It explicitly blocks an RC rehearsal/release until
+RC-specific matching-base and fixture expectations have been reviewed and added;
+it never substitutes the final Core tag for an RC base.
 
 Both nodes build in-run from immutable Git exports with the same recorded
 node-only configuration and no compiled-binary cache. Reports account for all

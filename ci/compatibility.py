@@ -29,9 +29,13 @@ OFFICIAL_CORE = "https://github.com/bitcoin/bitcoin"
 MAX_REPORT_BYTES = 2 * 1024 * 1024
 
 
+class GateError(ValueError):
+    """A fixed public diagnostic, never untrusted report or subprocess content."""
+
+
 def require(condition, message):
     if not condition:
-        raise ValueError(message)
+        raise GateError(message)
 
 
 def identity(value):
@@ -49,6 +53,8 @@ def git(source, *args):
 
 def generation(context_ref):
     require(isinstance(context_ref, str) and ".." not in context_ref, "invalid generation branch")
+    require(not re.search(r"/[0-9]+\.[0-9]+rc[0-9]+(?:[/\-]|$)", context_ref),
+            "Core release-candidate fixture expectations are not supported")
     match = re.fullmatch(r"(?:refs/heads/)?(?:roots|topic|integration|promote)/(\d+\.\d+(?:\.\d+)?)(?:[/\-][A-Za-z0-9_-]+)?", context_ref)
     require(match is not None, "unknown or ambiguous Core generation; use a reviewed generation branch")
     return match[1]
@@ -81,6 +87,8 @@ def resolve_sources(roots_source, core_source, candidate, core_sha, context_ref,
     git(roots_source, "merge-base", "--is-ancestor", core_sha, canonical)
     require(core_sha != candidate, "candidate has no Roots changes")
     if release_tag:
+        require(not re.fullmatch(r"v[0-9]+\.[0-9]+rc[0-9]+-roots\.[0-9]+", release_tag),
+                "Core release-candidate fixture expectations are not supported")
         require(re.fullmatch(r"v" + re.escape(version) + r"-roots\.\d+", release_tag), "release generation mismatch")
         # Reuse the established annotated-tag, exact canonical tip and linear-stack gate.
         result = subprocess.run([str(ROOT / "ci/release/validate-release-source.sh"), release_tag],
@@ -110,7 +118,8 @@ def prepare_inputs(roots_source, candidate, context_ref):
         # Committed package metadata narrows default-branch generation selection;
         # official tag pinning plus canonical/candidate ancestry still prove base.
         # A malformed generation-looking ref must not fall back silently.
-        require(context_ref in ("main", "refs/heads/main"), "unknown generation context")
+        if context_ref not in ("main", "refs/heads/main"):
+            raise
         requested = candidate_generation(roots_source, candidate)
         require(requested in versions, "candidate generation has no reviewed canonical branch")
     require(requested == "30.3", "fixture expectations are qualified only for Core 30.3")
@@ -320,6 +329,9 @@ def main():
         else:
             validate_report(load_report(args.report), args.roots_source, args.core_source,
                             args.candidate_sha, args.core_sha, args.profile)
+    except GateError as error:
+        print("Compatibility gate failed: " + str(error), file=sys.stderr)
+        return 1
     except (ValueError, OSError, KeyError, TypeError, AttributeError, IndexError, RecursionError, subprocess.SubprocessError):
         # Never print untrusted report data, paths, Git credentials or subprocess output.
         print("Compatibility gate failed: invalid or unavailable source/evidence", file=sys.stderr)
