@@ -1076,7 +1076,7 @@ def spenders_taproot_active():
     # Test that an input stack size of 1000 elements is permitted, but 1001 isn't.
     add_spender(spenders, "tapscript/1000inputs", leaf="t23", **common, inputs=[getter("sign")] + [b'' for _ in range(999)], failure={"leaf": "t24", "inputs": [getter("sign")] + [b'' for _ in range(1000)]}, **ERR_STACK_SIZE)
     # Test that pushing a MAX_SCRIPT_ELEMENT_SIZE byte stack element is valid, but one longer is not.
-    add_spender(spenders, "tapscript/pushmaxlimit", standard=False, leaf="t25", **common, **SINGLE_SIG, failure={"leaf": "t26"}, **ERR_PUSH_SIZE)
+    add_spender(spenders, "tapscript/pushmaxlimit", leaf="t25", **common, **SINGLE_SIG, failure={"leaf": "t26"}, **ERR_PUSH_SIZE)
     # Test that 999-of-999 multisig works (but 1000-of-1000 triggers stack size limits)
     add_spender(spenders, "tapscript/bigmulti", leaf="t33", **common, inputs=big_spend_inputs, num=999, failure={"leaf": "t34", "num": 1000}, **ERR_STACK_SIZE)
     # Test that the CLEANSTACK rule is consensus critical in tapscript
@@ -1657,6 +1657,54 @@ class TaprootTest(BitcoinTestFramework):
         assert len(mismatching_utxos) == 0
         self.log.info("  - Done")
 
+    def test_push_and_witness_limits(self):
+        """Separate the script-push consensus limit from Roots' witness-size policy."""
+        self.log.info("Deterministic script-push and witness-size boundaries...")
+        node = self.nodes[0]
+        key = (1).to_bytes(32, 'big')
+        pubkey = compute_xonly_pubkey(key)[0]
+        script = CScript([b'x' * MAX_SCRIPT_ELEMENT_SIZE, OP_DROP, pubkey, OP_CHECKSIG])
+        # Two leaves give a 65-byte control block; SIGHASH_DEFAULT gives a
+        # 64-byte signature. Padding stays within the same CompactSize width.
+        witness = CTxInWitness()
+        witness.scriptWitness.stack = [bytes(64), script, bytes(65)]
+        base_size = len(witness.serialize())
+        spenders = []
+        amounts = {}
+        for size in range(ROOTS_DEFAULT_MAX_SCRIPT_SIZE - 1, ROOTS_DEFAULT_MAX_SCRIPT_SIZE + 2):
+            padding = [OP_NOP] * (size - base_size)
+            scripts = [("valid", CScript(padding + [b'x' * MAX_SCRIPT_ELEMENT_SIZE, OP_DROP, pubkey, OP_CHECKSIG])),
+                       ("invalid", CScript(padding + [b'x' * (MAX_SCRIPT_ELEMENT_SIZE + 1), OP_DROP, pubkey, OP_CHECKSIG]))]
+            tap = taproot_construct(pubkey, scripts)
+            spenders.append((size, make_spender(f"pushmaxlimit/witness{size}", tap=tap, key=key, leaf="valid",
+                                               deterministic=True, **SINGLE_SIG, failure={"leaf": "invalid"})))
+            amounts[program_to_witness(1, tap.output_pubkey)] = 1
+        funding_id = node.sendmany("", amounts)
+        self.generate(node, 1)
+        funding = tx_from_hex(node.gettransaction(funding_id)["hex"])
+        self.init_blockinfo(node)
+        fee = 100000
+        for size, spender in spenders:
+            vout = next(i for i, output in enumerate(funding.vout) if output.scriptPubKey == spender.script)
+            tx = CTransaction()
+            tx.version = 2
+            tx.vin = [CTxIn(COutPoint(funding.txid_int, vout))]
+            tx.vout = [CTxOut(funding.vout[vout].nValue - fee, spender.script)]
+            tx.wit.vtxinwit = [CTxInWitness()]
+            for valid in (False, True):
+                scriptsig, stack = spender.sat_function(tx, 0, [funding.vout[vout]], valid)
+                tx.vin[0].scriptSig = scriptsig
+                tx.wit.vtxinwit[0].scriptWitness.stack = stack
+                assert_equal(len(tx.wit.vtxinwit[0].serialize()), size + (not valid))
+                if valid and size <= ROOTS_DEFAULT_MAX_SCRIPT_SIZE:
+                    assert_equal(node.sendrawtransaction(tx.serialize().hex(), 0), tx.txid_hex)
+                    assert node.getmempoolentry(tx.txid_hex) is not None
+                else:
+                    reason = "bad-witness-witness-size" if size + (not valid) > ROOTS_DEFAULT_MAX_SCRIPT_SIZE else None
+                    assert_raises_rpc_error(-26, reason, node.sendrawtransaction, tx.serialize().hex(), 0)
+                self.block_submit(node, [tx], spender.comment, None if valid else ERR_PUSH_SIZE["err_msg"],
+                                  fees=fee, witness=True, accept=valid)
+
     def gen_test_vectors(self):
         """Run a scenario that corresponds (and optionally produces) to BIP341 test vectors."""
 
@@ -1903,6 +1951,7 @@ class TaprootTest(BitcoinTestFramework):
         nonstd_spenders = spenders_taproot_nonstandard()
         self.test_spenders(self.nodes[0], nonstd_spenders, input_counts=[1])
         self.test_spenders(self.nodes[0], nonstd_spenders, input_counts=[2, 3])
+        self.test_push_and_witness_limits()
 
 
 if __name__ == '__main__':
