@@ -241,6 +241,7 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
     cases = report.get("cases", [])
     require([case.get("id") for case in cases] == CASES[profile]
             and all(case.get("status") == "passed" for case in cases), "missing, skipped or failed cases")
+    previous_state = None
     for case in cases:
         if case["id"] != "lifecycle":
             require(len(case.get("states", [])) == (2 if case["id"] == "sigop" else 1), "missing paired chain state")
@@ -257,11 +258,21 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
                 require(isinstance(admission["expected_allowed"][label], bool)
                         and admission["observed"][label]["allowed"] is admission["expected_allowed"][label],
                         "admission outcome mismatch")
-        for block in case.get("blocks", []):
+        for index, block in enumerate(case.get("blocks", [])):
+            require(isinstance(block, dict), "invalid block observation")
+            for field in ("hash", "serialized_sha256"):
+                require(isinstance(block.get(field), str) and re.fullmatch(r"[0-9a-f]{64}", block[field]),
+                        "invalid block " + field)
             require(set(block["outcomes"]) == {"core", "roots"}, "missing block outcome")
             require(block["expected_valid"] is (case["id"] != "invalid-block"), "wrong block expectation")
             require(all((outcome is None) if block["expected_valid"] else isinstance(outcome, str) and bool(outcome)
                         for outcome in block["outcomes"].values()), "divergent block acceptance")
+            state = case["states"][index]
+            if block["expected_valid"]:
+                require(block["hash"] == state["bestblockhash"], "accepted block does not match paired state")
+            else:
+                require(state == previous_state, "invalid block changed paired state")
+            previous_state = state
     if profile == "full":
         validate_lifecycle(cases)
     spec = importlib.util.spec_from_file_location("compatibility_build", ROOT / "contrib/roots/compatibility/build.py")

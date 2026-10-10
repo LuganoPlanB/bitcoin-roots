@@ -109,6 +109,7 @@ class CompatibilityCITest(unittest.TestCase):
                                    "observed": {"core": {"allowed": core}, "roots": {"allowed": roots}}}
                                   for title, core, roots in ci.ADMISSIONS[name]],
                     "blocks": [{"hash": snapshot["bestblockhash"] if valid else "9" * 64,
+                                "serialized_sha256": "a" * 64,
                                 "expected_valid": valid, "outcomes": {"core": None if valid else "invalid", "roots": None if valid else "invalid"}}
                                for snapshot in snapshots[name]]}
             if name in ("datacarrier", "subdust"):
@@ -216,6 +217,62 @@ class CompatibilityCITest(unittest.TestCase):
     def test_smoke_and_full_reports(self):
         for profile in ci.CASES:
             self.validate(self.report(profile), profile)
+
+    def test_every_block_requires_hash_and_serialized_digest(self):
+        missing = object()
+        for profile in ci.CASES:
+            good = self.report(profile)
+            for case_index, case in enumerate(good["cases"]):
+                for block_index in range(len(case["blocks"])):
+                    for field in ("hash", "serialized_sha256"):
+                        for value in (missing, None, 123, True, [], {}, "", "a" * 63, "a" * 65, "A" * 64, "g" * 64):
+                            report = copy.deepcopy(good)
+                            block = report["cases"][case_index]["blocks"][block_index]
+                            if value is missing:
+                                block.pop(field)
+                            else:
+                                block[field] = value
+                            with self.subTest(profile=profile, case=case["id"], block=block_index, field=field, value=value):
+                                with self.assertRaises(ci.GateError):
+                                    self.validate(report, profile)
+
+    def test_every_accepted_block_matches_its_state_tip(self):
+        for profile in ci.CASES:
+            good = self.report(profile)
+            for case_index, case in enumerate(good["cases"]):
+                for block_index, block in enumerate(case["blocks"]):
+                    if not block["expected_valid"]:
+                        continue
+                    for changed in ("block", "state"):
+                        report = copy.deepcopy(good)
+                        changed_case = report["cases"][case_index]
+                        if changed == "block":
+                            changed_case["blocks"][block_index]["hash"] = "0" * 64
+                        else:
+                            state = changed_case["states"][block_index]
+                            state["bestblockhash"] = "0" * 64
+                            for utxo in state["utxos"].values():
+                                if utxo is not None:
+                                    utxo["bestblock"] = state["bestblockhash"]
+                        with self.subTest(profile=profile, case=case["id"], block=block_index, changed=changed):
+                            with self.assertRaisesRegex(ci.GateError, "accepted block does not match paired state"):
+                                self.validate(report, profile)
+
+    def test_invalid_block_preserves_prior_state(self):
+        for profile in ci.CASES:
+            for field, value in (("height", 113), ("bestblockhash", "0" * 64), ("value_sats", 2)):
+                report = self.report(profile)
+                state = report["cases"][2]["states"][0]
+                if field == "value_sats":
+                    next(iter(state["utxos"].values()))[field] = value
+                else:
+                    state[field] = value
+                    if field == "bestblockhash":
+                        for utxo in state["utxos"].values():
+                            utxo["bestblock"] = value
+                with self.subTest(profile=profile, field=field):
+                    with self.assertRaisesRegex(ci.GateError, "invalid block changed paired state"):
+                        self.validate(report, profile)
 
     def test_missing_skipped_failed_and_duplicate_cases(self):
         good = self.report()
