@@ -14,8 +14,9 @@ import sys
 import tarfile
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "contrib/roots/compatibility/compare.py"
@@ -282,8 +283,8 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         self.assertEqual(report["error"], "qualification requires verified pinned-source build provenance")
         self.assertFalse(self.track.exists())
 
-    def simulated_build_comparison(self):
-        args = comparison.parser().parse_args(self.arguments(["--build-from-source", "--qualification"]))
+    def simulated_build_comparison(self, cases=None, extra=()):
+        args = comparison.parser().parse_args(self.arguments(["--build-from-source", "--qualification", *extra]))
         args.core_bitcoind = args.roots_bitcoind = None
         original_command = comparison.command
 
@@ -308,7 +309,7 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
                 binary.chmod(0o700)
             return "simulated build (unit test only)"
 
-        with patch.object(comparison, "command", simulated_cmake), patch.object(comparison, "run_cases", self.successful_cases):
+        with patch.object(comparison, "command", simulated_cmake), patch.object(comparison, "run_cases", cases or self.successful_cases):
             code = comparison.compare(args)
         self.assert_cleaned()
         return code, json.loads(self.output.read_text())
@@ -337,6 +338,73 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         self.assertEqual(report["nodes"]["core"]["cleanup"],
                          {"stopped": True, "method": "kill", "returncode": -signal.SIGKILL})
         self.assertEqual(report["nodes"]["roots"]["cleanup"]["returncode"], 0)
+
+    def test_intermediate_shutdown_controls_restart_and_qualification(self):
+        for operation in ("subdust", "lifecycle"):
+            for label in ("core", "roots"):
+                for failure in (None, "forced", "nonzero", "unstopped"):
+                    with self.subTest(operation=operation, node=label, failure=failure):
+                        restarts = []
+                        def cases(nodes, args, report):
+                            self.successful_cases(nodes, args, report)
+                            # Mock transaction/state work only; execute both real
+                            # fixture restart sites with actual owned processes.
+                            runner = object.__new__(fixtures.FixtureRunner)
+                            runner.nodes, runner.report, runner.error = nodes, report, comparison.ComparisonError
+                            runner.deadline = time.monotonic() + 10
+                            state = {"bestblockhash": "accepted", "height": 5}
+                            runner.tip, runner.height = state["bestblockhash"], state["height"]
+                            runner.snapshot = Mock(return_value=state)
+                            runner.snapshots = {"accepted": state}
+                            runner.expected_state = Mock(return_value=state)
+                            txid = "f" * 64
+                            runner.spend = Mock(return_value=SimpleNamespace(txid_hex=txid, serialize=lambda: b"tx", get_vsize=lambda: 100))
+                            runner.output_script = b""
+                            runner.m = SimpleNamespace(COIN=100000000)
+                            runner.block, runner.submit, runner.admission = Mock(), Mock(), Mock()
+                            runner.mempools = Mock(return_value={"core": [txid], "roots": [txid]})
+                            runner.rpc = Mock(side_effect=lambda _node, method, *_params: {
+                                "getblockheader": {"previousblockhash": "accepted", "height": 6},
+                                "getmempoolinfo": {"minrelaytxfee": 0.00001, "loaded": True},
+                                "sendrawtransaction": txid,
+                            }.get(method))
+                            for record in report["cases"]:
+                                record["selected_block"] = "selected"
+                            record = next(item for item in report["cases"] if item["id"] == operation)
+                            original_stop, original_start = comparison.Node.stop, comparison.Node.start
+                            def stop(node):
+                                if node.label == label:
+                                    if failure == "unstopped":
+                                        node.cleanup_result = {"stopped": False, "returncode": None}
+                                        return
+                                    if failure == "forced":
+                                        node.process.kill()
+                                        node.process.wait(timeout=5)
+                                original_stop(node)
+                                if node.label == label and failure == "nonzero":
+                                    node.cleanup_result["returncode"] = 7
+                            def start(node, deadline=None):
+                                restarts.append(node.label)
+                                return original_start(node, deadline)
+                            with patch.object(comparison.Node, "stop", stop), patch.object(comparison.Node, "start", start):
+                                getattr(runner, operation)(record)
+                        code, report = self.simulated_build_comparison(cases, ["--profile", "full"])
+                        if failure is None:
+                            self.assertEqual(code, 0, report.get("error"))
+                            self.assertTrue(report["qualified"])
+                            self.assertEqual(restarts, ["core", "roots"])
+                            for node in report["nodes"].values():
+                                self.assertEqual(node["restart_shutdowns"], [{"stopped": True, "method": "rpc", "returncode": 0}])
+                            continue
+                        self.assertEqual(code, 1)
+                        self.assertEqual(report["status"], "failed")
+                        self.assertFalse(report["qualified"])
+                        self.assertEqual(report["error"], label + " shutdown before restart failed")
+                        self.assertNotIn(label, restarts)
+                        shutdown = report["nodes"][label]["restart_shutdowns"][-1]
+                        self.assertEqual(shutdown.get("stopped"), failure != "unstopped")
+                        self.assertNotEqual(shutdown.get("returncode"), 0)
+                        self.assertTrue(all(node["cleanup"]["stopped"] for node in report["nodes"].values()))
 
     def test_nonzero_cleanup_preserves_original_failure_and_cancellation(self):
         for failure, expected_code in ((comparison.ComparisonError("original fixture failure"), 1),

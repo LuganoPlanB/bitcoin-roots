@@ -221,11 +221,19 @@ class FixtureRunner:
                        "bad-txns-input-sigops-toomany-overall")
         self.submit(self.block([tx]), record)
 
+    def stop_for_restart(self, node):
+        node.stop()
+        cleanup = deepcopy(node.cleanup_result)
+        self.report["nodes"][node.label].setdefault("restart_shutdowns", []).append(cleanup)
+        if (not isinstance(cleanup, dict) or cleanup.get("stopped") is not True
+                or type(cleanup.get("returncode")) is not int or cleanup["returncode"] != 0):
+            raise self.error(node.label + " shutdown before restart failed")
+
     def subdust(self, record):
         # Switch only standardness on both nodes; Roots' fee penalty stays on.
         # Earlier fixtures run under standard policy and are already recorded.
         for node in self.nodes:
-            node.stop()
+            self.stop_for_restart(node)
             node.extra_flags = list(SUBDUST_ROOTS_FLAGS if node.label == "roots" else SUBDUST_FLAGS)
             node.start(deadline=self.deadline)
             self.report["nodes"][node.label].setdefault("launch_history", []).append(node.flags)
@@ -295,7 +303,7 @@ class FixtureRunner:
             raise self.error("compatible control is missing before restart")
         for node in self.nodes:
             original_datadir = node.datadir
-            node.stop()
+            self.stop_for_restart(node)
             node.start(deadline=self.deadline)
             if node.datadir != original_datadir:
                 raise self.error("restart did not reuse owned datadir")
