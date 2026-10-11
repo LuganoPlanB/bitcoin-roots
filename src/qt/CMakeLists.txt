@@ -11,19 +11,27 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   string(APPEND CMAKE_OBJCXX_COMPILE_OBJECT " ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}")
 endif()
 
-get_target_property(qt_lib_type Qt6::Core TYPE)
+get_target_property(qt_lib_type Qt${WITH_QT_VERSION}::Core TYPE)
+if(qt_lib_type STREQUAL "STATIC_LIBRARY" AND NOT COMMAND qt${WITH_QT_VERSION}_import_plugins)
+  message(FATAL_ERROR "Static Qt requires the import_plugins CMake command (Qt 5.14 or newer for Qt 5).")
+endif()
 
 function(import_plugins target)
   if(qt_lib_type STREQUAL "STATIC_LIBRARY")
-    set(plugins Qt6::QMinimalIntegrationPlugin)
+    set(plugins Qt${WITH_QT_VERSION}::QMinimalIntegrationPlugin)
     if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|FreeBSD)$")
-      list(APPEND plugins Qt6::QXcbIntegrationPlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QXcbIntegrationPlugin)
     elseif(WIN32)
-      list(APPEND plugins Qt6::QWindowsIntegrationPlugin Qt6::QModernWindowsStylePlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QWindowsIntegrationPlugin)
+      if(WITH_QT_VERSION STREQUAL "5")
+        list(APPEND plugins Qt5::QWindowsVistaStylePlugin)
+      else()
+        list(APPEND plugins Qt6::QModernWindowsStylePlugin)
+      endif()
     elseif(APPLE)
-      list(APPEND plugins Qt6::QCocoaIntegrationPlugin Qt6::QMacStylePlugin)
+      list(APPEND plugins Qt${WITH_QT_VERSION}::QCocoaIntegrationPlugin Qt${WITH_QT_VERSION}::QMacStylePlugin)
     endif()
-    qt6_import_plugins(${target}
+    cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins ${target}
       INCLUDE ${plugins}
       EXCLUDE_BY_TYPE
         accessiblebridge
@@ -55,8 +63,8 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
 set(CMAKE_AUTORCC OFF)
 configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
-qt6_add_resources(BITCOIN_QRC bitcoin.qrc)
-qt6_add_resources(BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
+cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_QRC bitcoin.qrc)
+cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
 # See: https://bugreports.qt.io/browse/QTBUG-141858.
 get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
 if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
@@ -145,7 +153,7 @@ set_property(SOURCE macnotificationhandler.mm
 )
 target_link_libraries(bitcoinqt
   PUBLIC
-    Qt6::Widgets
+    Qt${WITH_QT_VERSION}::Widgets
   PRIVATE
     core_interface
     bitcoin_cli
@@ -223,18 +231,18 @@ if(ENABLE_WALLET)
   target_link_libraries(bitcoinqt
     PRIVATE
       bitcoin_wallet
-      Qt6::Network
+      Qt${WITH_QT_VERSION}::Network
   )
 endif()
 
 if(WITH_DBUS)
-  target_link_libraries(bitcoinqt PRIVATE Qt6::DBus)
+  target_link_libraries(bitcoinqt PRIVATE Qt${WITH_QT_VERSION}::DBus)
 endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   # We want to define static plugins to link ourselves, thus preventing
   # automatic linking against a "sane" set of default static plugins.
-  qt6_import_plugins(bitcoinqt
+  cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins bitcoinqt
     EXCLUDE_BY_TYPE
       accessiblebridge
       platforms
@@ -306,8 +314,8 @@ else()
   add_custom_target(translate COMMAND ${CMAKE_COMMAND}
     -D "PROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     -D "COPYRIGHT_HOLDERS=${COPYRIGHT_HOLDERS}"
-    -D "LCONVERT_EXECUTABLE=$<TARGET_FILE:Qt6::lconvert>"
-    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt6::lupdate>"
+    -D "LCONVERT_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lconvert>"
+    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lupdate>"
     -D "XGETTEXT_EXECUTABLE=${XGETTEXT_EXECUTABLE}"
     -P ${PROJECT_SOURCE_DIR}/share/qt/translate.cmake
   )

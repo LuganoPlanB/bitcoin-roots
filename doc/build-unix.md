@@ -2,6 +2,10 @@ UNIX BUILD NOTES
 ====================
 Some notes on how to build Bitcoin Core in Unix.
 
+For this Roots candidate, see [build portability](roots-build-portability.md)
+for Qt 5/6 selection, optional system-library probes and deferred integrations.
+The package examples below describe the default Qt 6 profile.
+
 (For BSD specific instructions, see `build-*bsd.md` in this directory.)
 
 To Build

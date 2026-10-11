@@ -4,11 +4,17 @@
 
 #include <dbwrapper.h>
 
+#include <bitcoin-build-config.h>
+
 #include <leveldb/cache.h>
 #include <leveldb/db.h>
 #include <leveldb/env.h>
 #include <leveldb/filter_policy.h>
+#if EMBEDDED_LEVELDB
 #include <leveldb/helpers/memenv/memenv.h>
+#else
+#include <memenv.h>
+#endif
 #include <leveldb/iterator.h>
 #include <leveldb/options.h>
 #include <leveldb/slice.h>
