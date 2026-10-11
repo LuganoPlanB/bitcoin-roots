@@ -71,7 +71,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.extra_args = [
             ["-txindex"],
             [],
-            ["-fastprune", "-prune=1"],
+            ["-fastprune", "-prune=1", "-permitbaredatacarrier=1"],  # Burn-only RPC fixtures.
         ]
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True

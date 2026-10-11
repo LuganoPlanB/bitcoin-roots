@@ -151,6 +151,9 @@ class EstimateFeeTest(BitcoinTestFramework):
             ["-blockmaxweight=36000"],
         ]
 
+        # Preserve the estimator's native low-feerate sampling range explicitly.
+        self.extra_args = [args + ["-minrelaytxfee=0.000001"] for args in self.extra_args]
+
     def setup_network(self):
         """
         We'll setup the network to have 3 nodes that all mine with different parameters.
@@ -398,7 +401,7 @@ class EstimateFeeTest(BitcoinTestFramework):
         os.utime(fee_dat, (last_modified_time, last_modified_time))
 
         # Restart node with -acceptstalefeeestimates option to ensure fee_estimate.dat file is read
-        self.start_node(0,extra_args=["-acceptstalefeeestimates"])
+        self.start_node(0,extra_args=self.extra_args[0] + ["-acceptstalefeeestimates"])
         assert_equal(self.nodes[0].estimatesmartfee(1)["feerate"], fee_rate)
 
     def clear_estimates(self):

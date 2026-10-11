@@ -67,11 +67,10 @@ FUZZ_TARGET(wallet_fees, .init = initialize_setup)
     Chainstate* chainstate = &node.chainman->ActiveChainstate();
 
     bilingual_str error;
-    CTxMemPool::Options mempool_opts{
-        .incremental_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)},
-        .min_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)},
-        .dust_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)}
-    };
+    CTxMemPool::Options mempool_opts{};
+    mempool_opts.incremental_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)};
+    mempool_opts.min_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)};
+    mempool_opts.dust_relay_feerate = CFeeRate{ConsumeMoney(fuzzed_data_provider, 1'000'000)};
     node.mempool = std::make_unique<CTxMemPool>(mempool_opts, error);
     std::unique_ptr<CBlockPolicyEstimator> fee_estimator = std::make_unique<FuzzedBlockPolicyEstimator>(fuzzed_data_provider);
     g_setup->SetFeeEstimator(std::move(fee_estimator));

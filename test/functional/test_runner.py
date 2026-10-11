@@ -341,6 +341,8 @@ BASE_SCRIPTS = [
     'mempool_unbroadcast.py',
     'mempool_compatibility.py',
     'mempool_accept_wtxid.py',
+    'mempool_roots_local_policy.py',
+    'feature_policy_args.py',
     'mempool_dust.py',
     'mempool_sigoplimit.py',
     'rpc_deriveaddresses.py',

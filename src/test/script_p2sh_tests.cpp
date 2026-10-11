@@ -21,13 +21,22 @@
 // Helpers:
 static bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, std::string& reason)
 {
-    return IsStandardTx(tx, std::nullopt, permit_bare_multisig, CFeeRate{DUST_RELAY_TX_FEE}, reason);
+    const StandardnessOptions opts{
+        .permit_bare_pubkey = true,
+        .permit_bare_multisig = permit_bare_multisig,
+    };
+    return IsStandardTx(tx, opts, reason);
 }
 
 static bool IsStandardTx(const CTransaction& tx, std::string& reason)
 {
-    return IsStandardTx(tx, std::nullopt, /*permit_bare_multisig=*/true, CFeeRate{DUST_RELAY_TX_FEE}, reason) &&
-           IsStandardTx(tx, std::nullopt, /*permit_bare_multisig=*/false, CFeeRate{DUST_RELAY_TX_FEE}, reason);
+    StandardnessOptions opts{
+        .permit_bare_pubkey = true,
+        .permit_bare_multisig = true,
+    };
+    if (!IsStandardTx(tx, opts, reason)) return false;
+    opts.permit_bare_multisig = false;
+    return IsStandardTx(tx, opts, reason);
 }
 
 static std::vector<unsigned char> Serialize(const CScript& s)

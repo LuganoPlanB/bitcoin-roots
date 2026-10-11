@@ -26,6 +26,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
+            "-maxscriptsize=1000000", "-datacarriersize=1000000",
             "-printpriority=1",
         ]] * self.num_nodes
         self.supports_cli = False
@@ -176,7 +177,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         self.clear_prioritisation(node=self.nodes[0])
 
         self.log.info("Test priority while txs are not in mempool")
-        self.restart_node(0, extra_args=["-nopersistmempool"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-nopersistmempool"])
         self.nodes[0].setmocktime(mock_time)
         assert_equal(self.nodes[0].getmempoolinfo()["size"], 0)
         self.nodes[0].prioritisetransaction(txid=txid_b, fee_delta=int(fee_delta_b * COIN))

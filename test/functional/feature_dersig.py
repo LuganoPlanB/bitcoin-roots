@@ -50,6 +50,7 @@ class BIP66Test(BitcoinTestFramework):
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
         self.extra_args = [[
+            '-permitbarepubkey=1',  # Preserve the legacy signature rejection fixture.
             f'-testactivationheight=dersig@{DERSIG_HEIGHT}',
         ]]
         self.setup_clean_chain = True

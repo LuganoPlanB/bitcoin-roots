@@ -90,6 +90,9 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
     const CCoinsViewCache coins_view_cache(&coins_view);
     (void)AreInputsStandard(tx, coins_view_cache);
     (void)IsWitnessStandard(tx, coins_view_cache);
+    // Carrier recognition and budget discovery are local admission helpers.
+    // Exercise their script/witness parsing under the same hostile transaction input.
+    (void)DatacarrierBytes(tx, coins_view_cache);
 
     if (tx.ComputeTotalSize() < 250'000) { // Avoid high memory usage (with msan) due to json encoding
         {

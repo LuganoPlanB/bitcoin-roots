@@ -78,10 +78,12 @@ class PackageRelayTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             "-maxmempool=5",
+            "-maxscriptsize=1000000", "-datacarriersize=1000000",  # fill_mempool padding.
+            "-permitbarepubkey=1", "-permitbaredatacarrier=1",  # Legacy and large orphan fixtures.
         ]]
 
     def create_tx_below_mempoolminfee(self, wallet, utxo_to_spend=None):
-        """Create a 1-input 0.1sat/vB transaction using a confirmed UTXO. Decrement and use
+        """Create a 1-input 1sat/vB transaction using a confirmed UTXO. Decrement and use
         self.sequence so that subsequent calls to this function result in unique transactions."""
 
         self.sequence -= 1

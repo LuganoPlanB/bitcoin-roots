@@ -75,6 +75,7 @@ add_executable(test_bitcoin
   pcp_tests.cpp
   peerman_tests.cpp
   pmt_tests.cpp
+  policy_args_tests.cpp
   policyestimator_tests.cpp
   pool_tests.cpp
   pow_tests.cpp

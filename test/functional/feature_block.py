@@ -92,6 +92,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.extra_args = [[
             '-testactivationheight=bip34@2',
+            '-permitbarepubkey=1',  # The reorg fixture resurrects P2PK transactions.
         ]]
 
     def add_options(self, parser):

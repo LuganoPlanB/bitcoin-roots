@@ -16,11 +16,19 @@
 #include <policy/policy.h>
 #include <tinyformat.h>
 #include <txgraph.h>
+#include <univalue.h>
 #include <util/moneystr.h>
+#include <util/strencodings.h>
+#include <util/string.h>
 #include <util/translation.h>
 
+#include <algorithm>
 #include <chrono>
+#include <initializer_list>
+#include <limits>
 #include <memory>
+#include <string_view>
+#include <utility>
 
 using common::AmountErrMsg;
 using kernel::MemPoolLimits;
@@ -42,8 +50,181 @@ void ApplyArgsManOptions(const ArgsManager& argsman, MemPoolLimits& mempool_limi
 }
 }
 
+util::Result<unsigned int> ParseDataCarrierCost(std::string_view value)
+{
+    int64_t parsed;
+    constexpr int64_t max_cost{int64_t{std::numeric_limits<unsigned int>::max()} * 100 / WITNESS_SCALE_FACTOR};
+    if (!ParseFixedPoint(value, 2, &parsed) || parsed < 0 || parsed > max_cost) {
+        return util::Error{strprintf(_("Invalid -datacarriercost value: '%s' (expected a value from 0 to 1073741823.75 exactly representable in hundredths)"), value)};
+    }
+    return static_cast<unsigned int>(((parsed * WITNESS_SCALE_FACTOR) + 99) / 100);
+}
+
+namespace {
+// Check every token, including empty tokens that SplitString would discard.
+bool ValidPolicyTokens(std::string_view value, std::initializer_list<std::string_view> allowed)
+{
+    if (value.empty() || value == "0" || value == "1") return true;
+    while (true) {
+        const auto separator = value.find_first_of(",+");
+        const auto token = value.substr(0, separator);
+        if (std::find(allowed.begin(), allowed.end(), token) == allowed.end()) return false;
+        if (separator == value.npos) return true;
+        value.remove_prefix(separator + 1);
+    }
+}
+}
+
+util::Result<void> ValidateRootsPolicyOptions(const ArgsManager& argsman)
+{
+    // Check types before GetArg converts settings to strings. These are the
+    // Roots-added controls only; inherited Core getters remain permissive.
+    for (const char* option : {
+             "-subdustfeepenalty", "-rejectparasites", "-acceptunknownwitness",
+             "-datacarrierfullcount", "-permitbareanchor", "-rejecttokens",
+             "-permitbarepubkey", "-permitbaredatacarrier", "-acceptnonstddatacarrier",
+             "-maxscriptsize", "-bytespersigopstrict", "-maxtxlegacysigops",
+             "-minrelaycoinblocks", "-minrelaymaturity", "-blockmaxsize",
+             "-blockprioritysize", "-datacarriercost", "-dustdynamic",
+             "-mempoolreplacement", "-mempooltruc", "-permitephemeral", "-spkreuse"}) {
+        const auto value = argsman.GetSetting(option);
+        if (!value.isNull() && !value.isStr() && !value.isNum() && !value.isBool()) {
+            return util::Error{Untranslated(strprintf("Invalid %s value: expected a scalar policy value", option))};
+        }
+    }
+
+    for (const char* option : {
+             "-subdustfeepenalty", "-rejectparasites", "-acceptunknownwitness",
+             "-datacarrierfullcount", "-permitbareanchor", "-rejecttokens",
+             "-permitbarepubkey", "-permitbaredatacarrier", "-acceptnonstddatacarrier"}) {
+        if (const auto value = argsman.GetArg(option); value && !value->empty() && *value != "0" && *value != "1") {
+            return util::Error{Untranslated(strprintf("Invalid %s value: '%s' (expected empty, 0, or 1)", option, *value))};
+        }
+    }
+
+    for (const auto& [option, maximum] : {
+             std::pair<const char*, int64_t>{"-maxscriptsize", std::numeric_limits<unsigned int>::max()},
+             {"-bytespersigopstrict", std::numeric_limits<unsigned int>::max()},
+             {"-maxtxlegacysigops", std::numeric_limits<unsigned int>::max()},
+             {"-minrelaycoinblocks", std::numeric_limits<int64_t>::max()},
+             {"-minrelaymaturity", std::numeric_limits<int>::max()},
+             {"-blockmaxsize", MAX_BLOCK_SERIALIZED_SIZE},
+             {"-blockprioritysize", std::numeric_limits<int64_t>::max()}}) {
+        if (const auto value = argsman.GetArg(option)) {
+            std::string_view digits{*value};
+            // from_chars does not accept '+', but the existing integer syntax does.
+            if (digits.starts_with('+')) digits.remove_prefix(1);
+            const auto parsed = ToIntegral<int64_t>(digits);
+            if (!parsed || *parsed < 0 || *parsed > maximum || (value->starts_with('+') && digits.starts_with('-'))) {
+                return util::Error{Untranslated(strprintf("Invalid %s value: '%s' (expected an integer from 0 to %d)", option, *value, maximum))};
+            }
+        }
+    }
+
+    if (const auto value = argsman.GetArg("-datacarriercost")) {
+        const auto parsed = ParseDataCarrierCost(*value);
+        if (!parsed) return util::Error{util::ErrorString(parsed)};
+    }
+
+    if (const auto value = argsman.GetArg("-mempoolreplacement"); value && !ValidPolicyTokens(*value, {"fee", "optin", "-optin"})) {
+        return util::Error{Untranslated(strprintf("Invalid -mempoolreplacement value: '%s' (expected empty, 0, 1, or fee/optin/-optin tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-mempooltruc"); value && !ValidPolicyTokens(*value, {"reject", "accept", "enforce", "optin", "-enforce", "-optin", "0"})) {
+        return util::Error{Untranslated(strprintf("Invalid -mempooltruc value: '%s' (expected empty, 0, 1, or reject/accept/enforce/optin/-enforce/-optin tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-permitephemeral"); value && !ValidPolicyTokens(*value, {"anchor", "dust", "send", "reject", "0", "-anchor", "-dust", "-send", "-reject", "-0"})) {
+        return util::Error{Untranslated(strprintf("Invalid -permitephemeral value: '%s' (expected empty, 0, 1, or optionally '-' prefixed anchor/dust/send/reject/0 tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-spkreuse"); value && !value->empty() && *value != "0" && *value != "1" && *value != "allow" && *value != "conflict") {
+        return util::Error{Untranslated(strprintf("Invalid -spkreuse value: '%s' (expected allow, conflict, empty, 0, or 1)", *value))};
+    }
+    return {};
+}
+
+util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optstr, const unsigned int max_fee_estimate_blocks)
+{
+    if (optstr == "0" || optstr == "off") {
+        return std::pair<int32_t, int>(0, DEFAULT_DUST_RELAY_MULTIPLIER);
+    }
+
+    int multiplier{DEFAULT_DUST_RELAY_MULTIPLIER};
+    if (auto pos = optstr.find('*'); pos != optstr.npos) {
+        int64_t parsed;
+        if ((!ParseFixedPoint(optstr.substr(0, pos), 3, &parsed)) || parsed > std::numeric_limits<int>::max() || parsed < 1) {
+            return util::Error{_("failed to parse multiplier")};
+        }
+        multiplier = parsed;
+        optstr.remove_prefix(pos + 1);
+    }
+
+    if (optstr.starts_with("target:")) {
+        const auto val = ToIntegral<uint16_t>(optstr.substr(7));
+        if (!val) {
+            return util::Error{_("failed to parse target block count")};
+        }
+        if (*val < 2) {
+            return util::Error{_("target must be at least 2 blocks")};
+        }
+        if (Assume(max_fee_estimate_blocks) && *val > max_fee_estimate_blocks) {
+            return util::Error{strprintf(_("target can only be at most %s blocks"), max_fee_estimate_blocks)};
+        }
+        return std::pair<int32_t, int>(-*val, multiplier);
+    } else if (optstr.starts_with("mempool:")) {
+        const auto val = ToIntegral<int32_t>(optstr.substr(8));
+        if (!val) {
+            return util::Error{_("failed to parse mempool position")};
+        }
+        if (*val < 1) {
+            return util::Error{_("mempool position must be at least 1 kB")};
+        }
+        return std::pair<int32_t, int>(*val, multiplier);
+    } else {
+        return util::Error{strprintf(_("\"%s\""), optstr)};
+    }
+}
+
+void ApplyPermitEphemeralOption(const common::SettingsValue& value, MemPoolOptions& mempool_opts)
+{
+    std::optional<bool> flag_anchor, flag_send, flag_dust;
+    const auto text = SettingToString(value).value_or("0");
+    if (text.empty() || text == "1") {
+        flag_anchor = flag_send = flag_dust = true;
+    }
+    for (auto& opt : util::SplitString(SettingToString(value).value_or(""), ",+")) {
+        bool v{true};
+        if (opt.size() && opt[0] == '-') {
+            opt.erase(opt.begin());
+            v = false;
+        }
+        if (opt == "anchor") {
+            flag_anchor = v;
+        } else if (opt == "dust") {
+            flag_dust = v;
+        } else if (opt == "send") {
+            flag_send = v;
+        } else if (opt == "reject" || opt == "0") {
+            flag_anchor = flag_send = flag_dust = !v;
+        }
+    }
+
+    if (!flag_send) {
+        flag_send = flag_dust.value_or(false) && !flag_anchor.value_or(false);
+    }
+    if (!flag_dust) {
+        flag_dust = flag_send;
+    }
+    if (!flag_anchor) {
+        flag_anchor = true;
+    }
+
+    mempool_opts.permitephemeral_dust = *flag_dust;
+    mempool_opts.permitephemeral_anchor = *flag_anchor;
+    mempool_opts.permitephemeral_send = *flag_send;
+}
+
 util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainParams& chainparams, MemPoolOptions& mempool_opts)
 {
+    if (auto result = ValidateRootsPolicyOptions(argsman); !result) return result;
     mempool_opts.check_ratio = argsman.GetIntArg("-checkmempool", mempool_opts.check_ratio);
 
     if (auto mb = argsman.GetIntArg("-maxmempool")) {
@@ -66,7 +247,6 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         }
     }
 
-    static_assert(DEFAULT_MIN_RELAY_TX_FEE == DEFAULT_INCREMENTAL_RELAY_FEE);
     if (const auto arg{argsman.GetArg("-minrelaytxfee")}) {
         if (std::optional<CAmount> min_relay_feerate = ParseMoney(*arg)) {
             // High fee check is done afterward in CWallet::Create()
@@ -90,17 +270,46 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         }
     }
 
+    mempool_opts.minrelaycoinblocks = argsman.GetIntArg("-minrelaycoinblocks", 0);
+    mempool_opts.minrelaymaturity = argsman.GetIntArg("-minrelaymaturity", 0);
+    mempool_opts.maxtxlegacysigops = argsman.GetIntArg("-maxtxlegacysigops", mempool_opts.maxtxlegacysigops);
+
+    mempool_opts.permitbareanchor = argsman.GetBoolArg("-permitbareanchor", mempool_opts.permitbareanchor);
+
+    mempool_opts.permit_bare_pubkey = argsman.GetBoolArg("-permitbarepubkey", DEFAULT_PERMIT_BAREPUBKEY);
+
     mempool_opts.permit_bare_multisig = argsman.GetBoolArg("-permitbaremultisig", DEFAULT_PERMIT_BAREMULTISIG);
+
+    mempool_opts.reject_parasites = argsman.GetBoolArg("-rejectparasites", DEFAULT_REJECT_PARASITES);
+
+    mempool_opts.reject_tokens = argsman.GetBoolArg("-rejecttokens", DEFAULT_REJECT_TOKENS);
+
 
     if (argsman.GetBoolArg("-datacarrier", DEFAULT_ACCEPT_DATACARRIER)) {
         mempool_opts.max_datacarrier_bytes = argsman.GetIntArg("-datacarriersize", MAX_OP_RETURN_RELAY);
     } else {
         mempool_opts.max_datacarrier_bytes = std::nullopt;
     }
+    mempool_opts.datacarrier_fullcount = argsman.GetBoolArg("-datacarrierfullcount", DEFAULT_DATACARRIER_FULLCOUNT);
+    mempool_opts.accept_non_std_datacarrier = argsman.GetBoolArg("-acceptnonstddatacarrier", false);
+
+    mempool_opts.permitbaredatacarrier = argsman.GetBoolArg("-permitbaredatacarrier", mempool_opts.permitbaredatacarrier);
 
     mempool_opts.require_standard = !argsman.GetBoolArg("-acceptnonstdtxn", DEFAULT_ACCEPT_NON_STD_TXN);
     if (!chainparams.IsTestChain() && !mempool_opts.require_standard) {
         return util::Error{Untranslated(strprintf("acceptnonstdtxn is not currently supported for %s chain", chainparams.GetChainTypeString()))};
+    }
+
+    mempool_opts.acceptunknownwitness = argsman.GetBoolArg("-acceptunknownwitness", mempool_opts.acceptunknownwitness);
+
+    if (argsman.IsArgSet("-permitephemeral")) {
+        ApplyPermitEphemeralOption(argsman.GetSetting("-permitephemeral"), mempool_opts);
+    }
+    if (const auto value = argsman.GetArg("-dustdynamic")) {
+        // v31's long estimator horizon is 1008 blocks. L8 runtime wiring will
+        // additionally validate against the initialized estimator's horizon.
+        const auto parsed = ParseDustDynamicOpt(*value, 1008);
+        if (!parsed) return util::Error{strprintf(_("Invalid mode for dustdynamic: %s (value: '%s'; expected off or [multiplier*]target:blocks or [multiplier*]mempool:kvB)"), util::ErrorString(parsed), *value)};
     }
 
     mempool_opts.persist_v1_dat = argsman.GetBoolArg("-persistmempoolv1", mempool_opts.persist_v1_dat);

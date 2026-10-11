@@ -14,11 +14,12 @@ These upstream build conditions are not evidence that a missing optional
 library or platform was tested. See [portability profiles](roots-build-portability.md).
 
 The source contracts below are preservation requirements, **not a claim that
-Roots behavior has been ported**. Local policy/mining and strict Roots parsing
-are deferred to L7; peer controls/health to L8; sweep, coin-control and per-send
-RBF extensions to L9; read/write config, effective-policy RPC, resource support
-and dormant statistics to L10; identity/desktop and maintenance integration to
-L11. The narrow monotonic `uptime` RPC sub-aspect has reviewed upstream
+Roots behavior has been ported**. L7 implements scoped parsing and local transaction checks; graph accounting,
+replacement/TRUC/reuse and dynamic dust are deferred to L8, and priority/template
+mining to L9; peer controls/health to L10; sweep, coin-control and per-send
+RBF extensions to L11; read/write config, effective-policy RPC, resource support
+and dormant statistics to L12; identity/desktop and maintenance integration to
+L13. The narrow monotonic `uptime` RPC sub-aspect has reviewed upstream
 equivalence; this does not retire the remaining operator-stats contract.
 
 MiniUPnPc dependency discovery is retained, but its UPnP runtime and depends
@@ -28,7 +29,8 @@ progress remains deferred to desktop integration. Passing either undeclared
 option to CMake does not implement it. No intended behavior is retired by a
 missing dependency.
 
-Code and test references in the contract body identify paths at pinned source
+Unless explicitly marked as candidate evidence, code and test references in the
+contract body identify paths at pinned source
 `10d772eb7f4b00b5193428a0dde4c06558d6c297`; they are rendered as source
 references rather than links into this candidate when their implementation
 has not been carried. Historical test results are not current candidate passes.
@@ -41,7 +43,9 @@ The source checked for this collection is Roots
 commit `49faec4f87f5cd19c88db01a82e5c68b087c8227`. Source and test links are
 version-specific aids; neither a function name nor the location of an admission
 check is a preservation requirement. The contracts do not authorize a change in
-consensus, a new feature, or repair of a documented gap.
+consensus or a new feature. The user explicitly authorized the bounded L8
+dynamic-dust startup/lifetime, missing-estimate fallback and safe-scaling repair;
+other documented gaps remain preservation limitations.
 
 **Acceptance rule for every ID:** preserve its observable results, defaults,
 supported configuration, units, errors and boundaries. Tests named below are
@@ -59,6 +63,35 @@ be represented as an adopted working feature; enabling it requires a separate
 compatibility decision.
 
 ### Local policy and mining
+
+The L7 candidate implements `policy-parsing`, `policy-standardness`, carrier
+recognition/budgets within `policy-carrier`, fixed thresholds and ephemeral
+exceptions within `policy-dust`, and relay gates within `policy-coinage`.
+Focused candidate acceptance passed in
+[`policy_args_tests.cpp`](../src/test/policy_args_tests.cpp),
+[`transaction_tests.cpp`](../src/test/transaction_tests.cpp),
+[`feature_policy_args.py`](../test/functional/feature_policy_args.py),
+[`mempool_datacarrier.py`](../test/functional/mempool_datacarrier.py),
+[`mempool_dust.py`](../test/functional/mempool_dust.py),
+[`mempool_sigoplimit.py`](../test/functional/mempool_sigoplimit.py), and
+[`mempool_roots_local_policy.py`](../test/functional/mempool_roots_local_policy.py).
+The last test covers enabled/disabled relay age, unconfirmed age, exact
+coin-block boundaries, extreme configured bounds, local filter/ephemeral
+switches and consensus-valid blocks for CAT21 and relay-age rejections.
+L7.2 adds tip-reorg age checks, carrier full-count/standardness independence,
+and consensus-valid blocks for local marker, pubkey, witness-version, token,
+multiple-OP_RETURN, dust and relay-age rejections. The complete native unit
+suite and applicable package/replacement/TRUC/cluster/mining functional suites
+are candidate verification gates, with explicit local allowances in resource
+fixtures. The v31
+[`policy_args` fuzz target](../src/test/fuzz/policy_args.cpp) retains L5's grammar
+oracles; [`transaction`](../src/test/fuzz/transaction.cpp) also exercises carrier
+recognition. Bounded Clang 19 ASan/UBSan/libFuzzer campaigns executed these and
+native coins-view policy callers with reproducible seeds. Final L7 review remains
+pending; a bounded campaign is not exhaustive coverage.
+Source acceptance and gaps below remain historical evidence; L8 owns carrier
+extra weight, dynamic dust, subdust, replacement/TRUC and reuse, and L9 owns
+mining. Explicitly supplied staged options warn that they are not enforced.
 
 - **policy-parsing:** the [policy input compatibility contract](feature-contracts/policy-parsing.md)
   specifies scoped grammar, effective defaults, diagnostics, migration decisions
@@ -133,6 +166,11 @@ compatibility decision.
   `DynamicDustFeePublication` covers changing snapshots. Gap: estimator-target
   mode without an estimator is accepted by the parser; it is not evidence of a
   working estimate. Extreme dynamic multiplier arithmetic needs separate coverage.
+  The source also aborts non-off startup because scheduler wiring is missing.
+  L8's explicitly authorized repair must add node-owned scheduling after successful
+  initialization, safe retry/shutdown lifetime, unavailable-estimator floor fallback
+  and overflow-safe scaling, with regression coverage. L7 carries syntax only;
+  this repaired runtime is not yet implemented.
 - **policy-subdust:** apply a configurable deficit penalty to modified fees,
   using script-specific dust thresholds, without changing the actual fee or
   consensus validity. Enabled by default. The
@@ -163,8 +201,10 @@ compatibility decision.
   to coinbase consensus maturity. See coin age (`src/policy/coin_age_priority.cpp`, source reference)
   and admission (`src/validation.cpp`, source reference). Acceptance: priority accounting cases in
   miner_tests.cpp (`src/test/miner_tests.cpp`, source reference) `CreateNewBlock_validity` cover the
-  shared age cache. Gap: dedicated enabled/disabled relay maturity/coin-block
-  boundaries and their valid-block fixtures.
+  shared age cache. Historical source gap: dedicated enabled/disabled relay
+  maturity/coin-block boundaries and valid-block fixtures. The candidate's
+  `mempool_roots_local_policy.py` supplies those cases and tip-reorg checks;
+  it does not port L9's priority cache or mining interactions.
 - **policy-reuse:** `spkreuse=allow` defaults to no extra restriction. The
   documented alternative `conflict` uses mempool scriptPubKey creation/spend
   tracking to reject reuse or consider policy conflicts for replacement. This is a local

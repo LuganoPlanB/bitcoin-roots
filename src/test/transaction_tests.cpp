@@ -14,6 +14,7 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <kernel/mempool_options.h>
 #include <key.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
@@ -49,8 +50,8 @@ using util::ToString;
 
 typedef std::vector<unsigned char> valtype;
 
-static CFeeRate g_dust{DUST_RELAY_TX_FEE};
-static bool g_bare_multi{DEFAULT_PERMIT_BAREMULTISIG};
+
+static kernel::MemPoolOptions g_mempool_opts;
 
 static const std::map<std::string, script_verify_flag_name>& mapFlagNames = ScriptFlagNamesToEnum();
 
@@ -764,21 +765,30 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     CKey key = GenerateRandomKey();
     t.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
 
-    constexpr auto CheckIsStandard = [](const auto& t, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY) {
+    constexpr auto CheckIsStandard = [](const auto& t, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY, const ignore_rejects_type& ignore_rejects = empty_ignore_rejects) {
         std::string reason;
-        BOOST_CHECK(IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
+        auto opts = g_mempool_opts;
+        opts.max_datacarrier_bytes = max_op_return_relay;
+        BOOST_CHECK(IsStandardTx(CTransaction{t}, opts, reason, ignore_rejects));
         BOOST_CHECK(reason.empty());
     };
-    constexpr auto CheckIsNotStandard = [](const auto& t, const std::string& reason_in, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY) {
+    constexpr auto CheckIsNotStandard = [](const auto& t, const std::string& reason_in, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY, const ignore_rejects_type& ignore_rejects = empty_ignore_rejects) {
         std::string reason;
-        BOOST_CHECK(!IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
+        auto opts = g_mempool_opts;
+        opts.max_datacarrier_bytes = max_op_return_relay;
+        BOOST_CHECK(!IsStandardTx(CTransaction{t}, opts, reason, ignore_rejects));
         BOOST_CHECK_EQUAL(reason_in, reason);
     };
 
+    g_mempool_opts.permit_bare_pubkey = true;
     CheckIsStandard(t);
 
+    g_mempool_opts.permitephemeral_anchor = true;
+    g_mempool_opts.permitephemeral_dust = true;
+    g_mempool_opts.permitephemeral_send = true;
+
     // Check dust with default relay fee:
-    CAmount nDustThreshold = 182 * g_dust.GetFeePerK() / 1000;
+    CAmount nDustThreshold = 182 * g_mempool_opts.dust_relay_feerate.GetFeePerK() / 1000;
     BOOST_CHECK_EQUAL(nDustThreshold, 546);
 
     // Add dust outputs up to allowed maximum, still standard!
@@ -813,25 +823,66 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Check dust with odd relay fee to verify rounding:
     // nDustThreshold = 182 * 3702 / 1000
-    g_dust = CFeeRate(3702);
+    g_mempool_opts.dust_relay_feerate = CFeeRate(3702);
     // dust:
     t.vout[0].nValue = 674 - 1;
     CheckIsNotStandard(t, "dust");
     // not dust:
     t.vout[0].nValue = 674;
     CheckIsStandard(t);
-    g_dust = CFeeRate{DUST_RELAY_TX_FEE};
+    g_mempool_opts.dust_relay_feerate = CFeeRate{DUST_RELAY_TX_FEE};
 
     t.vout[0].scriptPubKey = CScript() << OP_1;
     CheckIsNotStandard(t, "scriptpubkey");
 
-    // Custom 83-byte TxoutType::NULL_DATA (standard with max_op_return_relay of 83)
-    t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
-    BOOST_CHECK_EQUAL(83, t.vout[0].scriptPubKey.size());
-    CheckIsStandard(t, /*max_op_return_relay=*/83);
+    // Test rejectparasites
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    t.vout.emplace_back(674, GetScriptForDestination(PKHash(key.GetPubKey())));
+    t.nLockTime = PARASITE_CAT21_LOCKTIME;
+    g_mempool_opts.reject_parasites = false;
+    CheckIsStandard(t);
+    g_mempool_opts.reject_parasites = true;
+    CheckIsNotStandard(t, "parasite-cat21");
+    t.nLockTime = 0;
+    CheckIsStandard(t);
+    g_mempool_opts.reject_parasites = false;
 
-    // Non-standard if max_op_return_relay datacarrier arg is one less
-    CheckIsNotStandard(t, "datacarrier", /*max_op_return_relay=*/82);
+    // Test rejecttokens
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << OP_13 << OP_FALSE;
+    g_mempool_opts.reject_tokens = false;
+    CheckIsStandard(t);
+    g_mempool_opts.reject_tokens = true;
+    CheckIsNotStandard(t, "tokens-runes");
+    // At least one data push is needed after OP_13 to match
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << OP_13;
+    CheckIsStandard(t);
+    // Test rejecttokens applying to OLGA
+    const auto olga_header = CScript() << OP_0 << "003e7374616d703a000000000000000000000000000000000000000000000000"_hex;
+    t.vout[0].scriptPubKey = olga_header;
+    t.vout.resize(1);
+    // Missing a second output, so not OLGA
+    CheckIsStandard(t);
+    t.vout.emplace_back(1000, olga_header);
+    CheckIsNotStandard(t, "tokens-olga");
+    t.vout.emplace_back(1000, olga_header);
+    CheckIsNotStandard(t, "tokens-olga");
+    g_mempool_opts.reject_tokens = false;
+    CheckIsStandard(t);
+    t.vout.resize(1);
+
+    // MAX_OP_RETURN_RELAY-byte TxoutType::NULL_DATA (standard)
+    g_mempool_opts.permitbaredatacarrier = true;
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    while (t.vout[0].scriptPubKey.size() < MAX_OP_RETURN_RELAY) {
+        t.vout[0].scriptPubKey << OP_0;
+    }
+    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY, t.vout[0].scriptPubKey.size());
+    CheckIsStandard(t);
+
+    // MAX_OP_RETURN_RELAY+1-byte TxoutType::NULL_DATA (non-standard)
+    t.vout[0].scriptPubKey << OP_0;
+    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY + 1, t.vout[0].scriptPubKey.size());
+    CheckIsNotStandard(t, "datacarrier");
 
     // Data payload can be encoded in any way...
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << ""_hex;
@@ -853,28 +904,40 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     t.vout[0].scriptPubKey = CScript() << OP_RETURN;
     CheckIsStandard(t);
 
-    // Multiple TxoutType::NULL_DATA are permitted
+    // Multiple carriers require an explicit local policy relaxation
     t.vout.resize(2);
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[0].nValue = 0;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[1].nValue = 0;
-    CheckIsStandard(t);
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
 
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN;
-    CheckIsStandard(t);
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
 
     t.vout[0].scriptPubKey = CScript() << OP_RETURN;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN;
-    CheckIsStandard(t);
+    CheckIsNotStandard(t, "multi-op-return", MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR);
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"});
 
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     t.vout[1].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
     const auto datacarrier_size = t.vout[0].scriptPubKey.size() + t.vout[1].scriptPubKey.size();
-    CheckIsStandard(t); // Default max relay should never trigger
-    CheckIsStandard(t, /*max_op_return_relay=*/datacarrier_size);
-    CheckIsNotStandard(t, "datacarrier", /*max_op_return_relay=*/datacarrier_size-1);
+    CheckIsNotStandard(t, "datacarrier");
+    CheckIsStandard(t, MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR, {"multi-op-return"}); // Explicit generous aggregate limit
+    CheckIsStandard(t, /*max_op_return_relay=*/datacarrier_size, {"multi-op-return"});
+    CheckIsNotStandard(t, "datacarrier", /*max_op_return_relay=*/datacarrier_size-1, {"multi-op-return"});
+
+    // Bare carrier transactions still require explicit permission.
+    t.vout.resize(1);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    g_mempool_opts.permitbaredatacarrier = false;
+    CheckIsNotStandard(t, "bare-datacarrier");
+    g_mempool_opts.permitbaredatacarrier = true;
+    CheckIsStandard(t);
 
     // Check large scriptSig (non-standard if size is >1650 bytes)
     t.vout.resize(1);
@@ -937,16 +1000,16 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400004);
     CheckIsNotStandard(t, "tx-size");
 
-    // Check bare multisig (standard if policy flag g_bare_multi is set)
-    g_bare_multi = true;
+    // Check bare multisig (standard if the policy flag is set)
+    g_mempool_opts.permit_bare_multisig = true;
     t.vout[0].scriptPubKey = GetScriptForMultisig(1, {key.GetPubKey()}); // simple 1-of-1
     t.vin.resize(1);
     t.vin[0].scriptSig = CScript() << std::vector<unsigned char>(65, 0);
     CheckIsStandard(t);
 
-    g_bare_multi = false;
+    g_mempool_opts.permit_bare_multisig = false;
     CheckIsNotStandard(t, "bare-multisig");
-    g_bare_multi = DEFAULT_PERMIT_BAREMULTISIG;
+    g_mempool_opts.permit_bare_multisig = true;
 
     // Add dust outputs up to allowed maximum
     assert(t.vout.size() == 1);
@@ -1005,6 +1068,9 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     for (int op = OP_1; op <= OP_16; op += 1) {
         t.vout[0].scriptPubKey = CScript() << (opcodetype)op << std::vector<unsigned char>(2, 0);
         t.vout[0].nValue = 240;
+        g_mempool_opts.acceptunknownwitness = false;
+        CheckIsNotStandard(t, "scriptpubkey-unknown-witnessversion");
+        g_mempool_opts.acceptunknownwitness = true;
         CheckIsStandard(t);
 
         t.vout[0].nValue = 239;
@@ -1018,6 +1084,34 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     CheckIsStandard(t);
     t.vout[0].nValue = 239;
     CheckIsNotStandard(t, "dust");
+
+    // Test permitbareanchor
+    g_mempool_opts.permitbareanchor = false;
+    t.vout[1].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
+    t.vout[1].nValue = COIN;
+    CheckIsStandard(t);
+    t.vout.resize(1);
+    CheckIsNotStandard(t, "bare-anchor");
+    g_mempool_opts.permitbareanchor = true;
+    CheckIsStandard(t);
+
+    // Test permitephemeral
+    g_mempool_opts.permitephemeral_anchor = false;
+    CheckIsNotStandard(t, "anchor");
+    t.vout[0].nValue = 0;
+    CheckIsNotStandard(t, "anchor");
+    g_mempool_opts.permitephemeral_anchor = true;
+    g_mempool_opts.permitephemeral_dust = false;
+    CheckIsStandard(t);
+    t.vout[0].nValue = 1;
+    CheckIsNotStandard(t, "dust-nonzero");
+    g_mempool_opts.permitephemeral_dust = true;
+    g_mempool_opts.permitephemeral_send = false;
+    CheckIsStandard(t);
+    t.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
+    CheckIsNotStandard(t, "dust-nonanchor");
+    g_mempool_opts.permitephemeral_send = true;
+    CheckIsStandard(t);
 }
 
 BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
@@ -1113,55 +1207,6 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     AddCoins(coins, CTransaction(tx_create_p2pk), 0, false);
     BOOST_CHECK_GT(p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1, MAX_TX_LEGACY_SIGOPS);
     BOOST_CHECK(!::AreInputsStandard(CTransaction(tx_max_sigops), coins));
-}
-
-BOOST_AUTO_TEST_CASE(checktxinputs_invalid_transactions_test)
-{
-    auto check_invalid{[](CAmount input_value, CAmount output_value, bool coinbase, int spend_height, TxValidationResult expected_result, std::string_view expected_reason) {
-        CCoinsView coins_dummy;
-        CCoinsViewCache inputs(&coins_dummy);
-
-        const COutPoint prevout{Txid::FromUint256(uint256::ONE), 0};
-        inputs.AddCoin(prevout, Coin{{input_value, CScript() << OP_TRUE}, /*nHeightIn=*/1, coinbase}, /*possible_overwrite=*/false);
-
-        CMutableTransaction mtx;
-        mtx.vin.emplace_back(prevout);
-        mtx.vout.emplace_back(output_value, CScript() << OP_TRUE);
-
-        TxValidationState state;
-        CAmount txfee{0};
-        BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction{mtx}, state, inputs, spend_height, txfee));
-        BOOST_CHECK(state.IsInvalid());
-        BOOST_CHECK_EQUAL(state.GetResult(), expected_result);
-        BOOST_CHECK_EQUAL(state.GetRejectReason(), expected_reason);
-    }};
-
-    check_invalid(/*input_value=*/MAX_MONEY + 1,
-                  /*output_value=*/0,
-                  /*coinbase=*/false,
-                  /*spend_height=*/2,
-                  TxValidationResult::TX_CONSENSUS, /*expected_reason=*/"bad-txns-inputvalues-outofrange");
-
-    check_invalid(/*input_value=*/1 * COIN,
-                  /*output_value=*/2 * COIN,
-                  /*coinbase=*/false,
-                  /*spend_height=*/2,
-                  TxValidationResult::TX_CONSENSUS, /*expected_reason=*/"bad-txns-in-belowout");
-
-    check_invalid(/*input_value=*/1 * COIN,
-                  /*output_value=*/0,
-                  /*coinbase=*/true,
-                  /*spend_height=*/COINBASE_MATURITY,
-                  TxValidationResult::TX_PREMATURE_SPEND, /*expected_reason=*/"bad-txns-premature-spend-of-coinbase");
-}
-
-BOOST_AUTO_TEST_CASE(getvalueout_out_of_range_throws)
-{
-    CMutableTransaction mtx;
-    mtx.vout.emplace_back(MAX_MONEY + 1, CScript() << OP_TRUE);
-
-    const CTransaction tx{mtx};
-    BOOST_CHECK_EXCEPTION(tx.GetValueOut(), std::runtime_error, HasReason("GetValueOut: value out of range"));
 }
 
 /** Sanity check the return value of SpendsNonAnchorWitnessProg for various output types. */

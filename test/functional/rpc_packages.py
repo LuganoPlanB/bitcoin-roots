@@ -35,6 +35,7 @@ MAX_PACKAGE_COUNT = 25
 class RPCPackagesTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [["-maxscriptsize=1000000", "-datacarriersize=1000000"]]
         self.setup_clean_chain = True
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
@@ -450,7 +451,7 @@ class RPCPackagesTest(BitcoinTestFramework):
         # Make chain of two transactions where parent doesn't make minfee threshold
         # but child is too high fee
         # Lower mempool limit to make it easier to fill_mempool
-        self.restart_node(0, extra_args=[
+        self.restart_node(0, extra_args=self.extra_args[0] + [
             "-maxmempool=5",
             "-persistmempool=0",
         ])

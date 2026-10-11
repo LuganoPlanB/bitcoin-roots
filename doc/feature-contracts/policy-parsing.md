@@ -1,10 +1,23 @@
 # Roots policy input compatibility
 
-**v31 candidate status: deferred.** This preserved contract describes the
-accepted 30.3 source, including its documented gaps; the foundation does not
-implement its Roots controls or RPC fields. Source code/test paths below refer
-to `10d772eb7f4b00b5193428a0dde4c06558d6c297`, not current candidate behavior.
-[The port review](../roots-v31-port-review.md) records ownership and current gates.
+**v31 candidate status: L7 implementation tested; final milestone review pending.** Scoped
+grammar and local policy consumers are carried. `datacarriercost`,
+`subdustfeepenalty`, `mempoolreplacement`, `mempooltruc`, `spkreuse` and
+`dustdynamic` are parsing-only until L8; `blockmaxsize` and `blockprioritysize`
+are parsing-only until L9. Help labels these staged controls and explicit use emits a startup warning;
+acceptance of their syntax does not establish enforcement. Core's current
+replacement/mining algorithms continue to operate meanwhile. Only integrated
+Roots `confrw` precedence awaits L12; CLI, ordinary config and JSON settings
+passed the L7.1 startup matrix. Candidate tests are
+[`policy_args_tests.cpp`](../../src/test/policy_args_tests.cpp) and
+[`feature_policy_args.py`](../../test/functional/feature_policy_args.py).
+L7.2 carries the source
+[`policy_args` fuzz target](../../src/test/fuzz/policy_args.cpp): Boolean and
+integer independent grammar oracles, trailing-junk rejection, quarter-vbyte
+canonical round trips, dynamic-mode syntax round trips, JSON types and raw
+negation. Clang 19 ASan/UBSan/libFuzzer executed 103,911 inputs over 121 seconds
+with seed 31 and no findings. This bounds the reported campaign, not all inputs.
+Historical paths/results below are source evidence.
 
 **Contract ID: policy-parsing.** Scope: startup input for the Roots-added local
 policy controls listed below. This contract supplements `runtime-config` and the
@@ -173,10 +186,12 @@ The matrix produced 127 clean startups/shutdowns, 30 expected startup diagnostic
 and the three existing runtime aborts described below. All 160 outcomes matched
 the source-derived characterization; an expected rejection is not a test failure.
 
-**Existing runtime gap:** non-off `dustdynamic` modes can parse successfully but
+**Historical source runtime gap (repair authorized for L8):** non-off `dustdynamic` modes can parse successfully but
 abort startup because the mempool is constructed without its required scheduler.
 Parser acceptance does not prove these modes operate. This contract records that
-baseline failure; repairing scheduler wiring is a separate runtime change.
+baseline failure; The user authorized a bounded L8 runtime repair with node-owned scheduling,
+retry/shutdown lifetime safety, unavailable-estimate floor fallback and safe
+multiplier scaling. It is not implemented by L7 parsing.
 
 Acceptance: policy_args_tests.cpp (`src/test/policy_args_tests.cpp`, source reference)
 `boolean_values`, `integer_boundaries`, `carrier_cost_compatibility`, `mode_tokens`,
@@ -247,3 +262,16 @@ probe failed before testing. GCC sanitizer compilation and execution succeeded.
 The executed campaigns therefore used corpus replay, including generated
 mutations, with no coverage-guided engine. A coverage-guided libFuzzer campaign
 remains an explicit evidence gap, and cannot be claimed from these replay counts.
+
+## Candidate split and current gates
+
+L7 carries complete-token/negation/type/cost/mode syntax and local standardness,
+carrier budgets, fixed dust and relay age/maturity. The native v31 cluster limits
+and typed script flags remain intact. Mode-resolution/enforcement tests belong
+L8, and template-normalization tests belong L9; their source assertions are
+retained as explicit owning-theme gates, not represented as L7 passes.
+
+`feature_policy_args.py` retains independently runnable CLI/config/JSON cases;
+only its historical text read/write-config integration cases defer to L12.
+`policy_args_tests` retains parser boundaries and local/ephemeral defaults.
+Dynamic-dust grammar is tested without a runtime support claim.

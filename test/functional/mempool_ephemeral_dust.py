@@ -28,6 +28,8 @@ class EphemeralDustTest(BitcoinTestFramework):
     def set_test_params(self):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
+        # Exercise native dust packages with the Roots local send exception enabled.
+        self.extra_args = [["-permitephemeral=1"]] * self.num_nodes
 
         # Don't test trickling logic
         self.noban_tx_relay = True
@@ -200,8 +202,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that a single output of any satoshi amount is allowed, not checking spending")
 
         # We aren't checking spending, allow it in with no fee
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         # 330 is dust threshold for taproot outputs
@@ -211,8 +213,8 @@ class EphemeralDustTest(BitcoinTestFramework):
             test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
             assert test_res[0]["allowed"]
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=self.extra_args[0])
+        self.restart_node(1, extra_args=self.extra_args[1])
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -407,8 +409,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that ephemeral dust works in non-TRUC contexts when there's no minrelay requirement")
 
         # Note: since minrelay is 0, it is not testing 1P1C relay
-        self.restart_node(0, extra_args=["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])
@@ -472,8 +474,8 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         # Other topology tests (e.g., grandparents and parents both with dust) require relaxation of submitpackage topology
 
-        self.restart_node(0, extra_args=[])
-        self.restart_node(1, extra_args=[])
+        self.restart_node(0, extra_args=self.extra_args[0])
+        self.restart_node(1, extra_args=self.extra_args[1])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])

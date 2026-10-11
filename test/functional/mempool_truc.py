@@ -31,7 +31,7 @@ def cleanup(extra_args=None):
         def wrapper(self):
             try:
                 if extra_args is not None:
-                    self.restart_node(0, extra_args=extra_args)
+                    self.restart_node(0, extra_args=self.extra_args[0] + extra_args)
                 func(self)
             finally:
                 # Clear mempool again after test
@@ -44,7 +44,7 @@ def cleanup(extra_args=None):
 class MempoolTRUC(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [[]]
+        self.extra_args = [["-maxscriptsize=1000000", "-datacarriersize=1000000"]]
         self.setup_clean_chain = True
 
     def check_mempool(self, txids):
@@ -241,7 +241,7 @@ class MempoolTRUC(BitcoinTestFramework):
         self.generate(node, 1)
 
         self.log.info("Test that a decreased limitclustersize also applies to TRUC child")
-        self.restart_node(0, extra_args=["-limitclustersize=10", "-acceptnonstdtxn=1"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-limitclustersize=10", "-acceptnonstdtxn=1"])
         tx_v3_parent_large2 = self.wallet.send_self_transfer(from_node=node, target_vsize=parent_target_vsize, version=3)
         tx_v3_child_large2 = self.wallet.create_self_transfer(utxo_to_spend=tx_v3_parent_large2["new_utxo"], target_vsize=child_target_vsize, version=3)
         # Parent and child are within TRUC limits
@@ -249,7 +249,7 @@ class MempoolTRUC(BitcoinTestFramework):
         assert_greater_than_or_equal(TRUC_CHILD_MAX_VSIZE, tx_v3_child_large2["tx"].get_vsize())
         assert_raises_rpc_error(-26, "too-large-cluster", node.sendrawtransaction, tx_v3_child_large2["hex"])
         self.log.info("Test that a decreased limitclustercount also applies to TRUC transactions")
-        self.restart_node(0, extra_args=["-limitclustercount=1", "-acceptnonstdtxn=1"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-limitclustercount=1", "-acceptnonstdtxn=1"])
         assert_raises_rpc_error(-26, "too-large-cluster", node.sendrawtransaction, tx_v3_child_large2["hex"])
         self.check_mempool([tx_v3_parent_large2["txid"]])
 
@@ -617,7 +617,7 @@ class MempoolTRUC(BitcoinTestFramework):
         for minrelay_setting in (0, 5, 10, 100, 500, 1000, 5000, 333333, 2500000):
             self.log.info(f"-> Test -minrelaytxfee={minrelay_setting}sat/kvB...")
             setting_decimal = minrelay_setting / Decimal(COIN)
-            self.restart_node(0, extra_args=[f"-minrelaytxfee={setting_decimal:.8f}", "-persistmempool=0"])
+            self.restart_node(0, extra_args=self.extra_args[0] + [f"-minrelaytxfee={setting_decimal:.8f}", "-persistmempool=0"])
             minrelayfeerate = node.getmempoolinfo()["minrelaytxfee"]
             high_feerate = minrelayfeerate * 50
 

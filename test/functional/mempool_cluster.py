@@ -42,6 +42,7 @@ def cleanup(func):
 class MempoolClusterTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000"]]
 
     def add_chain_cluster(self, node, cluster_count, target_vsize=None):
         """Create a cluster of transactions, with the count specified.
@@ -398,7 +399,7 @@ class MempoolClusterTest(BitcoinTestFramework):
 
         for cluster_size_limit_kvb in [10, 20, 33, 100, DEFAULT_CLUSTER_SIZE_LIMIT_KVB]:
             self.log.info(f"-> Resetting node with -limitclustersize={cluster_size_limit_kvb}")
-            self.restart_node(0, extra_args=[f"-limitclustersize={cluster_size_limit_kvb}"])
+            self.restart_node(0, extra_args=self.extra_args[0] + [f"-limitclustersize={cluster_size_limit_kvb}"])
 
             cluster_size_limit = cluster_size_limit_kvb * 1000
             self.test_cluster_size_limit(cluster_size_limit)
@@ -406,7 +407,7 @@ class MempoolClusterTest(BitcoinTestFramework):
 
         for cluster_count_limit in [4, 10, 16, 32, DEFAULT_CLUSTER_LIMIT]:
             self.log.info(f"-> Resetting node with -limitclustercount={cluster_count_limit}")
-            self.restart_node(0, extra_args=[f"-limitclustercount={cluster_count_limit}"])
+            self.restart_node(0, extra_args=self.extra_args[0] + [f"-limitclustercount={cluster_count_limit}"])
 
             self.test_cluster_count_limit(cluster_count_limit)
             if cluster_count_limit > 10:

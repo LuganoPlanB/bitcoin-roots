@@ -268,6 +268,35 @@ bool CheckSequenceLocksAtTip(CBlockIndex* tip,
     return EvaluateSequenceLocks(index, {lock_points.height, lock_points.time});
 }
 
+static int64_t GetAccurateTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, script_verify_flags flags)
+{
+    if (tx.IsCoinBase()) {
+        return 0;
+    }
+
+    unsigned int nSigOps = 0;
+    for (const auto& txin : tx.vin) {
+        nSigOps += txin.scriptSig.GetSigOpCount(false);
+    }
+
+    if (flags & SCRIPT_VERIFY_P2SH) {
+        nSigOps += GetP2SHSigOpCount(tx, inputs);
+    }
+
+    nSigOps *= WITNESS_SCALE_FACTOR;
+
+    if (flags & SCRIPT_VERIFY_WITNESS) {
+        for (const auto& txin : tx.vin) {
+            const Coin& coin = inputs.AccessCoin(txin.prevout);
+            assert(!coin.IsSpent());
+            const CTxOut &prevout = coin.out;
+            nSigOps += CountWitnessSigOps(txin.scriptSig, prevout.scriptPubKey, txin.scriptWitness, flags);
+        }
+    }
+
+    return nSigOps;
+}
+
 static void LimitMempoolSize(CTxMemPool& pool, CCoinsViewCache& coins_cache)
     EXCLUSIVE_LOCKS_REQUIRED(::cs_main, pool.cs)
 {
@@ -812,7 +841,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     std::string reason;
-    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.m_opts.max_datacarrier_bytes, m_pool.m_opts.permit_bare_multisig, m_pool.m_opts.dust_relay_feerate, reason)) {
+    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.m_opts, reason)) {
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, reason);
     }
 
@@ -900,13 +929,42 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         return false; // state filled in by CheckTxInputs
     }
 
-    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view)) {
-        return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs");
+    // Local policy only. Consensus input maturity remains in CheckTxInputs.
+    const int64_t next_height{int64_t{m_active_chainstate.m_chain.Height()} + 1};
+    uint64_t coinblocks{0};
+    for (const auto& input : tx.vin) {
+        const auto& coin = m_view.AccessCoin(input.prevout);
+        const int64_t depth{std::max<int64_t>(0, next_height - coin.nHeight)};
+        if (depth < m_pool.m_opts.minrelaymaturity) {
+            return state.Invalid(TxValidationResult::TX_PREMATURE_SPEND, "bad-txns-input-immature-depth");
+        }
+        // Only compare against the configured bound: cap before multiplying.
+        const uint64_t remaining{m_pool.m_opts.minrelaycoinblocks - coinblocks};
+        if (depth > 0 && coin.out.nValue > 0) {
+            const uint64_t value{static_cast<uint64_t>(coin.out.nValue)};
+            coinblocks += value > remaining / depth ? remaining : value * depth;
+        }
+    }
+    if (coinblocks < m_pool.m_opts.minrelaycoinblocks) {
+        return state.Invalid(TxValidationResult::TX_PREMATURE_SPEND, "bad-txns-input-immature-coinblocks");
+    }
+    if (m_pool.m_opts.datacarrier_fullcount || !m_pool.m_opts.accept_non_std_datacarrier) {
+        const auto [standard_bytes, nonstandard_bytes] = DatacarrierBytes(tx, m_view);
+        if (nonstandard_bytes && !m_pool.m_opts.accept_non_std_datacarrier) {
+            return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "txn-datacarrier-nonstandard");
+        }
+        if (m_pool.m_opts.datacarrier_fullcount && standard_bytes + nonstandard_bytes > m_pool.m_opts.max_datacarrier_bytes.value_or(0)) {
+            return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "txn-datacarrier-exceeded");
+        }
+    }
+
+    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view, m_pool.m_opts, "bad-txns-input-", reason)) {
+        return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, reason);
     }
 
     // Check for non-standard witnesses.
-    if (tx.HasWitness() && m_pool.m_opts.require_standard && !IsWitnessStandard(tx, m_view)) {
-        return state.Invalid(TxValidationResult::TX_WITNESS_MUTATED, "bad-witness-nonstandard");
+    if (tx.HasWitness() && m_pool.m_opts.require_standard && !IsWitnessStandard(tx, m_view, "bad-witness-", reason)) {
+        return state.Invalid(TxValidationResult::TX_WITNESS_MUTATED, reason);
     }
 
     int64_t nSigOpsCost = GetTransactionSigOpCost(tx, m_view, STANDARD_SCRIPT_VERIFY_FLAGS);
@@ -942,7 +1000,9 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         }
     }
 
-    if (nSigOpsCost > MAX_STANDARD_TX_SIGOPS_COST)
+    if (nSigOpsCost > MAX_STANDARD_TX_SIGOPS_COST ||
+        (nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, m_view, STANDARD_SCRIPT_VERIFY_FLAGS) >
+            ws.m_vsize * WITNESS_SCALE_FACTOR / nBytesPerSigOpStrict))
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "bad-txns-too-many-sigops",
                 strprintf("%d", nSigOpsCost));
 

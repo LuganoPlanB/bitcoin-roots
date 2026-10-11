@@ -1,6 +1,6 @@
 # Sub-dust effective-fee contract
 
-**v31 candidate status: deferred.** This preserved contract describes the
+**v31 candidate status: deferred to L8 graph policy.** This preserved contract describes the
 accepted 30.3 source, including its documented gaps; the foundation does not
 implement its Roots controls or RPC fields. Source code/test paths below refer
 to `10d772eb7f4b00b5193428a0dde4c06558d6c297`, not current candidate behavior.

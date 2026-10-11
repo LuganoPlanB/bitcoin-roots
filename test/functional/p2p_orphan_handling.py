@@ -60,7 +60,7 @@ def cleanup(func):
             self.wait_until(lambda: len(self.nodes[0].getorphantxs()) == 0)
             assert_equal(0, len(self.nodes[0].getrawmempool()))
 
-            self.restart_node(0, extra_args=["-persistmempool=0"])
+            self.restart_node(0, extra_args=self.extra_args[0] + ["-persistmempool=0"])
             # Allow use of bumpmocktime again
             self.nodes[0].setmocktime(int(time.time()))
             self.wallet.rescan_utxos(include_mempool=True)
@@ -123,7 +123,11 @@ class PeerTxRelayer(P2PTxInvStore):
 class OrphanHandlingTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [[]]
+        # P2PK and burn-only outputs keep orphan fixtures independent of local output filters.
+        self.extra_args = [[
+            "-permitbarepubkey=1", "-permitbaredatacarrier=1",
+            "-maxscriptsize=1000000", "-datacarriersize=1000000",  # Maximal orphan padding.
+        ]]
 
     def create_parent_and_child(self):
         """Create package with 1 parent and 1 child, normal fees (no cpfp)."""

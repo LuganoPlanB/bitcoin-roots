@@ -111,6 +111,10 @@ std::optional<common::SettingsValue> InterpretValue(const KeyInfo& key, const st
             error = strprintf("Negating of -%s is meaningless and therefore forbidden", key.name);
             return std::nullopt;
         }
+        if ((flags & ArgsManager::STRICT_NEGATION) && value && !value->empty() && *value != "0" && *value != "1") {
+            error = strprintf("Invalid -no%s value: '%s' (expected empty, 0, or 1)", key.name, *value);
+            return std::nullopt;
+        }
         // Double negatives like -nofoo=0 are supported (but discouraged)
         if (value && !InterpretBool(*value)) {
             LogWarning("Parsed potentially confusing double-negative -%s=%s", key.name, *value);

@@ -25,6 +25,8 @@ static constexpr unsigned int DEFAULT_MEMPOOL_EXPIRY_HOURS{336};
 static constexpr bool DEFAULT_PERSIST_V1_DAT{false};
 /** Default for -acceptnonstdtxn */
 static constexpr bool DEFAULT_ACCEPT_NON_STD_TXN{false};
+/** Default for -acceptnonstddatacarrier */
+static constexpr bool DEFAULT_ACCEPT_NON_STD_DATACARRIER{false};
 
 namespace kernel {
 /**
@@ -34,7 +36,7 @@ namespace kernel {
  *
  * Most of the time, this struct should be referenced as CTxMemPool::Options.
  */
-struct MemPoolOptions {
+struct MemPoolOptions : StandardnessOptions {
     /* The ratio used to determine how often sanity checks will run.  */
     int check_ratio{0};
     int64_t max_size_bytes{DEFAULT_MAX_MEMPOOL_SIZE_MB * 1'000'000};
@@ -42,16 +44,11 @@ struct MemPoolOptions {
     CFeeRate incremental_relay_feerate{DEFAULT_INCREMENTAL_RELAY_FEE};
     /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
     CFeeRate min_relay_feerate{DEFAULT_MIN_RELAY_TX_FEE};
-    CFeeRate dust_relay_feerate{DUST_RELAY_TX_FEE};
-    /**
-     * A data carrying output is an unspendable output containing data. The script
-     * type is designated as TxoutType::NULL_DATA.
-     *
-     * Maximum size of TxoutType::NULL_DATA scripts that this node considers standard.
-     * If nullopt, any size is nonstandard.
-     */
-    std::optional<unsigned> max_datacarrier_bytes{DEFAULT_ACCEPT_DATACARRIER ? std::optional{MAX_OP_RETURN_RELAY} : std::nullopt};
-    bool permit_bare_multisig{DEFAULT_PERMIT_BAREMULTISIG};
+    // Local policy controls; graph accounting and dynamic dust remain deferred.
+    uint64_t minrelaycoinblocks{0};
+    int minrelaymaturity{0};
+    bool datacarrier_fullcount{DEFAULT_DATACARRIER_FULLCOUNT};
+    bool accept_non_std_datacarrier{false};
     bool require_standard{true};
     bool persist_v1_dat{DEFAULT_PERSIST_V1_DAT};
     MemPoolLimits limits{};

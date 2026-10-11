@@ -579,7 +579,13 @@ BOOST_FIXTURE_TEST_CASE(wallet_descriptor_test, BasicTestingSetup)
 //! wallet rescan and notifications are immediately synced, to verify the wallet
 //! must already have a handler in place for them, and there's no gap after
 //! rescanning where new transactions in new blocks could be lost.
-BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
+// This notification fixture deliberately pays raw public keys to its wallet.
+struct BarePubkeyChain100Setup : TestChain100Setup {
+    BarePubkeyChain100Setup()
+        : TestChain100Setup{ChainType::REGTEST, {.extra_args = {"-permitbarepubkey=1"}}} {}
+};
+
+BOOST_FIXTURE_TEST_CASE(CreateWallet, BarePubkeyChain100Setup)
 {
     m_args.ForceSetArg("-unsafesqlitesync", "1");
     // Create new wallet with known key and unload it.

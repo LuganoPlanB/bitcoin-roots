@@ -25,7 +25,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            "-acceptnonstdtxn=1",
+            "-acceptnonstdtxn=1", "-acceptnonstddatacarrier=1", "-datacarriersize=1000000",
         ]]
         self.setup_clean_chain = True
 

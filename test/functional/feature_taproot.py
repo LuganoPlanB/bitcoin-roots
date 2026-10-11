@@ -1414,6 +1414,7 @@ class TaprootTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [["-acceptnonstddatacarrier=1", "-datacarriersize=100000", "-rejectparasites=0"]]
         self.setup_clean_chain = True
 
     def block_submit(self, node, txs, msg, err_msg, cb_pubkey=None, fees=0, sigops_weight=0, witness=False, accept=False):
@@ -1632,6 +1633,8 @@ class TaprootTest(BitcoinTestFramework):
                     and (all(utxo.spender.is_standard for utxo in input_utxos))  # All inputs must be standard
                     and tx.version in TX_STANDARD_VERSIONS # The tx version must be standard
                     and not (tx.version == 3 and tx.get_vsize() > TRUC_MAX_VSIZE)  # Topological standardness rules must be followed
+                    # Roots bounds each serialized witness stack locally.
+                    and all(len(witness.serialize()) <= 1650 for witness in tx.wit.vtxinwit)
                 )
                 msg = ','.join(utxo.spender.comment + ("*" if n == fail_input else "") for n, utxo in enumerate(input_utxos))
                 if is_standard_tx:
