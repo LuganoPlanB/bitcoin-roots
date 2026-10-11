@@ -965,6 +965,26 @@ bool DescriptorScriptPubKeyMan::HasPrivKey(const CKeyID& keyid) const
     return m_map_keys.contains(keyid) || m_map_crypted_keys.contains(keyid);
 }
 
+std::set<CKeyID> DescriptorScriptPubKeyMan::GetAvailableKeys(const CScript& script) const
+{
+    LOCK(cs_desc_man);
+    const auto it{m_map_script_pub_keys.find(script)};
+    if (it == m_map_script_pub_keys.end()) return {};
+    class AvailableKeys final : public SigningProvider {
+        const DescriptorScriptPubKeyMan& m_manager;
+    public:
+        explicit AvailableKeys(const DescriptorScriptPubKeyMan& manager) : m_manager(manager) {}
+        bool HaveKey(const CKeyID& keyid) const override
+        {
+            LOCK(m_manager.cs_desc_man);
+            return m_manager.HasPrivKey(keyid);
+        }
+    } provider{*this};
+    std::set<CKeyID> keys;
+    m_wallet_descriptor.descriptor->GetAvailableKeys(it->second, m_wallet_descriptor.cache, provider, keys);
+    return keys;
+}
+
 std::optional<CKey> DescriptorScriptPubKeyMan::GetKey(const CKeyID& keyid) const
 {
     AssertLockHeld(cs_desc_man);

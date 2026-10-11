@@ -713,6 +713,12 @@ class Popen;
  *---------------------------------------------------
  */
 
+// Close inherited descriptors after redirecting the child standard streams.
+struct close_fds {
+  explicit close_fds(bool c): close_all(c) {}
+  bool close_all = false;
+};
+
 namespace detail {
 /*!
  * A helper class to Popen class for setting
@@ -729,6 +735,7 @@ struct ArgumentDeducer
   void set_option(input&& inp);
   void set_option(output&& out);
   void set_option(error&& err);
+  void set_option(close_fds&& cfds);
 
 private:
   Popen* popen_ = nullptr;
@@ -1014,6 +1021,8 @@ private:
   int child_pid_ = -1;
 #endif
 
+  bool close_fds_ = false;
+
   std::string exe_name_;
 
   // Command provided as sequence
@@ -1258,7 +1267,13 @@ namespace detail {
   }
 
 
+  inline void ArgumentDeducer::set_option(close_fds&& cfds) {
+    popen_->close_fds_ = cfds.close_all;
+  }
+
 #ifndef WIN32
+  bool subprocess_close_all_fds(int& except_fd, bool force_fallback = false) noexcept;
+
   inline void Child::execute_child() {
     int sys_ret = -1;
     auto& stream = parent_->stream_;
@@ -1302,6 +1317,17 @@ namespace detail {
 
       if (stream.err_write_ != -1 && stream.err_write_ > 2)
         subprocess_close(stream.err_write_);
+
+      // Close inherited descriptors except the exec error pipe and redirected standard streams.
+      if (parent_->close_fds_) {
+        if (!subprocess_close_all_fds(err_wr_pipe_)) {
+          // Avoid exception/string allocation in the post-fork failure path.
+          constexpr char error[] = "Unable to close inherited signer descriptors";
+          const auto written = ::write(err_wr_pipe_, error, sizeof(error) - 1);
+          (void)written;
+          _exit(EXIT_FAILURE);
+        }
+      }
 
       // Replace the current image with the executable
       sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());

@@ -4,6 +4,10 @@
 
 #include <boost/test/unit_test.hpp>
 
+#ifndef WIN32
+#include <fcntl.h>
+#endif
+
 #include <iostream>
 #include <string>
 
@@ -36,5 +40,14 @@ BOOST_AUTO_TEST_CASE(pass_stdin_to_stdout, *boost::unit_test::disabled())
     std::getline(std::cin, s);
     std::cout << s << std::endl;
 }
+
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(check_inherited_fd, *boost::unit_test::disabled())
+{
+    int fd;
+    std::cin >> fd;
+    std::cout << "{\"inherited\":" << (fcntl(fd, F_GETFD) == -1 ? "false" : "true") << "}";
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -201,6 +201,37 @@ class MultiWalletTest(BitcoinTestFramework):
         w5 = wallet("w5")
         assert_equal(w5.getbalances()["mine"]["immature"], 50)
 
+        if platform.system() != 'Windows' and os.geteuid() != 0:
+            self.log.info("Reject opening a wallet whose database directory cannot be written")
+            node.unloadwallet('w5')
+            os.chmod(data_dir('w5'), stat.S_IRUSR | stat.S_IXUSR)
+            try:
+                assert_raises_rpc_error(-4, 'directory is not writable', node.loadwallet, 'w5')
+            finally:
+                os.chmod(data_dir('w5'), stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            node.loadwallet('w5')
+
+        self.log.info("Verify wallet discovery does not descend into node databases")
+        hidden_wallet_dir = data_dir('indexes', 'wallet_discovery_fixture')
+        os.makedirs(hidden_wallet_dir)
+        w5.backupwallet(os.path.join(hidden_wallet_dir, 'wallet.dat'))
+        discovered = {w['name'] for w in node.listwalletdir()['wallets']}
+        assert 'w5' in discovered
+        assert 'indexes/wallet_discovery_fixture' not in discovered
+        shutil.rmtree(hidden_wallet_dir)
+        if os.name != 'nt':
+            self.log.info("Verify wallet discovery does not descend through symlinks")
+            linked_wallet_dir = os.path.join(self.options.tmpdir, 'linked_wallet_fixture')
+            nested_wallet_dir = os.path.join(linked_wallet_dir, 'nested')
+            os.makedirs(nested_wallet_dir)
+            w5.backupwallet(os.path.join(nested_wallet_dir, 'wallet.dat'))
+            link = data_dir('wallet_discovery_link')
+            os.symlink(linked_wallet_dir, link, target_is_directory=True)
+            discovered = {w['name'] for w in node.listwalletdir()['wallets']}
+            assert 'wallet_discovery_link/nested' not in discovered
+            os.unlink(link)
+            shutil.rmtree(linked_wallet_dir)
+
         competing_wallet_dir = os.path.join(self.options.tmpdir, 'competing_walletdir')
         os.mkdir(competing_wallet_dir)
         self.restart_node(0, ['-nowallet', '-walletdir=' + competing_wallet_dir])

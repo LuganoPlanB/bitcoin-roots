@@ -210,10 +210,12 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
 }
 } // namespace
 
-CKey DecodeSecret(const std::string& str)
+namespace {
+template <typename String, typename Allocator = std::allocator<unsigned char>>
+CKey DecodeSecretImpl(const String& str)
 {
     CKey key;
-    std::vector<unsigned char> data;
+    std::vector<unsigned char, Allocator> data;
     if (DecodeBase58Check(str, data, 34)) {
         const std::vector<unsigned char>& privkey_prefix = Params().Base58Prefix(CChainParams::SECRET_KEY);
         if ((data.size() == 32 + privkey_prefix.size() || (data.size() == 33 + privkey_prefix.size() && data.back() == 1)) &&
@@ -227,6 +229,10 @@ CKey DecodeSecret(const std::string& str)
     }
     return key;
 }
+} // namespace
+
+CKey DecodeSecret(const std::string& str) { return DecodeSecretImpl(str); }
+CKey DecodeSecret(const SecureString& str) { return DecodeSecretImpl<SecureString, secure_allocator<unsigned char>>(str); }
 
 std::string EncodeSecret(const CKey& key)
 {

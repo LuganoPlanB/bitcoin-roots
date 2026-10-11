@@ -7,7 +7,9 @@
 
 #include <util/fs_helpers.h>
 
+#include <random.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <util/fs.h>
 #include <util/log.h>
 #include <util/syserror.h>
@@ -315,3 +317,32 @@ FSType GetFilesystemType(const fs::path& path)
     return FSType::OTHER;
 }
 #endif
+
+bool IsDirWritable(const fs::path& dir_path)
+{
+    // Attempt to create a tmp file in the directory
+    if (!fs::is_directory(dir_path)) throw std::runtime_error(strprintf("Path %s is not a directory", fs::PathToString(dir_path)));
+    FastRandomContext rng;
+    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp_%d", rng.rand64()));
+
+    if (const auto created{fsbridge::fopen(tmp, "wbx")}) {
+        std::fclose(created);
+        std::error_code ec;
+        fs::remove(tmp, ec); // clean up, ignore errors
+        return true;
+    }
+    return false;
+}
+
+bool IsSymlink(const fs::path& path)
+{
+#ifdef WIN32
+    DWORD file_attrs = GetFileAttributesW(path.wstring().c_str());
+    if (file_attrs == INVALID_FILE_ATTRIBUTES) {
+        throw fs::filesystem_error("Unable to get file attributes", fs::PathToString(path), std::make_error_code(std::errc::invalid_argument));
+    }
+    return (file_attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    return fs::is_symlink(path);
+#endif
+}

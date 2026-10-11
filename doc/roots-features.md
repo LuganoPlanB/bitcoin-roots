@@ -20,7 +20,12 @@ Priority/template
 mining to L9; peer controls/health to L10; sweep, coin-control and per-send
 RBF extensions to L11; read/write config, effective-policy RPC, resource support
 and dormant statistics to L12; identity/desktop and maintenance integration to
-L13. The narrow monotonic `uptime` RPC sub-aspect has reviewed upstream
+L13. L11.1 adds database-discovery/write-access safeguards, Unix signer descriptor
+closure, wallet-derived per-send RBF defaults and prepared-transaction/PSBT
+signaling. L11.2 adds transient-key sweep with cancellation/final authorization,
+shared UTXO scanning and wallet-derived coin-control facts.
+
+The narrow monotonic `uptime` RPC sub-aspect has reviewed upstream
 equivalence; this does not retire the remaining operator-stats contract.
 
 MiniUPnPc dependency discovery is retained, but its UPnP runtime and depends
@@ -307,37 +312,48 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   are inherited Core foundations. Roots rejects unwritable database directories,
   avoids recursively scanning node database directories and symlink/reparse
   points, and closes unrelated child descriptors for signer commands. Preserve
-  normal wallet locking and error reporting; do not introduce another database,
-  backup/flush promise or Berkeley DB build option. See database (`src/wallet/db.cpp`, source reference),
-  SQLite (`src/wallet/sqlite.cpp`, source reference), filesystem helpers (`src/util/fs_helpers.cpp`, source reference)
-  and signer child invocation (`src/common/run_command.cpp`, source reference). Acceptance:
-  wallet_multiwallet.py (`test/functional/wallet_multiwallet.py`, source reference),
-  wallet_signer.py (`test/functional/wallet_signer.py`, source reference) and
-  wallet_tests.cpp (`src/wallet/test/wallet_tests.cpp`, source reference). Gap: platform-specific
-  reparse-point/permission cases and external signer availability in each build.
+  normal wallet locking and error reporting; automatic anti-fee-sniping
+  locktimes avoid the CAT21 marker reserved by local policy. Do not introduce another database,
+  backup/flush promise or Berkeley DB build option. [See database](../src/wallet/db.cpp),
+  [SQLite](../src/wallet/sqlite.cpp), [filesystem helpers](../src/util/fs_helpers.cpp)
+  and signer [child invocation](../src/common/run_command.cpp). Acceptance:
+  [wallet_multiwallet.py](../test/functional/wallet_multiwallet.py),
+  [wallet_signer.py](../test/functional/wallet_signer.py) and
+  [wallet_tests.cpp](../src/wallet/test/wallet_tests.cpp). Candidate evidence also
+  checks inherited Unix descriptors, directory write
+  probes, skipped node databases and symlink traversal. Unix signer closure keeps
+  standard streams and the exec-error pipe, closes actual inherited descriptors
+  even above a lowered soft limit, and fails before exec if safe closure fails.
+  Linux uses `close_range` or raw `/proc/self/fd` enumeration; other Unix builds
+  use native `closefrom` when available. Gap: non-Linux fallback runtime, Windows
+  reparse-point/permission cases and inherited handle closure; the Unix
+  close-descriptor implementation does not prove Windows handle isolation.
 - **wallet-rbf:** the per-send GUI choice starts from the wallet's `walletrbf`
   preference (Core default true), explicitly overrides it for the prepared
   transaction, and shows its resulting signaling in confirmation and saved
   PSBT. It is a signaling choice, not a guarantee of network replacement. See
-  Send dialog (`src/qt/sendcoinsdialog.cpp`, source reference) and
-  wallet model (`src/qt/walletmodel.cpp`, source reference). Acceptance:
-  wallettests.cpp (`src/qt/test/wallettests.cpp`, source reference) `walletTests` explicit on/off
-  override and decoded PSBT sequence assertions. Gap: visual confirmation/font
-  scale matrix, not established by a headless build.
+  [Send dialog](../src/qt/sendcoinsdialog.cpp) and
+  [wallet model](../src/qt/walletmodel.cpp). Acceptance:
+  [wallettests.cpp](../src/qt/test/wallettests.cpp) `walletTests` explicit on/off
+  override and decoded PSBT sequence assertions. Rendering evidence is recorded
+  in the wallet theme port review.
 - **wallet-sweep:** only documented WIF/script forms, local-key descriptor
   destination in the selected wallet, no key import, preview by default and
-  final authorization before broadcast. Fee state is snapshotted under wallet
+  final authorization before broadcast. Destination eligibility requires native
+  script satisfaction with available local keys, including encrypted keys:
+  incomplete multisig is rejected, while a sufficient subset is accepted.
+  Fee state is snapshotted under wallet
   locking; cancellation/invalidation can stop scanning or preview, while accepted
   broadcast submission completes. Reduce secret lifetime using secure storage,
   cleansing and console redaction without claiming complete host/toolkit erasure.
-  The full operational contract is [wallet-privacy.md](/doc/wallet-privacy.md).
-  See RPC (`src/wallet/rpc/spend.cpp`, source reference), construction (`src/wallet/spend.cpp`, source reference)
-  and dialog (`src/qt/sweepdialog.cpp`, source reference). Acceptance:
-  wallet_sweepprivkeys.py (`test/functional/wallet_sweepprivkeys.py`, source reference) `run_test`
+  The full operational contract is [wallet-privacy.md](wallet-privacy.md).
+  See [RPC](../src/wallet/rpc/spend.cpp),
+  [construction](../src/wallet/spend.cpp) and [dialog](../src/qt/sweepdialog.cpp). Acceptance:
+  [wallet_sweepprivkeys.py](../test/functional/wallet_sweepprivkeys.py) `run_test`
   covers supported script forms, destination rejection, no import, stale/conflicting
-  previews and broadcast; wallettests.cpp (`src/qt/test/wallettests.cpp`, source reference)
+  previews and broadcast; [wallettests.cpp](../src/qt/test/wallettests.cpp)
   `walletTests` covers secure cache and preview invalidation;
-  test_wallet_privacy_contract.py (`ci/test/test_wallet_privacy_contract.py`, source reference)
+  [test_wallet_privacy_contract.py](../ci/test/test_wallet_privacy_contract.py)
   checks source structure of authorization/redaction boundaries. Gap: that static
   check is not a race proof; cancellation/authorization concurrency and GUI
   confirmation need runtime and visual evidence.
@@ -346,12 +362,12 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   visible but unselectable; ordinary availability filters still exclude unsafe
   and immature outputs. Material wallet changes clear explicit selection.
   Conspicuously validate custom change; do not add automatic consolidation or
-  anonymity claims. See [wallet-privacy.md](/doc/wallet-privacy.md),
-  coin control (`src/qt/coincontroldialog.cpp`, source reference) and
-  wallet facts (`src/wallet/rpc/wallet.cpp`, source reference). Acceptance:
-  wallettests.cpp (`src/qt/test/wallettests.cpp`, source reference) `walletTests` selected/locked
-  and invalidation cases, wallet_send.py (`test/functional/wallet_send.py`, source reference) and
-  test_wallet_privacy_contract.py (`ci/test/test_wallet_privacy_contract.py`, source reference)
+  anonymity claims. See [wallet-privacy.md](wallet-privacy.md),
+  [coin control](../src/qt/coincontroldialog.cpp) and
+  [wallet facts](../src/wallet/interfaces.cpp). Acceptance:
+  [wallettests.cpp](../src/qt/test/wallettests.cpp) `walletTests` selected/locked
+  and invalidation cases, [wallet_send.py](../test/functional/wallet_send.py) and
+  [test_wallet_privacy_contract.py](../ci/test/test_wallet_privacy_contract.py)
   row-filter assertions. Gap: populated GUI and custom-change visual matrix.
 
 ### Runtime, configuration, portability and identity

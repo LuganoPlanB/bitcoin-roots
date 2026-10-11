@@ -222,6 +222,24 @@ public:
     virtual std::optional<CPubKey> GetRootPubKey() const = 0;
     /** Return the extended public key for this PubkeyProvider, if it has one. */
     virtual std::optional<CExtPubKey> GetRootExtPubKey() const = 0;
+    virtual bool IsXOnly() const { return false; }
+
+    virtual void GetAvailableKeys(int pos, const DescriptorCache& cache, const SigningProvider& provider, std::set<CKeyID>& out) const
+    {
+        const auto root{GetRootPubKey()};
+        const auto ext_root{GetRootExtPubKey()};
+        bool available{ext_root && provider.HaveKey(ext_root->pubkey.GetID())};
+        if (root) {
+            // Constant x-only expressions can represent either public-key parity.
+            available |= provider.HaveKey(root->GetID());
+            if (IsXOnly()) {
+                for (const auto& pubkey : XOnlyPubKey(*root).GetCPubKeys()) available |= provider.HaveKey(pubkey.GetID());
+            }
+        }
+        if (!available) return;
+        FlatSigningProvider public_data;
+        if (const auto pubkey{GetPubKey(pos, DUMMY_SIGNING_PROVIDER, public_data, &cache)}) out.insert(pubkey->GetID());
+    }
 
     /** Make a deep copy of this PubkeyProvider */
     virtual std::unique_ptr<PubkeyProvider> Clone() const = 0;
@@ -262,6 +280,11 @@ public:
     bool IsRange() const override { return m_provider->IsRange(); }
     size_t GetSize() const override { return m_provider->GetSize(); }
     bool IsBIP32() const override { return m_provider->IsBIP32(); }
+    bool IsXOnly() const override { return m_provider->IsXOnly(); }
+    void GetAvailableKeys(int pos, const DescriptorCache& cache, const SigningProvider& provider, std::set<CKeyID>& out) const override
+    {
+        m_provider->GetAvailableKeys(pos, cache, provider, out);
+    }
     std::string ToString(StringType type) const override { return "[" + OriginString(type) + "]" + m_provider->ToString(type); }
     bool ToPrivateString(const SigningProvider& arg, std::string& ret) const override
     {
@@ -331,6 +354,7 @@ public:
     bool IsRange() const override { return false; }
     size_t GetSize() const override { return m_pubkey.size(); }
     bool IsBIP32() const override { return false; }
+    bool IsXOnly() const override { return m_xonly; }
     std::string ToString(StringType type) const override { return m_xonly ? HexStr(m_pubkey).substr(2) : HexStr(m_pubkey); }
     bool ToPrivateString(const SigningProvider& arg, std::string& ret) const override
     {
@@ -762,6 +786,11 @@ public:
         }
     }
 
+    void GetAvailableKeys(int pos, const DescriptorCache& cache, const SigningProvider& provider, std::set<CKeyID>& out) const override
+    {
+        for (const auto& participant : m_participants) participant->GetAvailableKeys(pos, cache, provider, out);
+    }
+
     // Get RootPubKey and GetRootExtPubKey are used to return the single pubkey underlying the pubkey provider
     // to be presented to the user in gethdkeys. As this is a multisig construction, there is no single underlying
     // pubkey hence nothing should be returned.
@@ -1005,6 +1034,13 @@ public:
         for (const auto& arg : m_subdescriptor_args) {
             arg->ExpandPrivate(pos, provider, out);
         }
+    }
+
+    // NOLINTNEXTLINE(misc-no-recursion)
+    void GetAvailableKeys(int pos, const DescriptorCache& cache, const SigningProvider& provider, std::set<CKeyID>& out) const final
+    {
+        for (const auto& key : m_pubkey_args) key->GetAvailableKeys(pos, cache, provider, out);
+        for (const auto& descriptor : m_subdescriptor_args) descriptor->GetAvailableKeys(pos, cache, provider, out);
     }
 
     std::optional<OutputType> GetOutputType() const override { return std::nullopt; }

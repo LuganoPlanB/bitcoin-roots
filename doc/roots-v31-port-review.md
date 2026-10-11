@@ -619,3 +619,108 @@ matrix. No static mockup or history collector is introduced.
 These adaptations preserve the catalogued Roots contracts and attribution to
 Jaromil and devjoinedthechat alongside the Bitcoin Core and Bitcoin Knots
 provenance already recorded above.
+
+## L11.1 wallet foundations and per-send RBF
+
+The descriptor/SQLite and external-signer boundaries retain the native v31
+wallet API. Roots database enumeration excludes node database directories and
+avoids descending through symlinks/reparse points. SQLite opening probes directory
+write access before opening an existing database, retaining v31 locking/error
+handling; all 19 source SQLite warning/error modernization lines already exist
+upstream. No legacy database build support or new backup/flush promise is added.
+
+External signer invocation keeps v31's explicit argument vector and closes
+unrelated inherited Unix descriptors after redirecting standard streams, retaining
+the exec-error pipe at FD 3 with close-on-exec set. `close_range` closes all higher
+descriptors when available. Its Linux fallback reads `/proc/self/fd` using raw
+`getdents64` into a fixed stack buffer: it enumerates actual descriptors, including
+those above a subsequently lowered soft limit, without post-fork heap allocation
+or scanning a numeric descriptor limit. Other Unix builds use a detected native
+`closefrom` fallback. If no safe closure mechanism succeeds, the child reports an
+error through the retained pipe and exits before executing the signer. Non-Linux
+fallback runtime behavior is an untested platform gap; unsupported fallback
+platforms fail closed. The unsafe source RLIMIT-based fallback is replaced;
+source process poll/kill APIs remain unported. The current Windows
+CreateProcess implementation does not provide equivalent inherited-handle
+isolation; Windows handle, permission and reparse behavior remain explicit gaps.
+
+The Send dialog takes its initial RBF choice from the selected wallet's
+`walletrbf`, retains native explicit coin-control overrides and reports signaling
+from the prepared transaction even when no fee is charged. Saved PSBT tests decode
+both signaling choices. Replacement acceptance remains dependent on network policy.
+Automatic anti-fee-sniping locktimes avoid the source CAT21 policy marker; explicit
+caller locktimes and consensus validity are unchanged. This ports the spending
+safeguard associated with the accepted local-policy rule.
+
+Focused candidate coverage exercises database-directory write rejection, skipped
+node databases and symlink traversal; descriptor wallet/send and external signer
+behavior; child descriptor closure plus preserved standard streams and process
+errors; both wallet RBF defaults, explicit overrides, confirmation text and PSBT
+sequences. Sweep authorization, coin-control facts and the rendered interaction
+matrix remain L11.2. Attribution remains Jaromil and devjoinedthechat alongside
+Bitcoin Core/Knots provenance.
+
+L11.1 focused evidence: 34 GCC unit cases in system/filesystem/wallet/spend and
+wallet database/load/PSBT suites; four functional profiles (wallet signer,
+multiwallet RPC and CLI, wallet send); 21 Qt6 test results, including the RBF
+confirmation and decoded PSBT assertions; and the same 34 focused unit cases in
+Clang ASan/UBSan under a 60-second runtime bound. Leak detection was disabled
+(`ASAN_OPTIONS=detect_leaks=0`); undefined behavior halts on error. This is bounded
+sanitizer coverage, not a leak or exhaustive race proof. A Qt-only fixture reset
+was corrected after its first run and the Qt suite rerun; production and headless
+results stayed hash-matched. Qt5 and the visual matrix remain L11.2. The full
+applicable candidate gate remains the L11 acceptance gate.
+
+L11.1 signer review corrected the source fallback's soft-limit assumption. A new
+regression opens a descriptor at 123 or higher before lowering the child's soft
+limit to 32, forces fallback and checks descriptor closure, standard streams,
+retained exec-error pipe and its close-on-exec flag. All three current signer
+system cases pass under GCC and bounded Clang ASan/UBSan; `wallet_signer.py`
+passes again against the corrected daemon. Unaffected wallet/database/RBF and
+Qt6 evidence retains its original source/fixture and binary-hash provenance.
+The combined focused gate now covers 35 distinct unit cases, with the three
+signer cases replacing the original two; it is not a claim that every retained
+case was rerun against the new binary. The full acceptance gate is still L11.
+
+### L11.2 — sweep and coin-control authorization
+
+The v31 port carries transient-key WIF sweep through shared native UTXO scanning,
+RPC and Qt, without importing supplied keys. Preview remains the default. The
+GUI requires a current preview, default-Cancel confirmation and an exact rebuilt
+transaction-ID match. Atomic cancellation/final submission transitions prevent
+accepted cancellation from later broadcasting. Worker disposal clears secure
+storage and catches interruption errors; complete Qt/host memory erasure is not
+promised. Fee convergence uses one locked native estimate/fallback snapshot.
+
+Source review found an inherited destination defect: cached-script ownership
+accepted an incomplete local-key multisig descriptor. A disposable source-build
+probe confirmed accepted preview but incomplete wallet-only spending. Both v31
+entry points now share a native signing-satisfaction check. Cached public
+descriptor expansion maps available roots, including encrypted keys, to derived
+public keys without private-key retrieval/export or unlock. An availability-gated
+dummy creator uses native script satisfaction for multisig, Taproot alternatives
+and MuSig participants. Missing 2-of-2 keys are rejected; a sufficient 2-of-3
+subset remains eligible. Timelock maturity and future network acceptance remain
+separate from local signing capability.
+
+Coin-control preserves native availability/selection and PSBT behavior while
+reporting effective value, input size, lock, watch-only, reuse/group, fee/change
+and actual transaction RBF facts. Same-balance wallet notifications invalidate
+selection. Horizontal scrolling retains readable columns at large fonts; summary
+and controls fit the bounded visual profiles. These are facts, not privacy scores.
+
+Focused final verification covers 91 cases across all affected wallet, shared
+script/descriptor, key, RPC and process suites; six functional profiles (sweep,
+send, multiwallet RPC/CLI, signer and scantxoutset); the complete Qt5 and Qt6
+test suites (21 result rows each, including initialization/cleanup); and 48
+bounded Clang ASan/UBSan cases with leak detection disabled. After a recursive
+lock annotation correction, all 91 unit cases and all six affected functional
+profiles were rerun against the frozen final binaries.
+Eight actual Qt5/Qt6 profiles at 1280x800 and 1920x1080 with 100%/150% font scale
+produced 80 captures. These unchanged-UI captures retain their original binary
+hashes; both Qt suites passed again with the final destination correction.
+Native confirmation captures preserve a prior test's background shutdown window
+and synthetic regtest fee-estimator limitations. Linux/Xvfb evidence does not
+establish Windows/macOS rendering, physical-DPI scaling, complete secret erasure
+or exhaustive races. The full applicable L11 acceptance sweep remains the next
+root-directed gate. Credits remain Jaromil, devjoinedthechat, Core and Knots.

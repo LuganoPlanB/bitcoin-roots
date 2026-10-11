@@ -9,12 +9,14 @@
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <node/types.h>
 #include <numeric>
 #include <policy/policy.h>
 #include <policy/truc_policy.h>
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
+#include <rpc/rawtransaction_util.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
@@ -26,6 +28,7 @@
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
 #include <wallet/receive.h>
+#include <wallet/scriptpubkeyman.h>
 #include <wallet/spend.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
@@ -43,6 +46,107 @@ TRACEPOINT_SEMAPHORE(coin_selection, attempting_aps_create_tx);
 TRACEPOINT_SEMAPHORE(coin_selection, aps_create_tx_internal);
 
 namespace wallet {
+namespace {
+// Test native script satisfaction without creating signatures or accessing secrets.
+// Unlike the sizing dummy, absent keys must not produce successful signatures.
+class AvailableSignatureCreator final : public BaseSignatureCreator {
+    const std::set<CKeyID>& m_keys;
+
+    bool HaveKey(const XOnlyPubKey& key) const
+    {
+        for (const auto& pubkey : key.GetCPubKeys()) {
+            if (m_keys.contains(pubkey.GetID())) return true;
+        }
+        return false;
+    }
+
+public:
+    explicit AvailableSignatureCreator(const std::set<CKeyID>& keys) : m_keys(keys) {}
+    const BaseSignatureChecker& Checker() const override { return DUMMY_CHECKER; }
+    bool CreateSig(const SigningProvider& provider, std::vector<unsigned char>& sig, const CKeyID& keyid, const CScript& script, SigVersion version) const override
+    {
+        return m_keys.contains(keyid) && DUMMY_SIGNATURE_CREATOR.CreateSig(provider, sig, keyid, script, version);
+    }
+    bool CreateSchnorrSig(const SigningProvider& provider, std::vector<unsigned char>& sig, const XOnlyPubKey& key, const uint256* leaf, const uint256* root, SigVersion version) const override
+    {
+        return HaveKey(key) && DUMMY_SIGNATURE_CREATOR.CreateSchnorrSig(provider, sig, key, leaf, root, version);
+    }
+    std::vector<uint8_t> CreateMuSig2Nonce(const SigningProvider&, const CPubKey&, const CPubKey&, const CPubKey&, const uint256*, const uint256*, SigVersion, const SignatureData&) const override { return {}; }
+    bool CreateMuSig2PartialSig(const SigningProvider&, uint256&, const CPubKey&, const CPubKey&, const CPubKey&, const uint256*, const std::vector<std::pair<uint256, bool>>&, SigVersion, const SignatureData&) const override { return false; }
+    bool CreateMuSig2AggregateSig(const std::vector<CPubKey>& participants, std::vector<uint8_t>& sig, const CPubKey& aggregate, const CPubKey& script, const uint256* leaf, const std::vector<std::pair<uint256, bool>>& tweaks, SigVersion version, const SignatureData& data) const override
+    {
+        if (participants.empty() || !std::all_of(participants.begin(), participants.end(), [&](const CPubKey& key) { return m_keys.contains(key.GetID()); })) return false;
+        return DUMMY_SIGNATURE_CREATOR.CreateMuSig2AggregateSig(participants, sig, aggregate, script, leaf, tweaks, version, data);
+    }
+};
+} // namespace
+
+bool CanSweepTo(const CWallet& wallet, const CScript& destination)
+{
+    AssertLockHeld(wallet.cs_wallet);
+    if (!wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ||
+        wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) ||
+        wallet.IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER) || !wallet.IsMine(destination)) return false;
+    std::set<CKeyID> available_keys;
+    FlatSigningProvider provider;
+    for (const auto* manager : wallet.GetScriptPubKeyMans(destination)) {
+        if (const auto* descriptor_manager{dynamic_cast<const DescriptorScriptPubKeyMan*>(manager)}) {
+            const auto keys{descriptor_manager->GetAvailableKeys(destination)};
+            available_keys.insert(keys.begin(), keys.end());
+            // Combine public solving data just as native wallet signing combines
+            // providers, so one descriptor need not supply every usable path.
+            const auto solving{descriptor_manager->GetSolvingProvider(destination)};
+            if (const auto* public_data{dynamic_cast<const FlatSigningProvider*>(solving.get())}) provider.Merge(FlatSigningProvider{*public_data});
+        }
+    }
+    SignatureData satisfaction;
+    return ProduceSignature(provider, AvailableSignatureCreator{available_keys}, destination, satisfaction);
+}
+
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, const SigningProvider& provider,
+                                                            const std::map<COutPoint, Coin>& coins,
+                                                            const CScript& destination, const SweepBroadcastFn& broadcast,
+                                                            interfaces::SweepAuthorization& authorization)
+{
+    if (authorization.IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
+    CAmount amount{0};
+    CMutableTransaction tx;
+    for (const auto& [outpoint, coin] : coins) {
+        amount += coin.out.nValue;
+        tx.vin.emplace_back(outpoint);
+    }
+    if (coins.empty()) return util::Error{Untranslated("No spendable UTXOs found")};
+    tx.vout.emplace_back(amount, destination);
+    std::map<int, bilingual_str> errors;
+    if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+    // Fee settings can change while the UTXO scan runs. Take one synchronized
+    // snapshot for every signing iteration without holding the wallet lock
+    // during signing or broadcast.
+    const CFeeRate fee_rate{WITH_LOCK(wallet.cs_wallet, return GetMinimumFeeRate(wallet, CCoinControl{}, nullptr))};
+    CAmount fee{0};
+    for (int attempts{0}; attempts < 10; ++attempts) {
+        fee = fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}));
+        if (fee >= amount) return util::Error{Untranslated("Fee exceeds swept value")};
+        tx.vout[0].nValue = amount - fee;
+        errors.clear();
+        if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+        if (fee >= fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) break;
+    }
+    if (fee < fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) {
+        return util::Error{Untranslated("Unable to calculate a stable sweep fee")};
+    }
+    if (IsDust(tx.vout[0], wallet.chain().relayMinFee())) return util::Error{Untranslated("Swept output would be dust")};
+    if (authorization.IsCancelled()) return util::Error{Untranslated("Sweep cancelled")};
+    CTransactionRef final_tx{MakeTransactionRef(tx)};
+    if (broadcast) {
+        // This is the last safe cancellation point. BeginBroadcast and Cancel
+        // use one atomic state transition, so only one of them can succeed.
+        if (!authorization.BeginBroadcast()) return util::Error{Untranslated("Sweep cancelled")};
+        std::string error;
+        if (!broadcast(final_tx, error)) return util::Error{Untranslated("Sweep transaction broadcast failed: " + error)};
+    }
+    return SweepTransactionResult{final_tx, amount, fee};
+}
 static constexpr size_t OUTPUT_GROUP_MAX_ENTRIES{100};
 
 /** Whether the descriptor represents, directly or not, a witness program. */
@@ -994,6 +1098,16 @@ static bool IsCurrentForAntiFeeSniping(interfaces::Chain& chain, const uint256& 
     return true;
 }
 
+uint32_t GetAntiFeeSnipingLockTime(int block_height, FastRandomContext& rng_fast)
+{
+    uint32_t lock_time{static_cast<uint32_t>(block_height)};
+    if (rng_fast.randrange(10) == 0) {
+        lock_time = std::max(0, int(lock_time) - int(rng_fast.randrange(100)));
+    }
+    if (lock_time == PARASITE_CAT21_LOCKTIME) --lock_time;
+    return lock_time;
+}
+
 void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast,
                                  interfaces::Chain& chain, const uint256& block_hash, int block_height)
 {
@@ -1020,15 +1134,8 @@ void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast,
     // now we ensure code won't be written that makes assumptions about
     // nLockTime that preclude a fix later.
     if (IsCurrentForAntiFeeSniping(chain, block_hash)) {
-        tx.nLockTime = block_height;
-
-        // Secondly occasionally randomly pick a nLockTime even further back, so
-        // that transactions that are delayed after signing for whatever reason,
-        // e.g. high-latency mix networks and some CoinJoin implementations, have
-        // better privacy.
-        if (rng_fast.randrange(10) == 0) {
-            tx.nLockTime = std::max(0, int(tx.nLockTime) - int(rng_fast.randrange(100)));
-        }
+        // Avoid locktime values reserved by local policy.
+        tx.nLockTime = GetAntiFeeSnipingLockTime(block_height, rng_fast);
     } else {
         // If our chain is lagging behind, we can't discourage fee sniping nor help
         // the privacy of high-latency transactions. To avoid leaking a potentially

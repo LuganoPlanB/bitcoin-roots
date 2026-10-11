@@ -176,6 +176,11 @@ void WalletFrame::gotoSendCoinsPage(QString addr)
         i.value()->gotoSendCoinsPage(addr);
 }
 
+void WalletFrame::sweepPrivateKey()
+{
+    if (auto* view = currentWalletView()) view->sweepPrivateKey();
+}
+
 void WalletFrame::gotoSignMessageTab(QString addr)
 {
     WalletView *walletView = currentWalletView();

@@ -157,6 +157,12 @@ struct Descriptor {
      */
     virtual void ExpandPrivate(int pos, const SigningProvider& provider, FlatSigningProvider& out) const = 0;
 
+    /** Identify derived keys whose descriptor roots are available, without retrieving private keys.
+     * Uses cached public expansion and only queries provider.HaveKey(). Aggregate
+     * key expressions identify their participants, not a synthetic aggregate secret.
+     */
+    virtual void GetAvailableKeys(int pos, const DescriptorCache& cache, const SigningProvider& provider, std::set<CKeyID>& out) const = 0;
+
     /** @return The OutputType of the scriptPubKey(s) produced by this descriptor. Or nullopt if indeterminate (multiple or none) */
     virtual std::optional<OutputType> GetOutputType() const = 0;
 

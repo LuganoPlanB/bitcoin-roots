@@ -5,6 +5,7 @@
 #ifndef BITCOIN_WALLET_SPEND_H
 #define BITCOIN_WALLET_SPEND_H
 
+#include <functional>
 #include <consensus/amount.h>
 #include <policy/fees/block_policy_estimator.h>
 #include <util/result.h>
@@ -20,7 +21,33 @@
 #include <unordered_set>
 #include <vector>
 
+class COutPoint;
+class Coin;
+class CScript;
+class SigningProvider;
+namespace interfaces { class SweepAuthorization; }
+
+class FastRandomContext;
+
 namespace wallet {
+//! Require a selected local-key descriptor wallet and matching signing material.
+bool CanSweepTo(const CWallet& wallet, const CScript& destination) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+
+struct SweepTransactionResult
+{
+    CTransactionRef tx;
+    CAmount amount;
+    CAmount fee;
+};
+
+using SweepBroadcastFn = std::function<bool(const CTransactionRef&, std::string&)>;
+util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, const SigningProvider& provider,
+                                                            const std::map<COutPoint, Coin>& coins,
+                                                            const CScript& destination, const SweepBroadcastFn& broadcast,
+                                                            interfaces::SweepAuthorization& authorization);
+/** Pick an automatic anti-fee-sniping locktime without reserved policy markers. */
+uint32_t GetAntiFeeSnipingLockTime(int block_height, FastRandomContext& rng_fast);
+
 /** Get the marginal bytes if spending the specified output from this transaction.
  * Use CoinControl to determine whether to expect signature grinding when calculating the size of the input spend. */
 int CalculateMaximumSignedInputSize(const CTxOut& txout, const CWallet* pwallet, const CCoinControl* coin_control);

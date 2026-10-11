@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,8 @@ class CFeeRate;
 class CRPCCommand;
 class CScheduler;
 class Coin;
+class CScript;
+class COutPoint;
 class uint256;
 enum class MemPoolRemovalReason;
 enum class RBFTransactionState;
@@ -42,6 +45,14 @@ struct NodeContext;
 } // namespace node
 
 namespace interfaces {
+
+//! Result of a shared UTXO-set script scan.
+enum class ScanResult {
+    SUCCESS,
+    BUSY,
+    ABORTED,
+    UNAVAILABLE,
+};
 
 class Handler;
 class Wallet;
@@ -175,6 +186,9 @@ public:
     //! the current chain UTXO set. Iterates through all the keys in the map and
     //! populates the values.
     virtual void findCoins(std::map<COutPoint, Coin>& coins) = 0;
+    //! Snapshot scan for script matches. Results can become spent before use.
+    virtual ScanResult findScriptPubKeys(const std::set<CScript>& needles, std::map<COutPoint, Coin>& coins,
+                                         const std::function<bool()>& should_abort = {}) = 0;
 
     //! Estimate fraction of total transactions verified if blocks up to
     //! the specified block hash are verified.
