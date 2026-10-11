@@ -132,14 +132,13 @@ class PolicyArgsTest(BitcoinTestFramework):
         check_start(["-bytespersigop=20junk", "-datacarriersize=83junk", "-datacarrier=1junk", "-permitbaremultisig=2", "-mempoolfullrbf=1junk"])
         check_start(config="bytespersigop=20junk\ndatacarriersize=83junk\ndatacarrier=1junk\npermitbaremultisig=2\nmempoolfullrbf=1junk\n")
 
-        # Only malformed dynamic modes are startup-tested. Valid non-off grammar
-        # is unit-tested without constructing a mempool: production scheduler
-        # wiring is an existing separate runtime gap, not a successful startup.
+        # Valid dynamic-mode runtime behavior is covered by mempool_dynamic_dust.
+        # This parser test checks malformed effective input at startup.
         config_path.write_text(base_config, encoding="utf-8")
         node.assert_start_raises_init_error(extra_args=["-dustdynamic=target:2junk"], expected_msg="Invalid mode for dustdynamic: failed to parse target block count", match=ErrorMatch.PARTIAL_REGEX)
         rejected_startups += 1
 
-        self.log.info("JSON settings use the same effective grammar; confrw integration belongs L12")
+        self.log.info("JSON settings use the same effective grammar")
         settings_path = node.chain_path / "settings.json"
         for value in [True, False]:
             settings_path.write_text(json.dumps({"subdustfeepenalty": value}), encoding="utf-8")
@@ -155,6 +154,19 @@ class PolicyArgsTest(BitcoinTestFramework):
         check_start(["-subdustfeepenalty=1"])
         settings_path.write_text("{}", encoding="utf-8")
         config_path.write_text(base_config, encoding="utf-8")
+        self.log.info("Read/write config preserves first-value selection and strict effective parsing")
+        rw_path = node.chain_path / "bitcoin_rw.conf"
+        rw_path.write_text("subdustfeepenalty=1\nsubdustfeepenalty=junk\n", encoding="utf-8")
+        check_start(config="subdustfeepenalty=junk\n")
+        rw_path.write_text("subdustfeepenalty=junk\n", encoding="utf-8")
+        check_start(["-subdustfeepenalty=1"])
+        node.assert_start_raises_init_error(extra_args=[], expected_msg="Invalid -subdustfeepenalty value: 'junk'", match=ErrorMatch.PARTIAL_REGEX)
+        rejected_startups += 1
+        rw_path.write_text("nosubdustfeepenalty=junk\n", encoding="utf-8")
+        node.assert_start_raises_init_error(extra_args=["-subdustfeepenalty=1"], expected_msg="Invalid -nosubdustfeepenalty value: 'junk'", match=ErrorMatch.PARTIAL_REGEX)
+        rejected_startups += 1
+        rw_path.unlink()
+
         self.log.info("Policy startup cases: %d passed starts, %d expected diagnostic rejections", passed_startups, rejected_startups)
 
 

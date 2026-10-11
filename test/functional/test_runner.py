@@ -307,6 +307,7 @@ BASE_SCRIPTS = [
     'feature_reindex_init.py',
     'feature_cltv.py',
     'rpc_uptime.py',
+    'rpc_effective_policy.py',
     'feature_discover.py',
     'wallet_resendwallettransactions.py',
     'wallet_fallbackfee.py',

@@ -4,6 +4,7 @@
 
 #include <common/system.h>
 #include <policy/policy.h>
+#include <rpc/mempool.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
 #include <util/time.h>
@@ -11,6 +12,7 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+#include <univalue.h>
 #include <limits>
 #include <vector>
 #include <thread>
@@ -83,6 +85,14 @@ BOOST_AUTO_TEST_CASE(DynamicDustPublication)
         for (int i = 0; i < 10000; ++i) {
             const auto fee = pool.GetStandardnessOptions().dust_relay_feerate.GetFeePerK();
             if (fee != 3000 && fee != 90000) valid = false;
+            if (i < 1000) {
+                // Exercise the reporting snapshot while the live rate is published.
+                // Each returned JSON value must own its data after the pool lock ends.
+                const auto report{MempoolInfoToJSON(pool)};
+                const auto reported_fee{report["policy"]["dust_relay_fee"].getValStr()};
+                if (reported_fee != "0.00003000" && reported_fee != "0.00090000") valid = false;
+                if (report["policy"]["require_standard"].get_bool() != options.require_standard) valid = false;
+            }
         }
     }};
     for (int i = 0; i < 10000; ++i) pool.UpdateDynamicDustFee(i % 2 ? estimate : std::nullopt);

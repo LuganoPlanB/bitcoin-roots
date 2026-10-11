@@ -166,6 +166,30 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         miner.sendtoaddress(key_to_p2pkh(small_pubkey), Decimal('0.00010000'))
         self.generate(miner, 1)
         self.sync_blocks()
+        # Integrated runtime configuration must feed the same initialized
+        # relay fee used by reporting and sweep's required-fee calculation.
+        wallet_name = wallet.getwalletinfo()['walletname']
+        rw_path = node.chain_path / 'bitcoin_rw.conf'
+        self.stop_node(0)
+        rw_path.write_text('minrelaytxfee=0.00100000\n', encoding='utf-8')
+        self.start_node(0)
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
+        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
+        assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
+        self.restart_node(0, extra_args=['-minrelaytxfee=0.00001000'])
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
+        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
+        assert_equal(wallet.sweepprivkeys([small_wif], destination)['broadcast'], False)
+        self.stop_node(0)
+        rw_path.unlink()
+        self.start_node(0)
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
         wallet_name = wallet.getwalletinfo()['walletname']
         dust_destination = wallet.getnewaddress(address_type='legacy')
         self.restart_node(0, extra_args=['-fallbackfee=0.00052000'])

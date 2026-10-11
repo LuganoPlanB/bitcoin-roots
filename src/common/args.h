@@ -26,6 +26,7 @@ class ArgsManager;
 
 extern const char * const BITCOIN_CONF_FILENAME;
 extern const char * const BITCOIN_SETTINGS_FILENAME;
+extern const char * const BITCOIN_RW_CONF_FILENAME;
 
 // Return true if -datadir option points to a valid directory or is not specified.
 bool CheckDataDirOption(const ArgsManager& args);
@@ -66,6 +67,7 @@ enum class OptionsCategory {
     REGISTER_COMMANDS,
     CLI_COMMANDS,
     IPC,
+    STATS,
 
     HIDDEN // Always the last option to avoid printing these in the help
 };
@@ -98,6 +100,8 @@ std::optional<Int> SettingTo(const common::SettingsValue&);
 
 bool SettingToBool(const common::SettingsValue&, bool);
 std::optional<bool> SettingToBool(const common::SettingsValue&);
+
+void ModifyRWConfigStream(std::istream& stream_in, std::ostream& stream_out, const std::map<std::string, std::string>& settings_to_change);
 
 class ArgsManager
 {
@@ -146,11 +150,13 @@ protected:
     bool m_accept_any_command GUARDED_BY(cs_args){true};
     std::list<SectionInfo> m_config_sections GUARDED_BY(cs_args);
     std::optional<fs::path> m_config_path GUARDED_BY(cs_args);
+    std::optional<fs::path> m_rwconf_path GUARDED_BY(cs_args);
+    bool m_rwconf_had_prune_option GUARDED_BY(cs_args){false};
     mutable fs::path m_cached_blocks_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_datadir_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_network_datadir_path GUARDED_BY(cs_args);
 
-    [[nodiscard]] bool ReadConfigStream(std::istream& stream, const std::string& filepath, std::string& error, bool ignore_invalid_keys = false);
+    [[nodiscard]] bool ReadConfigStream(std::istream& stream, const std::string& filepath, std::string& error, bool ignore_invalid_keys = false, std::map<std::string, std::vector<common::SettingsValue>>* settings_target = nullptr);
 
     /**
      * Returns true if settings values from the default section should be used,
@@ -189,7 +195,13 @@ protected:
      */
     fs::path GetConfigFilePath() const;
     void SetConfigFilePath(fs::path);
+    fs::path GetRWConfigFilePath() const;
     [[nodiscard]] bool ReadConfigFiles(std::string& error, bool ignore_invalid_keys = false);
+
+    bool RWConfigHasPruneOption() const { LOCK(cs_args); return m_rwconf_had_prune_option; }
+    void ModifyRWConfigFile(const std::map<std::string, std::string>& settings_to_change, bool also_settings_json = true);
+    void ModifyRWConfigFile(const std::string& setting_to_change, const std::string& new_value, bool also_settings_json = true);
+    void EraseRWConfigFile();
 
     /**
      * Log warnings for options in m_section_only_args when

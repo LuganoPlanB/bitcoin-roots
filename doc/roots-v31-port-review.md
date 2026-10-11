@@ -724,3 +724,99 @@ and synthetic regtest fee-estimator limitations. Linux/Xvfb evidence does not
 establish Windows/macOS rendering, physical-DPI scaling, complete secret erasure
 or exhaustive races. The full applicable L11 acceptance sweep remains the next
 root-directed gate. Credits remain Jaromil, devjoinedthechat, Core and Knots.
+
+
+## L12.1 operator schemas and configuration integration
+
+The accepted effective-policy object and help are retained, with immutable
+`MemPoolOptions::weight_per_data_byte` and `reject_spk_reuse` replacing source
+process globals. Reporting stays within `MempoolInfoToJSON`'s existing mempool
+lock; live dust publication and admission use the same authoritative rate.
+No further snapshot refactor is justified: L4 supplied no refactor, and v31's
+existing standardness snapshot already provides the required lifetime boundary.
+Native `limitclustercount`, `limitclustersize` and `optimal` fields are preserved.
+
+`uptime` is adopted upstream: v31 initializes its steady-clock source at startup
+and returns integer elapsed seconds. `rpc_uptime.py` retains upstream's
+wall-clock-jump coverage. Statistics model, schema, options declarations and unit
+coverage are retained dormant; production registration, sampling and startup
+option setup remain absent. A functional assertion requires `getmempoolstats`
+to remain unavailable. Historical sample spacing, relative seconds, periodic
+cleanup and memory target semantics are preserved, with no interpolation.
+
+Roots read/write text config is restored before settings initialization, using
+network-datadir `bitcoin_rw.conf` or the selected `confrw` path. Forced settings,
+CLI, read/write config, JSON, network section and default section retain their
+established order; scalar CLI selects its last value and text config its first
+after negation. Source text config's flat key interpretation is retained even
+when the file contains section headers. Config diagnostics redact sensitive
+values through the existing argument logger. Numeric JSON Boolean getters
+retain the source conversion behavior (zero false, nonzero true), with existing
+scalar getter regression cases adapted accordingly. Writes use v31's native filesystem
+path bridge; input-read and output open/close failures cannot replace the old
+file or publish changed settings, and failed
+reset removal is diagnosed correctly. These bounded adaptations avoid carrying
+source's unchecked stream failure and inverted removal check into new code.
+Read/write config is cleared on reread, and prune-state access takes the args lock.
+
+Integrated `confrw` precedence gates previously owned by L7 and L11 are now
+covered by `feature_policy_args.py`, `rpc_effective_policy.py` and
+`wallet_sweepprivkeys.py`: effective strict parsing, JSON/config/CLI selection,
+reported relay fee and sweep required-fee checks. Sweep retains source
+`relayMinFee` semantics for its output dust guard; the runtime port does not
+change that wallet contract. Ordinary config tests and
+source stream-format tests remain applicable. Runtime-resource safeguards and
+platform evidence are described in L12.2 below.
+
+
+L12.1 review correction distinguishes valid EOF from `badbit` and non-EOF
+failure in the newline-preserving reader, including partial final lines and
+the invalid-line rewind/comment-copy path. Valid EOF state is cleared before
+rewinding a final invalid line without a newline. Ordinary configuration parsing
+also rejects failed reads before publishing parsed values; an existing unreadable
+read/write file fails initialization. Deterministic failing-stream regressions
+cover initial, partial-line and post-rewind failures; file-boundary coverage
+preserves an unreadable input directory and its in-memory setting, removing only
+the temporary output. Empty inputs and ordinary final lines without a newline
+remain accepted. Dormant statistics are unchanged by this correction.
+
+
+### L12.2 runtime-resource adaptation
+
+The source runtime commit `85257a0986d841cb2f6a8db1eb4902e92cfa94f5`
+provides the active allocation, file-descriptor and GiB safeguards. Allocation
+preserves existing bytes across repeated fallback chunks and repositions update
+streams between reads and writes. Requests inside an existing file do not
+truncate it. The Windows branch checks existing length before extension; the
+source's disabled Apple-specific truncate path is replaced by the common
+preserving fallback. FD results saturate at `INT_MAX`, including infinite limits,
+and GiB conversion uses checked shifts and a `size_t` bound.
+
+`GetTotalRAM` has identical supported-platform detection and unknown-result
+semantics in source and v31. Explicit `dbcache` conversion, its 32-bit 1 GiB cap,
+4 MiB minimum, warning thresholds (450 MiB below 2 GiB RAM, otherwise 75%) and
+failure fallback remain native. v31's upstream default is deliberately retained:
+1 GiB on 64-bit hosts reporting at least 4 GiB RAM; 450 MiB otherwise, including
+unknown RAM. This differs from source's fixed 450 MiB default. Retaining the native default
+is an accepted compatibility decision, not evidence of exact default equivalence.
+
+Source `mempressure`, I/O-priority, sequential-advice and close/uncache helpers
+have no production callers. Its low-memory threshold has no setter and remains
+zero. Omitting these unused helpers is an accepted compatibility decision; no collection,
+pressure response, I/O scheduling or cache eviction service is activated.
+The active allocation helper remains advisory; failures may leave allocation
+incomplete, but reads must not clobber existing bytes.
+
+Reporting returns owned JSON under the existing mempool lock; live dust updates
+and standardness snapshots use that same recursive lock. Startup policy values
+remain immutable after RPC warmup. The bounded publication regression also reads
+the JSON policy while dust updates run, then joins its reader before destroying
+the pool. Dormant statistics retain their source model and lifetime, without
+production singleton calls, signals or concurrent consumers. No new runtime
+mutex, singleton initialization or snapshot refactor is required.
+
+Linux GCC builds and Clang checks are the locally supported evidence. Windows,
+macOS, BSD and 32-bit execution are not proved by these runs; their conditional
+branches are retained from the source/native APIs, with the Windows file-size
+comparison expressed through `LARGE_INTEGER::QuadPart`. Whole-L12 acceptance
+and broader platform/runtime matrices remain separate gates.

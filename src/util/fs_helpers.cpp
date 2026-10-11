@@ -10,12 +10,16 @@
 #include <random.h>
 #include <sync.h>
 #include <tinyformat.h>
+#include <util/check.h>
 #include <util/fs.h>
 #include <util/log.h>
 #include <util/syserror.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -158,19 +162,35 @@ bool TruncateFile(FILE* file, unsigned int length)
  */
 int RaiseFileDescriptorLimit(int nMinFD)
 {
+    Assert(nMinFD >= 0);
 #if defined(WIN32)
     return 2048;
 #else
     struct rlimit limitFD;
     if (getrlimit(RLIMIT_NOFILE, &limitFD) != -1) {
-        if (limitFD.rlim_cur < (rlim_t)nMinFD) {
-            limitFD.rlim_cur = nMinFD;
-            if (limitFD.rlim_cur > limitFD.rlim_max)
+        // If the current soft limit is already higher, don't raise it
+        if (limitFD.rlim_cur != RLIM_INFINITY && std::cmp_less(limitFD.rlim_cur, nMinFD)) {
+            const auto current_limit{limitFD.rlim_cur};
+            limitFD.rlim_cur = std::in_range<rlim_t>(nMinFD) ? static_cast<rlim_t>(nMinFD) : limitFD.rlim_max;
+            // Don't raise soft limit beyond hard limit
+            if (limitFD.rlim_max != RLIM_INFINITY && limitFD.rlim_cur > limitFD.rlim_max) {
                 limitFD.rlim_cur = limitFD.rlim_max;
-            setrlimit(RLIMIT_NOFILE, &limitFD);
-            getrlimit(RLIMIT_NOFILE, &limitFD);
+            }
+            if (current_limit != limitFD.rlim_cur) {
+                setrlimit(RLIMIT_NOFILE, &limitFD);
+                getrlimit(RLIMIT_NOFILE, &limitFD);
+            }
         }
-        return limitFD.rlim_cur;
+        // Check the (possibly raised) current soft limit against the special
+        // value of RLIM_INFINITY. Some platforms implement this as the maximum
+        // uint64, others as int64 (-1). Avoid casting even if the return type
+        // is changed to uint64_t. We also cap unlikely but possible values
+        // that would overflow int.
+        if (limitFD.rlim_cur == RLIM_INFINITY ||
+            std::cmp_greater_equal(limitFD.rlim_cur, std::numeric_limits<int>::max())) {
+            return std::numeric_limits<int>::max();
+        }
+        return static_cast<int>(limitFD.rlim_cur);
     }
     return nMinFD; // getrlimit failed, assume it's fine
 #endif
@@ -178,7 +198,7 @@ int RaiseFileDescriptorLimit(int nMinFD)
 
 /**
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
- * it is advisory, and the range specified in the arguments will never contain live data
+ * It is advisory and must preserve existing bytes in the requested range.
  */
 void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
 {
@@ -187,42 +207,43 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     LARGE_INTEGER nFileSize;
     int64_t nEndPos = (int64_t)offset + length;
-    nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
-    nFileSize.u.HighPart = nEndPos >> 32;
-    SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN);
-    SetEndOfFile(hFile);
-#elif defined(__APPLE__)
-    // OSX specific version
-    // NOTE: Contrary to other OS versions, the OSX version assumes that
-    // NOTE: offset is the size of the file.
-    fstore_t fst;
-    fst.fst_flags = F_ALLOCATECONTIG;
-    fst.fst_posmode = F_PEOFPOSMODE;
-    fst.fst_offset = 0;
-    fst.fst_length = length; // mac os fst_length takes the # of free bytes to allocate, not desired file size
-    fst.fst_bytesalloc = 0;
-    if (fcntl(fileno(file), F_PREALLOCATE, &fst) == -1) {
-        fst.fst_flags = F_ALLOCATEALL;
-        fcntl(fileno(file), F_PREALLOCATE, &fst);
+    if (GetFileSizeEx(hFile, &nFileSize) && nFileSize.QuadPart < nEndPos) {
+        nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
+        nFileSize.u.HighPart = nEndPos >> 32;
+        if (SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN)) {
+            SetEndOfFile(hFile);
+        }
     }
-    ftruncate(fileno(file), static_cast<off_t>(offset) + length);
 #else
 #if defined(HAVE_POSIX_FALLOCATE)
     // Version using posix_fallocate
-    off_t nEndPos = (off_t)offset + length;
-    if (0 == posix_fallocate(fileno(file), 0, nEndPos)) return;
+    if (0 == posix_fallocate(fileno(file), offset, length)) return;
 #endif
     // Fallback version
     // TODO: just write one byte per block
-    static const char buf[65536] = {};
+    uint8_t buf[65536];
     if (fseek(file, offset, SEEK_SET)) {
         return;
     }
+    clearerr(file);
     while (length > 0) {
         unsigned int now = 65536;
         if (length < now)
             now = length;
-        fwrite(buf, 1, now, file); // allowed to fail; this function is advisory anyway
+        const size_t rlen = fread(buf, 1, now, file);
+        if (rlen < now) {
+            if (ferror(file)) {
+                // Don't clobber anything, just give up
+                clearerr(file);
+                return;
+            }
+            memset(&buf[rlen], 0, now - rlen);
+        }
+        // Rewind after every read so allocation preserves existing bytes.
+        if (fseek(file, -static_cast<long>(rlen), SEEK_CUR)) return;
+        if (fwrite(buf, 1, now, file) != now) return; // Advisory allocation may fail.
+        // An update stream needs a positioning operation between writing and reading.
+        if (fseek(file, 0, SEEK_CUR)) return;
         length -= now;
     }
 #endif

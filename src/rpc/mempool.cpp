@@ -1051,13 +1051,69 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("limitclustercount", pool.m_opts.limits.cluster_count);
     ret.pushKV("limitclustersize", pool.m_opts.limits.cluster_size_vbytes);
     ret.pushKV("optimal", pool.m_txgraph->DoWork(0)); // 0 work is a quick check for known optimality
+    // Startup controls are initialized before RPC warmup finishes. The live dust
+    // rate shares the existing mempool critical section with the other fields.
+    const auto& opts{pool.m_opts};
+    UniValue policy{UniValue::VOBJ};
+    policy.pushKV("require_standard", opts.require_standard);
+    policy.pushKV("max_script_size", g_script_size_policy_limit);
+    policy.pushKV("bytes_per_sigop", nBytesPerSigOp);
+    policy.pushKV("bytes_per_sigop_strict", nBytesPerSigOpStrict);
+    policy.pushKV("max_tx_legacy_sigops", opts.maxtxlegacysigops);
+    policy.pushKV("datacarrier", opts.max_datacarrier_bytes.has_value());
+    policy.pushKV("max_datacarrier_bytes", opts.max_datacarrier_bytes.value_or(0));
+    policy.pushKV("datacarrier_fullcount", opts.datacarrier_fullcount);
+    policy.pushKV("datacarrier_weight_per_byte", opts.weight_per_data_byte);
+    policy.pushKV("accept_nonstd_datacarrier", opts.accept_non_std_datacarrier);
+    policy.pushKV("permit_bare_datacarrier", opts.permitbaredatacarrier);
+    policy.pushKV("dust_relay_fee", ValueFromAmount(pool.GetDustRelayFee().GetFeePerK()));
+    policy.pushKV("subdust_fee_penalty", opts.subdustfeepenalty);
+    policy.pushKV("permit_bare_pubkey", opts.permit_bare_pubkey);
+    policy.pushKV("permit_bare_multisig", opts.permit_bare_multisig);
+    policy.pushKV("reject_parasites", opts.reject_parasites);
+    policy.pushKV("reject_tokens", opts.reject_tokens);
+    policy.pushKV("accept_unknown_witness", opts.acceptunknownwitness);
+    policy.pushKV("permit_bare_anchor", opts.permitbareanchor);
+    policy.pushKV("ephemeral_anchor", opts.permitephemeral_anchor);
+    policy.pushKV("ephemeral_dust", opts.permitephemeral_dust);
+    policy.pushKV("ephemeral_send", opts.permitephemeral_send);
+    switch (opts.rbf_policy) {
+    case RBFPolicy::Never:
+        policy.pushKV("replacement", "never");
+        break;
+    case RBFPolicy::OptIn:
+        policy.pushKV("replacement", "optin");
+        break;
+    case RBFPolicy::Always:
+        policy.pushKV("replacement", "always");
+        break;
+    }
+    switch (opts.truc_policy) {
+    case TRUCPolicy::Reject:
+        policy.pushKV("truc", "reject");
+        break;
+    case TRUCPolicy::Accept:
+        policy.pushKV("truc", "accept");
+        break;
+    case TRUCPolicy::Enforce:
+        policy.pushKV("truc", "enforce");
+        break;
+    }
+    policy.pushKV("min_relay_coinblocks", opts.minrelaycoinblocks);
+    policy.pushKV("min_relay_maturity", opts.minrelaymaturity);
+    policy.pushKV("spk_reuse", opts.reject_spk_reuse ? "conflict" : "allow");
+    ret.pushKV("policy", std::move(policy));
     return ret;
 }
 
 static RPCHelpMan getmempoolinfo()
 {
     return RPCHelpMan{"getmempoolinfo",
-        "Returns details on the active state of the TX memory pool.",
+        "Returns details on the active state of the TX memory pool.\n"
+        "The policy object reports initialized local admission controls, not consensus rules or mining limits.\n"
+        "Controls are startup-only, except the live dust rate; this RPC does not change policy.\n"
+        "Settings gated by require_standard remain visible when that gate is false. Other admission checks still apply.\n"
+        "All policy fields are present; clients should allow additional fields. Values share the mempool observation, not a cross-RPC snapshot.",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -1078,6 +1134,36 @@ static RPCHelpMan getmempoolinfo()
                 {RPCResult::Type::NUM, "limitclustercount", "Maximum number of transactions that can be in a cluster (configured by -limitclustercount)"},
                 {RPCResult::Type::NUM, "limitclustersize", "Maximum size of a cluster in virtual bytes (configured by -limitclustersize)"},
                 {RPCResult::Type::BOOL, "optimal", "If the mempool is in a known-optimal transaction ordering"},
+                {RPCResult::Type::OBJ, "policy", "Initialized local mempool admission controls. Allow flags are permissions, not unconditional acceptance guarantees",
+                {
+                    {RPCResult::Type::BOOL, "require_standard", "Enable transaction/input/witness standardness checks (default: true)"},
+                    {RPCResult::Type::NUM, "max_script_size", "Script policy bound in bytes under standardness; scriptSig is also capped at 1650 bytes. Zero is a zero-byte bound (default: 1650)"},
+                    {RPCResult::Type::NUM, "bytes_per_sigop", "Policy virtual bytes per sigop; zero removes this size contribution (default: 20)"},
+                    {RPCResult::Type::NUM, "bytes_per_sigop_strict", "Accurate sigop density bound in equivalent bytes per sigop, independent of standardness; zero disables this additional check (default: 20)"},
+                    {RPCResult::Type::NUM, "max_tx_legacy_sigops", "Legacy transaction sigop bound under standardness; zero is a zero-sigop bound (default: 2500)"},
+                    {RPCResult::Type::BOOL, "datacarrier", "Whether an OP_RETURN carrier budget exists; false denies carriers under standardness/full-count checking (default: true)"},
+                    {RPCResult::Type::NUM, "max_datacarrier_bytes", "Aggregate serialized carrier budget in bytes; zero when disabled or explicitly set to zero (default: 83)"},
+                    {RPCResult::Type::BOOL, "datacarrier_fullcount", "Include recognized input/witness carriers in the aggregate budget independently of standardness (default: true)"},
+                    {RPCResult::Type::NUM, "datacarrier_weight_per_byte", "Rounded-up weight units per detected data byte, adding only weight in excess of its existing weight; zero adds none (default: 4)"},
+                    {RPCResult::Type::BOOL, "accept_nonstd_datacarrier", "Permit recognized nonstandard carriers independently of standardness; the full-count budget still applies (default: false)"},
+                    {RPCResult::Type::BOOL, "permit_bare_datacarrier", "Permit carrier-only transactions under standardness (default: false)"},
+                    {RPCResult::Type::STR_AMOUNT, "dust_relay_fee", "Live dust threshold rate in " + CURRENCY_UNIT + "/kvB, also used by the sub-dust fee penalty; zero makes thresholds zero (default: 0.00003000)"},
+                    {RPCResult::Type::BOOL, "subdust_fee_penalty", "Subtract accumulated output dust shortfalls from policy modified fees independently of standardness (default: true)"},
+                    {RPCResult::Type::BOOL, "permit_bare_pubkey", "Permit bare pubkey outputs under standardness (default: false)"},
+                    {RPCResult::Type::BOOL, "permit_bare_multisig", "Permit bare multisig outputs under standardness (default: false)"},
+                    {RPCResult::Type::BOOL, "reject_parasites", "Reject the CAT21 locktime marker under standardness (default: true)"},
+                    {RPCResult::Type::BOOL, "reject_tokens", "Enable recognized token filters under standardness (default: false)"},
+                    {RPCResult::Type::BOOL, "accept_unknown_witness", "Permit unknown witness output versions under standardness (default: true)"},
+                    {RPCResult::Type::BOOL, "permit_bare_anchor", "Permit anchor-only transactions under standardness (default: true)"},
+                    {RPCResult::Type::BOOL, "ephemeral_anchor", "Permit anchor outputs under standardness (default: true)"},
+                    {RPCResult::Type::BOOL, "ephemeral_dust", "Permit nonzero ephemeral dust under standardness, subject to other dust/package rules (default: false)"},
+                    {RPCResult::Type::BOOL, "ephemeral_send", "Permit non-anchor dust under standardness, subject to other dust/package rules (default: false)"},
+                    {RPCResult::Type::STR, "replacement", "Resolved replacement mode: never, optin, or always. Opt-in also permits non-signaling TRUC/v3 replacement (default: always)"},
+                    {RPCResult::Type::STR, "truc", "Resolved local v3 policy: reject, accept, or enforce (default: enforce)"},
+                    {RPCResult::Type::NUM, "min_relay_coinblocks", "Minimum input value times confirmation age in satoshi-blocks; zero disables this restriction (default: 0)"},
+                    {RPCResult::Type::NUM, "min_relay_maturity", "Minimum input age in blocks, measured at the next block height; zero disables this restriction (default: 0)"},
+                    {RPCResult::Type::STR, "spk_reuse", "Initialized script reuse mode for mempool policy conflicts: allow or conflict (default: allow)"},
+                }},
             }},
         RPCExamples{
             HelpExampleCli("getmempoolinfo", "")

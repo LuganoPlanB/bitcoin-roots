@@ -1,10 +1,11 @@
 # Effective mempool policy (`effective-policy`)
 
-**v31 candidate status: deferred.** This preserved contract describes the
-accepted 30.3 source, including its documented gaps; the foundation does not
-implement its Roots controls or RPC fields. Source code/test paths below refer
-to `10d772eb7f4b00b5193428a0dde4c06558d6c297`, not current candidate behavior.
-[The port review](../roots-v31-port-review.md) records ownership and current gates.
+**v31 candidate status: implemented in L12.1.** The additive schema is
+preserved from the accepted 30.3 source. Carrier weight and script reuse now
+come from immutable v31 mempool options rather than process globals; the live
+dust rate remains synchronized with admission. Native v31 cluster fields remain
+available alongside this object. [The port review](../roots-v31-port-review.md)
+records ownership and evidence.
 
 ## Scope and compatibility
 
@@ -75,7 +76,7 @@ package, dust, fixed limits and consensus checks remain applicable.
 
 Read `CTxMemPool::m_opts` for initialized mempool controls, `GetDustRelayFee()`
 for the live dust rate, the initialized policy globals for script/size parameters,
-and `SpkReuseMode` for reuse policy. Do not reread argument strings, reconstruct
+and the immutable mempool options for carrier weight and reuse policy. Do not reread argument strings, reconstruct
 defaults, or introduce another configuration store. Constructor normalization
 matters: the dust floor is initialized from the selected dust fee. RBF/TRUC and
 ephemeral token options resolve to modes/flags, not the original spellings;
@@ -99,8 +100,7 @@ rolling minimum are read with existing locking; there is no policy setter RPC.
 The historical source's non-off `dustdynamic` failed startup because scheduler
 wiring was missing. Candidate L8.2 repairs node-owned scheduling, retry/teardown
 lifetime, synchronized live-rate reads, estimate fallback and bounded scaling;
-see [runtime semantics](subdust.md). The effective-policy RPC schema itself
-remains L12. Dormant `getmempoolstats` is outside this contract. Mining
+see [runtime semantics](subdust.md). The effective-policy RPC schema reads that synchronized publication. Dormant `getmempoolstats` is outside this contract. Mining
 options are reconstructed and clamped by individual block assemblers, with no
 single retained active instance to report here; this mempool schema deliberately
 does not claim to represent their limits.

@@ -19,4 +19,14 @@ constexpr size_t operator""_MiB(unsigned long long mebibytes)
     return *bytes;
 }
 
+//! Overflow-safe conversion of GiB to bytes.
+constexpr size_t operator""_GiB(unsigned long long gibibytes)
+{
+    const auto bytes{CheckedLeftShift(gibibytes, 30)};
+    if (!bytes || *bytes > std::numeric_limits<size_t>::max()) {
+        throw std::overflow_error("GiB value too large for size_t byte conversion");
+    }
+    return *bytes;
+}
+
 #endif // BITCOIN_UTIL_BYTE_UNITS_H

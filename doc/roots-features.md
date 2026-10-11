@@ -18,12 +18,14 @@ Roots behavior has been ported**. L7 implements scoped parsing and local transac
 accounting and replacement/TRUC/reuse controls; L8.2 repairs dynamic dust lifecycle.
 Priority/template
 mining to L9; peer controls/health to L10; sweep, coin-control and per-send
-RBF extensions to L11; read/write config, effective-policy RPC, resource support
-and dormant statistics to L12; identity/desktop and maintenance integration to
+RBF extensions to L11; resource safeguards remain L12.2; identity/desktop and maintenance integration to
 L13. L11.1 adds database-discovery/write-access safeguards, Unix signer descriptor
 closure, wallet-derived per-send RBF defaults and prepared-transaction/PSBT
 signaling. L11.2 adds transient-key sweep with cancellation/final authorization,
-shared UTXO scanning and wallet-derived coin-control facts.
+shared UTXO scanning and wallet-derived coin-control facts. L12.1 implements
+read/write config and initialized effective-policy reporting, preserves native
+monotonic uptime, and retains statistics model/schema source dormant.
+Production does not expose `getmempoolstats` or collect samples.
 
 The narrow monotonic `uptime` RPC sub-aspect has reviewed upstream
 equivalence; this does not retire the remaining operator-stats contract.
@@ -400,16 +402,18 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   not an available RPC. GUI-on/headless-off help wording also conflicts with
   the model's default-disabled constant. Wiring and schema/default decisions
   must be reviewed before claiming preservation of a working statistics service.
-- **runtime-resources:** RAM detection influences inherited node cache sizing;
-  advisory file allocation must preserve existing bytes, FD limits and GiB
-  conversion must avoid overflow. Memory-pressure and I/O-priority helpers are
-  platform-scoped support, not proof of active consumers on each platform.
-  See cache sizing (`src/node/caches.cpp`, source reference), FS helpers (`src/util/fs_helpers.cpp`, source reference),
-  memory pressure (`src/util/mempressure.cpp`, source reference) and I/O priority (`src/util/ioprio.cpp`, source reference).
-  Acceptance: system_ram_tests.cpp (`src/test/system_ram_tests.cpp`, source reference),
-  fs_tests.cpp (`src/test/fs_tests.cpp`, source reference) and util_tests.cpp (`src/test/util_tests.cpp`, source reference).
-  Gap: platform/failure/concurrency evidence for unused helpers; no dedicated
-  Tor-launch behavior is established by a build flag.
+- **runtime-resources:** advisory file allocation preserves existing bytes;
+  FD-limit results and GiB conversion avoid overflow. Native RAM detection and
+  warning thresholds are retained. v31 uses a 1 GiB default cache on 64-bit
+  hosts with at least 4 GiB detected RAM, and 450 MiB otherwise (also when RAM
+  is unknown); source used a fixed 450 MiB default. Explicit `dbcache` values
+  retain checked MiB conversion, a 4 MiB minimum and a 1 GiB 32-bit cap.
+  See [cache sizing](/src/node/caches.cpp), [FS helpers](/src/util/fs_helpers.cpp),
+  [byte units](/src/util/byte_units.h) and
+  [port review](/doc/roots-v31-port-review.md#l122-runtime-resource-adaptation).
+  Source memory-pressure, I/O-priority and sequential/cache-discard helpers have
+  no production callers and are not added as active services. Local Linux
+  tests do not establish execution guarantees for other platform branches.
 - **build-portability:** retain supported CMake switches and actual dependency
   probes, Qt 5/6 branches, QR/signer/taskbar conditions, native crypto flags,
   and usable system LevelDB memory environment. Defaults include wallet/tests
