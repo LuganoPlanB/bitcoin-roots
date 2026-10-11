@@ -34,23 +34,7 @@ class PolicyArgsTest(BitcoinTestFramework):
             config_path.write_text(default_config + base_config + config, encoding="utf-8")
             self.start_node(0, extra_args=cli or [])
             assert_equal(node.getblockchaininfo()["chain"], "regtest")
-            # Staged controls must visibly warn; verify the complete diagnostic.
-            staged = ["blockmaxsize", "blockprioritysize"]
-            supplied = set()
-            for arg in cli or []:
-                name = arg.split("=", 1)[0].lstrip("-")
-                supplied.add(name[2:] if name.startswith("no") else name)
-            for line in (default_config + config).splitlines():
-                name = line.split("=", 1)[0].strip()
-                supplied.add(name[2:] if name.startswith("no") else name)
-            settings_path = node.chain_path / "settings.json"
-            if settings_path.exists():
-                supplied.update(json.loads(settings_path.read_text(encoding="utf-8")))
-            expected = "\n".join(
-                f"Warning: -{name} is parsed but not enforced in this staged candidate; graph policy and mining implementations are pending."
-                for name in staged if name in supplied
-            )
-            self.stop_node(0, expected_stderr=expected)
+            self.stop_node(0)
             passed_startups += 1
 
         def check_error(option, value, *, config=False, negated=False, cli=None):

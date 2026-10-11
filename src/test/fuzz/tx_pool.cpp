@@ -102,6 +102,11 @@ void Finish(FuzzedDataProvider& fuzzed_data_provider, MockedTxPool& tx_pool, Cha
     {
         BlockAssembler::Options options;
         options.nBlockMaxWeight = fuzzed_data_provider.ConsumeIntegralInRange(0U, MAX_BLOCK_WEIGHT);
+        options.nBlockMaxSize = fuzzed_data_provider.ConsumeIntegralInRange(0U, MAX_BLOCK_SERIALIZED_SIZE);
+        options.nBlockPrioritySize = fuzzed_data_provider.ConsumeBool() ? 0 :
+            fuzzed_data_provider.ConsumeIntegral<size_t>();
+        options.block_reserved_weight = fuzzed_data_provider.ConsumeIntegralInRange(0U, MAX_BLOCK_WEIGHT);
+        options.coinbase_output_max_additional_sigops = fuzzed_data_provider.ConsumeIntegralInRange<int64_t>(0, MAX_BLOCK_SIGOPS_COST);
         options.blockMinFeeRate = CFeeRate{ConsumeMoney(fuzzed_data_provider, /*max=*/COIN)};
         options.include_dummy_extranonce = true;
         auto assembler = BlockAssembler{chainstate, &tx_pool, options};

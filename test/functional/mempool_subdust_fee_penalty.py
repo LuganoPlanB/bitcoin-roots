@@ -326,7 +326,7 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
     def test_mining_and_block_acceptance(self):
         self.log.info("Templates select modified fees, while blocks reward actual fees and accept local rejects")
         node = self.nodes[0]
-        self.reset_policy("-blockmintxfee=0.00002")
+        self.reset_policy("-blockprioritysize=0", "-blockmintxfee=0.00002")
         probe = self.build_tx_with_dust([0], 1000)
         min_fee = self.get_min_relay_fee(probe)
         low = self.build_tx_with_dust([0], min_fee)
@@ -353,12 +353,22 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
         assert txid in [entry["txid"] for entry in mined["tx"]]
         # Regtest at this height has a 25 BTC subsidy. Penalty/delta do not alter reward.
         assert_equal(sum(output["value"] for output in mined["tx"][0]["vout"]), Decimal(25) + Decimal(fee) / COIN)
-        self.reset_policy("-blockmintxfee=0.00002", "-subdustfeepenalty=0")
+        self.reset_policy("-blockprioritysize=0", "-blockmintxfee=0.00002", "-subdustfeepenalty=0")
         tx = self.build_tx_with_dust([0], fee)
         txid = node.sendrawtransaction(tx.serialize().hex())
         assert txid in [entry["txid"] for entry in node.getblocktemplate({"rules": ["segwit"]})["transactions"]]
-        # Priority-area selection is verified with its native L9 implementation.
-
+        self.reset_policy("-blockprioritysize=100000", "-blockmintxfee=0.00002")
+        # The explicit priority area can mine sufficiently aged coins below the
+        # template's fee floor. The dust penalty still appears in entry accounting.
+        tx = self.build_tx_with_dust([0], DUST_THRESHOLD + min_fee)
+        txid = node.sendrawtransaction(tx.serialize().hex())
+        assert_equal(node.getmempoolentry(txid)["fees"]["modified"], Decimal(min_fee) / COIN)
+        assert txid in [entry["txid"] for entry in node.getblocktemplate({"rules": ["segwit"]})["transactions"]]
+        self.generate(self.wallet, 1)
+        mined = node.getblock(node.getbestblockhash(), 2)
+        assert_equal([entry["txid"] for entry in mined["tx"]][1:], [txid])
+        assert_equal(sum(output["value"] for output in mined["tx"][0]["vout"]),
+                     Decimal(25) + Decimal(DUST_THRESHOLD + min_fee) / COIN)
 
 
 if __name__ == '__main__':

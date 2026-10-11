@@ -234,8 +234,18 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   fixture. Conflict: inherited help advertised a 300,000-byte size default, while
   assembler options (`src/node/miner.h`, source reference) leave size at the protocol maximum when
   unset; `policy-parsing` corrected that help while preserving the interaction.
-  Gap: every size/weight/reserve/priority combination; mining a small
-  local template must never limit acceptance of a larger consensus-valid block.
+  Candidate L9.1 uses parent-ready coin-age selection from the active UTXO set
+  and a temporary native residual TxGraph after any priority prefix. Native
+  policy weights/modified fees govern remaining chunks; actual fees fund rewards.
+  [`miner_tests.cpp`](../src/test/miner_tests.cpp) covers source priority parents,
+  shared descendants, dependency waiting, duplicate exclusion, tie ordering and
+  exact remaining size/weight/fee boundaries. The new
+  [`mining_roots_template.py`](../test/functional/mining_roots_template.py)
+  checks enabled/disabled priority, size-only/weight-only/both limits, reserve
+  clamping and acceptance of a larger valid block under a smaller local cap.
+  Joint policy combinations and the full gate remain L9.2. Integrated `confrw`
+  remains L12.
+
 
 ### Peer controls and current-connection health
 

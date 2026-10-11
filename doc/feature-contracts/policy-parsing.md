@@ -1,11 +1,10 @@
 # Roots policy input compatibility
 
-**v31 candidate status: L7 parsing/local policy and L8.1 graph consumers implemented.**
+**v31 candidate status: L7 local policy, L8 graph/dynamic dust and L9 mining consumers implemented.**
 Carrier cost, sub-dust modified fees, replacement/TRUC modes and script reuse
-now have native consumers. L8.2 repairs `dustdynamic` scheduling/publication;
-`blockmaxsize` and `blockprioritysize` remain parsing-only until L9. Explicit
-use of the remaining staged controls emits a startup warning. Help for
-implemented controls describes initialized behavior and defaults.
+have native consumers. Dynamic dust publication is synchronized. Serialized
+size and coin-age priority controls now affect local templates, with the same
+scoped parsing grammar and no staged-control warnings.
 Only integrated
 Roots `confrw` precedence awaits L12; CLI, ordinary config and JSON settings
 passed the L7.1 startup matrix. Candidate tests are

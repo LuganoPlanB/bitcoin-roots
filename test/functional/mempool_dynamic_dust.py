@@ -54,9 +54,20 @@ class DynamicDustTest(BitcoinTestFramework):
         second = self.probe(wallet, value=100)
         second_id = node.sendrawtransaction(second.serialize().hex())
         assert_equal(node.getmempoolentry(second_id)["fees"]["modified"], Decimal(100000 - 10900) / COIN)
-        # Existing entries retain their admission deficit, and valid blocks use
-        # actual fees even after the live policy rate changes.
+        # Priority/residual templates retain immutable deficits after publication,
+        # but their fee fields and coinbase reward use actual fees.
+        template = node.getblocktemplate({"rules": ["segwit"]})
+        fees = {entry["txid"]: entry["fee"] for entry in template["transactions"]}
+        assert_equal(fees[first_id], 100000)
+        assert_equal(fees[second_id], 100000)
+        subsidy = Decimal(50) / (2 ** ((node.getblockcount() + 1) // 150))
+        expected_reward = subsidy + Decimal(sum(fees.values())) / COIN
+        assert_equal(Decimal(template["coinbasevalue"]) / COIN, expected_reward)
         self.generate(wallet, 1)
+        mined = node.getblock(node.getbestblockhash(), 2)
+        assert first_id in [entry["txid"] for entry in mined["tx"]]
+        assert second_id in [entry["txid"] for entry in mined["tx"]]
+        assert_equal(sum(output["value"] for output in mined["tx"][0]["vout"]), expected_reward)
         with node.assert_debug_log(["Updating dust feerate to 3.000 sat/vB"]):
             node.mockscheduler(901)
         wallet.rescan_utxos()

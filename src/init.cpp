@@ -690,8 +690,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-spkreuse=<value>", "Set local script reuse policy: allow or conflict; empty/1 aliases allow, 0 aliases conflict (default: allow).", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-rejecttokens", strprintf("Refuse to relay or mine transactions involving non-bitcoin tokens (default: %u)", DEFAULT_REJECT_TOKENS) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-rejectparasites", strprintf("Refuse to relay or mine parasitic overlay protocols (default: %u)", DEFAULT_REJECT_PARASITES) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-blockmaxsize=<value>", "Staged parsing only; enforcement is deferred to L9 mining. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-blockprioritysize=<value>", "Staged parsing only; enforcement is deferred to L9 mining. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-blockmaxsize=<value>", "Set maximum serialized block size in bytes (unset: protocol maximum; size-only leaves weight unrestricted)", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::BLOCK_CREATION);
+    argsman.AddArg("-blockprioritysize=<value>", strprintf("Set serialized bytes reserved for coin-age priority selection (default: %u; 0 disables)", DEFAULT_BLOCK_PRIORITY_SIZE), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-acceptnonstdtxn", strprintf("Relay and mine \"non-standard\" transactions (test networks only; default: %u)", DEFAULT_ACCEPT_NON_STD_TXN), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-incrementalrelayfee=<amt>", strprintf("Fee rate (in %s/kvB) used to define cost of relay, used for mempool limiting and replacement policy. (default: %s)", CURRENCY_UNIT, FormatMoney(DEFAULT_INCREMENTAL_RELAY_FEE)), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-dustrelayfee=<amt>", strprintf("Fee rate (in %s/kvB) used to define dust, the value of an output such that it will cost more than its value in fees at this fee rate to spend it. (default: %s)", CURRENCY_UNIT, FormatMoney(DUST_RELAY_TX_FEE)), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
@@ -942,11 +942,6 @@ bool AppInitBasicSetup(const ArgsManager& args, std::atomic<int>& exit_status)
 bool AppInitParameterInteraction(const ArgsManager& args)
 {
     if (auto result = ValidateRootsPolicyOptions(args); !result) return InitError(util::ErrorString(result));
-    for (const char* option : {"-blockmaxsize", "-blockprioritysize"}) {
-        if (args.IsArgSet(option)) {
-            InitWarning(Untranslated(strprintf("%s is parsed but not enforced in this staged candidate; graph policy and mining implementations are pending.", option)));
-        }
-    }
     const CChainParams& chainparams = Params();
     // ********************************************************* Step 2: parameter interactions
 

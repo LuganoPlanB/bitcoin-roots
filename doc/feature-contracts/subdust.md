@@ -1,13 +1,14 @@
 # Sub-dust effective-fee contract
 
-**v31 candidate status: native graph accounting implemented in L8.1.**
+**v31 candidate status: L8 graph/dynamic dust and L9 mining implemented.**
 The source contract below remains the preservation reference. Admission stores
 an immutable dust deficit and carrier weight on each entry; actual fees and
 transaction weight remain separate. Staging receives the final modified fee
 before graph insertion. Native graph fee updates, replacement diagrams, block
 removal, reorg dependency discovery and trimming use these same entry values.
-Dynamic dust lifecycle is repaired in L8.2; priority selection and joint
-mining-policy combinations remain L9. Runtime-config precedence remains L12.
+Dynamic dust lifecycle is repaired in L8.2. L9 priority selection and native
+residual chunks preserve admission-time deficits and carrier-adjusted policy
+weight while rewards use actual fees. Integrated `confrw` precedence remains L12.
 
 Dynamic dust updates are node-owned: one task is registered after the final
 successful chainstate load, updates immediately and every 15 minutes, and is

@@ -152,7 +152,7 @@ class EstimateFeeTest(BitcoinTestFramework):
         ]
 
         # Preserve the estimator's native low-feerate sampling range explicitly.
-        self.extra_args = [args + ["-minrelaytxfee=0.000001"] for args in self.extra_args]
+        self.extra_args = [args + ["-minrelaytxfee=0.000001", "-blockmintxfee=0.000001", "-blockprioritysize=0"] for args in self.extra_args]
 
     def setup_network(self):
         """

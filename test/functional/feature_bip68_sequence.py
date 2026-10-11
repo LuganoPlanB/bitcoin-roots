@@ -50,9 +50,11 @@ class BIP68Test(BitcoinTestFramework):
         self.extra_args = [
             [
                 '-testactivationheight=csv@432',
+                '-blockprioritysize=0',  # Keep fee-selected lock fixtures independent of priority.
             ],
             [
                 '-testactivationheight=csv@432',
+                '-blockprioritysize=0',  # Keep fee-selected lock fixtures independent of priority.
             ],
         ]
 

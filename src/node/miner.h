@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 
 #include <boost/multi_index/identity.hpp>
 #include <boost/multi_index/indexed_by.hpp>
@@ -65,6 +66,8 @@ private:
 
     // Information on the current status of the block
     uint64_t nBlockWeight;
+    uint64_t nBlockSize;
+    std::set<const CTxMemPoolEntry*> m_in_block;
     uint64_t nBlockTx;
     uint64_t nBlockSigOpsCost;
     CAmount nFees;
@@ -81,6 +84,8 @@ public:
     struct Options : BlockCreateOptions {
         // Configuration parameters for the block size
         size_t nBlockMaxWeight{DEFAULT_BLOCK_MAX_WEIGHT};
+        size_t nBlockMaxSize{MAX_BLOCK_SERIALIZED_SIZE};
+        size_t nBlockPrioritySize{DEFAULT_BLOCK_PRIORITY_SIZE};
         CFeeRate blockMinFeeRate{DEFAULT_BLOCK_MIN_TX_FEE};
         // Whether to call TestBlockValidity() at the end of CreateNewBlock().
         bool test_block_validity{true};
@@ -111,11 +116,12 @@ private:
       *
       * @pre BlockAssembler::m_mempool must not be nullptr
     */
+    void addPriorityTxs() EXCLUSIVE_LOCKS_REQUIRED(::cs_main, m_mempool->cs);
     void addChunks() EXCLUSIVE_LOCKS_REQUIRED(m_mempool->cs);
 
     // helper functions for addChunks()
     /** Test if a new chunk would "fit" in the block */
-    bool TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t chunk_sigops_cost) const;
+    bool TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t chunk_sigops_cost, uint64_t chunk_size) const;
     /** Perform locktime checks on each transaction in a chunk:
       * This check should always succeed, and is here
       * only as an extra check in case of a bug */
@@ -134,7 +140,7 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 /** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
-/** Apply -blockmintxfee and -blockmaxweight options from ArgsManager to BlockAssembler options. */
+/** Apply local size, weight, priority, reserve and fee options. */
 void ApplyArgsManOptions(const ArgsManager& gArgs, BlockAssembler::Options& options);
 
 /* Compute the block's merkle root, insert or replace the coinbase transaction and the merkle root into the block */

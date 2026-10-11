@@ -55,7 +55,7 @@ MAX_FUTURE_BLOCK_TIME = 2 * 3600
 MAX_TIMEWARP = 600
 VERSIONBITS_TOP_BITS = 0x20000000
 VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT = 28
-DEFAULT_BLOCK_MIN_TX_FEE = 1 # default `-blockmintxfee` setting [sat/kvB]
+DEFAULT_BLOCK_MIN_TX_FEE = 1000 # default `-blockmintxfee` setting [sat/kvB]
 
 class MiningTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -66,7 +66,7 @@ class MiningTest(BitcoinTestFramework):
             ["-fastprune", "-prune=1"]
         ]
         # Oversized padding outputs exercise block resources, not local carrier limits.
-        self.extra_args = [args + ["-maxscriptsize=1000000", "-datacarriersize=1000000"] for args in self.extra_args]
+        self.extra_args = [args + ["-maxscriptsize=1000000", "-datacarriersize=1000000", "-blockprioritysize=0"] for args in self.extra_args]
         self.setup_clean_chain = True
 
     def mine_chain(self):
@@ -146,7 +146,7 @@ class MiningTest(BitcoinTestFramework):
         node = self.nodes[0]
 
         # test default (no parameter), zero and a bunch of arbitrary blockmintxfee rates [sat/kvB]
-        for blockmintxfee_sat_kvb in (DEFAULT_BLOCK_MIN_TX_FEE, 0, 5, 10, 50, 100, 500, 1000, 2500, 5000, 21000, 333333, 2500000):
+        for blockmintxfee_sat_kvb in (DEFAULT_BLOCK_MIN_TX_FEE, 0, 5, 10, 50, 100, 500, 2500, 5000, 21000, 333333, 2500000):
             blockmintxfee_btc_kvb = blockmintxfee_sat_kvb / Decimal(COIN)
             if blockmintxfee_sat_kvb == DEFAULT_BLOCK_MIN_TX_FEE:
                 self.log.info(f"-> Default -blockmintxfee setting ({blockmintxfee_sat_kvb} sat/kvB)...")
@@ -310,11 +310,11 @@ class MiningTest(BitcoinTestFramework):
         self.log.info(f"Testing that the mempool contains {LARGE_TXS_COUNT + 2} transactions.")
         assert_equal(len(self.nodes[0].getrawmempool()), LARGE_TXS_COUNT + 2)
 
-        # Verify the block template includes only the 10 high-fee transactions
-        self.log.info("Testing that the block template includes only the 10 large transactions.")
+        # Roots' default 1,200,000-weight cap fits two large and both normal txs.
+        self.log.info("Testing the default Roots block template weight limit.")
         self.verify_block_template(
-            expected_tx_count=LARGE_TXS_COUNT,
-            expected_weight=MAX_BLOCK_WEIGHT - DEFAULT_BLOCK_RESERVED_WEIGHT,
+            expected_tx_count=4,
+            expected_weight=1_200_000 - DEFAULT_BLOCK_RESERVED_WEIGHT,
         )
 
         # Test block template creation with custom -blockmaxweight
@@ -344,7 +344,7 @@ class MiningTest(BitcoinTestFramework):
 
         self.log.info("Test -blockreservedweight startup option.")
         # Lowering the -blockreservedweight by 4000 will allow for two more transactions.
-        self.restart_node(0, extra_args=self.extra_args[0] + ["-blockreservedweight=4000"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-blockreservedweight=4000", f"-blockmaxweight={MAX_BLOCK_WEIGHT}"])
         self.verify_block_template(
             expected_tx_count=12,
             expected_weight=MAX_BLOCK_WEIGHT - 4000,

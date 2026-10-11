@@ -108,7 +108,7 @@ contract with remaining Roots behavior. Existing source gaps remain explicit.
 
 | Contract | Disposition / theme | Upstream comparison, adaptation and acceptance gate |
 | --- | --- | --- |
-| policy-parsing | adapted / L7,L8 | `node::ApplyArgsManOptions` consumes cluster limits and scoped grammar; L8 consumes graph controls and repairs dynamic-dust publication. Mining controls remain parsing-only until L9. Preserve L2's complete-token/range/diagnostic decisions, quarter-vbyte rounding and CLI/config precedence. Parser unit/startup and L5 fuzz boundaries are carried; integrated read/write precedence remains L12. |
+| policy-parsing | adapted / L7,L8 | `node::ApplyArgsManOptions` consumes cluster limits and scoped grammar; L8 consumes graph controls and repairs dynamic-dust publication. L9 consumes mining size and priority controls. Preserve L2's complete-token/range/diagnostic decisions, quarter-vbyte rounding and CLI/config precedence. Parser unit/startup and L5 fuzz boundaries are carried; integrated read/write precedence remains L12. |
 | effective-policy | adapted / L12 | `getmempoolinfo` has cluster-era size/fee information but no Roots `policy` object. Read authoritative initialized v31 state plus synchronized dynamic dust; retain L3's schema, units and enforcement gates. Port `rpc_effective_policy.py`, help and admission parity assertions. L4 supplied no snapshot refactor to carry. |
 | policy-standardness | adapted / L7 | Core `IsStandardTx` takes carrier budget, bare-multisig flag and dust rate. Core permits bare multisig by default and lacks Roots configurable script/witness, strict sigop, CAT21/token and ephemeral modes. Preserve Roots limits/defaults/reasons solely in local gates. Run transaction/sigop/TRUC cases and valid-block fixtures; do not change script consensus. |
 | policy-carrier | adapted / L7,L8 | Core defaults to a 100,000-vbyte OP_RETURN budget, not Roots' aggregate 83-byte budget, and lacks recognized input/witness carriers and cost weighting. L7 adapts detection/budgets; L8 adapts extra policy weight to `TxGraph` fee/weight accounting. Retain Roots `multi-op-return` rejection despite source help conflict. Port `mempool_datacarrier.py`, extra-weight boundaries, tapscript and L5 dust-cost interactions. |
@@ -347,8 +347,8 @@ L5 interaction ownership remains bounded:
 | Parser grammar, types, negation, cost and dynamic syntax round trips | L7 unit/startup and actual sanitizer fuzz; no dynamic runtime claim. |
 | Fixed dust thresholds, ephemeral/local standardness, carrier budgets and valid blocks | L7 focused tests and broader native regression fixtures. |
 | Subdust deficit rounding/saturation, carrier extra weight, fee deltas, replacement/package/TRUC/reuse combinations | L8; existing source methods and arithmetic fuzz remain required gates. L7's native regression runs do not establish these Roots extensions. |
-| Dynamic startup, publication, estimator fallback, extreme scaling and retry/shutdown | Authorized bounded L8 repair, still deferred; default off remains unchanged. |
-| Priority ancestors, residual mining, template normalization, actual-versus-modified reward interactions | L9, including source L5 joint mining/block fixtures; native mining passes are regression evidence only. |
+| Dynamic startup, publication, estimator fallback, extreme scaling and retry/shutdown | Authorized bounded L8 repair delivered; L9 repeats the joint publication/template/reward gate. Default off is unchanged. |
+| Priority ancestors, residual mining, template normalization, actual-versus-modified reward interactions | L9 source L5 fixtures and native residual/priority/resource regressions delivered; joint gates below. |
 | Integrated Roots confrw precedence | L12 only; ordinary CLI/config/JSON cases run in L7. |
 
 Prior-release mempool compatibility remains skipped because release fixtures are
@@ -450,3 +450,103 @@ publication, changing-rate test and standardness-snapshot source history.
 L8.1's conservative representable-case graph restrictions remain explicit in
 [sub-dust semantics](feature-contracts/subdust.md). L9 mining combinations and
 L12 integrated runtime configuration remain their respective owners.
+
+## L9.1 priority selection and residual native chunks
+
+Local mining defaults are Roots' 1,200,000 weight units, 1,000 sat/kvB and
+100,000 serialized-byte priority area. Size-only and weight-only settings
+leave the other resource at its protocol maximum; both settings enforce both.
+Serialized size reserves 1,000 bytes as on the source; native weight reserve
+normalization and additional coinbase sigops remain intact. Resource equality
+is excluded by the inherited conservative template boundary.
+
+Coin age is evaluated from the active UTXO set under the chain and mempool
+locks, using the source's modified-vsize input discount. This deliberately
+replaces entry caches and confirmation/reorg repair indexes: formerly
+unconfirmed inputs start aging when present in the active UTXO set. Parent
+readiness, priority/individual actual-feerate/descending-txid ordering and the final
+area/threshold-crossing transaction follow source behavior. No priority delta
+API is added; the existing mining RPC changes fee deltas only.
+
+After a nonempty priority prefix, a temporary native TxGraph contains exactly
+the remaining entries and direct dependencies. Already included parents and
+their policy fees/weights are absent, so each descendant's native residual
+chunk has accurate resource and fee accounting. It retains configured cluster
+bounds, native bounded optimization and L8's conservative aggregate signed
+budgets. This costs O(mempool) temporary storage plus native cluster work;
+priority-disabled or empty-prefix templates use the existing graph directly.
+Builders have local RAII ownership and are destroyed before residual refs and
+graphs. Template assembly does not mutate or stage the live mempool graph.
+Chunks are included/skipped whole, in native dependency order. Actual
+serialized sizes and sigops are checked alongside native policy weight;
+entries are asserted unique and actual fees alone fund the coinbase reward.
+
+Provenance: priority/template content from `1b73fe3d21`, `ec9db369f5`,
+`875fa15829`, `9ab60f217b`, `9d9c125d9e` and joint fixtures from
+`10d772eb7f`. Retain Jaromil/devjoinedthechat credit and inherited Core/Knots
+lineage. L9.2 owns the whole joint policy/mining gate and split-test accounting;
+only integrated `confrw` remains deferred to L12.
+
+## L9.2 split coverage and consensus separation
+
+The source L5 commit `10d772eb7f` adds twelve functional subdust methods; every
+method is present and invoked in the candidate. Ownership is reconciled here:
+
+| Source methods / coverage | Delivered candidate gate |
+| --- | --- |
+| `test_dust_output_increases_required_fee`, `test_partial_dust_proportional_penalty`, `test_multiple_dust_outputs_stack`, `test_penalty_disabled`, `test_op_return_not_penalized`, `test_above_dust_not_penalized` | L8 admission/accounting boundaries, retained in the joint subdust functional run. |
+| `test_threshold_and_low_rate_boundaries`, `test_anchor_and_standardness` | L7 dust/standardness plus L8 rounding; retained zero/low-rate and local-reject/valid-block gates. |
+| `test_carrier_cost_interaction` | L8 independently charged carrier weight and deficit; L9 residual odd policy weight and exact descendant fee/resource boundaries. |
+| `test_fee_delta_and_replacement` | L8 actual/modified fields and replacement fee diagrams; L9 residual delta one-sat boundary and priority tie independence from operator deltas. |
+| `test_package_and_truc` | L8 ordinary-parent relay floor, native sponsorship, TRUC mode selection and modified package fields; joint package/RBF/TRUC scripts run with L9 assembly. |
+| `test_mining_and_block_acceptance` | L9 priority on/off, minfee equality, penalty disabled, fee delta, actual rewards under both selection modes, and local-reject/valid-block acceptance. |
+| Source parser `policy_args` and arithmetic/admission `subdust_fee_penalty` fuzz | L7/L8 independent grammar/arithmetic oracles retained; current bounded L9 sanitizer smoke plus native pool template option fuzz. |
+| L8 dynamic runtime/publication/estimator/retry/reload and immutability | Existing functional cases retained, with current template fee fields and mined rewards checked after publication and operator-delta persistence. |
+| Source priority-parent/stale-ancestor mining corrections | Native one/two-parent, shared/waiting descendant, repeated-build, exact remaining fee/weight/size and duplicate/order regressions. |
+| Source integrated Roots `confrw` precedence subsection | Only split-policy/mining integration deferral; L12. Ordinary CLI/config/JSON startup cases remain active. |
+
+Synthetic residual accounting tests combine a priority-selected negative-modified
+parent with a carrier-adjusted descendant. The descendant meets an exact
+rounded-vsize floor, misses it after a one-sat operator delta, and respects the
+remaining policy-weight boundary. Actual parent/child fees and coinbase rewards
+are checked separately. Pool fuzz assembly varies priority enabled/disabled,
+serialized size, weight, reserve and sigop reservations before block removal
+and reorg admission. These are short smoke checks, not exhaustive campaigns.
+
+Mining's synthetic fixtures now lock cs_main before mempool, matching production
+lock order. Fee-only ephemeral and estimation fixtures explicitly disable the
+source priority area; the estimator retains its native low-feerate sampling
+with an explicit template fee floor. The disconnected-pool bulk fixture requests
+the source's protocol-max template weight and FIFO fee ordering. Assertions
+are retained. Sequence-lock fixtures use fee selection, and large-block upload
+accounting requests the source size-only profile. The general mining test checks
+the Roots default weight/fee limits and explicitly requests protocol-max weight
+for its separate reserve-boundary case. Roots defaults remain covered by the
+dedicated template matrix.
+
+`validation.cpp` from `bool CheckBlock(` through end-of-file is byte-identical
+to the authenticated v31.1 base. The consensus subtree, interpreter, block
+primitive and kernel chain files have no candidate changes. This L9 diff touches
+only local template selection/configuration plus tests/docs and a read-only
+mempool builder accessor. No block-size/weight acceptance gate reads Roots local
+template limits. Functional and unit tests add transactions excluded by local
+policy/templates to valid blocks and accept them through the native interface.
+No RDTS/BIP110 or other new consensus rule is present.
+
+The per-contract/source-commit accounting above remains complete (72 commits,
+25 contracts) and retains Jaromil/devjoinedthechat plus Core/Knots attribution.
+Within the L7–L9 policy/mining split no parsing-only mining controls or unowned
+source interaction cases remain. Optional platform/dependency gates remain
+explicit environment gaps; heavy/nightly CI is L13.2, not a preservation claim.
+
+The L9 acceptance gate includes 751 GCC unit cases, 154 CTest passes plus the
+external script-assets skip, and 274 functional passes plus 17 environment
+skips. One frozen functional sweep exposed six inherited fixture assumptions;
+only those fixtures were corrected and rerun against the same daemon. CTest
+launches interrupted by a unit-binary relink were rerun after the build finished.
+The current miner cases also passed separately after the lock-order fixture
+correction. Scoped Clang ASan/UBSan checks cover 44 policy/miner unit cases and
+the dynamic/subdust template-reward interactions. The existing template matrix
+sanitizer evidence retains the same production source and daemon hash. Parser,
+penalty arithmetic and randomized native pool assembly have bounded sanitizer
+fuzz smoke coverage. No repeated full sweep or exhaustive fuzz claim is made.
