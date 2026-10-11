@@ -189,6 +189,12 @@ protected:
     std::atomic<unsigned int> nTransactionsUpdated{0}; //!< Used by getblocktemplate to trigger CreateNewBlock() invocation
 
     uint64_t totalTxSize GUARDED_BY(cs){0};      //!< sum of all mempool tx's virtual sizes. Differs from serialized tx size since witness data is discounted. Defined in BIP 141.
+    // An absolute-fee budget makes every native graph subset sum representable.
+    uint64_t m_modified_fee_usage GUARDED_BY(cs){0};
+    uint64_t m_staged_fee_usage GUARDED_BY(cs){0};
+    uint64_t m_policy_weight_usage GUARDED_BY(cs){0};
+    uint64_t m_staged_weight_usage GUARDED_BY(cs){0};
+    CFeeRate m_dust_relay_feerate GUARDED_BY(cs);
     CAmount m_total_fee GUARDED_BY(cs){0};       //!< sum of all mempool tx's fees (NOT modified fee)
     uint64_t cachedInnerUsage GUARDED_BY(cs){0}; //!< sum of dynamic memory usage of all the map elements (NOT the maps themselves)
 
@@ -285,7 +291,7 @@ private:
 
     static TxMempoolInfo GetInfo(CTxMemPool::indexed_transaction_set::const_iterator it)
     {
-        return TxMempoolInfo{it->GetSharedTx(), it->GetTime(), it->GetFee(), it->GetTxSize(), it->GetModifiedFee() - it->GetFee()};
+        return TxMempoolInfo{it->GetSharedTx(), it->GetTime(), it->GetFee(), it->GetTxSize(), SaturatingAdd(it->GetModifiedFee(), -it->GetFee())};
     }
 
     // Helper to remove all transactions that conflict with a given
@@ -299,6 +305,13 @@ public:
     using Options = kernel::MemPoolOptions;
 
     const Options m_opts;
+
+    CFeeRate GetDustRelayFee() const;
+    StandardnessOptions GetStandardnessOptions() const;
+    /** Select the actual-fee rate at a native graph-ordered policy-vsize position. */
+    std::optional<CFeeRate> EstimateDustFromMempool(int32_t target_kvb) const;
+    /** Publish a scaled estimate or the configured floor. Existing entry deficits are immutable. */
+    void UpdateDynamicDustFee(std::optional<CFeeRate> estimate);
 
     /** Create a new CTxMemPool.
      * Sanity checks will be off by default for performance, because otherwise
@@ -342,7 +355,9 @@ public:
     bool HasNoInputsOf(const CTransaction& tx) const EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     /** Affect CreateNewBlock prioritisation of transactions */
-    void PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelta);
+    bool PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelta);
+    bool CanAddModifiedFee(CAmount fee) const EXCLUSIVE_LOCKS_REQUIRED(cs);
+    bool CanAddPolicyWeight(int64_t weight) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     void ApplyDelta(const Txid& hash, CAmount &nFeeDelta) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     void ClearPrioritisation(const Txid& hash) EXCLUSIVE_LOCKS_REQUIRED(cs);
 
@@ -623,6 +638,8 @@ public:
             if (m_pool->m_txgraph->HaveStaging()) {
                 m_pool->m_txgraph->AbortStaging();
             }
+            m_pool->m_staged_fee_usage = 0;
+            m_pool->m_staged_weight_usage = 0;
             m_pool->m_have_changeset = false;
         }
 
@@ -631,7 +648,16 @@ public:
 
         using TxHandle = CTxMemPool::txiter;
 
-        TxHandle StageAddition(const CTransactionRef& tx, CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp);
+        TxHandle StageAddition(const CTransactionRef& tx, CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp, int32_t extra_weight = 0, CAmount dust_penalty = 0, std::map<CScript, unsigned> script_claims = {});
+
+        bool HasStagedScriptConflict(const CScript& script, bool creating) const
+        {
+            for (const auto& entry : m_to_add) {
+                const auto claim = entry.m_script_claims.find(script);
+                if (claim != entry.m_script_claims.end() && (creating || (claim->second & 1))) return true;
+            }
+            return false;
+        }
 
         void StageRemoval(CTxMemPool::txiter it);
 
@@ -695,6 +721,10 @@ public:
         m_have_changeset = true;
         return std::make_unique<ChangeSet>(this);
     }
+
+    // Every creator/spender is retained across reorg exceptions, not just the last one.
+    std::map<CScript, std::pair<std::set<Txid>, std::set<Txid>>> m_used_scripts GUARDED_BY(cs);
+    std::set<Txid> GetScriptConflicts(const CScript& script, bool creating) const EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     bool m_have_changeset GUARDED_BY(cs){false};
 

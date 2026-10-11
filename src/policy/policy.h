@@ -22,6 +22,7 @@
 #include <utility>
 
 class CCoinsViewCache;
+int32_t CalculateExtraTxWeight(const CTransaction& tx, const CCoinsViewCache& view, unsigned int weight_per_data_byte);
 class CFeeRate;
 class CScript;
 

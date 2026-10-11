@@ -29,7 +29,7 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
         # Exercise native dust packages with the Roots local send exception enabled.
-        self.extra_args = [["-permitephemeral=1"]] * self.num_nodes
+        self.extra_args = [["-permitephemeral=1", "-subdustfeepenalty=0"]] * self.num_nodes
 
         # Don't test trickling logic
         self.noban_tx_relay = True
@@ -219,15 +219,13 @@ class EphemeralDustTest(BitcoinTestFramework):
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
     def test_non_truc(self):
-        self.log.info("Test that v2 dust-having transaction is also accepted if spent")
-
+        self.log.info("Test that v2 dust packages retain the individual relay requirement")
         assert_equal(self.nodes[0].getrawmempool(), [])
         dusty_tx, sweep_tx = self.create_ephemeral_dust_package(tx_version=2)
-
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
-        assert_equal(res["package_msg"], "success")
-        assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"], sweep_tx["tx"]])
-        self.generate(self.nodes[0], 1)
+        assert_equal(res["package_msg"], "transaction failed")
+        assert "min relay fee not met" in res["tx-results"][dusty_tx["wtxid"]]["error"]
+        assert_equal(self.nodes[0].getrawmempool(), [])
 
     def test_unspent_ephemeral(self):
         self.log.info("Test that spending from a tx with ephemeral outputs is only allowed if dust is spent as well")

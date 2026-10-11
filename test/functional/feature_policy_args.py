@@ -35,7 +35,7 @@ class PolicyArgsTest(BitcoinTestFramework):
             self.start_node(0, extra_args=cli or [])
             assert_equal(node.getblockchaininfo()["chain"], "regtest")
             # Staged controls must visibly warn; verify the complete diagnostic.
-            staged = ["datacarriercost", "subdustfeepenalty", "mempoolreplacement", "mempoolfullrbf", "mempooltruc", "spkreuse", "dustdynamic", "blockmaxsize", "blockprioritysize"]
+            staged = ["blockmaxsize", "blockprioritysize"]
             supplied = set()
             for arg in cli or []:
                 name = arg.split("=", 1)[0].lstrip("-")

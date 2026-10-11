@@ -96,9 +96,11 @@ The globals and option controls above are startup-only in this implementation
 and initialized before RPC warmup finishes. The live dust rate and top-level
 rolling minimum are read with existing locking; there is no policy setter RPC.
 
-Non-off `dustdynamic` currently fails startup because production scheduler wiring
-is missing. Reporting a live dust rate does not imply that dynamic modes operate
-in this revision. Dormant `getmempoolstats` is outside this contract. Mining
+The historical source's non-off `dustdynamic` failed startup because scheduler
+wiring was missing. Candidate L8.2 repairs node-owned scheduling, retry/teardown
+lifetime, synchronized live-rate reads, estimate fallback and bounded scaling;
+see [runtime semantics](subdust.md). The effective-policy RPC schema itself
+remains L12. Dormant `getmempoolstats` is outside this contract. Mining
 options are reconstructed and clamped by individual block assemblers, with no
 single retained active instance to report here; this mempool schema deliberately
 does not claim to represent their limits.

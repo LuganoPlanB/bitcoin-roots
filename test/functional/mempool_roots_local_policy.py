@@ -77,10 +77,10 @@ class LocalPolicyTest(BitcoinTestFramework):
         tx.vout.append(CTxOut(1, tx.vout[0].scriptPubKey))
         tx.vout[0].nValue -= 1
         rejected(tx, "dust-nonanchor")
-        # These local exceptions are independent of L8's deferred deficit penalty.
-        self.restart_node(0, extra_args=["-permitephemeral=send", "-minrelaytxfee=0"])
+        # Isolate the L7 local exception from L8's enabled deficit penalty.
+        self.restart_node(0, extra_args=["-permitephemeral=send", "-minrelaytxfee=0", "-subdustfeepenalty=0"])
         assert_equal(result(tx)["allowed"], True)
-        self.restart_node(0, extra_args=["-permitephemeral=send,-dust", "-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=["-permitephemeral=send,-dust", "-minrelaytxfee=0", "-subdustfeepenalty=0"])
         rejected(tx, "dust-nonzero")
         self.generateblock(node, output="raw(42)", transactions=[tx.serialize().hex()])
         self.restart_node(0)

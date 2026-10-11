@@ -76,7 +76,9 @@ class UtxoToSqliteTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         # we want to create some UTXOs with non-standard output scripts
-        self.extra_args = [['-acceptnonstdtxn=1']]
+        # Arbitrary tiny outputs exercise conversion, independently of Roots'
+        # enabled dust-deficit fee accounting.
+        self.extra_args = [['-acceptnonstdtxn=1', '-subdustfeepenalty=0']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_py_sqlite3()

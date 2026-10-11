@@ -108,11 +108,11 @@ contract with remaining Roots behavior. Existing source gaps remain explicit.
 
 | Contract | Disposition / theme | Upstream comparison, adaptation and acceptance gate |
 | --- | --- | --- |
-| policy-parsing | adapted / L7 | `node::ApplyArgsManOptions` now consumes cluster limits; L7 carries scoped grammar; graph/mining options are labelled parsing-only until L8/L9 enforcement lands. Preserve L2's complete-token/range/diagnostic decisions, quarter-vbyte rounding and CLI/config precedence. Port parser unit/startup tests and L5 fuzz boundaries; complete read/write precedence in L12. |
+| policy-parsing | adapted / L7,L8 | `node::ApplyArgsManOptions` consumes cluster limits and scoped grammar; L8 consumes graph controls and repairs dynamic-dust publication. Mining controls remain parsing-only until L9. Preserve L2's complete-token/range/diagnostic decisions, quarter-vbyte rounding and CLI/config precedence. Parser unit/startup and L5 fuzz boundaries are carried; integrated read/write precedence remains L12. |
 | effective-policy | adapted / L12 | `getmempoolinfo` has cluster-era size/fee information but no Roots `policy` object. Read authoritative initialized v31 state plus synchronized dynamic dust; retain L3's schema, units and enforcement gates. Port `rpc_effective_policy.py`, help and admission parity assertions. L4 supplied no snapshot refactor to carry. |
 | policy-standardness | adapted / L7 | Core `IsStandardTx` takes carrier budget, bare-multisig flag and dust rate. Core permits bare multisig by default and lacks Roots configurable script/witness, strict sigop, CAT21/token and ephemeral modes. Preserve Roots limits/defaults/reasons solely in local gates. Run transaction/sigop/TRUC cases and valid-block fixtures; do not change script consensus. |
 | policy-carrier | adapted / L7,L8 | Core defaults to a 100,000-vbyte OP_RETURN budget, not Roots' aggregate 83-byte budget, and lacks recognized input/witness carriers and cost weighting. L7 adapts detection/budgets; L8 adapts extra policy weight to `TxGraph` fee/weight accounting. Retain Roots `multi-op-return` rejection despite source help conflict. Port `mempool_datacarrier.py`, extra-weight boundaries, tapscript and L5 dust-cost interactions. |
-| policy-dust | adapted / L7,L8 | Core retains `GetDustThreshold` and a 3,000 sat/kvB floor, but has a fixed initialized rate and no `dustdynamic` publication. L7 preserves fixed dust/ephemeral checks. L8 repairs scheduler lifetime and retains estimator/floor behavior and synchronized snapshots; adapt mempool-position estimation to clusters. Run `mempool_dust.py` and changing-publication unit cases. Estimator-unavailable and extreme-multiplier gaps are not passes. |
+| policy-dust | adapted / L7,L8 | L7 preserves fixed dust/ephemeral checks. L8.2 adds node-owned scheduling after final successful load, synchronized snapshots and initialized estimator/native cluster-position selection. Missing estimates return the configured floor; scaling saturates safely. This repairs the documented source lifecycle/fallback/extreme gaps. Focused runtime tests and whole-L8 gates are recorded separately in the L8 evidence. |
 | policy-subdust | adapted / L8 | No upstream deficit penalty. Preserve worked contract units, saturation, exemptions and modified-fee accounting without changing actual fee rewards. Adapt policy weight/modified fees consistently through cluster admission, replacement and mining. Port sub-dust tests and L5 arithmetic fuzz/valid-block cases. |
 | policy-replacement | adapted / L8 | Core has unconditional full RBF and cluster feerate-diagram replacement, with enforced TRUC; Roots Never/OptIn/TRUC mode controls are absent. Default full RBF alone is not equivalence. Preserve configured modes, v3 opt-in behavior, fee/resource gates and truthful `fullrbf`; adapt to current replacement algorithms without restoring ancestor indexes. Run RBF/TRUC/package/sibling and policy-block tests. |
 | policy-coinage | adapted / L7 | Relay coin-block age and maturity controls are absent. Reuse available coin heights; add local gates and bounded age arithmetic, never alter consensus coinbase maturity. Preserve disabled defaults and add/retain enabled, boundary and valid-block acceptance cases; the historical dedicated-relay coverage gap is addressed by candidate enabled/disabled, boundary, tip-reorg and valid-block tests. |
@@ -355,3 +355,98 @@ Prior-release mempool compatibility remains skipped because release fixtures are
 unavailable. External script-assets and other previously recorded optional
 matrix dependencies are not represented as passes. Final L7 acceptance and the
 later full candidate integration matrix remain separate review gates.
+
+## L8.1 native graph accounting and replacement
+
+Carrier cost, sub-dust penalty, configured RBF/TRUC modes and script reuse now
+have consumers; their L7 parsing-only warnings are removed. Dynamic dust remains
+L8.2 and mining size/priority controls remain L9. `getmempoolinfo.fullrbf` reports
+the initialized RBF mode here, while the additive effective-policy schema is L12.
+
+Entries retain actual fees/weight separately from carrier-adjusted policy weight
+and admission-time deficits. A changeset inserts the final fee and weight into
+`TxGraph`; resident deltas update that same graph fee. Native chunk diagrams,
+replacement, ancestor/descendant RPC summaries and trimming therefore share the
+same accounting. Graph tests cover abort/commit, fee updates, block removal and
+reorg dependency discovery. Native chunk mining already reads this accounting;
+L9 owns priority/residual selection and its remaining combinations. Coinbase
+rewards continue to use actual fees. Valid-block fixtures cover carrier cost,
+sub-dust rejection, TRUC rejection and script reuse.
+
+Numerical adaptation is deliberate: fee-rate evaluation saturates before an
+unrepresentable quotient, and graph admission reserves absolute modified fees
+and adjusted weights across the main graph and pending additions. The budgets
+are `INT64_MAX` and `INT32_MAX`, respectively; pending removals are conservatively
+reserved until commit. Extreme proposals can therefore be rejected even when
+the final graph alone would fit. Failed resident fee changes are atomic and
+reported as RPC errors. This avoids wrapping policy deficits or native diagram
+sums and does not introduce an ancestor-index compatibility layer.
+
+Replacement preserves Never/OptIn/Always and Reject/Accept/Enforce selection,
+including OptIn replacement of non-signaling v3. Native v31 cluster resource and
+feerate-diagram rules remain the economic replacement test. Non-TRUC parents
+retain Roots' individual relay floor; inherited CPFP/ephemeral expectations are
+updated to that source contract, with zero-floor coverage retained separately.
+TRUC Reject and script reuse checks still apply during reorg admission, matching
+the source legacy-bypass set. The RBF contradiction warning is emitted once at
+startup validation rather than once per options reconstruction.
+
+Reuse tracking uses full scripts and sets of all creator/spender claims instead
+of a single hash-keyed pointer. It rejects twin outputs, input/output reuse,
+ancestor conflicts and repeated staged claims, and considers independent
+mempool script conflicts under native replacement rules. Staged package reuse
+was an untested source gap; rejecting it closes the same local rule over native
+staging. Tests cover allow/conflict, fee-based policy replacement, block removal,
+reorg behavior and removal of one of multiple tracked claims. This remains a
+local script rule without ownership or privacy inference.
+
+Provenance: `1b73fe3d21`, `ec9db369f5` supply graph-policy behavior;
+`aa27c9117a`, `48f3b3bbe8`, `a6f35e915c` supply corrected RBF modes/reporting;
+`fc0dc945d0` and `10d772eb7f` supply sub-dust, carrier and interaction evidence.
+Scoped parsing from `87c950de92` is consumed without widening its grammar.
+Source attribution remains Jaromil and devjoinedthechat with retained
+Core/Knots lineage. Dynamic publication commits remain L8.2-owned.
+
+## L8.2 dynamic dust lifecycle repair
+
+The source constructor asserted the presence of an unwired scheduler and
+registered callbacks capturing a mempool that chainstate retries could destroy.
+The authorized repair registers one node-owned task after the final successful
+load, updates immediately and at the source 15-minute cadence, and stops/joins
+the scheduler before destroying the final mempool or estimator. Interrupted or
+failed load attempts register no dust tasks. Live dust getters and standardness
+snapshots synchronize publication with admission, ephemeral checks and wallets.
+Resident sub-dust deficits remain immutable; actual fees and rewards are unchanged.
+
+Target mode uses the initialized long horizon with source success threshold 0.8.
+Mempool mode traverses native chunk/topological order to the decimal-kvB policy
+vsize position and takes the boundary entry's actual fee rate. It retains no
+ancestor-score compatibility index. Missing/zero estimates use the configured
+floor. Thousandths multiplier evaluation quantizes to sat/kvB, rounds down and
+saturates at INT64_MAX without overflowing intermediate products. Default off
+and parser grammar/units are unchanged. This repairs source lifecycle, fallback
+and arithmetic gaps rather than claiming that dormant source modes worked.
+
+Restart coverage exposed another source gap: the persisted fee delta included
+the admission dust deficit, causing reload to subtract it twice. DumpMempool now
+serializes copied operator deltas only; reload computes one new admission deficit
+at its live rate. The regression preserves a nonzero operator delta across
+restart and observes unchanged accounting at the configured floor.
+
+The default full build also exposed the accepted L7 script-size policy global
+being defined in bitcoin_node while the standalone wallet links bitcoin_common.
+Its definition now lives with common standardness; declaration, default, runtime
+assignment and consensus behavior are unchanged.
+
+Current evidence is retained under `.gestalt/l8-policy`: full native units/CTest,
+the default headless functional suite, a separate Clang ASan/UBSan daemon and
+focused unit run, arithmetic/graph fuzz campaigns and exact binary/source/log
+hashes. Dynamic runtime coverage includes all modes, extreme grammar values,
+absent and warmed real estimators, periodic updates, floor fallback, immutable
+deficits, production reindex retry, restart, shutdown and concurrent publication.
+Source synchronization/fallback contracts remain the provenance reference;
+Jaromil's `784b2af17a`, `f74cc0433b` and `73c97862e2` supply the synchronized
+publication, changing-rate test and standardness-snapshot source history.
+L8.1's conservative representable-case graph restrictions remain explicit in
+[sub-dust semantics](feature-contracts/subdust.md). L9 mining combinations and
+L12 integrated runtime configuration remain their respective owners.

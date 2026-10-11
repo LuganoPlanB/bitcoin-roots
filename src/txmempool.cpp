@@ -37,6 +37,14 @@
 TRACEPOINT_SEMAPHORE(mempool, added);
 TRACEPOINT_SEMAPHORE(mempool, removed);
 
+namespace {
+uint64_t AbsoluteFee(CAmount fee)
+{
+    // Avoid negating INT64_MIN.
+    return fee < 0 ? static_cast<uint64_t>(-(fee + 1)) + 1 : static_cast<uint64_t>(fee);
+}
+}
+
 bool TestLockPointValidity(CChain& active_chain, const LockPoints& lp)
 {
     AssertLockHeld(cs_main);
@@ -174,7 +182,7 @@ static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, bilingual_str& 
 }
 
 CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
-    : m_opts{Flatten(std::move(opts), error)}
+    : m_dust_relay_feerate{opts.dust_relay_feerate}, m_opts{Flatten(std::move(opts), error)}
 {
     m_txgraph = MakeTxGraph(
         /*max_cluster_count=*/m_opts.limits.cluster_count,
@@ -185,6 +193,43 @@ CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
             const Txid& txid_b = static_cast<const CTxMemPoolEntry&>(b).GetTx().GetHash();
             return txid_a <=> txid_b;
         });
+}
+
+CFeeRate CTxMemPool::GetDustRelayFee() const
+{
+    LOCK(cs);
+    return m_dust_relay_feerate;
+}
+
+StandardnessOptions CTxMemPool::GetStandardnessOptions() const
+{
+    LOCK(cs);
+    StandardnessOptions options{m_opts};
+    options.dust_relay_feerate = m_dust_relay_feerate;
+    return options;
+}
+
+std::optional<CFeeRate> CTxMemPool::EstimateDustFromMempool(int32_t target_kvb) const
+{
+    Assume(target_kvb > 0);
+    int64_t remaining{int64_t{target_kvb} * 1000};
+    LOCK(cs);
+    for (const auto& entry : GetSortedScoreWithTopology()) {
+        remaining -= entry->GetTxSize();
+        if (remaining <= 0) return CFeeRate{entry->GetFee(), static_cast<int32_t>(entry->GetTxSize())};
+    }
+    return std::nullopt;
+}
+
+void CTxMemPool::UpdateDynamicDustFee(std::optional<CFeeRate> estimate)
+{
+    if (m_opts.dust_relay_target == 0) return;
+    const CFeeRate fee{estimate ? std::max(ScaleDustFee(*estimate, m_opts.dust_relay_multiplier), m_opts.dust_relay_feerate) : m_opts.dust_relay_feerate};
+    LOCK(cs);
+    if (m_dust_relay_feerate != fee) {
+        LogDebug(BCLog::MEMPOOL, "Updating dust feerate to %s\n", fee.ToString(FeeRateFormat::SAT_VB));
+        m_dust_relay_feerate = fee;
+    }
 }
 
 bool CTxMemPool::isSpent(const COutPoint& outpoint) const
@@ -246,9 +291,17 @@ void CTxMemPool::addNewTransaction(CTxMemPool::txiter newit)
     // In that case, our disconnect block logic will call UpdateTransactionsFromBlock
     // to clean up the mess we're leaving here.
 
+    for (const auto& [script, claims] : entry.m_script_claims) {
+        auto& [created, spent] = m_used_scripts[script];
+        if (claims & 2) created.insert(tx.GetHash());
+        if (claims & 1) spent.insert(tx.GetHash());
+    }
+
     nTransactionsUpdated++;
     totalTxSize += entry.GetTxSize();
     m_total_fee += entry.GetFee();
+    m_modified_fee_usage += AbsoluteFee(entry.GetModifiedFee());
+    m_policy_weight_usage += entry.GetAdjustedWeight();
 
     txns_randomized.emplace_back(tx.GetWitnessHash(), newit);
     newit->idx_randomized = txns_randomized.size() - 1;
@@ -298,8 +351,17 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
         txns_randomized.clear();
     }
 
+    for (const auto& [script, claims] : it->m_script_claims) {
+        auto used = m_used_scripts.find(script);
+        Assume(used != m_used_scripts.end());
+        used->second.first.erase(it->GetTx().GetHash());
+        used->second.second.erase(it->GetTx().GetHash());
+        if (used->second.first.empty() && used->second.second.empty()) m_used_scripts.erase(used);
+    }
     totalTxSize -= it->GetTxSize();
     m_total_fee -= it->GetFee();
+    m_modified_fee_usage -= AbsoluteFee(it->GetModifiedFee());
+    m_policy_weight_usage -= it->GetAdjustedWeight();
     cachedInnerUsage -= it->DynamicMemoryUsage();
     mapTx.erase(it);
     nTransactionsUpdated++;
@@ -442,6 +504,8 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
     uint64_t checkTotal = 0;
     CAmount check_total_fee{0};
+    uint64_t check_absolute_fee{0};
+    std::map<CScript, std::pair<std::set<Txid>, std::set<Txid>>> check_scripts;
     CAmount check_total_modified_fee{0};
     int64_t check_total_adjusted_weight{0};
     uint64_t innerUsage = 0;
@@ -477,6 +541,11 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         check_total_adjusted_weight += it->GetAdjustedWeight();
         check_total_fee += it->GetFee();
         check_total_modified_fee += it->GetModifiedFee();
+        check_absolute_fee += AbsoluteFee(it->GetModifiedFee());
+        for (const auto& [script, claims] : it->m_script_claims) {
+            if (claims & 2) check_scripts[script].first.insert(it->GetTx().GetHash());
+            if (claims & 1) check_scripts[script].second.insert(it->GetTx().GetHash());
+        }
         innerUsage += it->DynamicMemoryUsage();
         const CTransaction& tx = it->GetTx();
 
@@ -548,6 +617,9 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
     assert(totalTxSize == checkTotal);
     assert(m_total_fee == check_total_fee);
+    assert(m_modified_fee_usage == check_absolute_fee);
+    assert(m_policy_weight_usage == static_cast<uint64_t>(check_total_adjusted_weight));
+    assert(m_used_scripts == check_scripts);
     assert(diagram.back().fee == check_total_modified_fee);
     assert(diagram.back().size == check_total_adjusted_weight);
     assert(innerUsage == cachedInnerUsage);
@@ -627,13 +699,43 @@ CTransactionRef CTxMemPool::get(const Txid& hash) const
     return i->GetSharedTx();
 }
 
-void CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelta)
+std::set<Txid> CTxMemPool::GetScriptConflicts(const CScript& script, bool creating) const
+{
+    AssertLockHeld(cs);
+    std::set<Txid> conflicts;
+    const auto it = m_used_scripts.find(script);
+    if (it != m_used_scripts.end()) {
+        conflicts = it->second.second;
+        if (creating) conflicts.insert(it->second.first.begin(), it->second.first.end());
+    }
+    return conflicts;
+}
+
+bool CTxMemPool::CanAddPolicyWeight(int64_t weight) const
+{
+    AssertLockHeld(cs);
+    return weight > 0 && static_cast<uint64_t>(weight) <= uint64_t{INT32_MAX} - m_policy_weight_usage - m_staged_weight_usage;
+}
+
+bool CTxMemPool::CanAddModifiedFee(CAmount fee) const
+{
+    AssertLockHeld(cs);
+    return AbsoluteFee(fee) <= uint64_t{INT64_MAX} - m_modified_fee_usage - m_staged_fee_usage;
+}
+
+bool CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelta)
 {
     {
         LOCK(cs);
+        txiter it = mapTx.find(hash);
+        if (it != mapTx.end()) {
+            const auto new_fee = SaturatingAdd(it->GetModifiedFee(), nFeeDelta);
+            const auto other_usage = m_modified_fee_usage - AbsoluteFee(it->GetModifiedFee()) + m_staged_fee_usage;
+            if (AbsoluteFee(new_fee) > uint64_t{INT64_MAX} - other_usage) return false;
+            m_modified_fee_usage = m_modified_fee_usage - AbsoluteFee(it->GetModifiedFee()) + AbsoluteFee(new_fee);
+        }
         CAmount &delta = mapDeltas[hash];
         delta = SaturatingAdd(delta, nFeeDelta);
-        txiter it = mapTx.find(hash);
         if (it != mapTx.end()) {
             // PrioritiseTransaction calls stack on previous ones. Set the new
             // transaction fee to be current modified fee + feedelta.
@@ -652,6 +754,7 @@ void CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelt
                       FormatMoney(delta));
         }
     }
+    return true;
 }
 
 void CTxMemPool::ApplyDelta(const Txid& hash, CAmount &nFeeDelta) const
@@ -661,7 +764,7 @@ void CTxMemPool::ApplyDelta(const Txid& hash, CAmount &nFeeDelta) const
     if (pos == mapDeltas.end())
         return;
     const CAmount &delta = pos->second;
-    nFeeDelta += delta;
+    nFeeDelta = SaturatingAdd(nFeeDelta, delta);
 }
 
 void CTxMemPool::ClearPrioritisation(const Txid& hash)
@@ -778,7 +881,11 @@ void CCoinsViewMemPool::Reset()
 size_t CTxMemPool::DynamicMemoryUsage() const {
     LOCK(cs);
     // Estimate the overhead of mapTx to be 9 pointers (3 pointers per index) + an allocation, as no exact formula for boost::multi_index_contained is implemented.
-    return memusage::MallocUsage(sizeof(CTxMemPoolEntry) + 9 * sizeof(void*)) * mapTx.size() + memusage::DynamicUsage(mapNextTx) + memusage::DynamicUsage(mapDeltas) + memusage::DynamicUsage(txns_randomized) + m_txgraph->GetMainMemoryUsage() + cachedInnerUsage;
+    size_t script_usage{memusage::DynamicUsage(m_used_scripts)};
+    for (const auto& [script, claims] : m_used_scripts) {
+        script_usage += RecursiveDynamicUsage(script) + memusage::DynamicUsage(claims.first) + memusage::DynamicUsage(claims.second);
+    }
+    return script_usage + memusage::MallocUsage(sizeof(CTxMemPoolEntry) + 9 * sizeof(void*)) * mapTx.size() + memusage::DynamicUsage(mapNextTx) + memusage::DynamicUsage(mapDeltas) + memusage::DynamicUsage(txns_randomized) + m_txgraph->GetMainMemoryUsage() + cachedInnerUsage;
 }
 
 void CTxMemPool::RemoveUnbroadcastTx(const Txid& txid, const bool unchecked) {
@@ -1002,7 +1109,7 @@ util::Result<std::pair<std::vector<FeeFrac>, std::vector<FeeFrac>>> CTxMemPool::
     return m_pool->m_txgraph->GetMainStagingDiagrams();
 }
 
-CTxMemPool::ChangeSet::TxHandle CTxMemPool::ChangeSet::StageAddition(const CTransactionRef& tx, const CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp)
+CTxMemPool::ChangeSet::TxHandle CTxMemPool::ChangeSet::StageAddition(const CTransactionRef& tx, const CAmount fee, int64_t time, unsigned int entry_height, uint64_t entry_sequence, bool spends_coinbase, int64_t sigops_cost, LockPoints lp, int32_t extra_weight, CAmount dust_penalty, std::map<CScript, unsigned> script_claims)
 {
     LOCK(m_pool->cs);
     Assume(m_to_add.find(tx->GetHash()) == m_to_add.end());
@@ -1014,13 +1121,15 @@ CTxMemPool::ChangeSet::TxHandle CTxMemPool::ChangeSet::StageAddition(const CTran
     CAmount delta{0};
     m_pool->ApplyDelta(tx->GetHash(), delta);
 
-    FeePerWeight feerate(fee, GetSigOpsAdjustedWeight(GetTransactionWeight(*tx), sigops_cost, ::nBytesPerSigOp));
-    auto newit = m_to_add.emplace(tx, fee, time, entry_height, entry_sequence, spends_coinbase, sigops_cost, lp).first;
+    auto newit = m_to_add.emplace(tx, fee, time, entry_height, entry_sequence, spends_coinbase, sigops_cost, lp, extra_weight, dust_penalty, std::move(script_claims)).first;
+    newit->UpdateModifiedFee(delta);
+    newit->UpdateModifiedFee(-dust_penalty);
+    Assume(m_pool->CanAddPolicyWeight(newit->GetAdjustedWeight()));
+    m_pool->m_staged_weight_usage += newit->GetAdjustedWeight();
+    Assume(m_pool->CanAddModifiedFee(newit->GetModifiedFee()));
+    m_pool->m_staged_fee_usage += AbsoluteFee(newit->GetModifiedFee());
+    const FeePerWeight feerate{newit->GetModifiedFee(), static_cast<int32_t>(newit->GetAdjustedWeight())};
     m_pool->m_txgraph->AddTransaction(const_cast<CTxMemPoolEntry&>(*newit), feerate);
-    if (delta) {
-        newit->UpdateModifiedFee(delta);
-        m_pool->m_txgraph->SetTransactionFee(*newit, newit->GetModifiedFee());
-    }
 
     m_entry_vec.push_back(newit);
 
@@ -1043,6 +1152,8 @@ void CTxMemPool::ChangeSet::Apply()
     m_pool->Apply(this);
     m_to_add.clear();
     m_to_remove.clear();
+    m_pool->m_staged_fee_usage = 0;
+    m_pool->m_staged_weight_usage = 0;
     m_entry_vec.clear();
     m_ancestors.clear();
 }

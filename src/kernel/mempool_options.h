@@ -28,6 +28,9 @@ static constexpr bool DEFAULT_ACCEPT_NON_STD_TXN{false};
 /** Default for -acceptnonstddatacarrier */
 static constexpr bool DEFAULT_ACCEPT_NON_STD_DATACARRIER{false};
 
+enum class RBFPolicy { Never, OptIn, Always };
+enum class TRUCPolicy { Reject, Accept, Enforce };
+
 namespace kernel {
 /**
  * Options struct containing options for constructing a CTxMemPool. Default
@@ -44,7 +47,15 @@ struct MemPoolOptions : StandardnessOptions {
     CFeeRate incremental_relay_feerate{DEFAULT_INCREMENTAL_RELAY_FEE};
     /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
     CFeeRate min_relay_feerate{DEFAULT_MIN_RELAY_TX_FEE};
-    // Local policy controls; graph accounting and dynamic dust remain deferred.
+    // Local policy controls. Dynamic dust publication is node-owned.
+    unsigned int weight_per_data_byte{WITNESS_SCALE_FACTOR};
+    bool subdustfeepenalty{DEFAULT_SUBDUSTFEEPENALTY};
+    RBFPolicy rbf_policy{RBFPolicy::Always};
+    TRUCPolicy truc_policy{TRUCPolicy::Enforce};
+    bool reject_spk_reuse{false};
+    /** Negative: estimator target blocks; positive: native mempool position in kvB; zero: off. */
+    int32_t dust_relay_target{0};
+    int dust_relay_multiplier{3'000};
     uint64_t minrelaycoinblocks{0};
     int minrelaymaturity{0};
     bool datacarrier_fullcount{DEFAULT_DATACARRIER_FULLCOUNT};

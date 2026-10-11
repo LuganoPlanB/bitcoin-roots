@@ -670,24 +670,24 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     SetupChainParamsBaseOptions(argsman);
 
     argsman.AddArg("-acceptunknownwitness", strprintf("Relay transactions sending to unknown or future witness script versions (default: %u)", DEFAULT_ACCEPTUNKNOWNWITNESS) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-dustdynamic=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-dustdynamic=<value>", "Update the dust rate every 15 minutes using off, [multiplier*]target:blocks, or [multiplier*]mempool:kvB (default: off). Multiplier defaults to 3; the configured dustrelayfee is the floor and fallback when no estimate is available.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-bytespersigopstrict", strprintf("Minimum bytes per sigop in transactions we relay and mine (integer 0 to 4294967295; default: %u)", DEFAULT_BYTES_PER_SIGOP_STRICT), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-datacarriercost=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-datacarriercost=<value>", "Treat data carrier bytes as at least N vbytes each (0 to 1073741823.75, exact hundredths; rounded up to quarter-vbytes; default: 1). Only local policy size changes.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-datacarrierfullcount", strprintf("Apply datacarriersize limit to all known data-carrier methods (default: %u)", DEFAULT_DATACARRIER_FULLCOUNT) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | (DEFAULT_DATACARRIER_FULLCOUNT ? uint32_t{ArgsManager::DEBUG_ONLY} : 0), OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitbaredatacarrier", strprintf("Relay transactions with data carrier outputs and no monetary outputs (default: %u)", DEFAULT_PERMITBAREDATACARRIER) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-acceptnonstddatacarrier", strprintf("Relay nonstandard data carrier outputs (default: %u)", DEFAULT_ACCEPT_NON_STD_DATACARRIER) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitephemeral", "Permit ephemeral policy exceptions: send, dust, anchor, reject, or 0, optionally prefixed with '-'. Tokens are separated by ',' or '+'; 0 disables all, empty or 1 enables all (default: anchor only)", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-subdustfeepenalty=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-subdustfeepenalty=<value>", "Subtract sub-dust output deficits from modified policy fees (default: 1). Values: 0 or 1; no value means 1. Actual fees and consensus validity are unchanged.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-maxscriptsize=<n>", strprintf("Maximum size of scripts (including the witness stack) we relay and mine (integer 0 to 4294967295; default: %s)", DEFAULT_SCRIPT_SIZE_POLICY_LIMIT), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-maxtxlegacysigops", strprintf("Maximum legacy sigops in transactions we relay and mine (integer 0 to 4294967295; default: %s)", MAX_TX_LEGACY_SIGOPS), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-mempoolreplacement=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-mempoolfullrbf", "Staged legacy alias; replacement enforcement is deferred to L8 graph policy.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-mempooltruc=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempoolreplacement=<value>", "Set RBF policy: 0 disables, fee,optin honors signaling or TRUC/v3 replaceability, and fee,-optin enables full RBF. Tokens are separated by ',' or '+'; empty or 1 enables fee-based replacement (default: fee,-optin).", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempoolfullrbf", "Legacy RBF alias: accept replacement without requiring signaling (default: 1). Explicit optin or replacement disabling overrides this alias.", ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-mempooltruc=<value>", "Set TRUC policy: reject, accept, enforce/optin, or -enforce/-optin. Tokens are separated by ',' or '+'; 0 rejects, empty or 1 enforces (default: enforce).", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaycoinblocks=<n>", strprintf("Minimum coin blocks a transaction must spend to be relayed (integer 0 to 9223372036854775807; default: %s)", 0), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-minrelaymaturity=<n>", strprintf("Minimum input maturity before relay (integer 0 to 2147483647; default: %s)", 0), ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitbareanchor", strprintf("Relay transactions that only have ephemeral anchor outputs (default: %u)", DEFAULT_PERMITBAREANCHOR) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-permitbarepubkey", strprintf("Relay legacy pubkey outputs (default: %u)", DEFAULT_PERMIT_BAREPUBKEY) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-spkreuse=<value>", "Staged parsing only; enforcement is deferred to L8 graph policy. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
+    argsman.AddArg("-spkreuse=<value>", "Set local script reuse policy: allow or conflict; empty/1 aliases allow, 0 aliases conflict (default: allow).", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-rejecttokens", strprintf("Refuse to relay or mine transactions involving non-bitcoin tokens (default: %u)", DEFAULT_REJECT_TOKENS) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-rejectparasites", strprintf("Refuse to relay or mine parasitic overlay protocols (default: %u)", DEFAULT_REJECT_PARASITES) + " Values: 0 or 1; no value means 1.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-blockmaxsize=<value>", "Staged parsing only; enforcement is deferred to L9 mining. See doc/feature-contracts/policy-parsing.md for accepted grammar.", ArgsManager::ALLOW_ANY | ArgsManager::STRICT_NEGATION | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
@@ -942,7 +942,7 @@ bool AppInitBasicSetup(const ArgsManager& args, std::atomic<int>& exit_status)
 bool AppInitParameterInteraction(const ArgsManager& args)
 {
     if (auto result = ValidateRootsPolicyOptions(args); !result) return InitError(util::ErrorString(result));
-    for (const char* option : {"-datacarriercost", "-subdustfeepenalty", "-mempoolreplacement", "-mempoolfullrbf", "-mempooltruc", "-spkreuse", "-dustdynamic", "-blockmaxsize", "-blockprioritysize"}) {
+    for (const char* option : {"-blockmaxsize", "-blockprioritysize"}) {
         if (args.IsArgSet(option)) {
             InitWarning(Untranslated(strprintf("%s is parsed but not enforced in this staged candidate; graph policy and mining implementations are pending.", option)));
         }
@@ -1180,6 +1180,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         auto mempool_result{ApplyArgsManOptions(args, chainparams, mempool_opts)};
         if (!mempool_result) {
             return InitError(util::ErrorString(mempool_result));
+        }
+        if (mempool_opts.rbf_policy == RBFPolicy::Never && args.GetBoolArg("-mempoolfullrbf", false)) {
+            InitWarning(_("False mempoolreplacement option contradicts true mempoolfullrbf; disallowing all RBF"));
         }
     }
 
@@ -1917,6 +1920,31 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     if (ShutdownRequested(node)) {
         LogInfo("Shutdown requested. Exiting.");
         return true;
+    }
+
+    // Register only after the final successful load: InitAndLoadChainstate may
+    // destroy a failed attempt's mempool. Shutdown stops and joins the scheduler
+    // before destroying the final mempool/estimator. Capture their node owner,
+    // never a mempool pointer from a constructor or a retry attempt.
+    if (status == ChainstateLoadStatus::SUCCESS && node.mempool->m_opts.dust_relay_target != 0) {
+        const auto target{node.mempool->m_opts.dust_relay_target};
+        if (target < 0 && node.fee_estimator && static_cast<unsigned>(-target) > node.fee_estimator->HighestTargetTracked(FeeEstimateHorizon::LONG_HALFLIFE)) {
+            return InitError(_("Dynamic dust target exceeds the initialized fee estimator horizon"));
+        }
+        const auto update_dust = [&node] {
+            if (ShutdownRequested(node)) return;
+            const auto target{node.mempool->m_opts.dust_relay_target};
+            std::optional<CFeeRate> estimate;
+            if (target > 0) {
+                estimate = node.mempool->EstimateDustFromMempool(target);
+            } else if (node.fee_estimator) {
+                estimate = node.fee_estimator->estimateRawFee(-target, 0.8, FeeEstimateHorizon::LONG_HALFLIFE);
+            }
+            node.mempool->UpdateDynamicDustFee(estimate);
+        };
+        update_dust();
+        scheduler.scheduleEvery(update_dust, std::chrono::minutes{15});
+        LogInfo("Dynamic dust updates scheduled after chainstate load");
     }
 
     ChainstateManager& chainman = *Assert(node.chainman);

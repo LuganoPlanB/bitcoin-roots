@@ -1,12 +1,12 @@
 # Roots policy input compatibility
 
-**v31 candidate status: L7 implementation tested; final milestone review pending.** Scoped
-grammar and local policy consumers are carried. `datacarriercost`,
-`subdustfeepenalty`, `mempoolreplacement`, `mempooltruc`, `spkreuse` and
-`dustdynamic` are parsing-only until L8; `blockmaxsize` and `blockprioritysize`
-are parsing-only until L9. Help labels these staged controls and explicit use emits a startup warning;
-acceptance of their syntax does not establish enforcement. Core's current
-replacement/mining algorithms continue to operate meanwhile. Only integrated
+**v31 candidate status: L7 parsing/local policy and L8.1 graph consumers implemented.**
+Carrier cost, sub-dust modified fees, replacement/TRUC modes and script reuse
+now have native consumers. L8.2 repairs `dustdynamic` scheduling/publication;
+`blockmaxsize` and `blockprioritysize` remain parsing-only until L9. Explicit
+use of the remaining staged controls emits a startup warning. Help for
+implemented controls describes initialized behavior and defaults.
+Only integrated
 Roots `confrw` precedence awaits L12; CLI, ordinary config and JSON settings
 passed the L7.1 startup matrix. Candidate tests are
 [`policy_args_tests.cpp`](../../src/test/policy_args_tests.cpp) and
@@ -191,7 +191,8 @@ abort startup because the mempool is constructed without its required scheduler.
 Parser acceptance does not prove these modes operate. This contract records that
 baseline failure; The user authorized a bounded L8 runtime repair with node-owned scheduling,
 retry/shutdown lifetime safety, unavailable-estimate floor fallback and safe
-multiplier scaling. It is not implemented by L7 parsing.
+multiplier scaling. L8.2 implements that authorized repair; it is not an L7
+parser claim. See [sub-dust runtime semantics](subdust.md).
 
 Acceptance: policy_args_tests.cpp (`src/test/policy_args_tests.cpp`, source reference)
 `boolean_values`, `integer_boundaries`, `carrier_cost_compatibility`, `mode_tokens`,

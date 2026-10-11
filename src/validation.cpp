@@ -839,9 +839,14 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (tx.IsCoinBase())
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "coinbase");
 
+    if (tx.version == TRUC_VERSION && m_pool.m_opts.truc_policy == TRUCPolicy::Reject) {
+        return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "version");
+    }
+
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     std::string reason;
-    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.m_opts, reason)) {
+    const StandardnessOptions standardness{m_pool.GetStandardnessOptions()};
+    if (m_pool.m_opts.require_standard && !IsStandardTx(tx, standardness, reason)) {
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, reason);
     }
 
@@ -874,7 +879,24 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
                 // Transaction conflicts with a mempool tx, but we're not allowing replacements in this context.
                 return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "bip125-replacement-disallowed");
             }
+            if ((m_pool.m_opts.rbf_policy == RBFPolicy::Never ||
+                (m_pool.m_opts.rbf_policy == RBFPolicy::OptIn && !SignalsOptInRBF(*ptxConflicting) && ptxConflicting->version != TRUC_VERSION))) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-mempool-conflict");
+            }
             ws.m_conflicts.insert(ptxConflicting->GetHash());
+        }
+    }
+
+    std::map<CScript, unsigned> script_claims;
+    std::set<Txid> script_conflicts;
+    if (m_pool.m_opts.reject_spk_reuse) {
+        for (const auto& output : tx.vout) {
+            if (script_claims.contains(output.scriptPubKey)) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-spk-reused-twinoutputs");
+            }
+            script_claims[output.scriptPubKey] |= 2;
+            const auto conflicts = m_pool.GetScriptConflicts(output.scriptPubKey, true);
+            script_conflicts.insert(conflicts.begin(), conflicts.end());
         }
     }
 
@@ -948,6 +970,23 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (coinblocks < m_pool.m_opts.minrelaycoinblocks) {
         return state.Invalid(TxValidationResult::TX_PREMATURE_SPEND, "bad-txns-input-immature-coinblocks");
     }
+    if (m_pool.m_opts.reject_spk_reuse) {
+        for (const auto& input : tx.vin) {
+            const auto& script = m_view.AccessCoin(input.prevout).out.scriptPubKey;
+            if (script_claims[script] & 2) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-spk-reused-change");
+            }
+            script_claims[script] |= 1;
+            const auto conflicts = m_pool.GetScriptConflicts(script, false);
+            script_conflicts.insert(conflicts.begin(), conflicts.end());
+        }
+        {
+            if (!args.m_allow_replacement && !script_conflicts.empty()) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "bip125-replacement-disallowed");
+            }
+            ws.m_conflicts.insert(script_conflicts.begin(), script_conflicts.end());
+        }
+    }
     if (m_pool.m_opts.datacarrier_fullcount || !m_pool.m_opts.accept_non_std_datacarrier) {
         const auto [standard_bytes, nonstandard_bytes] = DatacarrierBytes(tx, m_view);
         if (nonstandard_bytes && !m_pool.m_opts.accept_non_std_datacarrier) {
@@ -958,7 +997,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         }
     }
 
-    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view, m_pool.m_opts, "bad-txns-input-", reason)) {
+    if (m_pool.m_opts.require_standard && !AreInputsStandard(tx, m_view, standardness, "bad-txns-input-", reason)) {
         return state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, reason);
     }
 
@@ -986,7 +1025,51 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (!m_subpackage.m_changeset) {
         m_subpackage.m_changeset = m_pool.GetChangeSet();
     }
-    ws.m_tx_handle = m_subpackage.m_changeset->StageAddition(ptx, ws.m_base_fees, nAcceptTime, m_active_chainstate.m_chain.Height(), entry_sequence, fSpendsCoinbase, nSigOpsCost, lock_points.value());
+    if (!bypass_limits) {
+        for (const auto& [script, claims] : script_claims) {
+            if (m_subpackage.m_changeset->HasStagedScriptConflict(script, claims & 2)) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-spk-reused-package");
+            }
+        }
+    }
+    const int32_t extra_weight{CalculateExtraTxWeight(tx, m_view, m_pool.m_opts.weight_per_data_byte)};
+    // Bound sigop cost before multiplying by the initialized unsigned policy
+    // factor. This is the same local limit checked below, moved ahead of math.
+    if (nSigOpsCost > MAX_STANDARD_TX_SIGOPS_COST) {
+        return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "bad-txns-too-many-sigops", strprintf("%d", nSigOpsCost));
+    }
+    const int64_t adjusted_weight{GetSigOpsAdjustedWeight(GetTransactionWeight(tx) + int64_t{extra_weight}, nSigOpsCost, nBytesPerSigOp)};
+    const int64_t policy_vsize{(adjusted_weight + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR};
+    // CFeeRate accepts int32 vsize. Extreme native bytespersigop settings must
+    // fail the graph limit before an implicit narrowing can wrap that argument.
+    if (policy_vsize > INT32_MAX) {
+        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "too-large-cluster");
+    }
+    CAmount dust_penalty{0};
+    if (m_pool.m_opts.subdustfeepenalty) {
+        for (const auto& output : tx.vout) {
+            const CAmount threshold{GetDustThreshold(output, standardness.dust_relay_feerate)};
+            if (output.nValue < threshold) dust_penalty = SaturatingAdd(dust_penalty, threshold - output.nValue);
+        }
+    }
+    CAmount delta{0};
+    m_pool.ApplyDelta(hash, delta);
+    const CAmount modified_fee{SaturatingAdd(SaturatingAdd(ws.m_base_fees, delta), -dust_penalty)};
+    ws.m_modified_fees = modified_fee;
+    ws.m_vsize = policy_vsize;
+    // Reject ordinary low-fee transactions before placing extreme deficit/weight
+    // values in the native graph. TRUC sponsorship is checked at package level.
+    const bool sponsored{tx.version == TRUC_VERSION && m_pool.m_opts.truc_policy == TRUCPolicy::Enforce};
+    if (!bypass_limits && !sponsored && modified_fee < m_pool.m_opts.min_relay_feerate.GetFee(policy_vsize)) {
+        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "min relay fee not met", strprintf("%d < %d", modified_fee, m_pool.m_opts.min_relay_feerate.GetFee(policy_vsize)));
+    }
+    if (!m_pool.CanAddModifiedFee(modified_fee)) {
+        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "mempool-fee-overflow");
+    }
+    if (!m_pool.CanAddPolicyWeight(adjusted_weight)) {
+        return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "too-large-cluster");
+    }
+    ws.m_tx_handle = m_subpackage.m_changeset->StageAddition(ptx, ws.m_base_fees, nAcceptTime, m_active_chainstate.m_chain.Height(), entry_sequence, fSpendsCoinbase, nSigOpsCost, lock_points.value(), extra_weight, dust_penalty, std::move(script_claims));
 
     // ws.m_modified_fees includes any fee deltas from PrioritiseTransaction
     ws.m_modified_fees = ws.m_tx_handle->GetModifiedFee();
@@ -995,14 +1078,13 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     // Enforces 0-fee for dust transactions, no incentive to be mined alone
     if (m_pool.m_opts.require_standard) {
-        if (!PreCheckEphemeralTx(*ptx, m_pool.m_opts.dust_relay_feerate, ws.m_base_fees, ws.m_modified_fees, state)) {
+        if (!PreCheckEphemeralTx(*ptx, standardness.dust_relay_feerate, ws.m_base_fees, ws.m_modified_fees, state)) {
             return false; // state filled in by PreCheckEphemeralTx
         }
     }
 
-    if (nSigOpsCost > MAX_STANDARD_TX_SIGOPS_COST ||
-        (nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, m_view, STANDARD_SCRIPT_VERIFY_FLAGS) >
-            ws.m_vsize * WITNESS_SCALE_FACTOR / nBytesPerSigOpStrict))
+    if (nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, m_view, STANDARD_SCRIPT_VERIFY_FLAGS) >
+            ws.m_vsize * WITNESS_SCALE_FACTOR / nBytesPerSigOpStrict)
         return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "bad-txns-too-many-sigops",
                 strprintf("%d", nSigOpsCost));
 
@@ -1015,11 +1097,11 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     ws.m_parents = m_pool.GetParents(*ws.m_tx_handle);
 
-    if (!args.m_bypass_limits) {
+    if (!args.m_bypass_limits && m_pool.m_opts.truc_policy == TRUCPolicy::Enforce) {
         // Perform the TRUC checks, using the in-mempool parents.
         if (const auto err{SingleTRUCChecks(m_pool, ws.m_ptx, ws.m_parents, ws.m_conflicts, ws.m_vsize)}) {
             // Single transaction contexts only.
-            if (args.m_allow_sibling_eviction && err->second != nullptr) {
+            if (args.m_allow_sibling_eviction && m_pool.m_opts.rbf_policy != RBFPolicy::Never && err->second != nullptr) {
                 // We should only be considering where replacement is considered valid as well.
                 Assume(args.m_allow_replacement);
                 // Potential sibling eviction. Add the sibling to our list of mempool conflicts to be
@@ -1036,6 +1118,15 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
                 // have a non-TRUC and non-BIP125 descendant is due to a reorg.
             } else {
                 return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "TRUC-violation", err->first);
+            }
+        }
+    }
+
+    if (!script_conflicts.empty()) {
+        const auto ancestors = m_subpackage.m_changeset->CalculateMemPoolAncestors(ws.m_tx_handle);
+        for (const auto& ancestor : ancestors) {
+            if (script_conflicts.contains(ancestor->GetTx().GetHash())) {
+                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-spk-reused-chained");
             }
         }
     }
@@ -1436,7 +1527,7 @@ MempoolAcceptResult MemPoolAccept::AcceptSingleTransactionInternal(const CTransa
 
     if (!args.m_bypass_limits && m_pool.m_opts.require_standard) {
         Wtxid dummy_wtxid;
-        if (!CheckEphemeralSpends(/*package=*/{ptx}, m_pool.m_opts.dust_relay_feerate, m_pool, ws.m_state, dummy_wtxid)) {
+        if (!CheckEphemeralSpends(/*package=*/{ptx}, m_pool.GetDustRelayFee(), m_pool, ws.m_state, dummy_wtxid)) {
             return MempoolAcceptResult::Failure(ws.m_state);
         }
     }
@@ -1541,9 +1632,9 @@ PackageMempoolAcceptResult MemPoolAccept::AcceptMultipleTransactionsInternal(con
     }
 
     // At this point we have all in-mempool parents, and we know every transaction's vsize.
-    // Run the TRUC checks on the package.
+    // Run the configured TRUC checks on the package.
     for (Workspace& ws : workspaces) {
-        if (auto err{PackageTRUCChecks(m_pool, ws.m_ptx, ws.m_vsize, txns, ws.m_parents)}) {
+        if (auto err{m_pool.m_opts.truc_policy == TRUCPolicy::Enforce ? PackageTRUCChecks(m_pool, ws.m_ptx, ws.m_vsize, txns, ws.m_parents) : std::nullopt}) {
             package_state.Invalid(PackageValidationResult::PCKG_POLICY, "TRUC-violation", err.value());
             return PackageMempoolAcceptResult(package_state, {});
         }
@@ -1590,7 +1681,7 @@ PackageMempoolAcceptResult MemPoolAccept::AcceptMultipleTransactionsInternal(con
     if (m_pool.m_opts.require_standard) {
         TxValidationState child_state;
         Wtxid child_wtxid;
-        if (!CheckEphemeralSpends(txns, m_pool.m_opts.dust_relay_feerate, m_pool, child_state, child_wtxid)) {
+        if (!CheckEphemeralSpends(txns, m_pool.GetDustRelayFee(), m_pool, child_state, child_wtxid)) {
             package_state.Invalid(PackageValidationResult::PCKG_TX, "unspent-dust");
             results.emplace(child_wtxid, MempoolAcceptResult::Failure(child_state));
             return PackageMempoolAcceptResult(package_state, std::move(results));

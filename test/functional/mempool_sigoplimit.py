@@ -52,7 +52,8 @@ MAX_PUBKEYS_PER_MULTISIG = 20
 class BytesPerSigOpTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1']]
+        # Isolate native sigop-adjusted vsize from Roots' carrier-data weight.
+        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1', '-datacarriercost=0']]
 
     def create_p2wsh_spending_tx(self, witness_script, output_script):
         """Create a 1-input-1-output P2WSH spending transaction with only the
@@ -237,6 +238,14 @@ class BytesPerSigOpTest(BitcoinTestFramework):
 
         self.test_sigops_package()
         self.test_legacy_sigops_stdness()
+        self.log.info("Extreme policy vsize rejects safely while a valid block remains acceptable")
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-bytespersigop=2147483647"])
+        script = CScript([OP_FALSE, OP_IF] + [OP_CHECKSIG] * 5 + [OP_ENDIF, OP_TRUE])
+        tx = self.create_p2wsh_spending_tx(script, self.wallet.get_output_script())
+        self.generate(self.wallet, 1)
+        result = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        assert_equal(result["reject-reason"], "too-large-cluster")
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [tx.serialize().hex()])
 
 
 if __name__ == '__main__':

@@ -51,11 +51,13 @@ class WalletBackupTest(BitcoinTestFramework):
         self.noban_tx_relay = True
         # nodes 1, 2, 3 are spenders, let's give them a keypool=100
         self.extra_args = [
-            ["-keypool=100"],
-            ["-keypool=100"],
-            ["-keypool=100"],
-            [],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-rejectparasites=0"],
         ]
+        # Wallet anti-fee-sniping can randomly choose locktime 21. Isolate
+        # backup behavior from the Roots local marker rejection policy.
         self.rpc_timeout = 120
 
     def skip_test_if_missing_module(self):

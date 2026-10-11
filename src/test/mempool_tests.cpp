@@ -11,11 +11,252 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+#include <limits>
 #include <vector>
+#include <thread>
 
 BOOST_FIXTURE_TEST_SUITE(mempool_tests, TestingSetup)
 
 static constexpr auto REMOVAL_REASON_DUMMY = MemPoolRemovalReason::REPLACED;
+
+BOOST_AUTO_TEST_CASE(MempoolExtraWeightBoundary)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(0, CScript{} << OP_RETURN << std::vector<unsigned char>(100, 0));
+    const auto ref = MakeTransactionRef(tx);
+    CCoinsView view;
+    CCoinsViewCache cache{&view};
+    const int32_t maximum = CalculateExtraTxWeight(*ref, cache, std::numeric_limits<unsigned int>::max());
+    BOOST_REQUIRE_EQUAL(maximum, std::numeric_limits<int32_t>::max());
+    const auto weight = GetTransactionWeight(*ref);
+    for (const int32_t extra : {0, 4, maximum - int32_t{weight}, maximum}) {
+        const CTxMemPoolEntry entry{ref, 100, 0, 1, 0, false, 0, {}, extra};
+        BOOST_CHECK_EQUAL(entry.GetTxWeight(), weight);
+        BOOST_CHECK_EQUAL(entry.GetAdjustedWeight(), int64_t{weight} + extra);
+        BOOST_CHECK_EQUAL(entry.GetTxSize(), (int64_t{weight} + extra + 3) / 4);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(DynamicDustPublication)
+{
+    auto options = MemPoolOptionsForTest(m_node);
+    options.dust_relay_target = 1;
+    options.dust_relay_multiplier = 3000;
+    options.dust_relay_feerate = CFeeRate{3000};
+    bilingual_str error;
+    CTxMemPool pool{options, error};
+    BOOST_REQUIRE(error.empty());
+    BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), 3000);
+    BOOST_CHECK(!pool.EstimateDustFromMempool(1));
+    CMutableTransaction mutable_tx;
+    mutable_tx.vin.resize(1);
+    mutable_tx.vout.emplace_back(10000, CScript{} << OP_TRUE);
+    const auto tx = MakeTransactionRef(mutable_tx);
+    {
+        LOCK2(cs_main, pool.cs);
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(tx, 30000, 0, 1, 0, false, 0, {}, 4000 - GetTransactionWeight(*tx), 123);
+        stage->Apply();
+    }
+    const auto estimate = pool.EstimateDustFromMempool(1);
+    BOOST_REQUIRE(estimate);
+    BOOST_CHECK_EQUAL(estimate->GetFeePerK(), 30000);
+    BOOST_CHECK(!pool.EstimateDustFromMempool(INT32_MAX));
+    pool.UpdateDynamicDustFee(estimate);
+    BOOST_CHECK_EQUAL(pool.GetStandardnessOptions().dust_relay_feerate.GetFeePerK(), 90000);
+    {
+        LOCK(pool.cs);
+        const auto entry = pool.GetEntry(tx->GetHash());
+        BOOST_CHECK_EQUAL(entry->GetModifiedFee(), 29877);
+        BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*entry).fee, 29877);
+        BOOST_CHECK_EQUAL(pool.GetTotalFee(), 30000);
+        BOOST_REQUIRE(pool.PrioritiseTransaction(tx->GetHash(), 1'000'000));
+    }
+    BOOST_CHECK_EQUAL(pool.EstimateDustFromMempool(1)->GetFeePerK(), 30000);
+    pool.UpdateDynamicDustFee(std::nullopt);
+    BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), 3000);
+    pool.UpdateDynamicDustFee(CFeeRate{0});
+    BOOST_CHECK_EQUAL(pool.GetDustRelayFee().GetFeePerK(), 3000);
+    std::atomic<bool> valid{true};
+    std::thread reader{[&] {
+        for (int i = 0; i < 10000; ++i) {
+            const auto fee = pool.GetStandardnessOptions().dust_relay_feerate.GetFeePerK();
+            if (fee != 3000 && fee != 90000) valid = false;
+        }
+    }};
+    for (int i = 0; i < 10000; ++i) pool.UpdateDynamicDustFee(i % 2 ? estimate : std::nullopt);
+    reader.join();
+    BOOST_CHECK(valid.load());
+    options.dust_relay_target = 0;
+    CTxMemPool disabled{options, error};
+    disabled.UpdateDynamicDustFee(CFeeRate{90000});
+    BOOST_CHECK_EQUAL(disabled.GetDustRelayFee().GetFeePerK(), 3000);
+}
+
+BOOST_AUTO_TEST_CASE(GraphPolicyAccounting)
+{
+    auto options = MemPoolOptionsForTest(m_node);
+    bilingual_str error;
+    CTxMemPool pool{options, error};
+    Assert(error.empty());
+    LOCK2(cs_main, pool.cs);
+    CMutableTransaction parent;
+    parent.vin.resize(1);
+    parent.vout.emplace_back(10000, CScript{} << OP_TRUE);
+    const auto p = MakeTransactionRef(parent);
+    CMutableTransaction child;
+    child.vin.emplace_back(COutPoint{p->GetHash(), 0});
+    child.vout.emplace_back(9000, CScript{} << OP_TRUE);
+    const auto c = MakeTransactionRef(child);
+    pool.PrioritiseTransaction(p->GetHash(), 7);
+    {
+        auto stage = pool.GetChangeSet();
+        const auto entry = stage->StageAddition(p, 100, 0, 1, 0, false, 0, {}, 5, 130);
+        BOOST_CHECK_EQUAL(entry->GetFee(), 100);
+        BOOST_CHECK_EQUAL(entry->GetModifiedFee(), -23);
+        const auto fees = stage->CalculateChunksForRBF();
+        BOOST_REQUIRE(fees);
+        BOOST_CHECK_EQUAL(fees->second.back().fee, -23);
+        BOOST_CHECK_EQUAL(fees->second.back().size, GetTransactionWeight(*p) + 5);
+        stage->Apply();
+    }
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(c, 1000, 0, 1, 0, false, 0, {}, 3, 30);
+        stage->Apply();
+    }
+    const auto original_fee = pool.GetTotalFee();
+    const auto entry = pool.GetEntry(p->GetHash());
+    auto chunk = pool.GetMainChunkFeerate(*entry);
+    BOOST_CHECK_EQUAL(chunk.fee, 947);
+    BOOST_CHECK_EQUAL(chunk.size, GetTransactionWeight(*p) + GetTransactionWeight(*c) + 8);
+    pool.PrioritiseTransaction(p->GetHash(), 13);
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*entry).fee, 960);
+    BOOST_CHECK_EQUAL(pool.GetTotalFee(), original_fee);
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageRemoval(pool.GetIter(c->GetHash()).value());
+        stage->StageAddition(c, 2000, 0, 1, 0, false, 0, {}, 9, 40);
+        const auto fees = stage->CalculateChunksForRBF();
+        BOOST_REQUIRE(fees);
+        BOOST_CHECK_EQUAL(fees->first.back().fee, 960);
+        BOOST_CHECK_EQUAL(fees->second.back().fee, 1950);
+        // Destructor aborts: both entry accounting and main diagram survive.
+    }
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*entry).fee, 960);
+    // Block removal detaches a surviving child, then reorg insertion discovers
+    // the dependency again using the authoritative policy fee/weight values.
+    pool.removeForBlock({p}, 2);
+    const auto child_entry = pool.GetEntry(c->GetHash());
+    BOOST_REQUIRE(child_entry);
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*child_entry).fee, 970);
+    BOOST_CHECK_EQUAL(pool.GetTotalFee(), 1000);
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(p, 100, 0, 1, 0, false, 0, {}, 5, 130);
+        stage->Apply();
+    }
+    pool.UpdateTransactionsFromBlock({p->GetHash()});
+    const auto reorg_entry = pool.GetEntry(p->GetHash());
+    BOOST_REQUIRE(reorg_entry);
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*reorg_entry).fee, 940);
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*reorg_entry).size, GetTransactionWeight(*p) + GetTransactionWeight(*c) + 8);
+    pool.removeRecursive(*c, REMOVAL_REASON_DUMMY);
+    BOOST_CHECK_EQUAL(pool.GetMainChunkFeerate(*reorg_entry).fee, -30);
+    pool.removeRecursive(*p, REMOVAL_REASON_DUMMY);
+    BOOST_CHECK_EQUAL(pool.GetTotalFee(), 0);
+}
+
+BOOST_AUTO_TEST_CASE(GraphPolicyBudgetsAndReuseClaims)
+{
+    auto options = MemPoolOptionsForTest(m_node);
+    bilingual_str error;
+    CTxMemPool pool{options, error};
+    BOOST_REQUIRE(error.empty());
+    LOCK2(cs_main, pool.cs);
+    CMutableTransaction mutable_tx;
+    mutable_tx.vin.resize(1);
+    mutable_tx.vout.emplace_back(0, CScript{} << OP_TRUE);
+    const auto first = MakeTransactionRef(mutable_tx);
+    mutable_tx.nLockTime = 1;
+    const auto second = MakeTransactionRef(mutable_tx);
+    const CScript script{CScript{} << OP_2};
+    constexpr CAmount maximum{std::numeric_limits<CAmount>::max()};
+    BOOST_CHECK(!pool.CanAddModifiedFee(std::numeric_limits<CAmount>::min()));
+    BOOST_CHECK(pool.CanAddModifiedFee(maximum));
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(first, 0, 0, 1, 0, false, 0, {}, 0, maximum, {{script, 3}});
+        BOOST_CHECK(!pool.CanAddModifiedFee(1));
+        BOOST_CHECK(stage->HasStagedScriptConflict(script, true));
+        BOOST_CHECK(stage->HasStagedScriptConflict(script, false));
+    }
+    BOOST_CHECK(pool.CanAddModifiedFee(maximum));
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(first, 100, 0, 1, 0, false, 0, {}, 0, 10, {{script, 3}});
+        stage->StageAddition(second, 100, 0, 1, 0, false, 0, {}, 0, 10, {{script, 3}});
+        stage->Apply();
+    }
+    BOOST_CHECK_EQUAL(pool.GetScriptConflicts(script, true).size(), 2);
+    BOOST_CHECK(!pool.PrioritiseTransaction(first->GetHash(), maximum));
+    BOOST_CHECK_EQUAL(pool.GetEntry(first->GetHash())->GetModifiedFee(), 90);
+    pool.removeRecursive(*first, REMOVAL_REASON_DUMMY);
+    BOOST_CHECK(pool.GetScriptConflicts(script, true) == std::set<Txid>{second->GetHash()});
+    BOOST_CHECK(pool.PrioritiseTransaction(second->GetHash(), maximum));
+    BOOST_CHECK(!pool.CanAddModifiedFee(1));
+    pool.removeRecursive(*second, REMOVAL_REASON_DUMMY);
+    BOOST_CHECK(pool.GetScriptConflicts(script, true).empty());
+    BOOST_CHECK(pool.CanAddModifiedFee(maximum));
+    // The global absolute budget deliberately rejects some representable signed
+    // totals and independent singleton clusters; per-cluster limits cannot bound
+    // a replacement diagram spanning several clusters.
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(first, 0, 0, 1, 0, false, 0, {}, 0, maximum / 2);
+        stage->Apply();
+    }
+    BOOST_CHECK(pool.PrioritiseTransaction(first->GetHash(), maximum));
+    BOOST_CHECK_EQUAL(pool.GetEntry(first->GetHash())->GetModifiedFee(), maximum - maximum / 2);
+    BOOST_CHECK(!pool.CanAddModifiedFee(-(maximum / 2 + 1)));
+    BOOST_CHECK(!pool.CanAddModifiedFee(maximum / 2 + 1));
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageRemoval(pool.mapTx.find(first->GetHash()));
+        BOOST_CHECK(!pool.CanAddModifiedFee(maximum)); // Removal reserved until commit.
+    }
+    pool.removeRecursive(*first, REMOVAL_REASON_DUMMY);
+    BOOST_CHECK(pool.CanAddModifiedFee(maximum));
+    BOOST_CHECK(pool.CanAddPolicyWeight(std::numeric_limits<int32_t>::max()));
+    BOOST_CHECK(!pool.CanAddPolicyWeight(int64_t{std::numeric_limits<int32_t>::max()} + 1));
+}
+
+BOOST_AUTO_TEST_CASE(GraphPolicyTrimUsesModifiedFees)
+{
+    auto options = MemPoolOptionsForTest(m_node);
+    bilingual_str error;
+    CTxMemPool pool{options, error};
+    BOOST_REQUIRE(error.empty());
+    LOCK2(cs_main, pool.cs);
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.emplace_back(0, CScript{} << OP_TRUE);
+    const auto penalized = MakeTransactionRef(tx);
+    tx.nLockTime = 1;
+    const auto unpenalized = MakeTransactionRef(tx);
+    {
+        auto stage = pool.GetChangeSet();
+        stage->StageAddition(penalized, 10000, 0, 1, 0, false, 0, {}, 0, 9990);
+        stage->StageAddition(unpenalized, 100, 0, 1, 0, false, 0, {});
+        stage->Apply();
+    }
+    pool.TrimToSize(pool.DynamicMemoryUsage() - 1);
+    BOOST_CHECK(!pool.exists(penalized->GetHash()));
+    BOOST_CHECK(pool.exists(unpenalized->GetHash()));
+    BOOST_CHECK_EQUAL(pool.GetTotalFee(), 100);
+    BOOST_CHECK_EQUAL(pool.GetEntry(unpenalized->GetHash())->GetModifiedFee(), 100);
+}
 
 class MemPoolTest final : public CTxMemPool
 {

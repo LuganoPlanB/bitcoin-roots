@@ -351,7 +351,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
     TryAddToMempool(pool, entry.Fee(low_fee).FromTx(low_tx));
 
     const auto entry_low = pool.GetIter(low_tx->GetHash()).value();
-    const auto low_size = entry_low->GetAdjustedWeight();
+    const auto low_size = static_cast<int32_t>(entry_low->GetAdjustedWeight());
 
     const auto replacement_tx = make_tx(/*inputs=*/ {m_coinbase_txns[0]}, /*output_values=*/ {9 * COIN});
     auto entry_replacement = entry.FromTx(replacement_tx);
@@ -365,7 +365,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         BOOST_CHECK(replace_one.has_value());
         std::vector<FeeFrac> expected_old_chunks{{low_fee, low_size}};
         BOOST_CHECK(replace_one->first == expected_old_chunks);
-        std::vector<FeeFrac> expected_new_chunks{{0, entry_replacement.GetAdjustedWeight()}};
+        std::vector<FeeFrac> expected_new_chunks{{0, static_cast<int32_t>(entry_replacement.GetAdjustedWeight())}};
         BOOST_CHECK(replace_one->second == expected_new_chunks);
     }
 
@@ -378,7 +378,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         BOOST_CHECK(replace_one_fee.has_value());
         std::vector<FeeFrac> expected_old_diagram{{low_fee, low_size}};
         BOOST_CHECK(replace_one_fee->first == expected_old_diagram);
-        std::vector<FeeFrac> expected_new_diagram{{high_fee, entry_replacement.GetAdjustedWeight()}};
+        std::vector<FeeFrac> expected_new_diagram{{high_fee, static_cast<int32_t>(entry_replacement.GetAdjustedWeight())}};
         BOOST_CHECK(replace_one_fee->second == expected_new_diagram);
     }
 
@@ -386,7 +386,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
     const auto high_tx = make_tx(/*inputs=*/ {low_tx}, /*output_values=*/ {995 * CENT});
     TryAddToMempool(pool, entry.Fee(high_fee).FromTx(high_tx));
     const auto entry_high = pool.GetIter(high_tx->GetHash()).value();
-    const auto high_size = entry_high->GetAdjustedWeight();
+    const auto high_size = static_cast<int32_t>(entry_high->GetAdjustedWeight());
 
     {
         auto changeset = pool.GetChangeSet();
@@ -397,7 +397,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         BOOST_CHECK(replace_single_chunk.has_value());
         std::vector<FeeFrac> expected_old_chunks{{low_fee + high_fee, low_size + high_size}};
         BOOST_CHECK(replace_single_chunk->first == expected_old_chunks);
-        std::vector<FeeFrac> expected_new_chunks{{high_fee, entry_replacement.GetAdjustedWeight()}};
+        std::vector<FeeFrac> expected_new_chunks{{high_fee, static_cast<int32_t>(entry_replacement.GetAdjustedWeight())}};
         BOOST_CHECK(replace_single_chunk->second == expected_new_chunks);
     }
 
@@ -410,7 +410,7 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         BOOST_CHECK(replace_cpfp_child.has_value());
         std::vector<FeeFrac> expected_old_chunks{{low_fee + high_fee, low_size + high_size}};
         BOOST_CHECK(replace_cpfp_child->first == expected_old_chunks);
-        std::vector<FeeFrac> expected_new_chunks{{high_fee, entry_replacement.GetAdjustedWeight()}, {low_fee, low_size}};
+        std::vector<FeeFrac> expected_new_chunks{{high_fee, static_cast<int32_t>(entry_replacement.GetAdjustedWeight())}, {low_fee, low_size}};
         BOOST_CHECK(replace_cpfp_child->second == expected_new_chunks);
     }
 
@@ -418,12 +418,12 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
     const auto high_tx_2 = make_tx(/*inputs=*/ {m_coinbase_txns[1]}, /*output_values=*/ {10 * COIN});
     TryAddToMempool(pool, entry.Fee(high_fee).FromTx(high_tx_2));
     const auto entry_high_2 = pool.GetIter(high_tx_2->GetHash()).value();
-    const auto high_size_2 = entry_high_2->GetAdjustedWeight();
+    const auto high_size_2 = static_cast<int32_t>(entry_high_2->GetAdjustedWeight());
 
     const auto low_tx_2 = make_tx(/*inputs=*/ {high_tx_2}, /*output_values=*/ {9 * COIN});
     TryAddToMempool(pool, entry.Fee(low_fee).FromTx(low_tx_2));
     const auto entry_low_2 = pool.GetIter(low_tx_2->GetHash()).value();
-    const auto low_size_2 = entry_low_2->GetAdjustedWeight();
+    const auto low_size_2 = static_cast<int32_t>(entry_low_2->GetAdjustedWeight());
 
     {
         auto changeset = pool.GetChangeSet();

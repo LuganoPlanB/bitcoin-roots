@@ -14,8 +14,9 @@ These upstream build conditions are not evidence that a missing optional
 library or platform was tested. See [portability profiles](roots-build-portability.md).
 
 The source contracts below are preservation requirements, **not a claim that
-Roots behavior has been ported**. L7 implements scoped parsing and local transaction checks; graph accounting,
-replacement/TRUC/reuse and dynamic dust are deferred to L8, and priority/template
+Roots behavior has been ported**. L7 implements scoped parsing and local transaction checks. L8.1 adds native graph
+accounting and replacement/TRUC/reuse controls; L8.2 repairs dynamic dust lifecycle.
+Priority/template
 mining to L9; peer controls/health to L10; sweep, coin-control and per-send
 RBF extensions to L11; read/write config, effective-policy RPC, resource support
 and dormant statistics to L12; identity/desktop and maintenance integration to

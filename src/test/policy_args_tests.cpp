@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -208,6 +209,15 @@ BOOST_AUTO_TEST_CASE(dynamic_dust_grammar_without_runtime_claim)
     const auto position = ParseDustDynamicOpt("1.0000*mempool:01", 1008);
     BOOST_REQUIRE(position);
     BOOST_CHECK_EQUAL(position->first, 1);
+    for (const auto& [value, expected_target, expected_multiplier] : std::vector<std::tuple<std::string, int32_t, int>>{
+             {"off", 0, 3000}, {"0", 0, 3000}, {"1e0*target:2", -2, 1000}, {"2147483.647*mempool:2147483647", INT32_MAX, INT32_MAX}}) {
+        ArgsManager args;
+        args.ForceSetArg("-dustdynamic", value);
+        kernel::MemPoolOptions options;
+        BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), options));
+        BOOST_CHECK_EQUAL(options.dust_relay_target, expected_target);
+        BOOST_CHECK_EQUAL(options.dust_relay_multiplier, expected_multiplier);
+    }
     for (const std::string value : {"", "target:1", "target:2junk", "mempool:+1", "mempool:0", "mempool:2147483648", "0*mempool:1", "1.0001*mempool:1", "junk"}) {
         ArgsManager args;
         args.ForceSetArg("-dustdynamic", value);

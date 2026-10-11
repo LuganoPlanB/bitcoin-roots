@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 
@@ -73,6 +74,7 @@ private:
     const CTransactionRef tx;
     const CAmount nFee;             //!< Cached to avoid expensive parent-transaction lookups
     const int32_t nTxWeight;         //!< ... and avoid recomputing tx weight (also used for GetTxSize())
+    const int32_t m_extra_weight;   //!< Additional local policy weight; actual weight is unchanged
     const size_t nUsageSize;        //!< ... and total memory usage
     const int64_t nTime;            //!< Local time when entering the mempool
     const uint64_t entry_sequence;  //!< Sequence number used to determine whether this transaction is too recent for relay
@@ -87,10 +89,11 @@ public:
     CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,
                     int64_t time, unsigned int entry_height, uint64_t entry_sequence,
                     bool spends_coinbase,
-                    int64_t sigops_cost, LockPoints lp)
+                    int64_t sigops_cost, LockPoints lp, int32_t extra_weight = 0, CAmount dust_penalty = 0, std::map<CScript, unsigned> script_claims = {})
         : tx{tx},
           nFee{fee},
           nTxWeight{GetTransactionWeight(*tx)},
+          m_extra_weight{extra_weight},
           nUsageSize{RecursiveDynamicUsage(tx)},
           nTime{time},
           entry_sequence{entry_sequence},
@@ -98,7 +101,9 @@ public:
           spendsCoinbase{spends_coinbase},
           sigOpCost{sigops_cost},
           m_modified_fee{nFee},
-          lockPoints{lp} {}
+          lockPoints{lp},
+          m_dust_penalty{dust_penalty},
+          m_script_claims{std::move(script_claims)} {}
 
     CTxMemPoolEntry& operator=(const CTxMemPoolEntry&) = delete;
     CTxMemPoolEntry(CTxMemPoolEntry&&) = default;
@@ -109,16 +114,22 @@ public:
     const CAmount& GetFee() const { return nFee; }
     int32_t GetTxSize() const
     {
-        return GetVirtualTransactionSize(nTxWeight, sigOpCost, ::nBytesPerSigOp);
+        return GetVirtualTransactionSize(int64_t{nTxWeight} + m_extra_weight, sigOpCost, ::nBytesPerSigOp);
     }
-    int32_t GetAdjustedWeight() const { return GetSigOpsAdjustedWeight(nTxWeight, sigOpCost, ::nBytesPerSigOp); }
+    int64_t GetAdjustedWeight() const { return GetSigOpsAdjustedWeight(int64_t{nTxWeight} + m_extra_weight, sigOpCost, ::nBytesPerSigOp); }
+    int32_t GetExtraWeight() const { return m_extra_weight; }
     int32_t GetTxWeight() const { return nTxWeight; }
     std::chrono::seconds GetTime() const { return std::chrono::seconds{nTime}; }
     unsigned int GetHeight() const { return entryHeight; }
     uint64_t GetSequence() const { return entry_sequence; }
     int64_t GetSigOpCost() const { return sigOpCost; }
     CAmount GetModifiedFee() const { return m_modified_fee; }
-    size_t DynamicMemoryUsage() const { return nUsageSize; }
+    size_t DynamicMemoryUsage() const
+    {
+        size_t usage{nUsageSize + memusage::DynamicUsage(m_script_claims)};
+        for (const auto& [script, claims] : m_script_claims) usage += RecursiveDynamicUsage(script);
+        return usage;
+    }
     const LockPoints& GetLockPoints() const { return lockPoints; }
 
     // Updates the modified fees with descendants/ancestors.
@@ -134,6 +145,10 @@ public:
     }
 
     bool GetSpendsCoinbase() const { return spendsCoinbase; }
+
+    const CAmount m_dust_penalty; //!< Admission-time deficit; dynamic changes do not reprice entries
+    // Bit 1: spent; bit 2: created. Full scripts avoid hash collisions.
+    const std::map<CScript, unsigned> m_script_claims;
 
     mutable size_t idx_randomized; //!< Index in mempool's txns_randomized
 };

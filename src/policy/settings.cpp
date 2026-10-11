@@ -9,5 +9,4 @@
 
 unsigned int nBytesPerSigOp = DEFAULT_BYTES_PER_SIGOP;
 
-unsigned int g_script_size_policy_limit = DEFAULT_SCRIPT_SIZE_POLICY_LIMIT;
 unsigned int nBytesPerSigOpStrict = DEFAULT_BYTES_PER_SIGOP_STRICT;

@@ -21,6 +21,11 @@
 #include <validation.h>
 #include <validationinterface.h>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
+#include <algorithm>
+#include <array>
+
 using node::BlockAssembler;
 using node::NodeContext;
 using util::ToString;
@@ -462,5 +467,135 @@ FUZZ_TARGET(tx_pool, .init = initialize_tx_pool)
         }
     }
     Finish(fuzzed_data_provider, tx_pool, chainstate);
+}
+FUZZ_TARGET(subdust_fee_penalty, .init = initialize_tx_pool)
+{
+    SeedRandomStateForTest(SeedRand::ZEROS);
+    FuzzedDataProvider provider{buffer.data(), buffer.size()};
+    const auto& node{g_setup->m_node};
+    auto& chainstate{static_cast<DummyChainState&>(node.chainman->ActiveChainstate())};
+    SetMockTime(chainstate.m_chain.Tip()->GetMedianTimePast() + 1);
+
+    using Wide = boost::multiprecision::int128_t;
+    const auto clamp_amount = [](Wide amount) -> CAmount {
+        return std::clamp(amount, Wide{INT64_MIN}, Wide{INT64_MAX}).convert_to<CAmount>();
+    };
+    // All these outputs are below 1,000 bytes including the spend estimate.
+    // Thus an arbitrary nonnegative int64 rate has a representable threshold.
+    // Larger scripts/rates require a separate threshold-overflow decision.
+    const std::array<CScript, 5> scripts{
+        CScript{} << OP_1 << std::vector<unsigned char>(32, 1),
+        CScript{} << OP_0 << std::vector<unsigned char>(20, 1),
+        CScript{} << OP_1 << std::vector<unsigned char>{0x4e, 0x73},
+        CScript{} << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20, 1) << OP_EQUALVERIFY << OP_CHECKSIG,
+        CScript{} << OP_RETURN << std::vector<unsigned char>(16, 1),
+    };
+    const CAmount rate{provider.ConsumeIntegralInRange<CAmount>(0, INT64_MAX)};
+    const CAmount fee{provider.ConsumeIntegralInRange<CAmount>(0, 1'000'000)};
+    const CAmount delta{provider.ConsumeIntegralInRange<CAmount>(-MAX_MONEY, MAX_MONEY)};
+    CMutableTransaction mutable_tx;
+    mutable_tx.vin.emplace_back(g_outpoints_coinbase_init_mature.front());
+    mutable_tx.vin[0].scriptWitness.stack = {WITNESS_STACK_ELEM_OP_TRUE};
+    CAmount output_value{0};
+    const auto output_count{provider.ConsumeIntegralInRange<unsigned>(1, 16)};
+    for (unsigned i{0}; i < output_count; ++i) {
+        const CAmount value{provider.ConsumeIntegralInRange<CAmount>(0, 1000)};
+        mutable_tx.vout.emplace_back(value, provider.PickValueInArray(scripts));
+        output_value += value;
+    }
+    mutable_tx.vout.emplace_back(50 * COIN - fee - output_value, P2WSH_OP_TRUE);
+    const auto tx{MakeTransactionRef(mutable_tx)};
+
+    Wide deficit{0};
+    for (const auto& output : tx->vout) {
+        CAmount threshold{0};
+        if (!output.scriptPubKey.IsUnspendable()) {
+            int witness_version;
+            std::vector<unsigned char> program;
+            const auto bytes{GetSerializeSize(output) + (output.scriptPubKey.IsWitnessProgram(witness_version, program) ? 67 : 148)};
+            threshold = ((Wide{rate} * bytes + 999) / 1000).convert_to<CAmount>();
+        }
+        Assert(GetDustThreshold(output, CFeeRate{rate}) == threshold);
+        deficit += std::max<CAmount>(0, threshold - output.nValue);
+    }
+    const CAmount penalty{clamp_amount(deficit)};
+    const auto previous_mempool{chainstate.GetMempool()};
+    for (const bool enabled : {false, true}) {
+        auto options{MemPoolOptionsForTest(node)};
+        options.require_standard = false;
+        options.datacarrier_fullcount = false;
+        options.accept_non_std_datacarrier = true;
+        options.subdustfeepenalty = enabled;
+        options.dust_relay_feerate = CFeeRate{rate};
+        options.min_relay_feerate = CFeeRate{1000};
+        options.check_ratio = 0;
+        bilingual_str error;
+        CTxMemPool pool{options, error};
+        Assert(error.empty());
+        chainstate.SetMempool(&pool);
+        pool.PrioritiseTransaction(tx->GetHash(), delta);
+        const CAmount modified{clamp_amount(Wide{fee} + delta - (enabled ? penalty : 0))};
+        const auto result{WITH_LOCK(cs_main, return AcceptToMemoryPool(chainstate, tx, GetTime(), /*bypass_limits=*/false, /*test_accept=*/false))};
+        // These valid v2 fixtures have only the relay floor as an admission gate.
+        Assert((result.m_result_type == MempoolAcceptResult::ResultType::VALID) == (modified >= GetVirtualTransactionSize(*tx)));
+        if (result.m_result_type == MempoolAcceptResult::ResultType::VALID) {
+            LOCK(pool.cs);
+            const auto entry{Assert(pool.GetEntry(tx->GetHash()))};
+            Assert(entry->GetFee() == fee);
+            Assert(entry->GetModifiedFee() == modified);
+            Assert(pool.GetMainChunkFeerate(*entry).fee == modified);
+            Assert(pool.CalculateAncestorData(*entry) == std::make_tuple(size_t{1}, static_cast<size_t>(entry->GetTxSize()), modified));
+        } else {
+            Assert(result.m_state.GetRejectReason() == "min relay fee not met");
+        }
+        node.validation_signals->SyncWithValidationInterfaceQueue();
+        chainstate.SetMempool(previous_mempool);
+    }
+}
+FUZZ_TARGET(dynamic_dust_fee)
+{
+    FuzzedDataProvider provider{buffer.data(), buffer.size()};
+    const CAmount fee{provider.ConsumeIntegral<CAmount>()};
+    const int32_t size{provider.ConsumeIntegralInRange<int32_t>(1, INT32_MAX)};
+    const int multiplier{provider.ConsumeIntegralInRange<int>(1, INT32_MAX)};
+    using Wide = boost::multiprecision::int128_t;
+    const Wide maximum{std::numeric_limits<CAmount>::max()};
+    const Wide minimum{std::numeric_limits<CAmount>::min()};
+    const Wide product{Wide{fee} * 1000};
+    Wide per_kvb{product / size};
+    if (product < 0 && product % size != 0) --per_kvb;
+    per_kvb = std::max(minimum, std::min(maximum, per_kvb));
+    const CFeeRate estimate{fee, size};
+    Assert(estimate.GetFeePerK() == static_cast<CAmount>(per_kvb));
+    const Wide scaled{std::max(Wide{0}, per_kvb) * multiplier / 1000};
+    Assert(ScaleDustFee(estimate, multiplier).GetFeePerK() == static_cast<CAmount>(std::min(maximum, scaled)));
+}
+
+FUZZ_TARGET(carrier_policy_weight)
+{
+    SeedRandomStateForTest(SeedRand::ZEROS);
+    FuzzedDataProvider provider{buffer.data(), buffer.size()};
+    const unsigned int cost{provider.ConsumeIntegral<unsigned int>()};
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    uint64_t data_bytes{0};
+    const auto outputs{provider.ConsumeIntegralInRange<unsigned>(1, 16)};
+    for (unsigned i{0}; i < outputs; ++i) {
+        const auto bytes{provider.ConsumeBytes<unsigned char>(provider.ConsumeIntegralInRange<unsigned>(0, 4096))};
+        const CScript script{CScript{} << OP_RETURN << bytes};
+        data_bytes += script.size();
+        tx.vout.emplace_back(0, script);
+    }
+    CCoinsView view;
+    CCoinsViewCache cache{&view};
+    const auto ref{MakeTransactionRef(tx)};
+    const uint64_t extra{cost > WITNESS_SCALE_FACTOR ? data_bytes * (cost - WITNESS_SCALE_FACTOR) : 0};
+    const auto expected{static_cast<int32_t>(std::min<uint64_t>(extra, INT32_MAX))};
+    Assert(CalculateExtraTxWeight(*ref, cache, cost) == expected);
+    const CTxMemPoolEntry entry{ref, 123, 0, 1, 0, false, 0, {}, expected};
+    Assert(entry.GetFee() == 123);
+    Assert(entry.GetTxWeight() == GetTransactionWeight(*ref));
+    Assert(entry.GetAdjustedWeight() == GetTransactionWeight(*ref) + int64_t{expected});
+    Assert(entry.GetTxSize() == (entry.GetAdjustedWeight() + 3) / 4);
 }
 } // namespace

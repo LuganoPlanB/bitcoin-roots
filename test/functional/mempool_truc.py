@@ -649,8 +649,14 @@ class MempoolTRUC(BitcoinTestFramework):
             assert_equal(result_truc["package_msg"], "success")
 
             result_non_truc = node.submitpackage([tx_v2_0fee_parent["hex"], tx_v2_child["hex"]], maxfeerate=0)
-            assert_equal(result_non_truc["package_msg"], "success")
-            self.check_mempool([tx_v2_0fee_parent["txid"], tx_v2_child["txid"], tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
+            if minrelayfeerate > 0:
+                # Roots retains the individual relay floor for non-TRUC parents.
+                assert_equal(result_non_truc["package_msg"], "transaction failed")
+                assert "min relay fee not met" in result_non_truc["tx-results"][tx_v2_0fee_parent["wtxid"]]["error"]
+                self.check_mempool([tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
+            else:
+                assert_equal(result_non_truc["package_msg"], "success")
+                self.check_mempool([tx_v2_0fee_parent["txid"], tx_v2_child["txid"], tx_v3_0fee_parent["txid"], tx_v3_child["txid"]])
 
 
     def run_test(self):

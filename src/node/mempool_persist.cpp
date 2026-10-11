@@ -196,7 +196,11 @@ bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path, FopenFn mock
         for (const auto& i : vinfo) {
             file << TX_WITH_WITNESS(*(i.tx));
             file << int64_t{count_seconds(i.m_time)};
-            file << int64_t{i.nFeeDelta};
+            // Modified fees include the immutable admission-time dust deficit.
+            // Persist only operator deltas; admission recomputes its own deficit
+            // from the live dust floor/rate when these transactions are loaded.
+            const auto delta = mapDeltas.find(i.tx->GetHash());
+            file << int64_t{delta == mapDeltas.end() ? 0 : delta->second};
             mapDeltas.erase(i.tx->GetHash());
         }
 

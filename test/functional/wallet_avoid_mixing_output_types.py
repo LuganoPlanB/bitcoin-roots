@@ -114,12 +114,16 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
         self.extra_args = [
             [
                 "-addresstype=bech32",
+                "-rejectparasites=0",
             ],
             [
                 "-addresstype=p2sh-segwit",
                 "-txindex",
+                "-rejectparasites=0",
             ],
         ]
+        # Randomized wallet locktime can hit 21; isolate input grouping from
+        # the Roots local marker filter.
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -164,6 +168,9 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             tx = self.make_payment(
                 A, B, v, random.choice(ADDRESS_TYPES)
             )
+            # B submits locally; ensure A receives the payment before mining it.
+            # Otherwise the final mixed payment can depend on unconfirmed change.
+            self.sync_mempools()
             self.generate(A, 1)
             assert is_same_type(B, tx)
 

@@ -341,7 +341,7 @@ public:
     CFeeRate getDustRelayFee() override
     {
         if (!m_context->mempool) return CFeeRate{DUST_RELAY_TX_FEE};
-        return m_context->mempool->m_opts.dust_relay_feerate;
+        return m_context->mempool->GetDustRelayFee();
     }
     UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) override
     {
@@ -751,7 +751,7 @@ public:
     CFeeRate relayDustFee() override
     {
         if (!m_node.mempool) return CFeeRate{DUST_RELAY_TX_FEE};
-        return m_node.mempool->m_opts.dust_relay_feerate;
+        return m_node.mempool->GetDustRelayFee();
     }
     bool havePruned() override
     {

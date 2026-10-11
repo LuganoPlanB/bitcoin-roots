@@ -270,6 +270,13 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         }
     }
 
+    if (const auto value = argsman.GetArg("-datacarriercost")) {
+        mempool_opts.weight_per_data_byte = *ParseDataCarrierCost(*value);
+    }
+    mempool_opts.subdustfeepenalty = argsman.GetBoolArg("-subdustfeepenalty", mempool_opts.subdustfeepenalty);
+    const auto reuse = argsman.GetArg("-spkreuse", "allow");
+    mempool_opts.reject_spk_reuse = reuse != "allow" && !argsman.GetBoolArg("-spkreuse", false);
+
     mempool_opts.minrelaycoinblocks = argsman.GetIntArg("-minrelaycoinblocks", 0);
     mempool_opts.minrelaymaturity = argsman.GetIntArg("-minrelaymaturity", 0);
     mempool_opts.maxtxlegacysigops = argsman.GetIntArg("-maxtxlegacysigops", mempool_opts.maxtxlegacysigops);
@@ -302,6 +309,87 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
 
     mempool_opts.acceptunknownwitness = argsman.GetBoolArg("-acceptunknownwitness", mempool_opts.acceptunknownwitness);
 
+    if (argsman.IsArgSet("-mempoolreplacement") || argsman.IsArgSet("-mempoolfullrbf")) {
+        // Generally, mempoolreplacement overrides mempoolfullrbf, but the latter is used to infer intent in some cases
+        std::optional<bool> optin_flag;
+        bool fee_flag{false};
+        if (argsman.GetBoolArg("-mempoolreplacement", false)) {
+            fee_flag = true;
+        } else {
+            for (auto& opt : util::SplitString(argsman.GetArg("-mempoolreplacement", ""), ",+")) {
+                if (opt == "optin") {
+                    optin_flag = true;
+                } else if (opt == "-optin") {
+                    optin_flag = false;
+                } else if (opt == "fee") {
+                    fee_flag = true;
+                }
+            }
+        }
+        if (optin_flag.value_or(false)) {
+            // "optin" is explicitly specified
+            mempool_opts.rbf_policy = RBFPolicy::OptIn;
+        } else if (argsman.GetBoolArg("-mempoolfullrbf", false)) {
+            const bool mempoolreplacement_false{argsman.IsArgSet("-mempoolreplacement") && !(fee_flag || optin_flag.has_value())};
+            if (mempoolreplacement_false) {
+                // This is a contradiction, but override rather than error
+                mempool_opts.rbf_policy = RBFPolicy::Never;
+            } else {
+                mempool_opts.rbf_policy = RBFPolicy::Always;
+            }
+        } else if (!optin_flag.value_or(true)) {
+            // "-optin" is explicitly specified
+            mempool_opts.rbf_policy = fee_flag ? RBFPolicy::Always : RBFPolicy::Never;
+        } else if (fee_flag) {
+            // Just "fee" by itself
+            if (!argsman.GetBoolArg("-mempoolfullrbf", true)) {
+                mempool_opts.rbf_policy = RBFPolicy::OptIn;
+            } else {
+                // Fallback to default, unless it's been changed to Never
+                if (mempool_opts.rbf_policy == RBFPolicy::Never) {
+                    mempool_opts.rbf_policy = RBFPolicy::Always;
+                }
+            }
+        } else if (!argsman.IsArgSet("-mempoolreplacement")) {
+            // mempoolfullrbf is always explicitly false here
+            // Fallback to default, as long as it isn't Always
+            if (mempool_opts.rbf_policy == RBFPolicy::Always) {
+                mempool_opts.rbf_policy = RBFPolicy::OptIn;
+            }
+        } else {
+            // mempoolreplacement is explicitly false here
+            mempool_opts.rbf_policy = RBFPolicy::Never;
+        }
+    }
+
+    if (argsman.IsArgSet("-mempooltruc")) {
+        std::optional<bool> accept_flag, enforce_flag;
+        if (argsman.GetBoolArg("-mempooltruc", false)) {
+            enforce_flag = true;
+        }
+        for (auto& opt : util::SplitString(argsman.GetArg("-mempooltruc", ""), ",+")) {
+            if (opt == "optin" || opt == "enforce") {
+                enforce_flag = true;
+            } else if (opt == "-optin" || opt == "-enforce") {
+                enforce_flag = false;
+            } else if (opt == "accept") {
+                accept_flag = true;
+            } else if (opt == "reject" || opt == "0") {
+                accept_flag = false;
+            }
+        }
+
+        if (accept_flag && !*accept_flag) {  // reject
+            mempool_opts.truc_policy = TRUCPolicy::Reject;
+        } else if (enforce_flag && *enforce_flag) {  // enforce
+            mempool_opts.truc_policy = TRUCPolicy::Enforce;
+        } else if ((!accept_flag) && !enforce_flag) {
+            // nothing specified, leave at default
+        } else {  // accept or -enforce
+            mempool_opts.truc_policy = TRUCPolicy::Accept;
+        }
+    }
+
     if (argsman.IsArgSet("-permitephemeral")) {
         ApplyPermitEphemeralOption(argsman.GetSetting("-permitephemeral"), mempool_opts);
     }
@@ -310,6 +398,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         // additionally validate against the initialized estimator's horizon.
         const auto parsed = ParseDustDynamicOpt(*value, 1008);
         if (!parsed) return util::Error{strprintf(_("Invalid mode for dustdynamic: %s (value: '%s'; expected off or [multiplier*]target:blocks or [multiplier*]mempool:kvB)"), util::ErrorString(parsed), *value)};
+        std::tie(mempool_opts.dust_relay_target, mempool_opts.dust_relay_multiplier) = parsed.value();
     }
 
     mempool_opts.persist_v1_dat = argsman.GetBoolArg("-persistmempoolv1", mempool_opts.persist_v1_dat);

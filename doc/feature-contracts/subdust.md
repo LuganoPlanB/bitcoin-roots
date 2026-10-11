@@ -1,9 +1,65 @@
 # Sub-dust effective-fee contract
 
-**v31 candidate status: deferred to L8 graph policy.** This preserved contract describes the
-accepted 30.3 source, including its documented gaps; the foundation does not
-implement its Roots controls or RPC fields. Source code/test paths below refer
-to `10d772eb7f4b00b5193428a0dde4c06558d6c297`, not current candidate behavior.
+**v31 candidate status: native graph accounting implemented in L8.1.**
+The source contract below remains the preservation reference. Admission stores
+an immutable dust deficit and carrier weight on each entry; actual fees and
+transaction weight remain separate. Staging receives the final modified fee
+before graph insertion. Native graph fee updates, replacement diagrams, block
+removal, reorg dependency discovery and trimming use these same entry values.
+Dynamic dust lifecycle is repaired in L8.2; priority selection and joint
+mining-policy combinations remain L9. Runtime-config precedence remains L12.
+
+Dynamic dust updates are node-owned: one task is registered after the final
+successful chainstate load, updates immediately and every 15 minutes, and is
+stopped/joined before the final mempool or estimator is destroyed. Failed/retried
+constructors register no callbacks. The live rate and standardness snapshots
+share the mempool lock. Updating the rate does not reprice resident entries;
+new admission captures its own immutable deficit. Wallet dust queries and
+ephemeral checks use the same published rate.
+
+`off` remains the default. Target mode uses the initialized long-horizon raw
+estimate at success threshold 0.8; unavailable/zero estimates fall back to the
+configured dustrelayfee floor. Mempool mode walks native chunk/topological order
+to the configured decimal-kvB position and uses that entry's actual fee divided
+by its policy vsize, preserving the source boundary units and fee meaning.
+An empty/short mempool also falls back to the floor. Scaling first quantizes the
+estimate to sat/kvB, applies the thousandths multiplier with floor rounding, and
+saturates at INT64_MAX without overflowing an intermediate multiplication.
+These lifecycle/fallback/boundary semantics repair the documented source gaps.
+
+The v31 adaptation makes numerical limits explicit. Fee-rate evaluation
+saturates an unrepresentable signed-64-bit quotient; output thresholds then
+saturate at `INT64_MAX`, followed by the existing deficit/subtraction saturation.
+The graph reserves the sum of absolute modified fees across resident and staged
+entries up to `INT64_MAX`, and adjusted weight up to `INT32_MAX`. Pending removals
+remain reserved until commit. Out-of-budget admission fails locally with
+`mempool-fee-overflow` or `too-large-cluster`; a resident fee delta that exhausts
+the budget fails without changing either the entry, graph or persisted delta.
+This conservative bound is an adaptation to native graph and diagram storage,
+not a consensus limit or a change to actual transaction fees. It can reject
+extreme replacement proposals even if the final graph alone would fit. The bound
+is global, not per cluster: it also rejects cancelling positive/negative fees
+whose absolute sum exceeds the limit, and independent clusters whose individual
+fees fit but whose combined absolute fees do not. These are representable
+combinations, not inherently overflowing transactions. Per-cluster bounds alone
+would leave multi-cluster replacement diagrams and their cumulative `FeeFrac`
+arithmetic unprotected; preserving those extremes requires a separate widening
+of native graph arithmetic. This adapter deliberately reserves main and staged
+states conservatively rather than widening native storage.
+The existing local sigop-cost ceiling is checked before policy multiplication;
+an extreme bytespersigop setting whose vsize exceeds CFeeRate's int32 domain is
+rejected before narrowing. The sigop fixture verifies graceful local rejection
+and acceptance of the same consensus-valid transaction in a block.
+`amount_tests/FeeRateSaturatedEvaluation` and
+`mempool_tests/GraphPolicyBudgetsAndReuseClaims` cover these limits.
+
+`mempool_tests/GraphPolicyAccounting` checks staging/rollback, fee deltas,
+block removal and reorg dependency restoration against native diagrams.
+`mempool_subdust_fee_penalty.py` retains source fee, carrier, package/TRUC,
+replacement and actual-reward fixtures; its priority-area portion is explicitly
+owned by L9. `subdust_fee_penalty` retains L5's wide-integer admission oracle;
+`carrier_policy_weight` independently checks output-carrier arithmetic and
+entry sizes through the extra-weight clamp.
 [The port review](../roots-v31-port-review.md) records ownership and current gates.
 
 Stable ID: **policy-subdust**. Depends on **policy-dust** and the shared local
