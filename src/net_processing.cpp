@@ -1001,6 +1001,7 @@ private:
     std::vector<std::pair<Wtxid, CTransactionRef>> vExtraTxnForCompact GUARDED_BY(g_msgproc_mutex);
     /** Offset into vExtraTxnForCompact to insert the next tx */
     size_t vExtraTxnForCompactIt GUARDED_BY(g_msgproc_mutex) = 0;
+    size_t m_extra_tx_memusage GUARDED_BY(g_msgproc_mutex){0};
 
     /** Check whether the last unknown block a peer advertised is not yet known. */
     void ProcessBlockAvailability(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -1615,6 +1616,10 @@ void PeerManagerImpl::InitializeNode(const CNode& node, ServiceFlags our_service
         our_services = static_cast<ServiceFlags>(our_services | NODE_BLOOM);
     }
 
+    if (node.HasPermission(NetPermissionFlags::BlockFilters)) {
+        our_services = static_cast<ServiceFlags>(our_services | NODE_COMPACT_FILTERS);
+    }
+
     PeerRef peer = std::make_shared<Peer>(nodeid, our_services, node.IsInboundConn());
     {
         LOCK(m_peer_mutex);
@@ -1793,6 +1798,7 @@ bool PeerManagerImpl::GetNodeStateStats(NodeId nodeid, CNodeStateStats& stats) c
         const CNodeState* state = State(nodeid);
         if (state == nullptr)
             return false;
+        stats.m_last_block_announcement = std::chrono::seconds{state->m_last_block_announcement};
         stats.nSyncHeight = state->pindexBestKnownBlock ? state->pindexBestKnownBlock->nHeight : -1;
         stats.nCommonHeight = state->pindexLastCommonBlock ? state->pindexLastCommonBlock->nHeight : -1;
         for (const QueuedBlock& queue : state->vBlocksInFlight) {
@@ -1839,6 +1845,7 @@ bool PeerManagerImpl::GetNodeStateStats(NodeId nodeid, CNodeStateStats& stats) c
         }
     }
     stats.time_offset = peer->m_time_offset;
+    stats.m_misbehavior_score = WITH_LOCK(peer->m_misbehavior_mutex, return peer->m_should_discourage) ? 100 : 0;
 
     return true;
 }
@@ -1884,12 +1891,26 @@ std::vector<CTransactionRef> PeerManagerImpl::AbortPrivateBroadcast(const uint25
 
 void PeerManagerImpl::AddToCompactExtraTransactions(const CTransactionRef& tx)
 {
-    if (m_opts.max_extra_txs <= 0)
-        return;
-    if (!vExtraTxnForCompact.size())
-        vExtraTxnForCompact.resize(m_opts.max_extra_txs);
-    vExtraTxnForCompact[vExtraTxnForCompactIt] = std::make_pair(tx->GetWitnessHash(), tx);
-    vExtraTxnForCompactIt = (vExtraTxnForCompactIt + 1) % m_opts.max_extra_txs;
+    const size_t usage{RecursiveDynamicUsage(*tx)};
+    if (m_opts.max_extra_txs == 0 || m_opts.max_extra_txs_size == 0 ||
+        usage >= BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT || usage > m_opts.max_extra_txs_size) return;
+    // Bound the slot allocation as well as transaction storage, even with an extreme count.
+    const size_t slots{std::min<size_t>(m_opts.max_extra_txs, m_opts.max_extra_txs_size / sizeof(vExtraTxnForCompact[0]))};
+    if (slots == 0) return;
+    if (vExtraTxnForCompact.empty()) vExtraTxnForCompact.resize(slots);
+    auto& entry = vExtraTxnForCompact[vExtraTxnForCompactIt];
+    if (entry.second) m_extra_tx_memusage -= RecursiveDynamicUsage(*entry.second);
+    entry = {};
+    vExtraTxnForCompactIt = (vExtraTxnForCompactIt + 1) % slots;
+    // Evict before adding to avoid overflowing size_t on 32-bit platforms.
+    while (m_extra_tx_memusage > m_opts.max_extra_txs_size - usage) {
+        auto& oldest = vExtraTxnForCompact[vExtraTxnForCompactIt];
+        if (oldest.second) m_extra_tx_memusage -= RecursiveDynamicUsage(*oldest.second);
+        oldest = {};
+        vExtraTxnForCompactIt = (vExtraTxnForCompactIt + 1) % slots;
+    }
+    entry = std::make_pair(tx->GetWitnessHash(), tx);
+    m_extra_tx_memusage += usage;
 }
 
 void PeerManagerImpl::Misbehaving(Peer& peer, const std::string& message)
@@ -1972,6 +1993,11 @@ util::Expected<void, std::string> PeerManagerImpl::FetchBlock(NodeId peer_id, co
 
     LOCK(cs_main);
 
+    // Reject duplicates before removing in-flight tracking for this peer.
+    for (auto range = mapBlocksInFlight.equal_range(block_index.GetBlockHash()); range.first != range.second; ++range.first) {
+        if (range.first->second.first == peer_id) return util::Unexpected{"Already requested from this peer"};
+    }
+
     // Forget about all prior requests
     RemoveBlockRequest(block_index.GetBlockHash(), std::nullopt);
 
@@ -2006,7 +2032,8 @@ PeerManagerImpl::PeerManagerImpl(CConnman& connman, AddrMan& addrman,
                                  BanMan* banman, ChainstateManager& chainman,
                                  CTxMemPool& pool, node::Warnings& warnings, Options opts)
     : m_rng{opts.deterministic_rng},
-      m_fee_filter_rounder{CFeeRate{DEFAULT_MIN_RELAY_TX_FEE}, m_rng},
+      // Retain Roots' fee-filter bucket spacing across its low/high incremental fee profiles.
+      m_fee_filter_rounder{CFeeRate{pool.m_opts.incremental_relay_feerate.GetFeePerK() < 1000 ? 100 : 1000}, m_rng},
       m_chainparams(chainman.GetParams()),
       m_connman(connman),
       m_addrman(addrman),
@@ -5627,7 +5654,7 @@ void PeerManagerImpl::MaybeSendSendHeaders(CNode& node, Peer& peer)
 
 void PeerManagerImpl::MaybeSendFeefilter(CNode& pto, Peer& peer, std::chrono::microseconds current_time)
 {
-    if (m_opts.ignore_incoming_txs) return;
+    if (m_opts.ignore_incoming_txs || !m_opts.send_feefilter) return;
     if (pto.GetCommonVersion() < FEEFILTER_VERSION) return;
     // peers with the forcerelay permission should not filter txs to us
     if (pto.HasPermission(NetPermissionFlags::ForceRelay)) return;

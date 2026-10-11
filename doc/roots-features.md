@@ -255,34 +255,51 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   individual extras; provides `forceinbound` (implies `noban`) and explicit
   compact-filter permissions; permits subnet disconnect; and can disable
   outbound v1 on clearnet (`v2onlyclearnet`, default false). Default fee filters
-  are enabled. Bloom service is not globally advertised by default, with
+  are enabled; quantization uses a 100 sat/kvB seed below 1,000 sat/kvB
+  incremental fee, and a 1,000 sat/kvB seed otherwise. Bloom service is not globally advertised by default, with
   implicit loopback permission when not explicitly disabled. Retain inactivity
   limits, protected outbound/manual peers, bounded address scoring/cache behavior,
   duplicate manual-connection checks and block-fetch safeguards. Tor binds must
   not accidentally grant clearnet whitelist permission; SOCKS credentials must
-  not be logged. See networking (`src/net.cpp`, source reference),
-  processing (`src/net_processing.cpp`, source reference), permissions (`src/net_permissions.cpp`, source reference)
-  and proxy (`src/netbase.cpp`, source reference). Acceptance:
-  p2p_compactblocks_extratxs.py (`test/functional/p2p_compactblocks_extratxs.py`, source reference),
-  p2p_permissions.py (`test/functional/p2p_permissions.py`, source reference),
-  p2p_disconnect_ban.py (`test/functional/p2p_disconnect_ban.py`, source reference),
-  p2p_eviction.py (`test/functional/p2p_eviction.py`, source reference),
-  p2p_filter.py (`test/functional/p2p_filter.py`, source reference) and
-  p2p_invalid_messages.py (`test/functional/p2p_invalid_messages.py`, source reference), each
-  `run_test`. Gap: the full new permission/memory/transport/Tor-bind combination
-  matrix and platform-specific CPU measurement.
-- **peer-health:** keep sorting/selection and current connection facts in the
-  existing peer table/detail pane. Missing state must reset to unavailable,
-  never another peer's stale values. Node RPC adds last block announcement,
-  forced-inbound state, deprecated misbehavior score and optional CPU load in
-  per mille of connection duration; omit CPU load when not measured or duration
-  is unsuitable. No history retention or content/activity feed. See
-  peer RPC (`src/rpc/net.cpp`, source reference), peer table (`src/qt/peertablemodel.cpp`, source reference) and
-  details (`src/qt/rpcconsole.cpp`, source reference). Acceptance:
-  apptests.cpp (`src/qt/test/apptests.cpp`, source reference) `consoleTests` resets unavailable
-  details; rpc_net.py (`test/functional/rpc_net.py`, source reference) `run_test` covers RPC.
-  Gap: visual checks at 1280×800 and 1920×1080, 100%/150% font scale, populated
-  sorting/selection and refresh; these were not executed by the headless baseline.
+  not be logged. See [networking](/src/net.cpp),
+  [processing](/src/net_processing.cpp), [permissions](/src/net_permissions.cpp)
+  and [proxy](/src/netbase.cpp). Acceptance:
+  [p2p_compactblocks_extratxs.py](/test/functional/p2p_compactblocks_extratxs.py),
+  [p2p_permissions.py](/test/functional/p2p_permissions.py),
+  [p2p_disconnect_ban.py](/test/functional/p2p_disconnect_ban.py),
+  [p2p_eviction.py](/test/functional/p2p_eviction.py),
+  [p2p_filter.py](/test/functional/p2p_filter.py) and
+  [p2p_invalid_messages.py](/test/functional/p2p_invalid_messages.py), each
+  `run_test`. Candidate boundaries additionally use
+  [p2p_roots_controls.py](/test/functional/p2p_roots_controls.py),
+  [p2p_feefilter.py](/test/functional/p2p_feefilter.py) and
+  [rpc_getblockfrompeer.py](/test/functional/rpc_getblockfrompeer.py).
+  Memory uses four decimal places of MB (100-byte increments); negative values
+  disable and malformed values retain the default, matching source behavior.
+  The cap tracks recursive transaction dynamic usage; slot metadata is separately
+  bounded by that cap. Oversized replacements are excluded as well as rejects.
+  Clearnet uses the source routable IPv4/IPv6 classification: loopback and
+  non-routable addresses remain eligible for v1. Tests redirect routable targets
+  through a local SOCKS server. Gap: exhaustive combinations and non-Linux
+  platform measurements; current-connection CPU reporting belongs to peer-health.
+- **peer-health:** sorting, selection and current connection facts use the
+  existing peer table/detail pane. Missing state resets to unavailable, never
+  another peer's stale values. Persistent table indexes resolve the current row
+  after storage refresh. Node RPC adds last block announcement, forced-inbound
+  state, deprecated misbehavior score (0 or 100 pending discouragement) and
+  optional CPU load in per mille of connection duration. CPU load is omitted
+  when not measured or duration is non-positive; failed/backwards CPU-clock
+  readings are ignored. Measurement uses one scalar per current connection, with
+  no history retention or content/activity feed. See [peer RPC](../src/rpc/net.cpp),
+  [peer table](../src/qt/peertablemodel.cpp) and
+  [details](../src/qt/rpcconsole.cpp). Acceptance:
+  [apptests](../src/qt/test/apptests.cpp) tests empty refresh, unavailable reset and
+  an optional live regtest sorting/selection/refresh profile;
+  [rpc_net.py](../test/functional/rpc_net.py) covers current RPC fields and
+  zero/backwards duration. Native v31 starting-height RPC deprecation is retained.
+  The live GUI profile captures Peers table/detail/unavailable at 1280×800 and
+  1920×1080 with 100%/150% application font scale. Gap: non-Linux visual/CPU
+  measurements and exhaustive timing races.
 
 ### Wallet authorization, signing and spend controls
 

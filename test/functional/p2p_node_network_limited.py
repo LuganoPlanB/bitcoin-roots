@@ -11,6 +11,7 @@ and that it responds to getdata requests for blocks correctly:
 from test_framework.messages import (
     CInv,
     MSG_BLOCK,
+    NODE_BLOOM,
     NODE_NETWORK_LIMITED,
     NODE_P2P_V2,
     NODE_WITNESS,
@@ -123,7 +124,7 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
             expected_services |= NODE_P2P_V2
 
         self.log.info("Check that node has signalled expected services.")
-        assert_equal(node.nServices, expected_services)
+        assert_equal(node.nServices, expected_services | NODE_BLOOM)  # Implicit loopback bloom is per-peer only.
 
         self.log.info("Check that the localservices is as expected.")
         assert_equal(int(self.nodes[0].getnetworkinfo()['localservices'], 16), expected_services)

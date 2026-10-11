@@ -41,7 +41,10 @@ class Warnings;
 static constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
 /** Default number of non-mempool transactions to keep around for block reconstruction. Includes
     orphan, replaced, and rejected transactions. */
-static const uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{100};
+static const uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{32768};
+static constexpr size_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE{10000000};
+static constexpr size_t BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT{100000};
+static constexpr bool DEFAULT_FEEFILTER{true};
 static const bool DEFAULT_PEERBLOOMFILTERS = false;
 static const bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
@@ -51,6 +54,8 @@ static const unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
 static const unsigned int MAX_HEADERS_RESULTS = 2000;
 
 struct CNodeStateStats {
+    std::chrono::seconds m_last_block_announcement{0};
+    int m_misbehavior_score{0}; // Deprecated: 0 or 100 when discouragement is pending.
     int nSyncHeight = -1;
     int nCommonHeight = -1;
     int m_starting_height = -1;
@@ -84,6 +89,8 @@ public:
         //! Number of non-mempool transactions to keep around for block reconstruction. Includes
         //! orphan, replaced, and rejected transactions.
         uint32_t max_extra_txs{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN};
+        size_t max_extra_txs_size{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE};
+        bool send_feefilter{DEFAULT_FEEFILTER};
         //! Whether all P2P messages are captured to disk
         bool capture_messages{false};
         //! Whether or not the internal RNG behaves deterministically (this is

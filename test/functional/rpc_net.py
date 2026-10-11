@@ -107,10 +107,28 @@ class NetTest(BitcoinTestFramework):
         time_now = int(time.time())
         peer_info = [x.getpeerinfo() for x in self.nodes]
         # Verify last_block and last_transaction keys/values.
-        for node, peer, field in product(range(self.num_nodes), range(2), ['last_block', 'last_transaction']):
+        for node, peer, field in product(range(self.num_nodes), range(2), ['last_block', 'last_transaction', 'last_block_announcement']):
             assert field in peer_info[node][peer].keys()
             if peer_info[node][peer][field] != 0:
                 assert_approx(peer_info[node][peer][field], time_now, vspan=60)
+        for info in peer_info:
+            for peer in info:
+                assert_equal(peer["forced_inbound"], False)
+                assert_equal(peer["misbehavior_score"], 0)
+                if "cpu_load" in peer:
+                    assert_greater_than(peer["cpu_load"], 0)
+        # A zero or backwards connection duration cannot produce CPU load.
+        conntime = peer_info[0][0]["conntime"]
+        for mocktime in (conntime, conntime - 1):
+            self.nodes[0].setmocktime(mocktime)
+            assert "cpu_load" not in self.nodes[0].getpeerinfo()[0]
+        if platform.system() == "Linux" and hasattr(time, "CLOCK_THREAD_CPUTIME_ID"):
+            # The supported live CPU clock must report processing, not silently
+            # leave the optional field permanently absent.
+            self.nodes[0].setmocktime(conntime + 1)
+            assert_greater_than(self.nodes[0].getpeerinfo()[0]["cpu_load"], 0)
+        self.nodes[0].setmocktime(0)
+        assert_greater_than(max(peer["last_block_announcement"] for peer in peer_info[0]), 0)
         # check both sides of bidirectional connection between nodes
         # the address bound to on one side will be the source address for the other node
         assert_equal(peer_info[0][0]['addrbind'], peer_info[1][0]['addr'])
@@ -140,6 +158,7 @@ class NetTest(BitcoinTestFramework):
             self.wait_until(lambda: self.nodes[0].getpeerinfo()[no_version_peer_id]["transport_protocol_type"] == "v2")
         self.nodes[0].setmocktime(0)
         peer_info = self.nodes[0].getpeerinfo()[no_version_peer_id]
+        peer_info.pop("cpu_load", None)
         peer_info.pop("addr")
         peer_info.pop("addrbind")
         # The next two fields will vary for v2 connections because we send a rng-based number of decoy messages
@@ -161,12 +180,15 @@ class NetTest(BitcoinTestFramework):
                 "inbound": True,
                 "inflight": [],
                 "last_block": 0,
+                "last_block_announcement": 0,
+                "forced_inbound": False,
+                "misbehavior_score": 0,
                 "last_transaction": 0,
                 "lastrecv": 0 if not self.options.v2transport else no_version_peer_conntime,
                 "lastsend": 0 if not self.options.v2transport else no_version_peer_conntime,
                 "minfeefilter": Decimal("0E-8"),
                 "network": "not_publicly_routable",
-                "permissions": [],
+                "permissions": ["bloomfilter"],
                 "presynced_headers": -1,
                 "relaytxes": False,
                 "inv_to_send": 0,

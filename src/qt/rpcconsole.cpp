@@ -1184,6 +1184,7 @@ void RPCConsole::updateDetailWidget()
         ui->peerSessionId->setVisible(true);
         ui->peerSessionId->setText(QString::fromStdString(stats->nodeStats.m_session_id));
     } else {
+        ui->peerSessionId->clear();
         ui->peerSessionIdLabel->setVisible(false);
         ui->peerSessionId->setVisible(false);
     }
@@ -1198,6 +1199,8 @@ void RPCConsole::updateDetailWidget()
         ui->peerPermissions->setText(permissions.join(" & "));
     }
     ui->peerMappedAS->setText(stats->nodeStats.m_mapped_as != 0 ? QString::number(stats->nodeStats.m_mapped_as) : ts.na);
+
+    resetPeerStateStats();
 
     // This check fails for example if the lock was busy and
     // nodeStateStats couldn't be fetched.
@@ -1216,6 +1219,7 @@ void RPCConsole::updateDetailWidget()
         } else {
             ui->peerCommonHeight->setText(ts.unknown);
         }
+        ui->peerHeight->setText(stats->nodeStateStats.m_starting_height >= 0 ? QString::number(stats->nodeStateStats.m_starting_height) : ts.unknown);
         ui->peerPingWait->setText(GUIUtil::formatPingTime(stats->nodeStateStats.m_ping_wait));
         ui->peerAddrRelayEnabled->setText(stats->nodeStateStats.m_addr_relay_enabled ? ts.yes : ts.no);
         ui->peerAddrProcessed->setText(QString::number(stats->nodeStateStats.m_addr_processed));
@@ -1225,6 +1229,23 @@ void RPCConsole::updateDetailWidget()
 
     ui->hidePeersDetailButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/remove")));
     ui->peersTabRightPanel->show();
+}
+
+void RPCConsole::resetPeerStateStats()
+{
+    // State stats can be unavailable when the non-blocking cs_main acquisition
+    // loses a refresh race. Clear them first so a newly selected peer never
+    // shows state from an earlier selection.
+    ui->timeoffset->setText(ts.na);
+    ui->peerServices->setText(ts.na);
+    ui->peerSyncHeight->setText(ts.unknown);
+    ui->peerCommonHeight->setText(ts.unknown);
+    ui->peerHeight->setText(ts.unknown);
+    ui->peerPingWait->setText(ts.na);
+    ui->peerAddrRelayEnabled->setText(ts.na);
+    ui->peerAddrProcessed->setText(ts.na);
+    ui->peerAddrRateLimited->setText(ts.na);
+    ui->peerRelayTxes->setText(ts.na);
 }
 
 void RPCConsole::resizeEvent(QResizeEvent *event)

@@ -6,6 +6,7 @@
 #ifndef BITCOIN_UTIL_TIME_H
 #define BITCOIN_UTIL_TIME_H
 
+#include <functional>
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
 #include <optional>
@@ -157,5 +158,42 @@ struct timeval MillisToTimeval(int64_t nTimeout);
  * Convert milliseconds to a struct timeval for e.g. select.
  */
 struct timeval MillisToTimeval(std::chrono::milliseconds ms);
+
+/**
+ * Retrieve the CPU time (user + system) spent by the current thread.
+ */
+std::chrono::nanoseconds ThreadCpuTime();
+
+/**
+ * Measure CPU time spent by the current thread.
+ * A clock is started when a CpuTimer is created. When the object is destroyed
+ * the elapsed CPU time is calculated and a callback function is invoked,
+ * providing it the elapsed CPU time.
+ */
+class CpuTimer
+{
+public:
+    using FinishedCB = std::function<void(std::chrono::nanoseconds)>;
+
+    /**
+     * Construct a timer.
+     * @param[in] finished_cb A callback to invoke when this object is destroyed.
+     */
+    CpuTimer(const FinishedCB& finished_cb)
+        : m_start{ThreadCpuTime()},
+          m_finished_cb{finished_cb}
+    {
+    }
+
+    ~CpuTimer()
+    {
+        const auto end{ThreadCpuTime()};
+        if (m_start > 0ns && end >= m_start) m_finished_cb(end - m_start);
+    }
+
+private:
+    const std::chrono::nanoseconds m_start;
+    FinishedCB m_finished_cb;
+};
 
 #endif // BITCOIN_UTIL_TIME_H

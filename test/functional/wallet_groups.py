@@ -29,6 +29,9 @@ class WalletGroupTest(BitcoinTestFramework):
             ["-maxapsfee=0.00002720"],
         ]
 
+        # This wallet grouping fixture may generate the CAT21 reserved locktime.
+        self.extra_args = [args + ["-rejectparasites=0"] for args in self.extra_args]
+
         self.fee_rate = 20  # apply feerate of 20 sats/vB across all nodes
 
         self.rpc_timeout = 480

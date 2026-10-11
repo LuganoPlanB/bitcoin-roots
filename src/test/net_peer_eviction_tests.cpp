@@ -682,4 +682,22 @@ BOOST_AUTO_TEST_CASE(peer_eviction_test)
     }
 }
 
+BOOST_AUTO_TEST_CASE(force_eviction_preserves_unconditional_protection)
+{
+    NodeEvictionCandidate candidate{};
+    candidate.id = 17;
+    candidate.m_conn_type = ConnectionType::INBOUND;
+    BOOST_CHECK(!SelectNodeToEvict({candidate}));
+    BOOST_CHECK_EQUAL(*SelectNodeToEvict({candidate}, true), 17);
+    candidate.m_noban = true;
+    BOOST_CHECK(!SelectNodeToEvict({candidate}, true));
+    candidate.m_noban = false;
+    for (const auto type : {ConnectionType::MANUAL, ConnectionType::OUTBOUND_FULL_RELAY,
+                           ConnectionType::BLOCK_RELAY, ConnectionType::FEELER}) {
+        candidate.m_conn_type = type;
+        BOOST_CHECK(!SelectNodeToEvict({candidate}, true));
+    }
+    BOOST_CHECK(!SelectNodeToEvict({}, true));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

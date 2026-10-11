@@ -57,10 +57,11 @@ int PeerTableModel::columnCount(const QModelIndex& parent) const
 
 QVariant PeerTableModel::data(const QModelIndex& index, int role) const
 {
-    if(!index.isValid())
+    if (!index.isValid() || index.row() >= m_peers_data.size())
         return QVariant();
 
-    CNodeCombinedStats *rec = static_cast<CNodeCombinedStats*>(index.internalPointer());
+    // Refresh swaps the storage; persistent indexes must resolve the current row.
+    auto* rec = const_cast<CNodeCombinedStats*>(&m_peers_data[index.row()]);
 
     const auto column = static_cast<ColumnIndex>(index.column());
     if (role == Qt::DisplayRole) {
@@ -142,7 +143,7 @@ QModelIndex PeerTableModel::index(int row, int column, const QModelIndex& parent
     Q_UNUSED(parent);
 
     if (0 <= row && row < rowCount() && 0 <= column && column < columnCount()) {
-        return createIndex(row, column, const_cast<CNodeCombinedStats*>(&m_peers_data[row]));
+        return createIndex(row, column);
     }
 
     return QModelIndex();
@@ -184,7 +185,9 @@ void PeerTableModel::refresh()
         m_peers_data.swap(new_peers_data);
     }
 
-    const auto top_left = index(0, 0);
-    const auto bottom_right = index(rowCount() - 1, columnCount() - 1);
-    Q_EMIT dataChanged(top_left, bottom_right);
+    if (rowCount() > 0) {
+        const auto top_left = index(0, 0);
+        const auto bottom_right = index(rowCount() - 1, columnCount() - 1);
+        Q_EMIT dataChanged(top_left, bottom_right);
+    }
 }

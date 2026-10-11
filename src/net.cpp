@@ -320,7 +320,7 @@ bool SeenLocal(const CService& addr)
     LOCK(g_maplocalhost_mutex);
     const auto it = mapLocalHost.find(addr);
     if (it == mapLocalHost.end()) return false;
-    ++it->second.nScore;
+    if (it->second.nScore < std::numeric_limits<int>::max()) ++it->second.nScore;
     return true;
 }
 
@@ -440,6 +440,10 @@ CNode* CConnman::ConnectNode(CAddress addrConnect,
     std::unique_ptr<i2p::sam::Session> i2p_transient_session;
 
     for (auto& target_addr: connect_to) {
+        if (!use_v2transport && DisableV1OnClearnet(target_addr.GetNetClass())) {
+            LogDebug(BCLog::NET, "outbound v1 disabled on clearnet\n");
+            continue;
+        }
         if (target_addr.IsValid()) {
             bool use_proxy;
             if (proxy_override.has_value()) {
@@ -511,8 +515,7 @@ CNode* CConnman::ConnectNode(CAddress addrConnect,
         }
 
         NetPermissionFlags permission_flags = NetPermissionFlags::None;
-        std::vector<NetWhitelistPermissions> whitelist_permissions = conn_type == ConnectionType::MANUAL ? vWhitelistedRangeOutgoing : std::vector<NetWhitelistPermissions>{};
-        AddWhitelistPermissionFlags(permission_flags, target_addr, whitelist_permissions);
+        AddWhitelistPermissionFlags(permission_flags, target_addr, vWhitelistedRangeOutgoing);
 
         // Add node
         NodeId id = GetNewNodeId();
@@ -585,6 +588,7 @@ void CConnman::AddWhitelistPermissionFlags(NetPermissionFlags& flags, std::optio
         if (whitelist_relay) NetPermissions::AddFlag(flags, NetPermissionFlags::Relay);
         NetPermissions::AddFlag(flags, NetPermissionFlags::Mempool);
         NetPermissions::AddFlag(flags, NetPermissionFlags::NoBan);
+        NetPermissions::AddFlag(flags, NetPermissionFlags::Addr);
     }
 }
 
@@ -658,6 +662,8 @@ void CNode::CopyStats(CNodeStats& stats)
     stats.addrLocal = addrLocalUnlocked.IsValid() ? addrLocalUnlocked.ToStringAddrPort() : "";
 
     X(m_conn_type);
+    X(m_forced_inbound);
+    stats.m_cpu_time = std::chrono::nanoseconds{m_cpu_time.load()};
 }
 #undef X
 
@@ -1685,7 +1691,7 @@ std::pair<size_t, bool> CConnman::SocketSendData(CNode& node) const
  *   to forge.  In order to partition a node the attacker must be
  *   simultaneously better at all of them than honest peers.
  */
-bool CConnman::AttemptToEvictConnection()
+bool CConnman::AttemptToEvictConnection(bool force)
 {
     std::vector<NodeEvictionCandidate> vEvictionCandidates;
     {
@@ -1713,7 +1719,7 @@ bool CConnman::AttemptToEvictConnection()
             vEvictionCandidates.push_back(candidate);
         }
     }
-    const std::optional<NodeId> node_id_to_evict = SelectNodeToEvict(std::move(vEvictionCandidates));
+    const std::optional<NodeId> node_id_to_evict = SelectNodeToEvict(std::move(vEvictionCandidates), force);
     if (!node_id_to_evict) {
         return false;
     }
@@ -1769,7 +1775,14 @@ void CConnman::CreateNodeFromAcceptedSocket(std::unique_ptr<Sock>&& sock,
 {
     int nInbound = 0;
 
-    const bool inbound_onion = std::find(m_onion_binds.begin(), m_onion_binds.end(), addr_bind) != m_onion_binds.end();
+    const bool inbound_onion = [this, &addr, &addr_bind] {
+        if (!m_onion_binds.empty()) {
+            return std::find(m_onion_binds.begin(), m_onion_binds.end(), addr_bind) != m_onion_binds.end();
+        }
+        if (!m_listenonion || m_normal_binds.empty() || addr_bind != m_normal_binds.front()) return false;
+        // A wildcard first bind shares Tor only with local proxy connections.
+        return !addr_bind.IsBindAny() || addr.IsLocal();
+    }();
 
     // Tor inbound connections do not reveal the peer's actual network address.
     // Therefore do not apply address-based whitelist permissions to them.
@@ -1816,13 +1829,15 @@ void CConnman::CreateNodeFromAcceptedSocket(std::unique_ptr<Sock>&& sock,
         return;
     }
 
+    bool forced{false};
     if (nInbound >= m_max_inbound)
     {
-        if (!AttemptToEvictConnection()) {
+        if (!AttemptToEvictConnection(NetPermissions::HasFlag(permission_flags, NetPermissionFlags::ForceInbound))) {
             // No connection to evict, disconnect the new connection
             LogDebug(BCLog::NET, "failed to find an eviction candidate - connection dropped (full)\n");
             return;
         }
+        forced = true;
     }
 
     NodeId id = GetNewNodeId();
@@ -1851,6 +1866,7 @@ void CConnman::CreateNodeFromAcceptedSocket(std::unique_ptr<Sock>&& sock,
                              CNodeOptions{
                                  .permission_flags = permission_flags,
                                  .prefer_evict = discouraged,
+                                 .forced_inbound = forced,
                                  .recv_flood_size = nReceiveFloodSize,
                                  .use_v2transport = use_v2transport,
                              });
@@ -1951,7 +1967,7 @@ void CConnman::DisconnectNodes()
                 // Add to reconnection list if appropriate. We don't reconnect right here, because
                 // the creation of a connection is a blocking operation (up to several seconds),
                 // and we don't want to hold up the socket handler thread for that long.
-                if (network_active && pnode->m_transport->ShouldReconnectV1()) {
+                if (network_active && pnode->m_transport->ShouldReconnectV1() && !DisableV1OnClearnet(pnode->addr.GetNetClass())) {
                     reconnections_to_add.push_back({
                         .proxy_override = pnode->m_proxy_override,
                         .addr_connect = pnode->addr,
@@ -3172,6 +3188,8 @@ void CConnman::ThreadMessageHandler()
                 if (pnode->fDisconnect)
                     continue;
 
+                CpuTimer timer{[pnode](std::chrono::nanoseconds elapsed) { pnode->m_cpu_time.fetch_add(elapsed.count(), std::memory_order_relaxed); }};
+
                 // Receive messages
                 bool fMoreNodeWork{m_msgproc->ProcessMessages(*pnode, flagInterruptMsgProc)};
                 fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
@@ -3764,12 +3782,14 @@ std::vector<CAddress> CConnman::GetAddresses(CNode& requestor, size_t max_addres
 
 bool CConnman::AddNode(const AddedNodeParams& add)
 {
-    const CService resolved(LookupNumeric(add.m_added_node, GetDefaultPort(add.m_added_node)));
-    const bool resolved_is_valid{resolved.IsValid()};
-
+    const CService resolved{MaybeFlipIPv6toCJDNS(LookupNumeric(add.m_added_node, GetDefaultPort(add.m_added_node)))};
     LOCK(m_added_nodes_mutex);
     for (const auto& it : m_added_node_params) {
-        if (add.m_added_node == it.m_added_node || (resolved_is_valid && resolved == LookupNumeric(it.m_added_node, GetDefaultPort(it.m_added_node)))) return false;
+        if (add.m_added_node == it.m_added_node) return false;
+        if (!resolved.IsValid()) continue;
+        const CService service{MaybeFlipIPv6toCJDNS(LookupNumeric(it.m_added_node, GetDefaultPort(it.m_added_node)))};
+        if (resolved == service) return false;
+        if (resolved.IsCJDNS() && static_cast<CNetAddr>(resolved) == static_cast<CNetAddr>(service)) return false;
     }
 
     m_added_node_params.push_back(add);
@@ -4019,6 +4039,7 @@ CNode::CNode(NodeId idIn,
       m_addr_name{addrNameIn.empty() ? addr.ToStringAddrPort() : addrNameIn},
       m_dest(addrNameIn),
       m_inbound_onion{inbound_onion},
+      m_forced_inbound{node_opts.forced_inbound},
       m_prefer_evict{node_opts.prefer_evict},
       nKeyedNetGroup{nKeyedNetGroupIn},
       m_network_key{network_key},

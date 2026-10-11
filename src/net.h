@@ -227,6 +227,8 @@ public:
     TransportProtocolType m_transport_type;
     /** BIP324 session id string in hex, if any. */
     std::string m_session_id;
+    bool m_forced_inbound{false};
+    std::chrono::nanoseconds m_cpu_time{0};
 };
 
 
@@ -672,6 +674,7 @@ struct CNodeOptions
     std::optional<Proxy> proxy_override = {};
     std::unique_ptr<i2p::sam::Session> i2p_sam_session = nullptr;
     bool prefer_evict = false;
+    bool forced_inbound{false};
     size_t recv_flood_size{DEFAULT_MAXRECEIVEBUFFER * 1000};
     bool use_v2transport = false;
 };
@@ -732,6 +735,7 @@ public:
      * from the wire. This cleaned string can safely be logged or displayed.
      */
     std::string cleanSubVer GUARDED_BY(m_subver_mutex){};
+    const bool m_forced_inbound{false};
     const bool m_prefer_evict{false}; // This peer is preferred for eviction.
     bool HasPermission(NetPermissionFlags permission) const {
         return NetPermissions::HasFlag(m_permission_flags, permission);
@@ -896,6 +900,8 @@ public:
     std::atomic<std::chrono::seconds> m_last_tx_time{0s};
 
     /** Last measured round-trip time. Used only for RPC/GUI stats/debugging.*/
+    //! Current connection message-processing CPU time, in nanoseconds.
+    std::atomic<int64_t> m_cpu_time{0};
     std::atomic<std::chrono::microseconds> m_last_ping_time{0us};
 
     /** Lowest measured round-trip time. Used as an inbound peer eviction
@@ -1094,6 +1100,8 @@ public:
         std::vector<NetWhitebindPermissions> vWhiteBinds;
         std::vector<CService> vBinds;
         std::vector<CService> onion_binds;
+        bool listenonion{false};
+        bool disable_v1conn_clearnet{false};
         /// True if the user did not specify -bind= or -whitebind= and thus
         /// we should bind on `0.0.0.0` (IPv4) and `::` (IPv6).
         bool bind_on_any;
@@ -1138,6 +1146,9 @@ public:
                 m_added_node_params.push_back({added_node, use_v2transport});
             }
         }
+        m_normal_binds = connOptions.vBinds;
+        m_listenonion = connOptions.listenonion;
+        m_disable_v1conn_clearnet = connOptions.disable_v1conn_clearnet;
         m_onion_binds = connOptions.onion_binds;
         whitelist_forcerelay = connOptions.whitelist_forcerelay;
         whitelist_relay = connOptions.whitelist_relay;
@@ -1510,7 +1521,7 @@ private:
      */
     bool AlreadyConnectedToAddress(const CNetAddr& addr) const;
 
-    bool AttemptToEvictConnection();
+    bool AttemptToEvictConnection(bool force);
 
     /**
      * Open a new P2P connection.
@@ -1743,6 +1754,13 @@ private:
      * an address and port that are designated for incoming Tor connections.
      */
     std::vector<CService> m_onion_binds;
+    std::vector<CService> m_normal_binds;
+    bool m_listenonion{false};
+    bool m_disable_v1conn_clearnet{false};
+    bool DisableV1OnClearnet(Network net) const
+    {
+        return m_disable_v1conn_clearnet && (net == NET_IPV4 || net == NET_IPV6);
+    }
 
     /**
      * flag for adding 'forcerelay' permission to whitelisted inbound

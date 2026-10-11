@@ -107,6 +107,8 @@ private Q_SLOTS:
     void clearSelectedNode();
     /** show detailed information on ui about selected node */
     void updateDetailWidget();
+    /** Clear connection state details before each refresh. */
+    void resetPeerStateStats();
 
 public Q_SLOTS:
     void clear(bool keep_prompt = false);

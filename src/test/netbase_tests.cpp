@@ -471,8 +471,18 @@ BOOST_AUTO_TEST_CASE(netpermissions_test)
     BOOST_CHECK(NetWhitelistPermissions::TryParse("in,out,bloom@1.2.3.4", whitelistPermissions, connection_direction, error));
     BOOST_CHECK_EQUAL(connection_direction, ConnectionDirection::Both);
 
+    BOOST_CHECK(NetWhitelistPermissions::TryParse("forceinbound@127.0.0.1", whitelistPermissions, connection_direction, error));
+    BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::ForceInbound));
+    BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::NoBan));
+    BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::Download));
+    for (const auto alias : {"blockfilters", "compactfilters", "cfilters"}) {
+        BOOST_CHECK(NetWhitelistPermissions::TryParse(std::string{alias} + "@127.0.0.1", whitelistPermissions, connection_direction, error));
+        BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::BlockFilters_Explicit));
+    }
+
     const auto strings = NetPermissions::ToStrings(NetPermissionFlags::All);
-    BOOST_CHECK_EQUAL(strings.size(), 7U);
+    BOOST_CHECK_EQUAL(strings.size(), 8U);
+    BOOST_CHECK(std::find(strings.begin(), strings.end(), "blockfilters") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "bloomfilter") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "forcerelay") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "relay") != strings.end());

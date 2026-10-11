@@ -54,10 +54,10 @@ class P2PBlocksOnly(BitcoinTestFramework):
         first_peer = self.nodes[0].add_p2p_connection(P2PInterface())
         second_peer = self.nodes[0].add_p2p_connection(P2PInterface())
         peer_1_info = self.nodes[0].getpeerinfo()[0]
-        assert_equal(peer_1_info['permissions'], ['relay'])
+        assert_equal(peer_1_info['permissions'], ['bloomfilter', 'relay'])
         assert_equal(first_peer.relay, 1)
         peer_2_info = self.nodes[0].getpeerinfo()[1]
-        assert_equal(peer_2_info['permissions'], ['relay'])
+        assert_equal(peer_2_info['permissions'], ['bloomfilter', 'relay'])
         assert_equal(self.nodes[0].testmempoolaccept([tx_hex])[0]['allowed'], True)
 
         self.log.info('Check that the tx from first_peer with relay-permission is relayed to others (ie.second_peer)')

@@ -87,6 +87,13 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         presegwit_peer_id = peers[1]["id"]
         assert_raises_rpc_error(-1, "Pre-SegWit peer", self.nodes[0].getblockfrompeer, short_tip, presegwit_peer_id)
 
+        self.log.info("Duplicate manual fetch from the same peer is rejected without resetting tracking")
+        stalled_peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        stalled_id = self.nodes[0].getpeerinfo()[-1]['id']
+        assert_equal(self.nodes[0].getblockfrompeer(short_tip, stalled_id), {})
+        stalled_peer.sync_with_ping()
+        assert_raises_rpc_error(-1, "Already requested from this peer", self.nodes[0].getblockfrompeer, short_tip, stalled_id)
+
         self.log.info("Successful fetch")
         result = self.nodes[0].getblockfrompeer(short_tip, peer_0_peer_1_id)
         self.wait_until(lambda: self.check_for_block(node=0, hash=short_tip), timeout=1)

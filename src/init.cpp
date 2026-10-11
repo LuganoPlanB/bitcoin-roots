@@ -498,6 +498,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
     argsman.AddArg("-blockreconstructionextratxn=<n>", strprintf("Extra transactions to keep in memory for compact block reconstructions (default: %u)", DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-blockreconstructionextratxnsize=<n>", strprintf("Upper limit of memory usage (in decimal megabytes) for compact block extra transactions (default: %u)", DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE / 1000000), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksonly", strprintf("Whether to reject transactions from network peers. Disables automatic broadcast and rebroadcast of transactions, unless the source peer has the 'forcerelay' permission. RPC transactions are not affected. (default: %u)", DEFAULT_BLOCKSONLY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-coinstatsindex", strprintf("Maintain coinstats index used by the gettxoutsetinfo RPC (default: %u)", DEFAULT_COINSTATSINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-conf=<file>", strprintf("Specify path to read-only configuration file. Relative paths will be prefixed by datadir location (only useable from command line, not configuration file) (default: %s)", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -570,6 +571,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-onlynet=<net>", "Make automatic outbound connections only to network <net> (" + Join(GetNetworkNames(), ", ") + "). Inbound and manual connections are not affected by this option. It can be specified multiple times to allow multiple networks.", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-v2transport", strprintf("Support v2 transport (default: %u)", DEFAULT_V2_TRANSPORT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-peerbloomfilters", strprintf("Support filtering of blocks and transaction with bloom filters (default: %u)", DEFAULT_PEERBLOOMFILTERS), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-v2onlyclearnet", "Disable outbound v1 connections and v1 fallback on IPv4/IPv6 (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-feefilter", strprintf("Tell peers to filter transaction announcements by the mempool minimum fee (default: %u)", DEFAULT_FEEFILTER), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-peerblockfilters", strprintf("Serve compact block filters to peers per BIP 157 (default: %u)", DEFAULT_PEERBLOCKFILTERS), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-txreconciliation", strprintf("Enable transaction reconciliations per BIP 330 (default: %d)", DEFAULT_TXRECONCILIATION_ENABLE), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-port=<port>", strprintf("Listen for connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u). Not relevant for I2P (see doc/i2p.md). If set to a value x, the default onion listening port will be set to x+1.", defaultChainParams->GetDefaultPort(), testnetChainParams->GetDefaultPort(), testnet4ChainParams->GetDefaultPort(), signetChainParams->GetDefaultPort(), regtestChainParams->GetDefaultPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
@@ -2163,6 +2166,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     connOptions.whitelist_forcerelay = args.GetBoolArg("-whitelistforcerelay", DEFAULT_WHITELISTFORCERELAY);
     connOptions.whitelist_relay = args.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY);
     connOptions.m_capture_messages = args.GetBoolArg("-capturemessages", false);
+    connOptions.disable_v1conn_clearnet = args.GetBoolArg("-v2onlyclearnet", false);
+    connOptions.listenonion = listenonion;
 
     // Port to bind to if `-bind=addr` is provided without a `:port` suffix.
     const uint16_t default_bind_port =
@@ -2204,10 +2209,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return InitError(ResolveErrMsg("bind", bind_arg));
     }
 
+    NetPermissionFlags all_permission_flags{NetPermissionFlags::None};
     for (const std::string& strBind : args.GetArgs("-whitebind")) {
         NetWhitebindPermissions whitebind;
         bilingual_str error;
         if (!NetWhitebindPermissions::TryParse(strBind, whitebind, error)) return InitError(error);
+        NetPermissions::AddFlag(all_permission_flags, whitebind.m_flags);
         connOptions.vWhiteBinds.push_back(whitebind);
     }
 
@@ -2249,17 +2256,28 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         Discover();
     }
 
-    for (const auto& net : args.GetArgs("-whitelist")) {
+    std::vector<std::string> whitelist_opts{args.GetArgs("-whitelist")};
+    if ((g_local_services & NODE_BLOOM) == NODE_NONE && args.GetBoolArg("-peerbloomfilters", true)) {
+        whitelist_opts.emplace_back("in,out,bloomfilter@127.0.0.0/8");
+        whitelist_opts.emplace_back("in,out,bloomfilter@[::1]/128");
+    }
+    for (const auto& net : whitelist_opts) {
         NetWhitelistPermissions subnet;
         ConnectionDirection connection_direction;
         bilingual_str error;
         if (!NetWhitelistPermissions::TryParse(net, subnet, connection_direction, error)) return InitError(error);
+        NetPermissions::AddFlag(all_permission_flags, subnet.m_flags);
         if (connection_direction & ConnectionDirection::In) {
             connOptions.vWhitelistedRangeIncoming.push_back(subnet);
         }
         if (connection_direction & ConnectionDirection::Out) {
             connOptions.vWhitelistedRangeOutgoing.push_back(subnet);
         }
+    }
+
+    if (NetPermissions::HasFlag(all_permission_flags, NetPermissionFlags::BlockFilters_Explicit) &&
+        !g_enabled_filter_types.contains(BlockFilterType::BASIC)) {
+        return InitError(_("Cannot grant blockfilters permission without -blockfilterindex."));
     }
 
     connOptions.vSeedNodes = args.GetArgs("-seednode");

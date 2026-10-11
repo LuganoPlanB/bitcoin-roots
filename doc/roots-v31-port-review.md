@@ -334,8 +334,8 @@ The remaining default headless functional suite is also covered, beyond the
 selected policy filter. Its block resurrection, CSV/DER, orphan/package,
 burn-accounting RPC and large wallet-script fixtures retain their original
 assertions with explicit allowances for their constructed outputs and padding.
-The IBD fee-filter fixture uses the buckets produced by the unchanged native
-rounder from the Roots default relay fee. Full native units, non-Boost CTest
+The IBD fee-filter fixture follows native bucket quantization; L10 restores
+the source incremental-fee seed selection and its corresponding fixture values. Full native units, non-Boost CTest
 gates, and the applicable functional tests pass; optional-feature/environment
 skips remain gaps. The bounded Clang ASan/UBSan campaigns cover parser,
 transaction/carrier and native input/witness callers, not the L8/L9 extensions.
@@ -550,3 +550,72 @@ the dynamic/subdust template-reward interactions. The existing template matrix
 sanitizer evidence retains the same production source and daemon hash. Parser,
 penalty arithmetic and randomized native pool assembly have bounded sanitizer
 fuzz smoke coverage. No repeated full sweep or exhaustive fuzz claim is made.
+
+## L10.1 peer resource and permission controls
+
+Compact reconstruction retains 32,768 extra slots by default with a separate
+10 decimal MB transaction dynamic-usage budget. Zero/negative disables caching;
+malformed fixed-point memory settings retain the source default. Four decimal
+places of MB represent 100-byte increments. Slot allocation is capped from the
+memory budget, avoiding an extreme count-only allocation. Eviction occurs
+before addition to avoid size_t overflow on 32-bit platforms. The source's
+100,000-byte individual dynamic-usage exclusion now covers replacements too,
+matching the stated contract. Native v31 compact-block reconstruction is unchanged.
+
+ForceInbound implies NoBan/Download. Its random fallback considers only inbound
+ban-able peers, after unconditional NoBan/outbound protections; ordinary eviction
+retains native scoring. Explicit blockfilters/compactfilters/cfilters permission
+requires the basic index and grants native BIP157 services to that connection;
+All retains the source non-explicit exception. Legacy whitelist defaults include
+Addr; outbound ranges apply to automatic and manual connections. Bloom is
+unadvertised globally by default and permitted on loopback unless explicitly
+disabled. Onion-specific and first-bind Tor targets suppress address whitelist
+permissions, including implicit loopback bloom.
+
+Subnet disconnect uses v31's existing CSubNet overload and native RPC argument
+views. Clearnet-v2-only suppresses v1 initiation and fallback for the source
+routable IPv4/IPv6 classification; loopback/non-routable and encrypted overlay
+networks retain source eligibility. Tests use a local forwarding SOCKS server
+for routable targets and authentication, with no external traffic. Credentials
+are not included in the proxy debug message. Fee filters default on with the
+source explicit off switch. Fee-filter buckets retain the source 100 sat/kvB
+seed below 1,000 sat/kvB initialized incremental fee and 1,000 otherwise;
+both profiles and the IBD exit regression are tested. Duplicate CJDNS manual addresses ignore ports;
+local-address scores saturate, and duplicate manual block fetch rejects before
+resetting in-flight tracking. The source's nullable FetchBlock overload has no
+production caller; v31's typed existing-header interface remains sufficient.
+
+Native v31 already carries network-key inventory timers/address-cache grouping,
+inactivity checks, reconnection cleanup, orphan resource controls, protected
+outbound/manual peers and safe subversion handling. Their upstream regression
+assertions remain. No new wire message/inventory type or filtered-witness-block
+extension is introduced. These are local controls over existing P2P interfaces.
+Peer-health fields and Qt evidence remain L10.2.
+
+Provenance: mixed peer controls from `1b73fe3d21`, `ec9db369f5`; compact and
+permission fixtures from `fc0dc945d0` plus their feature-owned corrective history
+in the complete mapping. Retain Jaromil/devjoinedthechat and Core/Knots credit.
+
+### L10.2 peer-health adaptation
+
+The source current-connection fields travel through native `CNodeStats`,
+`CNodeStateStats`, `getpeerinfo` and the existing GUI node interface. Thread CPU
+measurement covers the message-processing/send pass, not historical samples.
+Unavailable or backwards CPU readings are ignored, and RPC omits load unless
+CPU time and connection duration are positive. Native v31's deprecated
+`startingheight` RPC gate is retained rather than reversing upstream interface
+changes. The source Starting Block detail uses the still-available native state
+field and resets to Unknown when unavailable. Deprecated misbehavior score remains source-compatible at 0 or 100.
+
+The peer detail pane clears state fields before each refresh, and clears the
+hidden BIP324 session ID when switching transports. The model resolves peer data
+by current row because refresh swaps its storage; persistent selection cannot
+keep a pointer into a discarded snapshot. Native table columns and sorting are
+preserved. Focused GUI tests can connect to caller-supplied real regtest nodes,
+exercise sorting/refresh/disconnect selection and the production unavailable
+try-lock branch, and capture the rendered window at the specified font/resolution
+matrix. No static mockup or history collector is introduced.
+
+These adaptations preserve the catalogued Roots contracts and attribution to
+Jaromil and devjoinedthechat alongside the Bitcoin Core and Bitcoin Knots
+provenance already recorded above.
