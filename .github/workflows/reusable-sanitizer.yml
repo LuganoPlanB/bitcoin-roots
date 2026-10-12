@@ -100,7 +100,7 @@ jobs:
         with:
           name: sanitizer-failures-${{ inputs.name }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn

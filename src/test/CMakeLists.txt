@@ -88,6 +88,7 @@ add_executable(test_bitcoin
   rest_tests.cpp
   result_tests.cpp
   reverselock_tests.cpp
+  roots_policy_oracle_tests.cpp
   rpc_tests.cpp
   sanity_tests.cpp
   scheduler_tests.cpp

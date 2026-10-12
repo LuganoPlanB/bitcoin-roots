@@ -165,7 +165,7 @@ jobs:
         with:
           name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
@@ -231,7 +231,7 @@ jobs:
         with:
           name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
@@ -278,7 +278,7 @@ jobs:
         with:
           name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
@@ -421,7 +421,7 @@ jobs:
         with:
           name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
@@ -469,7 +469,7 @@ jobs:
         with:
           name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
           path: |
-            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
             ${{ runner.temp }}/ci/scratch/test_runner/
             ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn

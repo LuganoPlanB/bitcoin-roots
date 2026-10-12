@@ -12,6 +12,7 @@
 #include <test/fuzz/util.h>
 #include <test/fuzz/util/mempool.h>
 #include <test/util/mining.h>
+#include <test/util/roots_policy_oracles.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
 #include <test/util/txmempool.h>
@@ -571,9 +572,9 @@ FUZZ_TARGET(dynamic_dust_fee)
     if (product < 0 && product % size != 0) --per_kvb;
     per_kvb = std::max(minimum, std::min(maximum, per_kvb));
     const CFeeRate estimate{fee, size};
-    Assert(estimate.GetFeePerK() == static_cast<CAmount>(per_kvb));
+    Assert(estimate.GetFeePerK() == roots_test::BoundedSignedReference(per_kvb));
     const Wide scaled{std::max(Wide{0}, per_kvb) * multiplier / 1000};
-    Assert(ScaleDustFee(estimate, multiplier).GetFeePerK() == static_cast<CAmount>(std::min(maximum, scaled)));
+    Assert(ScaleDustFee(estimate, multiplier).GetFeePerK() == roots_test::BoundedSignedReference(scaled));
 }
 
 FUZZ_TARGET(carrier_policy_weight)

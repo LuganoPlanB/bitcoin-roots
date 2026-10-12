@@ -1368,3 +1368,88 @@ and the export fixture tag belong to that clone; candidate refs are unchanged.
 After an eventual accepted L15 commit, documentation tree/artifact identity is
 checked again. This is export integrity evidence, not release, signing,
 promotion, hosted-matrix or whole-candidate acceptance.
+
+## L16.1 ordinary oracle and diagnostic repair evidence
+
+The test-only decimal validator now iterates the `char` representation supplied
+by `std::string_view` and rejects everything outside ASCII `0` through `9`
+before converting a digit. The independent dynamic-dust oracle keeps its
+multiprecision multiplication, floor division and clamping. Its final signed
+conversion handles both bounds explicitly, returns `INT64_MIN` directly and
+converts only representable positive magnitudes before applying a negative sign.
+Neither oracle calls the production parser or scaling implementation to derive
+its expected result. Production policy is unchanged.
+
+The shared test-only helpers are covered by `roots_policy_oracle_tests.cpp`,
+registered in the native unit target. The same two ordinary Boost test cases
+were built and run in an isolated executable, with both signed and unsigned
+`char` defaults, preserving the established candidate build trees and binaries.
+They cover signed limits and adjacent values, saturation, negative floor
+division, decimal grammar/overflow and all 256 byte values, including embedded
+NULs. This is focused ordinary coverage, not execution of a fuzz target.
+
+CI now forwards and bind-mounts an explicit `ROOTS_ARTIFACTS_DIR` at the same
+host/container path. Command logs, result JSON and crash artifacts use that
+directory, as do workflow uploads. Failure summaries identify the command or
+target, exit status and full log path, with a bounded tail; complete output is
+retained in the artifact. Ordinary helper fixtures demonstrate the generated
+mount/environment contract, host-visible failed-run output and result files,
+timeout handling and bounded summaries. They mock Docker and do not establish
+an actual hosted upload or hosted test pass.
+
+The original seven-pass/two-failure local result and historical hosted failure
+above remain unchanged evidence. `dynamic_dust_fee` and `policy_args` are
+**not rerun under instrumentation**. No further fuzz execution, sanitizer
+campaign, saved-input replay or hosted substitute was performed. The old fuzz
+binary therefore does not contain these repairs; its prior results cannot be
+reused as passing verification of the changed oracle sources. L16.2 owns the
+remaining ordinary candidate gates and provenance reconciliation before review.
+
+## L16.2 reduced candidate gates
+
+The repair starts from accepted L15 commit
+`0c0d2f1bf2e70f85e93423b61d1acd9b0b327578`. Current ordinary maintenance
+verification runs all **128 cases** successfully, superseding the earlier
+125-case result for that scope. Both isolated ordinary oracle cases pass with
+signed and unsigned `char` defaults. Fresh uninstrumented CMake configuration
+also registers `roots_policy_oracle_tests` in the native CTest manifest; this
+configuration check does not claim a rebuilt full native test executable.
+
+Reconciliation matches all eight accepted repair-source hashes, thirteen
+binary hashes, four cache hashes and seventeen prior command-log hashes.
+All 389 functional fixtures, the native-stream fixture and three Qt fixtures
+match. Of 60 maintenance fixtures, six changed CI/helper files are covered by
+the fresh full maintenance run; 54 retain matching hashes. Production sources
+are unchanged since accepted L14. The earlier 774 native cases, 156 CTest
+passes plus one skip, 278 functional passes plus 17 skips, 22 Qt result rows
+per major and three benchmark smokes retain their original tested scope and
+limitations. The added native suite is verified separately rather than being
+claimed as part of those older binaries. Prior stream sanitizer evidence is
+preserved as historical coverage, without another instrumented run.
+
+Current documentation, shell lint, header guards, Python syntax, scoped
+include checks and whitespace checks pass. The preexisting global include
+findings remain: duplicate `QTimer` and the missing `cpp_int.hpp` allowlist
+entry. The new ordinary oracle unit tests use that same existing Boost
+multiprecision dependency; this is explicitly not a clean global include-lint
+claim.
+
+Portable export/replay uses an isolated eleven-commit snapshot of the exact
+seventeen-file repair scope, including both new C++ files. Staged snapshot
+blobs match the working-tree files. `git am -3 --keep-cr` reproduces every
+product path, excludes `.github/**` from the patch and leaves Core hosting
+files unchanged. Source accounting remains 72 exact commits/authors and 25
+contract dispositions, including the accepted L7 build gap and L8–L13 trailer
+exceptions. All snapshot commits, refs and the fixture tag exist only in a
+disposable clone; protected candidate/source refs and accepted history are
+preserved.
+
+A read-only hosted refresh still finds draft PR 49 at remote head
+`8e7ffad5d932e07c0c80f3756f7c3a442786877e`, with historical PR Tests run
+`38249608708` completed unsuccessfully. The local L15 documentation and L16
+repairs have no hosted test result. No omitted campaign or substitute job was
+dispatched. Final acceptance uses the approved reduced scope: the original
+seven-pass/two-failure record remains, the two repaired targets are **not rerun
+under instrumentation**, and the hosted failure's underlying cause remains
+unidentified. L16 review/commit and a later independent terminal review remain
+separate gates; this evidence does not authorize publication or promotion.

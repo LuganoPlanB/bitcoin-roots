@@ -112,6 +112,16 @@ Selection/result JSON and per-command logs are temporary failure artifacts,
 not a second source of configuration or a release-state ledger. Timed-out owned
 process groups are terminated; unowned node processes are untouched.
 
+Hosted runners set `ROOTS_ARTIFACTS_DIR` to an absolute host directory and
+bind-mount it at the same path inside the test container. The regression
+runner writes per-target logs, result JSON and crash artifacts there; workflow
+uploads use that exact directory. Local runs without the setting retain the
+scratch-directory fallback. Failed commands also print the exit status, full
+log path and at most 12 tail lines of 240 characters from the last 4 KiB.
+The artifact keeps complete output; the bounded console tail may omit earlier
+diagnostics. Ordinary mock-runner tests cover transport and retention without
+executing a fuzz campaign.
+
 ### Nightly/manual assurance and caches
 
 `nightly.yml` keeps cron `23 2 * * *` (UTC), `workflow_dispatch` and explicit

@@ -253,7 +253,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-smoke-failures
-          path: ${{ runner.temp }}/ci/scratch/roots-failures/
+          path: ${{ env.ROOTS_ARTIFACTS_DIR }}/
           if-no-files-found: warn
 
   nightly-sanitizers:

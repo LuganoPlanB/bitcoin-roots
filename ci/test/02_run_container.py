@@ -92,6 +92,13 @@ def main():
         CI_DEPENDS_SOURCES_MOUNT = f"type=volume,src={os.environ['CONTAINER_NAME']}_depends_sources,dst={os.environ['DEPENDS_DIR']}/sources"
         CI_PREVIOUS_RELEASES_MOUNT = f"type=volume,src={os.environ['CONTAINER_NAME']}_previous_releases,dst={os.environ['PREVIOUS_RELEASES_DIR']}"
         CI_BUILD_MOUNT = []
+        CI_ARTIFACTS_MOUNT = []
+        if os.getenv("ROOTS_ARTIFACTS_DIR"):
+            artifacts = Path(os.environ["ROOTS_ARTIFACTS_DIR"])
+            if not artifacts.is_absolute():
+                sys.exit("ROOTS_ARTIFACTS_DIR must be an absolute host/guest path")
+            artifacts.mkdir(parents=True, exist_ok=True)
+            CI_ARTIFACTS_MOUNT = [f"--mount=type=bind,src={artifacts},dst={artifacts}"]
 
         if os.getenv("DANGER_CI_ON_HOST_FOLDERS"):
             # ensure the directories exist
@@ -143,6 +150,7 @@ def main():
             f"--mount={CI_DEPENDS_SOURCES_MOUNT}",
             f"--mount={CI_PREVIOUS_RELEASES_MOUNT}",
             *CI_BUILD_MOUNT,
+            *CI_ARTIFACTS_MOUNT,
             f"--env-file={env_file}",
             f"--name={os.environ['CONTAINER_NAME']}",
             "--network=ci-ip6net",

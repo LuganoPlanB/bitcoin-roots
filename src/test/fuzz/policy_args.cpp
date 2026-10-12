@@ -8,6 +8,7 @@
 #include <node/mempool_args.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
+#include <test/util/roots_policy_oracles.h>
 #include <test/util/setup_common.h>
 #include <univalue.h>
 #include <util/check.h>
@@ -24,24 +25,6 @@ void InitializePolicyArgs()
     static const auto setup = MakeNoLogFileContext<const BasicTestingSetup>();
 }
 
-// Decimal accumulation with an explicit bound is independent of ToIntegral.
-bool ValidInteger(std::string_view value, uint64_t maximum)
-{
-    bool negative{false};
-    if (!value.empty() && (value.front() == '+' || value.front() == '-')) {
-        negative = value.front() == '-';
-        value.remove_prefix(1);
-    }
-    if (value.empty()) return false;
-    uint64_t number{0};
-    for (const unsigned char digit : value) {
-        if (digit < '0' || digit > '9') return false;
-        const auto numeric_digit{static_cast<uint64_t>(digit - '0')};
-        if (number > maximum / 10 || (number == maximum / 10 && numeric_digit > maximum % 10)) return false;
-        number = number * 10 + numeric_digit;
-    }
-    return !negative || number == 0;
-}
 } // namespace
 
 FUZZ_TARGET(policy_args, .init = InitializePolicyArgs)
@@ -63,7 +46,7 @@ FUZZ_TARGET(policy_args, .init = InitializePolicyArgs)
              {"-blockmaxsize", 4'000'000}, {"-blockprioritysize", INT64_MAX}}) {
         ArgsManager args;
         args.ForceSetArg(option, value);
-        Assert(bool(ValidateRootsPolicyOptions(args)) == ValidInteger(value, maximum));
+        Assert(bool(ValidateRootsPolicyOptions(args)) == roots_test::ValidInteger(value, maximum));
     }
     for (const char* option : {"-datacarriercost", "-mempoolreplacement", "-mempooltruc", "-permitephemeral", "-spkreuse"}) {
         ArgsManager args;

@@ -70,3 +70,5 @@ export CI_IMAGE_PLATFORM=${CI_IMAGE_PLATFORM:-"linux"} # Force linux, but use na
 # Roots assurance cadence and complete classifier input are forwarded into CI.
 export ROOTS_CI_CADENCE=${ROOTS_CI_CADENCE:-}
 export ROOTS_CHANGED_FILES_JSON=${ROOTS_CHANGED_FILES_JSON:-null}
+# When configured, this directory is bind-mounted at the same host/guest path.
+export ROOTS_ARTIFACTS_DIR=${ROOTS_ARTIFACTS_DIR:-}

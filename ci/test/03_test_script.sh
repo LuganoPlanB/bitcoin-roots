@@ -168,7 +168,7 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
   if [[ "${ROOTS_CI_CADENCE:-}" == fast ]]; then
     LD_LIBRARY_PATH="${DEPENDS_DIR}/${HOST}/lib" \
     python3 "${BASE_ROOT_DIR}/ci/test/roots-regressions.py" functional --cadence fast \
-      --build-dir "$BASE_BUILD_DIR" --artifacts "${BASE_SCRATCH_DIR}/roots-failures" -- \
+      --build-dir "$BASE_BUILD_DIR" --artifacts "${ROOTS_ARTIFACTS_DIR:-${BASE_SCRATCH_DIR}/roots-failures}" -- \
       "$MAKEJOBS" --tmpdirprefix "${BASE_SCRATCH_DIR}/test_runner/" \
       --ansi --combinedlogslen=99999999 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" \
       "${TEST_RUNNER_EXTRA[@]}" --quiet
@@ -249,7 +249,7 @@ if [ "$RUN_FUZZ_TESTS" = "true" ]; then
   if [[ -n "${ROOTS_CI_CADENCE:-}" ]]; then
     python3 "${BASE_ROOT_DIR}/ci/test/roots-regressions.py" fuzz \
       --cadence "$ROOTS_CI_CADENCE" --build-dir "$BASE_BUILD_DIR" \
-      --artifacts "${BASE_SCRATCH_DIR}/roots-failures"
+      --artifacts "${ROOTS_ARTIFACTS_DIR:-${BASE_SCRATCH_DIR}/roots-failures}"
   fi
 fi
 

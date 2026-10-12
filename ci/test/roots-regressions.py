@@ -89,22 +89,39 @@ def run_bounded(command, timeout, log, env=None):
             return 124
 
 
+def report_failure(name, result, log):
+    """Keep console diagnostics bounded; the artifact retains the full output."""
+    print(f'Roots regression {name} failed (exit {result}); full log: {log}', file=sys.stderr)
+    with log.open('rb') as output:
+        output.seek(0, os.SEEK_END)
+        output.seek(max(0, output.tell() - 4096))
+        tail = output.read(4096).decode('utf-8', errors='replace')
+    for line in tail.splitlines()[-12:]:
+        print(line[:240], file=sys.stderr)
+
+
 def execute(plan, kind, build, artifacts, runner_args):
     artifacts.mkdir(parents=True, exist_ok=True)
     records = []
     if kind == 'functional' and plan['functional']:
         command = [sys.executable, str(build / 'test/functional/test_runner.py'), *plan['functional'], *runner_args]
         timeout = plan['budgets']['functional']
-        result = run_bounded(command, timeout, artifacts / 'functional.log')
-        records.append({'command': command, 'timeout': timeout, 'exit': result})
+        log = artifacts / 'functional.log'
+        result = run_bounded(command, timeout, log)
+        records.append({'command': command, 'timeout': timeout, 'exit': result, 'log': log.name})
+        if result != 0:
+            report_failure('functional', result, log)
     elif kind == 'fuzz':
         for target in plan['fuzz']:
             # Native libFuzzer flags bound generation by time, not input counts.
             budget = plan['budgets']['fuzz']
             command = [str(build / 'bin/fuzz'), f'-max_total_time={budget}', '-timeout=5', '-seed=1',
                        '-max_len=4096', '-rss_limit_mb=2048', '-artifact_prefix=' + str(artifacts / (target + '-'))]
-            result = run_bounded(command, budget + 10, artifacts / (target + '.log'), os.environ | {'FUZZ': target})
-            records.append({'target': target, 'command': command, 'timeout': budget + 10, 'exit': result})
+            log = artifacts / (target + '.log')
+            result = run_bounded(command, budget + 10, log, os.environ | {'FUZZ': target})
+            records.append({'target': target, 'command': command, 'timeout': budget + 10, 'exit': result, 'log': log.name})
+            if result != 0:
+                report_failure(target, result, log)
     (artifacts / (kind + '-results.json')).write_text(json.dumps({'selection': plan, 'results': records}, indent=2) + '\n')
     return 1 if any(record['exit'] != 0 for record in records) else 0
 
