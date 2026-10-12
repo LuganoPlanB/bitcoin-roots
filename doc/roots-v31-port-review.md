@@ -1,12 +1,15 @@
 # Roots Core v31 port review
 
-This is a preservation review for an unpublished local candidate, not a release
+This is a preservation review for a review candidate, not a release
 announcement or an executable patch manifest. The accepted 30.3 contracts define
-intent; Git defines each version's implementation. At the input-review stage,
-the candidate contained unmodified Core plus this document. The foundation now
-carries preservation documentation and CMake selections/probes described in
-[the portability guide](roots-build-portability.md). Later themes must land
-before their Roots runtime behavior can be described as available.
+intent; Git defines each version's implementation. Nine accepted thematic
+commits now carry the implementation on Core v31.1. The stage reports below
+retain their original scope and evidence limitations; their pending wording
+does not supersede later accepted results. The [series audit](#l151-repaired-series-audit)
+records exact history, contract coverage, compatibility decisions and closed
+L14 repair findings. L15 is documentation acceptance only. The approved L16
+repairs and reduced candidate gates, followed by independent terminal review,
+remain pending; the draft PR is a review boundary, not a release.
 
 ## Exact inputs and authentication
 
@@ -57,7 +60,9 @@ not a Roots-series merge.
 
 ## Proposed smaller series and dependencies
 
-The user approved a nine-theme target: **9 instead of 72 commits**. The former
+The user approved an eleven-theme target: **11 instead of 72 commits**, including
+the bounded L14 preservation repair, the documentation-only tenth L15 commit
+and the separate eleventh L16 test-oracle/hosted-diagnostics repair commit. The former
 policy/mining theme is split into independently reviewed local checks, graph
 accounting, and mining adaptations. Historical fixes,
 tests and documentation travel with the behavior they correct; release/CI work
@@ -74,7 +79,9 @@ No broad compatibility layer is proposed.
 | L11 wallet | Database/signer boundaries, per-send RBF, sweep authorization/secrets and coin-control facts. Requires L10. |
 | L12 operator/runtime | Read/write config, effective-policy RPC and platform resource support; dormant stats remain dormant. Requires L7 state and L11. |
 | L13 integration | Identity/icons/QR/taskbar, generated help artifacts, CI and release/export tools. Requires L12. |
-| L14 evidence | Final preservation review, range comparison and exact-candidate supported gates. Requires L6–L13. |
+| L14 repairs | Qt5 persistence, configured benchmark default and safe empty AutoFile writes. Requires L6–L13. |
+| L15 evidence | Preservation ledger, range comparison and honest diagnostic/provenance accounting; documentation acceptance only. Requires L6–L14. |
+| L16 diagnostic repairs | Two test-oracle conversions, hosted failure-log visibility and final candidate gates under the approved reduced verification. Requires accepted L15. |
 
 Preimplementation review found distinct algorithm risks: v31's block builder
 can include or skip only the current whole chunk, while Roots selects an
@@ -95,11 +102,12 @@ statistics or permit unrelated repairs. Dynamic runtime is still deferred.
 Until then, feature tests must cover Core CLI/config semantics and explicitly
 defer Roots `confrw` precedence cases; they cannot claim those cases passed.
 The full precedence gate runs when L12 lands. Feature-local tests still ship
-with each implementation; L14 is additional aggregate evidence.
+with each implementation; L15 is additional aggregate evidence.
 
 ## Contract dispositions against actual v31.1 APIs
 
-These are implementation directions for review, not completed-port claims.
+These are the reviewed implementation placements; the current coverage table
+below records candidate evidence and remaining platform limits.
 **Adapted** retains all intended behavior while changing Core-specific placement;
 **kept** retains compatible behavior/support; **adopted-upstream** needs equivalent
 defaults, configuration, invariants and current acceptance evidence. No intended
@@ -131,7 +139,7 @@ contract with remaining Roots behavior. Existing source gaps remain explicit.
 | identity-desktop | adapted / L13 | Core version/icons/help remain Core; Roots identity, QR-PNG export and Windows taskbar support are not equivalent. Port limited identity/desktop changes while preserving upstream names/protocol attribution. Generate manuals/config from final help only; run version, Qt QR/icon and Windows/platform/visual gates. |
 | maintenance-ci | adapted / L13 | Core's v31 compiler/platform/cluster fixtures supersede old job assumptions; Roots classifier, exact promotion proof and platform/fuzz scheduling need adaptation. Retain actual exact-candidate CI gates and bounded corpora scheduling; run maintained tool tests and supported candidate profiles. |
 | maintenance-release | adapted / L13 | Upstream does not provide Roots immutable source/tag/assets, signed new-draft-only five-platform release, portable export or contributor-credit rules. Adapt version/base validation and replay without publishing/tagging. Retain `.github` exclusions and `git am -3 --keep-cr`; test temporary export/replay and all release tools. Expanded notices remain deferred. |
-| maintenance-docs | adapted / L6,L13,L14 | Carry accepted contracts first with explicit deferred status, reconcile catalog/privacy/provenance to actual candidate, generate help artifacts when interfaces land, and complete review evidence last. Historical release notes are provenance, not a v31 feature claim. Check links/doc lint/whitespace and generated-output parity. |
+| maintenance-docs | adapted / L6,L13,L15 | Carry accepted contracts first with explicit deferred status, reconcile catalog/privacy/provenance to actual candidate, generate help artifacts when interfaces land, and complete review evidence last. Historical release notes are provenance, not a v31 feature claim. Check links/doc lint/whitespace and generated-output parity. |
 | maintenance-native | adapted / owning theme | Inspect every surviving source hunk; keep behavior-preserving C++/empty-write/test hooks only where needed on v31 APIs. Port test fixtures with their features rather than overwriting newer Core tests. Transient reverted script work is not a new consensus feature. Run affected unit/functional/fuzz gates. |
 
 The shared consensus-neutral and no-RDTS boundaries apply to every row. Contract
@@ -142,44 +150,47 @@ be preserved on v31, seek an explicit compatibility decision before removing it.
 
 ## Complete source-to-theme accounting
 
-Every abbreviated object below uniquely resolves in the pinned source range.
+Every source object below resolves in the pinned source range.
 Rows assign the final semantic content, including tests, docs and maintenance;
 mixed source commits may feed multiple themes. References are provenance, not
-instructions to replay whole commits. Aggregate commits must include the full
-`Source-commit:` values for the content they use and honest adaptation notes.
+instructions to replay whole commits. Full source objects and honest adaptation
+notes provide the provenance ledger. The [series audit](#l151-repaired-series-audit)
+records the accepted commit-body format deviation; this ledger does not pretend
+that omitted trailers exist.
 
-| Source commits | Owning themes and treatment |
-| --- | --- |
-| `5c210e17fb` | L6 build/dependency support; L13 platform CI/release integration. Adapt required probes, not old generated summaries. |
-| `85257a0986`, `724f8c2ee7` | L7–L9 policy utility dependencies; L10 peer diagnostics; L11 signer boundary; L12 config/runtime/stats support. Split mixed runtime content by contract; preserve dormant status. |
-| `1b73fe3d21`, `ec9db369f5` | L7 local checks; L8 accounting/dynamic dust/replacement; L9 mining and broad functional fixtures; L10 peer controls; L11 wallet boundary fixes/fixtures; L12 runtime dependencies; L13 CI test-script integration. Adapt actual surviving deltas to clusters/interfaces. |
-| `dd03dcb989` | L11 database/SQLite/signer hardening, adapted. |
-| `c592888088` | L6 Qt build support; L10 peer view; L11 wallet GUI support; L13 identity/QR/taskbar. Split mixed GUI content without importing incidental upstream text. |
-| `fc0dc945d0` | L7 fixed-dust/sigop tests; L8 sub-dust/TRUC tests, plus L10 peer fixtures and L12 operator tests where present. Preserve tests' actual feature ownership. |
-| `9f1780f330`, `4570a6a547` | L6 necessary build registration; L13 assurance/CI/release tooling and fixtures; owning-feature tests across L7–L12. No replacement maintenance state system. |
-| `9da5851410`, `26b691e4f3`, `201927c151`, `e819a07a4a`, `56e2894760` | L13 CI scheduling, apt-retry, optional-feature selection and branded archive checks; adapt to v31 jobs. |
-| `83fa42a963`, `f5182f0e3a`, `7791eede50`, `11c84c39ef`, `0efa437e29`, `f2595557d9`, `38bc7ec2ce`, `df8aa8e2b7`, `ddae467a78`, `778ff50d19`, `c474825f96`, `17e1d484ab` | L13 release/rehearsal/source/archives/signing/new-draft/promotion CI and notice deferral; preserve final safeguards, fold corrective history. `f5182f0e3a` also supplies L11 sweep/privacy boundary tests and L12 safe-empty-stream writes/tests, plus L13 apt/sanitizer checks. No releases dispatched. |
-| `25f889f97e`, `3e13c1f213` | L13 Windows icon and QR QString-size corrections, kept/adapted with identity. |
-| `b0b235d6a1`, `f4066e5282`, `30f673a4bc`, `a13f28e2f4`, `1517d925b2`, `628bdf4e38`, `02464df449`, `089888acdd` | L6/L13/L14 catalog, scope, historical notes and provenance; rewrite candidate claims for actual implementation, retain relevant history/credit. |
-| `bbd7339af2`, `9b778b9a23` | L10 peer stale-state fix/apptests; L12 streams assertion fixtures and L13 QR/build GUI assertions from the mixed test commit. |
-| `e4b26462de`, `0e3ae72d89` | L11 wallet-derived per-send RBF and locked Qt assertions, adapted. |
-| `5e2d79e937` | L7 `node/mempool_args.cpp` string-view prefix modernization, adapted only where the parser remains; no consensus feature. |
-| `fb21288879`, `dc1b217cbd`, `9a216bc389`, `7c70374050`, `f3cd7da535`, `96fecfd411`, `a1748ccc64`, `f9e9a36cd1` | L11 sweep RPC/GUI, coin-control facts, documentation, asynchronous authorization, locked fee snapshot and secret cleansing. Fold security corrections into final feature. |
-| `875fa15829`, `9ab60f217b`, `9d9c125d9e` | L9 priority-selected ancestor/resource correctness and locale-independent regression fixtures, adapted to chunk mining. |
-| `aa27c9117a`, `48f3b3bbe8`, `a6f35e915c` | L8 configured RBF/TRUC semantics and tests; L12 truthful RPC field; L13 final generated help. |
-| `30e7eac266`, `12d67ba60a`, `e6d4abc704`, `085a84a7cb`, `8cb07ef1b9` | L7–L10/L12 feature-owned full-suite, Taproot-carrier, fee-estimator and startup fixtures; adapt to current APIs without erasing upstream regressions. |
-| `1f7cfce176` | L13 regenerate manuals/example configuration from final help, not source-byte replay. |
-| `16b2198275`, `47329c00dd`, `1b2431c74c` | L6 native crypto flags, exact MiniUPnPc dependency patch and usable system LevelDB memory environment; the Chain interface include and mempool/1p1c lint fixtures follow L7/L10. |
-| `784b2af17a`, `f74cc0433b`, `73c97862e2` | L8 synchronized dynamic-dust publication/snapshot and changing-rate tests; consumers in L12 report the same authoritative state. |
-| `f66eca4ae4` | L6 accepted stable contract collection and source/provenance reconciliation. |
-| `87c950de92` | L7 strict policy grammar, scoped help/diagnostics and parser/startup tests; distinct source behavior change. |
-| `b60a6e04d0` | L12 additive effective-policy RPC/schema/parity tests; distinct source API change. |
-| `10d772eb7f` | L7 local valid-block/carrier interactions and parser fuzz; L8 penalty/carrier arithmetic and fuzz; L9 priority/fee/template interactions; L6 retains documented gaps until tests are ported. |
+| Source commits | Exact source authors | Owning themes and treatment |
+| --- | --- | --- |
+| `5c210e17fbafbdab01391fbfa60efa00701d6422` | Jaromil &lt;jaromil@dyne.org&gt; | L6 build/dependency support; L13 platform CI/release integration. Adapt required probes, not old generated summaries. |
+| `85257a0986d841cb2f6a8db1eb4902e92cfa94f5`, `724f8c2ee71be107540ac5042ddb55d5c53ef69e` | Jaromil &lt;jaromil@dyne.org&gt; | L7–L9 policy utility dependencies; L10 peer diagnostics; L11 signer boundary; L12 config/runtime/stats support. Split mixed runtime content by contract; preserve dormant status. |
+| `1b73fe3d2126e8a1233343e8485a28b507515426`, `ec9db369f5034677665ac1d93bdb87024fd7f21c` | Jaromil &lt;jaromil@dyne.org&gt; | L7 local checks; L8 accounting/dynamic dust/replacement; L9 mining and broad functional fixtures; L10 peer controls; L11 wallet boundary fixes/fixtures; L12 runtime dependencies; L13 CI test-script integration. Adapt actual surviving deltas to clusters/interfaces. |
+| `dd03dcb98911e4ed75abb843ccdc5507b67dac7b` | Jaromil &lt;jaromil@dyne.org&gt; | L11 database/SQLite/signer hardening, adapted. |
+| `c5928880885a32510cfd716f4354117eeaf4d4dc` | Jaromil &lt;jaromil@dyne.org&gt; | L6 Qt build support; L10 peer view; L11 wallet GUI support; L13 identity/QR/taskbar; L14 Qt5 startup/persistence repair. Split mixed GUI content without importing incidental upstream text. |
+| `fc0dc945d0002ca054a7046a33b45ee92389b805` | Jaromil &lt;jaromil@dyne.org&gt; | L7 fixed-dust/sigop tests; L8 sub-dust/TRUC tests, plus L10 peer fixtures and L12 operator tests where present. Preserve tests' actual feature ownership. |
+| `9f1780f33036b3a606b0120e94415587e44f018b`, `4570a6a54770fbda04d9cd05197b6f4fd8f88546` | Jaromil &lt;jaromil@dyne.org&gt; | L6 necessary build registration; L13 assurance/CI/release tooling and fixtures; L14 configured benchmark repair; owning-feature tests across L7–L12. No replacement maintenance state system. |
+| `9da585141091354442aec822d5b47d8a0dc6afc0`, `26b691e4f35c66b28a2ddef7504790df29f07392`, `201927c151875aa3c19d96d7cbec00ece65c65b1`, `e819a07a4a1efc30d1d66f86394f7bbb0609f758`, `56e28947604c04e429e6035094e847452aeb38e1` | Jaromil &lt;jaromil@dyne.org&gt; | L13 CI scheduling, apt-retry, optional-feature selection and branded archive checks; adapt to v31 jobs. |
+| `83fa42a963d3f190abeecec08db64f0175b2ebc8`, `f5182f0e3a7c49c85abe6159af0a16d1b6ae8298`, `7791eede50f6ca8bfca78ce2cb79ac005cc22d95`, `11c84c39ef4c0bf06d5f94b2299cf7502688cab3`, `0efa437e29d4fcb0ec567991c75221129c4c488f`, `f2595557d9e9029ab5506efc3aa094dd6252dc15`, `38bc7ec2ce41543a69dfec20e1fa98073f246502`, `df8aa8e2b79139f8c8cc9b4f1d412ab9d9a45792`, `ddae467a788aa0ca1f7c81fdd79d75e6014b10e7`, `778ff50d19a53a46bb0b0ba021a1111f886c7e7c`, `c474825f9698324747592c9535400ffd0cd01ed9`, `17e1d484aba2a881be03b8928fba3c0125e027a2` | Jaromil &lt;jaromil@dyne.org&gt; | L13 release/rehearsal/source/archives/signing/new-draft/promotion CI and notice deferral; preserve final safeguards, fold corrective history. `f5182f0e3a7c49c85abe6159af0a16d1b6ae8298` also supplies L11 sweep/privacy boundary tests and L12 safe-empty-stream writes/tests, plus L13 apt/sanitizer checks and L14 empty AutoFile write repair. No releases dispatched. |
+| `25f889f97ef09b4596ccfc8a67cca3e420ffea9d`, `3e13c1f213b931c9304526cf17309a3af4d07174` | Jaromil &lt;jaromil@dyne.org&gt; | L13 Windows icon and QR QString-size corrections, kept/adapted with identity. |
+| `b0b235d6a1d7c7548e96c6d171f5246c99e01be7`, `f4066e52827ae2edde22380159f4ace87e1a7dbf`, `30f673a4bca1ae92083bbd47035588216553ce18`, `a13f28e2f482a89a1b3979e9045ddabb4a3df498`, `1517d925b2d6e189bc395b484676d76b6d10b2f5`, `628bdf4e382b9c8b672e3017335ec37ef7ac542c`, `02464df449d3ce81bd3241ab6d7170788f621b06`, `089888acdd5c03a070a31177d9d20e2fce3ce72f` | Jaromil &lt;jaromil@dyne.org&gt;, devjoinedthechat &lt;235875317+devjoinedthechat@users.noreply.github.com&gt; | L6/L13/L15 catalog, scope, historical notes and provenance; rewrite candidate claims for actual implementation, retain relevant history/credit. |
+| `bbd7339af2bb0b707f3d11f574f200352a7c2dbb`, `9b778b9a23d2d13a4b116984ad6739d83b1aa13f` | Jaromil &lt;jaromil@dyne.org&gt; | L10 peer stale-state fix/apptests; L12 streams assertion fixtures and L13 QR/build GUI assertions from the mixed test commit. |
+| `e4b26462de371041bd9973e750e220f72895250e`, `0e3ae72d89552a4178e12b15fe56ffd87bf8eb03` | Jaromil &lt;jaromil@dyne.org&gt; | L11 wallet-derived per-send RBF and locked Qt assertions, adapted. |
+| `5e2d79e9376a1fed32cd728091b23205e0ab9999` | Jaromil &lt;jaromil@dyne.org&gt; | L7 `node/mempool_args.cpp` string-view prefix modernization, adapted only where the parser remains; no consensus feature. |
+| `fb2128887946f094cf1d69c8cbb3cfd3604ba9dc`, `dc1b217cbd4802cc45ef6d97919ce819f8f2a58e`, `9a216bc38919c9bd80c0438ef74f4013bc0d651d`, `7c70374050f61bfaa86f9de2c7955c3153c1e356`, `f3cd7da535bfe2f715b1ae49f32d54796503e0a3`, `96fecfd411a9b2e04633b8078dea038b7b3abf9b`, `a1748ccc6416563683710996e5380766dec61ac9`, `f9e9a36cd1715c4370a41f6527a71e2eb5c1536a` | Jaromil &lt;jaromil@dyne.org&gt; | L11 sweep RPC/GUI, coin-control facts, documentation, asynchronous authorization, locked fee snapshot and secret cleansing. Fold security corrections into final feature. |
+| `875fa1582972f9cd6fa710b5f82bdc758b5470e4`, `9ab60f217b0ded70bebf08cb656de8d77944fa1c`, `9d9c125d9e6a3548f0d19678218bba9f66d6ae00` | Jaromil &lt;jaromil@dyne.org&gt;, devjoinedthechat &lt;235875317+devjoinedthechat@users.noreply.github.com&gt; | L9 priority-selected ancestor/resource correctness and locale-independent regression fixtures, adapted to chunk mining. |
+| `aa27c9117a1f08e009d99417c0cd8151acbc7141`, `48f3b3bbe8930f91a6cedb3764ca3e1b6febd15f`, `a6f35e915c798236cebb6442756d0fe29a3214eb` | Jaromil &lt;jaromil@dyne.org&gt;, devjoinedthechat &lt;235875317+devjoinedthechat@users.noreply.github.com&gt; | L8 configured RBF/TRUC semantics and tests; L12 truthful RPC field; L13 final generated help. |
+| `30e7eac266d6811c0520aa8846001b0501d47c5e`, `12d67ba60a926ec5993c2f2285bdece6e964d2fa`, `e6d4abc70406a8bc9082815a477ad0112e8e05ad`, `085a84a7cb936aa4317616fd9ba94152b3a26b32`, `8cb07ef1b92bf1f057d35bf478792725c14ab63e` | Jaromil &lt;jaromil@dyne.org&gt; | L7–L10/L12 feature-owned full-suite, Taproot-carrier, fee-estimator and startup fixtures; adapt to current APIs without erasing upstream regressions. |
+| `1f7cfce1768ac2e26ebde8e8a2148098af4a7c83` | Jaromil &lt;jaromil@dyne.org&gt; | L13 regenerate manuals/example configuration from final help, not source-byte replay. |
+| `16b2198275aee408686c22cb4365c594b7608ed6`, `47329c00dd66503166e7487d79a11589912ce2f3`, `1b2431c74c00eb5db1d0960e7480a39a4cce2ae2` | Jaromil &lt;jaromil@dyne.org&gt; | L6 native crypto flags, exact MiniUPnPc dependency patch and usable system LevelDB memory environment; the Chain interface include and mempool/1p1c lint fixtures follow L7/L10. |
+| `784b2af17a0c8c0fa7a8b1988e9da168983a3890`, `f74cc0433bc4d5fefff6d1542707f32c532a78ee`, `73c97862e2888d2a65ea3adc4eaa1e2e4e96a877` | Jaromil &lt;jaromil@dyne.org&gt; | L8 synchronized dynamic-dust publication/snapshot and changing-rate tests; consumers in L12 report the same authoritative state. |
+| `f66eca4ae466e198fecd66cac22a0033918b12ec` | Jaromil &lt;jaromil@dyne.org&gt; | L6 accepted stable contract collection and source/provenance reconciliation. |
+| `87c950de92ea1d5b35eef50c2230e9705ad9467b` | Jaromil &lt;jaromil@dyne.org&gt; | L7 strict policy grammar, scoped help/diagnostics and parser/startup tests; distinct source behavior change. |
+| `b60a6e04d09b4e706b6c382b844b61cc97c9280c` | Jaromil &lt;jaromil@dyne.org&gt; | L12 additive effective-policy RPC/schema/parity tests; distinct source API change. |
+| `10d772eb7f4b00b5193428a0dde4c06558d6c297` | Jaromil &lt;jaromil@dyne.org&gt; | L7 local valid-block/carrier interactions and parser fuzz; L8 penalty/carrier arithmetic and fuzz; L9 priority/fee/template interactions; L6 retains documented gaps until tests are ported. |
 
 Source-range authors are Jaromil and devjoinedthechat. Preserve their existing
 copyright/credit and upstream Core/Knots lineage; use retained source authorship
 and attribution in aggregate commit bodies. These thematic rewrites are not
 single-commit cherry-picks and must not fabricate an `-x` trailer.
+
 
 ## Input-stage verification
 
@@ -942,7 +953,7 @@ The remaining maintenance-only history is folded by responsibility:
 | `5c210e17fb`, `9f1780f330`, `4570a6a547` | Adapted CI/platform/assurance entry points and maintained fixtures; retain v31 native cache actions, compiler profiles, build script and test runners. Feature-owned code/tests stay in their earlier themes. |
 | `9da5851410`, `26b691e4f3`, `201927c151`, `e819a07a4a`, `56e2894760` | Adapted additive classification, conservative scheduled-change gate, strict APT retry, optional-feature selection and branded archive checks. Broad platform jobs move to nightly/manual; no optional capability is retired. |
 | `83fa42a963`, `f5182f0e3a`, `7791eede50`, `11c84c39ef`, `0efa437e29`, `f2595557d9`, `38bc7ec2ce`, `df8aa8e2b7`, `ddae467a78`, `778ff50d19`, `c474825f96`, `17e1d484ab` | Kept/adapted final release-source/rehearsal, five-platform archives, COPYING, portable replay, trusted signing/new-draft-only and promotion-proof safeguards. Corrective source history is folded; expanded notices remain optional/deferred. The configured-version sub-aspect is also preserved in L13.1. |
-| `b0b235d6a1`, `f4066e5282`, `30f673a4bc`, `a13f28e2f4`, `1517d925b2`, `628bdf4e38`, `02464df449`, `089888acdd` | Adapted relevant candidate identity, maintained workflow guidance, provenance and credit; existing upstream release notes remain historical. Final aggregate/range evidence stays L14. |
+| `b0b235d6a1`, `f4066e5282`, `30f673a4bc`, `a13f28e2f4`, `1517d925b2`, `628bdf4e38`, `02464df449`, `089888acdd` | Adapted relevant candidate identity, maintained workflow guidance, provenance and credit; existing upstream release notes remain historical. Final aggregate/range evidence stays L15. |
 | `1b73fe3d21`, `ec9db369f5`, `c592888088`, `9b778b9a23` | Remaining CI/build/GUI assertions are carried or adapted to v31 paths and the accepted owning-feature implementations; semantic source content is not reintroduced as a second chronological series. |
 
 PR/development execution now uses the existing `ci/test_run_all.sh` and native
@@ -1007,3 +1018,353 @@ binary/tool-test/export hashes are local evidence under
 `.gestalt/l13-integration`. L13.1 GUI/capture/manual evidence remains unchanged
 and is reused. Full L13 acceptance and the final candidate/hosted matrix remain
 later gates, rather than being inferred from these focused checks.
+
+## L15.1 repaired series audit
+
+The audited implementation tip is
+`8e7ffad5d932e07c0c80f3756f7c3a442786877e`, tree
+`05dba633973f45bd3a3cf40fdad467443ff7fc89`. Both worktrees were clean at audit entry. The source and
+base objects above resolve exactly; `v31.1` still resolves to the authenticated
+annotated-tag object and peeled commit. This audit does not repeat online
+release discovery or substitute public-main changes for the accepted source.
+
+### History and attribution
+
+The source range has 72 commits; the candidate range has nine accepted implementation
+commits. The proposed evidence-only tenth commit remains pending acceptance.
+The approved eleven-commit target is below 72 (61 fewer, about an 84.7%
+reduction); the eleventh L16 repair commit is also pending. No candidate merge, `fixup!` or
+`squash!` commit occurs after the new base. Each commit has exactly the previous
+theme as parent; the old Roots tip is not an ancestor. Upstream merges before
+the new base remain upstream history. The eleven-theme grouping includes the approved
+revision of the original seven-theme proposal: graph policy and mining were
+separated from local parsing/checks to isolate cluster accounting and residual
+template risks, followed by the authorized preservation repairs. Accepted historical commit descriptions still mentioning seven
+themes describe that earlier proposal, not additional commits to replay.
+
+| Theme | Exact accepted commit | Aggregate responsibility |
+| --- | --- | --- |
+| L6 | `6a60180521daedbc404caf23a8c4a77bcb739de7` | Build/portability foundation and preserved contracts. |
+| L7 | `e5445b7c96193c7ec141705aac5ba96651e0ee30` | Scoped parsing, local checks, valid-block regressions and inherited fixture adaptations. |
+| L8 | `846c9de12a5e71259dc1ed829413d68f449ebfd5` | Native graph weight/modified fees, replacement/TRUC/reuse and authorized dynamic-dust repair. |
+| L9 | `0fbff64239358c69a266705b189770b0f5570ff3` | Priority prefix, residual native chunks, resource/reward interactions. |
+| L10 | `2cd5097c909d1ab2f8bf27eb0df97b24b6c0807e` | Peer resource/permissions, current-connection health and GUI evidence. |
+| L11 | `ab07fc5490af30ce7c6da1c137c8280d1f4815f0` | Descriptor/signer boundaries, per-send RBF, transient sweep and coin-control facts. |
+| L12 | `44c15f2cde7d36f2733814d6ab68ce148f1a7079` | Configuration/effective-policy, dormant statistics and resource safeguards. |
+| L13 | `2f8bedaf1c56b3647746773492cb0d6c81a33e86` | Identity/desktop/help, Git-native maintenance/export and verification cadence. |
+| L14 | `8e7ffad5d932e07c0c80f3756f7c3a442786877e` | Qt5 startup/persistence registration, configured benchmark default and safe empty-write repair with regressions. |
+| L15 | Pending | This preservation ledger, observed diagnostics and limitations; documentation acceptance only. |
+| L16 | Pending | Test-oracle/hosted-diagnostics repairs and final candidate gates under reduced verification. |
+
+The full-object source ledger above covers exactly 72 distinct source commits,
+with no object outside the pinned range. Its 25 contract IDs equal the catalog's
+stable-ID set. Mixed source commits contribute to several themes; historical
+corrections are folded into their corrected final behavior. Reverted script work
+has no surviving consensus behavior. All source-range authors are Jaromil and
+devjoinedthechat. Their credit and Bitcoin Core/Knots lineage are retained;
+the new executor's aggregate authorship does not replace that attribution.
+
+The user explicitly accepted the historical commit-body provenance deviation: L6 and L7 carry respectively
+nine and twelve full `Source-commit:` trailers. L8–L13 use narrative source
+references and the document ledger rather than those trailers. The full-object
+ledger makes that provenance resolvable without rewriting accepted history;
+L14 carries the three exact full source trailers. This is not a claim of historical trailer conformance or a fabricated cherry-pick `-x`.
+
+### Range comparison and aggregate inspection
+
+The exact comparison is:
+
+```sh
+git range-diff --no-color \
+  49faec4f87f5cd19c88db01a82e5c68b087c8227..10d772eb7f4b00b5193428a0dde4c06558d6c297 \
+  9be056a8a72b624dae9623b2f7bded92c2a21c91..8e7ffad5d932e07c0c80f3756f7c3a442786877e
+git diff --binary 49faec4f87f5cd19c88db01a82e5c68b087c8227 10d772eb7f4b00b5193428a0dde4c06558d6c297
+git diff --binary 9be056a8a72b624dae9623b2f7bded92c2a21c91 8e7ffad5d932e07c0c80f3756f7c3a442786877e
+```
+
+Default range-diff similarity finds **zero syntactic pairs: 72 old-only and
+nine new-only entries**. That result is expected for many-to-one semantic
+aggregation, different Core APIs and feature-owned test/doc corrections; it is
+not evidence that 72 features disappeared. The full source ledger and thematic
+table explain those unmatched entries. No matching threshold was adjusted to
+manufacture apparent equivalence. The source aggregate changes 377 paths;
+the candidate aggregate changes 313. Path-count reductions likewise do not
+establish behavioral preservation.
+
+The remaining aggregate source-only production paths were inspected explicitly:
+
+| Source paths absent from the candidate delta | Disposition |
+| --- | --- |
+| `common/system.{cpp,h}`, `qt/clientmodel.cpp`, `rpc/server.cpp` | Native v31 monotonic uptime/startup display; only the reviewed uptime sub-aspect adopts upstream. |
+| `policy/coin_age_priority.{cpp,h}`, `kernel/CMakeLists.txt`, `validation.h` | Entry-age caches and legacy admission signatures are replaced by active-UTXO priority/coinage and native v31 admission APIs; no kernel priority source is needed. |
+| `policy/rbf.{cpp,h}`, `policy/truc_policy.{cpp,h}` | Legacy ancestor replacement/TRUC helpers are replaced by v31 cluster checks plus the configured gates in admission; Never/OptIn/Always and TRUC modes remain tested. |
+| `policy/fees.{cpp,h}` | v31 moved the estimator under `policy/fees/`; long-horizon estimates, hourly flushing, initialization and changing-rate tests use those native APIs. The source bool/const flush wrapper has no result-consuming production caller. |
+| `util/ioprio.{cpp,h}`, `util/mempressure.{cpp,h}` | Accepted omission of unused support, not a working pressure/I/O service or a whole runtime-resource retirement. |
+| `util/batchpriority.cpp`, `util/exception.cpp`, `logging.cpp`, `util/overflow.h` | Native v31 header/logging/arithmetic maintenance replaces the old implementation; no separate Roots operator interface is represented by these maintenance hunks. |
+| `util/check.{cpp,h}` | Native test-only assertion-to-exception hooks retain the required testing capability. |
+| `util/fs.{cpp,h}` | Native path bridge and lock-error checks; Windows exclusive-open/reparse/permission execution remains an unproved platform boundary, not a Linux pass. |
+| `util/strencodings.{cpp,h}` | Native restrictive subversion sanitization is retained; the source printable-character expansion is not imported. No raw or secret-bearing peer string is exposed. |
+| `protocol.h` | The source reserved filtered-witness enum/helpers have no source production consumer; they are not an active wire feature to add. |
+| `bench/mempool_stress.cpp` | Old cached coin-age/entry-constructor fixture arguments are unnecessary on v31's native entry API. L14 configured the benchmark profile and passed three bounded one-iteration smokes; this is not performance certification. |
+
+Paths in this table are relative to `src/`. L14 adds `qt/optionsmodel.cpp`,
+`bench/blockencodings.cpp` and `streams.cpp` to the candidate delta; those three
+closed omissions are no longer source-only paths. Source-only upstream tests and
+documentation remain assigned to their owning source-ledger themes: v31 tests
+retain newer native assertions instead of replaying old constructor/ancestor
+fixtures; historical release notes, generated help and platform/job assumptions
+are not byte-replay targets. Exact per-source and aggregate path inventories
+are retained in the local audit evidence. New candidate-only production deltas
+are `dbwrapper.cpp` (system MemEnv header), `qt/forms/debugwindow.ui` (peer
+details), and `script/descriptor.{cpp,h}` plus `wallet/scriptpubkeyman.{cpp,h}`
+(native local-key satisfaction for sweep destinations). Those changes follow
+the accepted L6/L10/L11 responsibilities and source security boundaries.
+
+Consensus/script-interpreter/block/kernel-chain files and embedded
+LevelDB/secp256k1/crc32c/minisketch subtrees are unchanged from the new base.
+`validation.cpp` from `bool CheckBlock(` to EOF is byte-identical to that base;
+native `txgraph.{cpp,h}` is unchanged. This bounds source placement; the local
+reject/valid-block tests remain the behavioral evidence. No new RDTS/BIP110
+consensus rule is claimed.
+
+### Implemented contract coverage and explicit decisions
+
+These are candidate test entry points, not assertions that every configuration
+passed. The prior accepted theme gates are historical matching evidence;
+L15.2 owns documentation and preserved-evidence provenance checks. L16 owns
+the remaining repairs and reduced candidate gates; independent terminal
+acceptance is a subsequent root-owned review.
+
+| Contract | Current disposition and candidate evidence |
+| --- | --- |
+| policy-parsing | Adapted strict scoped grammar; [unit tests](../src/test/policy_args_tests.cpp), [startup/precedence](../test/functional/feature_policy_args.py), [fuzz oracle](../src/test/fuzz/policy_args.cpp). |
+| effective-policy | Adapted initialized-state schema; [report/admission parity](../test/functional/rpc_effective_policy.py), [mempool units](../src/test/mempool_tests.cpp). |
+| policy-standardness | Adapted local limits/reasons; [transaction units](../src/test/transaction_tests.cpp), [sigop cases](../test/functional/mempool_sigoplimit.py), [local reject/valid blocks](../test/functional/mempool_roots_local_policy.py). |
+| policy-carrier | Adapted detection/budgets/native graph weight; [carrier cases](../test/functional/mempool_datacarrier.py), [transaction units](../src/test/transaction_tests.cpp), [subdust interactions](../test/functional/mempool_subdust_fee_penalty.py). |
+| policy-dust | Fixed rules retained and dynamic lifecycle repaired under explicit authorization; [dust thresholds](../test/functional/mempool_dust.py), [runtime](../test/functional/mempool_dynamic_dust.py), [publication units](../src/test/mempool_tests.cpp). |
+| policy-subdust | Adapted graph deficits with actual rewards unchanged; [functional arithmetic/reward matrix](../test/functional/mempool_subdust_fee_penalty.py), [documented conservative signed budgets](feature-contracts/subdust.md). |
+| policy-replacement | Adapted modes over native cluster economic checks; [RBF modes](../test/functional/mempool_rbf_policy.py), [TRUC](../test/functional/mempool_truc.py), [replacement units](../src/test/rbf_tests.cpp). |
+| policy-coinage | Adapted active-coin bounded age/maturity; [enabled/disabled/reorg/valid-block cases](../test/functional/mempool_roots_local_policy.py), [miner units](../src/test/miner_tests.cpp). |
+| policy-reuse | Adapted full-script staged/resident claims; [mempool units](../src/test/mempool_tests.cpp), [mode/reorg/replacement cases](../test/functional/mempool_graph_policy.py). |
+| mining-template | Adapted priority/residual chunks; [miner units](../src/test/miner_tests.cpp), [template limits](../test/functional/mining_roots_template.py), [joint rewards](../test/functional/mempool_subdust_fee_penalty.py). |
+| peer-controls | Adapted resources/permissions/clearnet controls; [bounded controls](../test/functional/p2p_roots_controls.py), [extras](../test/functional/p2p_compactblocks_extratxs.py), [permissions](../test/functional/p2p_permissions.py). |
+| peer-health | Adapted current facts/unavailable reset; [RPC](../test/functional/rpc_net.py), [actual GUI tests](../src/qt/test/apptests.cpp). Non-Linux CPU/rendering remains unproved. |
+| wallet-foundation | Adapted descriptor/SQLite and Unix FD boundary; [signer](../test/functional/wallet_signer.py), [multiwallet](../test/functional/wallet_multiwallet.py), [process units](../src/test/system_tests.cpp). Windows handle/fallback gaps remain explicit. |
+| wallet-rbf | Adapted wallet-derived per-send choice; [confirmation/PSBT tests](../src/qt/test/wallettests.cpp), [send](../test/functional/wallet_send.py). |
+| wallet-sweep | Adapted transient-key authorization and corrected local signing capability; [sweep](../test/functional/wallet_sweepprivkeys.py), [GUI](../src/qt/test/wallettests.cpp), [structural boundary checks](../ci/test/test_wallet_privacy_contract.py). No full memory-erasure/race claim. |
+| wallet-coin-control | Adapted wallet facts/invalidation; [GUI](../src/qt/test/wallettests.cpp), [send](../test/functional/wallet_send.py), retained populated visual matrix. |
+| runtime-config | Adapted text config and failure-safe writes; [getarg units](../src/test/getarg_tests.cpp), [configuration](../test/functional/feature_config_args.py), policy/effective-policy/sweep integrated precedence cases. |
+| operator-stats | Dormant model/schema retained; [model units](../src/stats/test/stats_tests.cpp). Only [monotonic uptime](../test/functional/rpc_uptime.py) adopts upstream; stats RPC remains unavailable. |
+| runtime-resources | Adapted preserving allocation/FD/GiB; [FS units](../src/test/fs_tests.cpp), [util units](../src/test/util_tests.cpp). Explicit accepted change: native RAM-aware cache default; unused advisory support omitted. |
+| build-portability | Adapted Qt5/6/system probes; [LevelDB finder tests](../test/cmake/test_leveldb.py), [profile guide](roots-build-portability.md). L14 covers Qt5 fresh-process settings persistence including early language reads. |
+| identity-desktop | Adapted Roots identity/assets/QR/taskbar conditions; [version tests](../test/cmake/test_identity.py), [QR/icon GUI tests](../src/qt/test/apptests.cpp), [receive/save](../src/qt/test/wallettests.cpp). Windows taskbar runtime unproved. |
+| maintenance-ci | Adapted affected fast checks and nightly/manual assurance; [selector tests](../ci/test/test_roots_regressions.py), [CI budgets](../ci/README.md). Local fixtures are not hosted/platform passes. |
+| maintenance-release | Retained/adapted immutable export/tag/source/archive/signature/new-draft safeguards; [tools and replay](../ci/release/README.md), maintained `ci/test` suite. No publishing/signing action authorized here. |
+| maintenance-docs | Adapted actual help/contracts/credit; [help lint](../test/lint/check-doc.py), regenerated config/manual parity and local links. |
+| maintenance-native | Adapted native APIs/test hooks; L14 preserves the configured compact-block benchmark and safe empty writes, including null-handle behavior. Reverted source work is not imported as consensus behavior. |
+
+No whole feature contract is retired or silently dropped. Dormant statistics,
+the unconsumed Tor-subprocess declaration and unused resource helpers are not
+available services. Native v31 sweep fee APIs replace removed settxfee/paytxfee.
+The source script-reuse collision/staging, signer fallback, sweep local-key and
+config stream-failure gaps are documented corrected adaptations. Conservative
+graph aggregate budgets can reject some representable final states; this
+accepted restriction is explicit in the subdust contract rather than called
+exact mathematical equivalence.
+
+### Historical buildability evidence
+
+Accepted-tree SHA256 comparison against durable theme snapshots matches
+25/25 L6, 66/66 L7, 44/44 L8, 23/23 L9, 37/37 L10, 63/63 L11, 29/29 L12,
+105/105 L13 and 8/8 L14 changed source paths. These snapshots bind the theme review
+commands and binary hashes; this audit did not rebuild nine historical trees.
+They establish the recorded profiles only:
+
+| Theme | Matched historical coverage / limit |
+| --- | --- |
+| L6 | Headless wallet, IPC build and actual Qt5/6 build/CTest; IPC Python cases skipped without capnp, distribution system-library profiles not proved. |
+| L7 | Daemon/native units, applicable functional and scoped sanitizer/fuzz targets. The user accepted this historical gap: the standalone wallet was not covered by the limited target build; L8 subsequently moved the script-size global from node to common to repair its link. Thus L7 is not claimed fully buildable across default executables. |
+| L8 | Full configured headless wallet build, native/functional and bounded sanitizer/fuzz evidence after that link repair. |
+| L9 | Full configured headless build plus current miner tests; inherited fixtures corrected with focused reruns after the frozen sweep. |
+| L10 | Full configured headless build and real Qt5/6 health tests; benchmark profile was off; L14 subsequently repaired and verified its source assertion omission. |
+| L11 | Full headless and Qt5/6 configured targets; bounded signer/wallet sanitizers and authorization/visual cases. |
+| L12 | Full headless and Qt5/6 targets; bounded runtime/config/resource regressions. L14 subsequently restored and tested the source empty-write guard. |
+| L13 | Full headless/native/CTest/functional, actual Qt5/6 suites and maintenance tests. New minimal-backend Save fixture failed initially; only the interaction fixture changed and both full Qt suites reran successfully. |
+| L14 | Current full headless/native/CTest/functional and tool gates, Qt5/Qt6 full suites after early-startup regression repair, configured benchmark build and bounded stream sanitizer/benchmark checks. Exact provenance is retained in the repair snapshot. |
+
+L13's frozen accepted evidence records 772 native cases, 156 CTest passes plus
+one external-assets skip, 278 functional passes plus 17 prerequisite skips,
+21 Qt result rows per major and 125 maintained tool cases. Its 32 reviewed
+identity images and seven repeated manuals retain original hashes. Those
+results are historical provenance at the L13 tree, not a new L15.2 gate. The
+old pure dynamic-dust fuzz binary's matching arithmetic closure does not certify
+the entire current candidate. Optional hosted CI, Windows/macOS/32-bit,
+USDT/ZMQ/IPC interfaces, system-library distributions, extended/previous-release
+fixtures and full modern sanitizer/fuzz profiles remain unexecuted locally.
+
+### Closed repair findings and current evidence
+
+L14 closes the three verified preservation omissions in one accepted repair
+commit, without rewriting the eight earlier accepted themes:
+
+1. **Qt5 display-unit persistence:** source
+   `c5928880885a32510cfd716f4354117eeaf4d4dc` (Jaromil) registers
+   `qRegisterMetaTypeStreamOperators<BitcoinUnit>()`. The candidate retains the
+   source-style `OptionsModel` hook for standalone construction and additionally
+   registers in `BitcoinApplication::RegisterMetaTypes` before translation
+   settings are read. A constructor-only hook was insufficient because Qt5's
+   earlier language read cached an invalid enum. The fresh-process regression
+   writes language and each of four units, then reads language before model
+   construction and checks the stored type/value before fallback. The enhanced
+   Qt5 test first failed; final Qt5 and Qt6 full suites each passed 22 result
+   rows with no skips, including eight writer/reader child processes per major.
+2. **Benchmark profile:** source
+   `4570a6a54770fbda04d9cd05197b6f4fd8f88546` (Jaromil) preserves the configured default.
+   The compact-block benchmark now uses the Roots default 32,768 rather than
+   asserting the old value 100. The configured benchmark profile builds and
+   three one-iteration producer smokes pass. These are build/smoke evidence,
+   not throughput or full benchmark campaign results.
+3. **Safe empty AutoFile writes:** source
+   `f5182f0e3a7c49c85abe6159af0a16d1b6ae8298` (Jaromil) retains the guard after null-handle
+   validation. Empty writes no longer call `fwrite` or mark a valid stream
+   written. Regression coverage preserves null-handle failure and empty-write
+   behavior; the current Clang ASan/UBSan streams smoke passes 20 cases with
+   leak detection disabled. It does not certify leaks or a full sanitizer suite.
+
+The repaired candidate records 774 native cases, 156 CTest passes plus one
+external-assets skip, 278 functional passes plus 17 prerequisite skips, 22 Qt
+result rows per major, 125 maintained-tool cases and the three benchmark smokes.
+Exact command records, all eight repair source hashes, thirteen binary hashes,
+four build-cache hashes and fixture hashes are bound in the local L14 review
+snapshot. Its Qt-startup correction reuse proof binds unchanged headless code,
+eight binaries, three primary caches and 389 tracked functional fixtures; the
+headless gates were not repeated merely for Qt-only corrections. L15.2
+revalidates this provenance by hashing the unchanged sources, binaries, caches,
+fixtures and recorded logs; it does not rerun those suites. Earlier GUI
+captures and generated manuals retain their original artifact identities and
+limitations; none are relabeled as new captures.
+
+Changed-scope include lint passes. Global include lint has two explicitly
+accepted preexisting findings: duplicate `QTimer` in
+`src/qt/test/wallettests.cpp` and the `cpp_int` include allowlist finding in
+`src/test/fuzz/tx_pool.cpp`. They remain disclosed for terminal review; no
+production cleanup is hidden in this documentation commit. Optional hosted CI,
+Windows/macOS/32-bit, USDT/ZMQ/IPC interfaces, system-library distributions,
+extended/previous-release fixtures and full sanitizer/fuzz campaigns remain
+unproved by these local gates.
+
+The refreshed audit records exact range/aggregate artifacts, per-source
+path/author/disposition accounting, historical source matches and protected
+source comparisons. The L15.1 audit neither changes nor fetches any ref. Its
+before/after local source, candidate and public ref snapshots match. Prior
+publication was separately authorized: the root published the candidate and
+exact-base `review/core-v31.1` review branch and opened
+[draft PR 49](https://github.com/LuganoPlanB/bitcoin-roots/pull/49). Existing
+public release/main/tag refs remain outside this execution's write scope; the
+executor performs no push, release, promotion, signing or history rewrite.
+L15 documentation/export checks establish evidence integrity only. The separate
+L16 repairs and reduced candidate gates, then a fresh independent terminal
+review, remain required before whole-plan acceptance.
+
+
+## L15.2 provenance, observed failures and approved handoff
+
+The evidence-only working tree is based on implementation HEAD
+`8e7ffad5d932e07c0c80f3756f7c3a442786877e` and Core base
+`9be056a8a72b624dae9623b2f7bded92c2a21c91`. The current reuse check compares
+all eight L14 repair-source hashes, thirteen binary hashes, four build-cache
+hashes, 453 fixture hashes (389 functional, 60 maintained-tool, one native-stream
+and three Qt) and seventeen command-log hashes with the accepted repair snapshot.
+Matched evidence retains its original commands, skips and profile limitations;
+no full unit, functional, Qt or sanitizer suite was rerun for this documentation
+change. The older dynamic-dust arithmetic-closure pass remains historical,
+limited evidence and does not supersede the current failures below.
+
+| Matched accepted evidence | Result and scope |
+| --- | --- |
+| Native unit suite | 774 passing cases. |
+| CTest | 156 passes; one external-assets skip. |
+| Functional suite | 278 passes; 17 prerequisite skips, detailed below. |
+| Qt5 and Qt6 | 22 passing result rows per major, including fresh-process persistence probes; no skips. |
+| Maintained tools | 125 passing cases. |
+| Stream ASan/UBSan smoke | 20 passing cases with leak detection disabled; prior bounded stream evidence only. |
+| Compact-block benchmark | Three one-iteration smokes; no throughput claim. |
+
+The 17 functional skips comprise uncompiled benchmark and chainstate tools
+(two), missing Python ZMQ (one), disabled USDT tracepoints (five), unavailable
+previous releases (five), external routable-address prerequisites (two) and
+uncompiled IPC (two). Previous-release cases are
+`wallet_backwards_compatibility.py`, `mempool_compatibility.py`,
+`feature_unsupported_utxo_db.py`, `feature_coinstatsindex_compatibility.py` and
+`wallet_migration.py`; IPC cases are `interface_ipc.py` and
+`interface_ipc_mining.py`. The earlier functional benchmark skip remains recorded
+although a later configured benchmark build and three smokes passed.
+
+### Existing current-target diagnostic results
+
+Before the reduced-verification instruction, the current-source local fast run
+completed all nine selected targets with five-second per-target budgets, seed 1,
+maximum input length 4096 and a 2048 MiB RSS limit. Its preserved result record
+reports **seven passes and two failures**, with no omitted target in that run:
+
+| Target | Observed exit | Result |
+| --- | --- | --- |
+| `dynamic_dust_fee` | 1 | Fail: Boost multiprecision signed-bound conversion in the reference oracle reports unsigned-integer-overflow. |
+| `policy_args` | 1 | Fail: decimal-validator char conversion reports implicit-integer-sign-change at `src/test/fuzz/policy_args.cpp:37`. |
+| `process_message` | 0 | Pass within the bounded local run. |
+| `psbt` | 0 | Pass within the bounded local run. |
+| `script` | 0 | Pass within the bounded local run. |
+| `string` | 0 | Pass within the bounded local run. |
+| `subdust_fee_penalty` | 0 | Pass within the bounded local run. |
+| `tx_pool` | 0 | Pass within the bounded local run. |
+| `txgraph` | 0 | Pass within the bounded local run. |
+
+These results belong to the existing local Clang 19 current-source build with
+`fuzzer,address,undefined,float-divide-by-zero,integer` instrumentation,
+`-ftrivial-auto-var-init=pattern` and IPC disabled. Hosted CI uses Clang 22;
+matching sanitizer names do not establish compiler/profile equivalence. The
+Boost diagnostic is in `cpp_int/misc.hpp:1303`, reached by the oracle conversion
+at `src/test/fuzz/tx_pool.cpp:574`; it is not a demonstrated production-policy
+failure. These observed failures are preserved, unresolved at the L15 tree,
+and cannot be relabeled as passing by using the older arithmetic-only binary.
+No failing input was replayed during this documentation reconciliation.
+
+The preserved hosted observation for draft PR 49 is fuzz job `114814967702`
+in run `38249608708`, exit 1, with no uploaded per-target diagnostics. The
+historical hosted failing target remains unidentified. Existing inspection found
+per-target output in container scratch while artifact upload searched a host
+path; L16 owns diagnostic transport repair. The local failures do not establish
+the cause of that hosted failure. Hosted lint success is separate from the two
+accepted preexisting global include-lint findings disclosed above.
+
+### Reduced verification and remaining ownership
+
+On 2026-10-12 the user explicitly removed further fuzz execution, sanitizer
+campaigns and saved-input reproducer replays from remaining work and acceptance.
+No hosted substitute is authorized for those omitted actions. Reduced coverage
+is an accepted limitation, not a passing result. The existing nine-target
+results and failure logs remain evidence; no new instrumented pass is required
+or asserted. Following the planned L16 repairs, the affected targets must be
+reported as **not rerun under instrumentation**.
+
+L16 separately owns safe signed-bound handling including `INT64_MIN` in the
+independent dynamic-dust reference oracle, explicit decimal-validator character
+conversion, host-visible failure artifacts and bounded console diagnostics.
+Its required verification uses ordinary focused unit/maintenance/CI-helper tests,
+source review, relevant lint, matched prior full-suite evidence and portable
+export/replay parity. Neither production-policy changes nor broad sanitizer
+suppression are part of this disposition. Final candidate acceptance belongs
+to L16 followed by fresh terminal review; acceptance of L15 only approves the
+accuracy and integrity of this documentation.
+
+Current documentation checks verify the complete source/author ledger, 25
+contract dispositions, local links, option documentation, whitespace and exact
+single-document dirty scope with an empty index. An isolated disposable clone
+snapshots the intended documentation tree for portable export/replay using
+`git am -3 --keep-cr`: product paths match that snapshot, `.github/**` remains
+excluded from the patch and at the Core base on replay, and Jaromil and
+devjoinedthechat credit remains present. All temporary snapshot commits, refs
+and the export fixture tag belong to that clone; candidate refs are unchanged.
+After an eventual accepted L15 commit, documentation tree/artifact identity is
+checked again. This is export integrity evidence, not release, signing,
+promotion, hosted-matrix or whole-candidate acceptance.
