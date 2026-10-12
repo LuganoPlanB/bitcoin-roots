@@ -235,8 +235,9 @@ binaries, and existing release tags cannot be manually rehearsed.
 
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
-Before creating a permanent tag, merge the reviewed promotion so the trusted
-workflow is present on the default branch. The default path tags the reviewed
+Before creating a permanent tag, verify the release workflow in the reviewed
+canonical source. The tag-push path uses that tagged workflow and does not
+require a promotion into `main`. The default path tags the reviewed
 canonical source once; the tag runs fresh five-platform builds, required
 manifest signing and new-draft creation. Independently verify that draft before
 separate publication approval.

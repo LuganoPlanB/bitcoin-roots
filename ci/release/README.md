@@ -50,7 +50,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    python3 ci/release/repack.py intermediate.tar.gz assembled.tar.gz \
-     bitcoin-roots-30.3-roots.1 notice-inputs/index.json linux-x86_64
+     bitcoin-roots-31.1-roots.1 notice-inputs/index.json linux-x86_64
    ```
 
    The repacker adds canonical `COPYING` and `notices/` at the archive root,
