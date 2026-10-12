@@ -66,3 +66,7 @@ export CI_RETRY_EXE=${CI_RETRY_EXE:-"retry"}
 
 # The --platform argument used with `docker build` and `docker run`.
 export CI_IMAGE_PLATFORM=${CI_IMAGE_PLATFORM:-"linux"} # Force linux, but use native arch by default
+
+# Roots assurance cadence and complete classifier input are forwarded into CI.
+export ROOTS_CI_CADENCE=${ROOTS_CI_CADENCE:-}
+export ROOTS_CHANGED_FILES_JSON=${ROOTS_CHANGED_FILES_JSON:-null}

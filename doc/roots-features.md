@@ -18,8 +18,11 @@ Roots behavior has been ported**. L7 implements scoped parsing and local transac
 accounting and replacement/TRUC/reuse controls; L8.2 repairs dynamic dust lifecycle.
 Priority/template
 mining to L9; peer controls/health to L10; sweep, coin-control and per-send
-RBF extensions to L11; resource safeguards remain L12.2; identity/desktop and maintenance integration to
-L13. L11.1 adds database-discovery/write-access safeguards, Unix signer descriptor
+RBF extensions to L11; resource safeguards to L12.2. L13.1 carries Roots
+identity/icons, font-aware QR-PNG export and conditional Windows taskbar
+progress. L13.2 carries Git-native source/export/signing safeguards and the
+fast PR/development versus nightly/manual verification split; hosted/platform
+coverage remains subject to the explicitly recorded gaps. L11.1 adds database-discovery/write-access safeguards, Unix signer descriptor
 closure, wallet-derived per-send RBF defaults and prepared-transaction/PSBT
 signaling. L11.2 adds transient-key sweep with cancellation/final authorization,
 shared UTXO scanning and wallet-derived coin-control facts. L12.1 implements
@@ -32,9 +35,9 @@ equivalence; this does not retire the remaining operator-stats contract.
 
 MiniUPnPc dependency discovery is retained, but its UPnP runtime and depends
 recipe integration belong to the peer theme. The legacy `ENABLE_TOR_SUBPROCESS` declaration has no dedicated
-launcher consumer; it is not an available feature. Roots Windows taskbar
-progress remains deferred to desktop integration. Passing either undeclared
-option to CMake does not implement it. No intended behavior is retired by a
+launcher consumer; it is not an available feature. Windows taskbar progress is enabled by `WITH_TASKBAR_PROGRESS` only for
+Windows GUI builds. Its runtime remains an untested platform gap locally.
+Passing an undeclared Tor-subprocess option to CMake does not implement it. No intended behavior is retired by a
 missing dependency.
 
 Unless explicitly marked as candidate evidence, code and test references in the
@@ -425,14 +428,20 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   checks in ci/test (`ci/test`, source reference). Gap: the baseline covers one Linux headless
   wallet profile, not all optional/platform configurations. `ENABLE_TOR_SUBPROCESS`
   has no production consumer and cannot promise an automatic Tor instance.
-- **identity-desktop:** built tools identify Roots and the selected version;
-  retain Roots icons and upstream/protocol attribution, QR-to-PNG export and
+- **identity-desktop:** built tools identify Bitcoin Roots `v31.1-roots.1`
+  by default; `CLIENT_VERSION_TAG` accepts only `v31.1-roots.<positive revision>`
+  and sets archive-build identity without Git metadata. Numeric protocol version
+  and BIP14 `Satoshi` identity remain upstream-compatible. Retain Roots icons,
+  Bitcoin Core/Knots lineage and attribution, font-aware QR-to-PNG export and
   supported Windows taskbar progress without mass-rebranding history. See
-  version (`src/clientversion.cpp`, source reference), QR export (`src/qt/qrimagewidget.cpp`, source reference) and
-  taskbar (`src/qt/wintaskbarprogress.cpp`, source reference). Acceptance:
-  apptests.cpp (`src/qt/test/apptests.cpp`, source reference) `consoleTests` QR/icon assertions,
-  binary `-version`, and supported Qt/platform builds. Gap: QR/receive UI at both
-  resolutions/font scales and Windows taskbar runtime evidence.
+  [version](/src/clientversion.cpp), [QR export](/src/qt/qrimagewidget.cpp) and
+  [taskbar](/src/qt/wintaskbarprogress.cpp). Acceptance: production CMake release
+  version cases in [test_identity.py](/test/cmake/test_identity.py), QR/icon/PNG
+  clipboard assertions in [apptests.cpp](/src/qt/test/apptests.cpp), actual
+  receive Save action/PNG parity/font refresh in
+  [wallettests.cpp](/src/qt/test/wallettests.cpp), binary `-version`, and
+  supported Qt/platform builds. See the [L13.1 evidence](/doc/roots-v31-port-review.md#l131-identity-and-desktop-integration)
+  for the receive/export resolution/font matrix and platform/profile gaps.
 
 ### Maintenance dispositions
 

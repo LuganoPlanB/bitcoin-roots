@@ -10,6 +10,9 @@
 #include <qt/bitcoin.h>
 #include <qt/bitcoingui.h>
 #include <qt/networkstyle.h>
+#include <qt/qrimagewidget.h>
+#include <QClipboard>
+#include <QTemporaryDir>
 #include <qt/rpcconsole.h>
 #include <qt/peertablemodel.h>
 #include <QLabel>
@@ -207,6 +210,38 @@ void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
     QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->rowCount() == endpoints.size() - 1), 10000);
     QVERIFY(table->selectionModel()->selectedRows().isEmpty());
 }
+void TestQrQuietZone()
+{
+#if defined(ENABLE_WALLET) && defined(USE_QRCODE)
+    QRImageWidget qr;
+    QVERIFY(qr.setQR(QStringLiteral("bitcoin:bc1qz0j5w6w8t8d5alw5lp4n4t3g6d7n7ld5cqqqqq")));
+    const QImage image{qr.exportImage()};
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path{directory.filePath("qr.png")};
+    QVERIFY(image.save(path, "PNG"));
+    QCOMPARE(QImage{path}, image);
+    qr.copyImage();
+    QCOMPARE(QApplication::clipboard()->image(), image);
+    QCOMPARE(image.width(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
+    QCOMPARE(image.height(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
+    // The first matrix pixel remains white only when the four-module quiet zone
+    // survives the scale-to-display path.
+    QCOMPARE(image.pixelColor(QR_IMAGE_MARGIN, QR_IMAGE_MARGIN), QColor{Qt::white});
+#endif
+}
+
+void TestRootsResources()
+{
+    const QPixmap icon{QStringLiteral(":/icons/bitcoin")};
+    QVERIFY(!icon.isNull());
+    const QSize expected_icon_size{256, 256};
+    QCOMPARE(icon.size(), expected_icon_size);
+    const QPixmap splash{QStringLiteral(":/icons/splash")};
+    QVERIFY(!splash.isNull());
+    const QSize expected_size{960, 960};
+    QCOMPARE(splash.size(), expected_size);
+}
 } // namespace
 
 //! Entry point for BitcoinApplication tests.
@@ -262,6 +297,8 @@ void AppTests::guiTests(BitcoinGUI* window)
 void AppTests::consoleTests(RPCConsole* console)
 {
     HandleCallback callback{"consoleTests", *this};
+    TestQrQuietZone();
+    TestRootsResources();
     TestRpcCommand(console);
     TestPeerRefreshState(console);
     TestLivePeerView(console, m_app.node());

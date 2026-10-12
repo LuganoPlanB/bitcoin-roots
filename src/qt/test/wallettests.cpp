@@ -22,6 +22,11 @@
 #include <qt/qvalidatedlineedit.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/receiverequestdialog.h>
+#include <qt/qrimagewidget.h>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QTemporaryDir>
+#include <QTimer>
 #include <qt/recentrequeststablemodel.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
@@ -124,6 +129,23 @@ bool CaptureWalletWidget(QWidget& widget, const QString& name)
     qApp->processEvents();
     QTest::qWait(50);
     return widget.size() == size && QDir().mkpath(directory) && widget.grab().save(directory + '/' + name + ".png");
+}
+
+//! Receive/save dialogs keep their production size; evidence records the
+//! complete screen at the caller's resolution instead of forcing a layout.
+bool CaptureReceiveWidget(QWidget& widget, const QString& name)
+{
+    const QString directory{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_DIR")};
+    if (directory.isEmpty()) return true;
+    const auto dimensions{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_SIZE", "1280x800").split('x')};
+    if (dimensions.size() != 2) return false;
+    const QSize size{dimensions[0].toInt(), dimensions[1].toInt()};
+    widget.show();
+    qApp->processEvents();
+    widget.move(std::max(0, (size.width() - widget.width()) / 2), std::max(0, (size.height() - widget.height()) / 2));
+    QTest::qWait(50);
+    const auto screenshot{widget.screen()->grabWindow(0)};
+    return screenshot.size() == size && QDir().mkpath(directory) && screenshot.save(directory + '/' + name + ".png");
 }
 
 //! Press "Yes" or "Cancel" buttons in modal send confirmation dialog.
@@ -699,6 +721,51 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
             QCOMPARE(uri.count("message=TEST_MESSAGE_1"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("message_tag")->text(), QString("Message:"));
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("message_content")->text(), QString("TEST_MESSAGE_1"));
+#ifdef USE_QRCODE
+            auto* qr = receiveRequestDialog->findChild<QRImageWidget*>("qr_code");
+            auto* save = receiveRequestDialog->findChild<QPushButton*>("btnSaveAs");
+            QVERIFY(qr && save && save->isEnabled());
+            const QImage exported{qr->exportImage()};
+            QVERIFY(!exported.isNull());
+            // Exercise the actual receive dialog and save action with an
+            // isolated filename, never a real wallet address or directory.
+            QVERIFY(CaptureReceiveWidget(receiveCoinsDialog, "receive"));
+            QVERIFY(CaptureReceiveWidget(*receiveRequestDialog, "receive-request"));
+            QTemporaryDir export_dir;
+            QVERIFY(export_dir.isValid());
+            const QString capture_dir{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_DIR")};
+            const QString filename{capture_dir.isEmpty() ? export_dir.filePath("qr.png") : capture_dir + "/qr-export.png"};
+            const bool native_dialogs_disabled{qApp->testAttribute(Qt::AA_DontUseNativeDialogs)};
+            qApp->setAttribute(Qt::AA_DontUseNativeDialogs);
+            bool saved{false};
+            QTimer::singleShot(0, [&] {
+                for (auto* top : QApplication::topLevelWidgets()) {
+                    if (auto* dialog = qobject_cast<QFileDialog*>(top)) {
+                        // QFileDialog's filesystem model loads asynchronously.
+                        // Pin the writable test directory before selecting the
+                        // name; minimal has no screenshot event-pumping delay.
+                        dialog->setDirectory(QFileInfo{filename}.absolutePath());
+                        dialog->selectFile(QFileInfo{filename}.fileName());
+                        auto* filename_edit = dialog->findChild<QLineEdit*>("fileNameEdit");
+                        if (filename_edit) filename_edit->setText(QFileInfo{filename}.fileName());
+                        const bool selected{QTest::qWaitFor([&] { return dialog->selectedFiles() == QStringList{filename}; }, 1000)};
+                        saved = selected && CaptureReceiveWidget(*dialog, "qr-save-dialog");
+                        QMetaObject::invokeMethod(dialog, saved ? "accept" : "reject");
+                    }
+                }
+            });
+            save->click();
+            qApp->setAttribute(Qt::AA_DontUseNativeDialogs, native_dialogs_disabled);
+            QVERIFY(saved);
+            QCOMPARE(QImage{filename}, exported);
+            // Font changes refresh the production QR image in-place.
+            QFont larger_font{walletModel.getOptionsModel()->getFontForMoney()};
+            larger_font.setPointSizeF(larger_font.pointSizeF() * 1.5);
+            const auto original_choice{walletModel.getOptionsModel()->data(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney))};
+            QVERIFY(walletModel.getOptionsModel()->setData(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney), QVariant::fromValue(OptionsModel::FontChoice{larger_font})));
+            QVERIFY(qr->exportImage().height() > exported.height());
+            QVERIFY(walletModel.getOptionsModel()->setData(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney), original_choice));
+#endif
         }
     }
 

@@ -125,4 +125,7 @@
 /* Define if QR support should be compiled in */
 #cmakedefine USE_QRCODE 1
 
+/* Define to enable Windows GUI taskbar progress. */
+#cmakedefine BITCOIN_QT_WIN_TASKBAR 1
+
 #endif //BITCOIN_CONFIG_H

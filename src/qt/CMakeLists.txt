@@ -241,6 +241,11 @@ if(WITH_DBUS)
   target_link_libraries(bitcoinqt PRIVATE Qt${WITH_QT_VERSION}::DBus)
 endif()
 
+if(WITH_TASKBAR_PROGRESS)
+  target_sources(bitcoinqt PRIVATE wintaskbarprogress.cpp wintaskbarprogress.h)
+  target_link_libraries(bitcoinqt PRIVATE ole32)
+endif()
+
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   # We want to define static plugins to link ourselves, thus preventing
   # automatic linking against a "sane" set of default static plugins.
@@ -270,7 +275,10 @@ add_executable(bitcoin-qt
   ../init/bitcoin-qt.cpp
 )
 
-add_windows_resources(bitcoin-qt res/bitcoin-qt-res.rc)
+if(WIN32)
+  configure_file(res/bitcoin-qt-res.rc res/bitcoin-qt-res.rc USE_SOURCE_PERMISSIONS @ONLY)
+  add_windows_resources(bitcoin-qt ${CMAKE_CURRENT_BINARY_DIR}/res/bitcoin-qt-res.rc)
+endif()
 add_windows_application_manifest(bitcoin-qt)
 
 target_link_libraries(bitcoin-qt

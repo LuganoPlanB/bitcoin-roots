@@ -37,6 +37,10 @@ create_test_config()
 
 if(BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME roots_build_identity
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_identity.py
+      --cmake ${CMAKE_COMMAND}
+  )
   add_test(NAME roots_leveldb_finder
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_leveldb.py
       --cmake ${CMAKE_COMMAND}

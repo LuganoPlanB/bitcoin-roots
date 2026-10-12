@@ -26,7 +26,7 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 # Project / Package metadata
 #=============================
-set(CLIENT_NAME "Bitcoin Core")
+set(CLIENT_NAME "Bitcoin Roots")
 set(CLIENT_VERSION_MAJOR 31)
 set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_BUILD 0)
@@ -53,18 +53,30 @@ set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
 project(BitcoinCore
   VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
   DESCRIPTION "Bitcoin client software"
-  HOMEPAGE_URL "https://bitcoincore.org/"
+  HOMEPAGE_URL "https://github.com/luganoplanb/bitcoin-roots/"
   LANGUAGES NONE
 )
 
-set(CLIENT_VERSION_STRING ${PROJECT_VERSION})
+# Keep the user-visible Roots release name separate from the numeric protocol
+# version. Release builders supply CLIENT_VERSION_TAG even when Git metadata
+# is unavailable; a clean Git tag still takes precedence in build info.
+set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
 if(CLIENT_VERSION_RC GREATER 0)
   string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
+endif()
+if(DEFINED CLIENT_VERSION_TAG)
+  string(REPLACE "." "\\." client_version_tag_base_pattern "${CLIENT_VERSION_STRING}")
+  if(NOT CLIENT_VERSION_TAG MATCHES "^v${client_version_tag_base_pattern}-roots\\.[1-9][0-9]*$")
+    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${CLIENT_VERSION_STRING}.")
+  endif()
+  string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
+else()
+  string(APPEND CLIENT_VERSION_STRING "-roots.1")
 endif()
 
 set(COPYRIGHT_HOLDERS "The %s developers")
 set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/bitcoin/bitcoin/issues")
+set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================
 # Language setup
@@ -169,6 +181,9 @@ if(WITH_QRENCODE)
   find_package(QRencode MODULE REQUIRED)
   set(USE_QRCODE TRUE)
 endif()
+
+cmake_dependent_option(WITH_TASKBAR_PROGRESS "Enable GUI taskbar progress." ON "CMAKE_SYSTEM_NAME STREQUAL \"Windows\" AND BUILD_GUI" OFF)
+set(BITCOIN_QT_WIN_TASKBAR ${WITH_TASKBAR_PROGRESS})
 
 cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI" OFF)
 
@@ -699,6 +714,7 @@ message("  IPC ................................. ${ipc_status}")
 message("  Embedded ASMap ...................... ${WITH_EMBEDDED_ASMAP}")
 message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
+message("  Windows taskbar (GUI) ............... ${WITH_TASKBAR_PROGRESS}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
 message("  Qt major version (GUI) .............. ${WITH_QT_VERSION}")
 message("  System LevelDB ...................... ${WITH_SYSTEM_LEVELDB}")

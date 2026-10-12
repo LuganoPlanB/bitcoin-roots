@@ -49,6 +49,12 @@
       "dependencies": [
         "zeromq"
       ]
+    },
+    "miniupnpc": {
+      "description": "Enable optional Roots UPnP support",
+      "dependencies": [
+        "miniupnpc"
+      ]
     }
   },
   "overrides": [

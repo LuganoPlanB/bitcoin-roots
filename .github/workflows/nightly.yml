@@ -1,0 +1,606 @@
+# Copyright (c) 2026-present The Bitcoin Roots developers
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Nightly assurance
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Assurance suite to run
+        required: false
+        default: all
+        type: choice
+        options: [all, sanitizers, fuzz, platforms, tsan, msan, tidy, i686, previous-releases, extended-functional, macos-fuzz, windows-fuzz, arm32, kernel, macos-smoke, windows-smoke]
+  workflow_call:
+    inputs:
+      ref:
+        description: Immutable commit SHA to test
+        required: true
+        type: string
+      suite:
+        description: Assurance suite to run
+        required: false
+        default: all
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: nightly-assurance-${{ inputs.ref || github.ref }}-${{ inputs.suite || 'all' }}
+  cancel-in-progress: false
+
+env:
+  CI_FAILFAST_TEST_LEAVE_DANGLING: 1
+
+jobs:
+  gate:
+    name: nightly change gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.decision.outputs.run }}
+      reason: ${{ steps.decision.outputs.reason }}
+      linux-matrix: ${{ steps.matrix.outputs.value }}
+      sanitizer-matrix: ${{ steps.matrix.outputs.sanitizers }}
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Retrieve current and immediately preceding scheduled runs
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const history = {complete: false, workflow_runs: []};
+            try {
+              const response = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'nightly.yml',
+                event: 'schedule',
+                per_page: 2,
+                page: 1,
+              });
+              if (!Array.isArray(response.data.workflow_runs) ||
+                  response.data.workflow_runs.length > 2 ||
+                  !Number.isInteger(response.data.total_count) ||
+                  response.data.total_count < response.data.workflow_runs.length) {
+                throw new Error('malformed scheduled workflow history');
+              }
+              history.complete = true;
+              history.workflow_runs = response.data.workflow_runs;
+            } catch (error) {
+              core.warning(`Unable to retrieve complete nightly history: ${error.message}`);
+            }
+            fs.writeFileSync('nightly-history.json', JSON.stringify(history));
+      - name: Decide whether assurance is required
+        id: decision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          history='{"complete":false}'
+          if [[ "${EVENT_NAME}" == schedule && -f nightly-history.json ]]; then
+            history="$(<nightly-history.json)"
+          fi
+          python3 ci/nightly-change-gate.py --event-name "${EVENT_NAME}" --current-run-id "${CURRENT_RUN_ID}" --current-sha "${CURRENT_SHA}" --history-json "${history}" --github-output "${GITHUB_OUTPUT}"
+      - name: Select requested Linux assurance suites
+        id: matrix
+        env:
+          SUITE: ${{ inputs.suite || 'all' }}
+        run: |
+          set -Eeuo pipefail
+          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
+          sanitizers='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true},{"name":"ASan wallet, GUI and USDT","file-env":"./ci/test/00_setup_env_native_asan.sh","timeout":180,"configure-aslr":false,"enable-usdt":true}]}'
+          case "${SUITE}" in
+            all) value="${all}"; sanitizer_value="${sanitizers}" ;;
+            tsan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true}]}' ;;
+            msan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}' ;;
+            sanitizers) value='{"include":[]}'; sanitizer_value="${sanitizers}" ;;
+            tidy) value='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360}]}' ;;
+            i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240}]}' ;;
+            previous-releases) value='{"include":[{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300}]}' ;;
+            extended-functional) value='{"include":[{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}' ;;
+            fuzz|macos-fuzz|windows-fuzz|arm32|kernel|macos-smoke|windows-smoke) value='{"include":[]}' ;;
+            *) echo "Unsupported suite: ${SUITE}" >&2; exit 1 ;;
+          esac
+          sanitizer_value=${sanitizer_value:-'{"include":[]}'}
+          echo "value=${value}" >> "${GITHUB_OUTPUT}"
+          echo "sanitizers=${sanitizer_value}" >> "${GITHUB_OUTPUT}"
+
+  linux-assurance:
+    name: ${{ matrix.name }}
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && fromJSON(needs.gate.outputs.linux-matrix).include[0] != null
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.gate.outputs.linux-matrix) }}
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ${{ matrix.file-env }}
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      - name: Restore caches
+        uses: ./.github/actions/cache/restore
+        with:
+          provider: gha
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run assurance suite
+        run: ./ci/test_run_all.sh
+      - name: Preserve failed assurance output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+
+  sanitizers:
+    name: ${{ matrix.name }}
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && fromJSON(needs.gate.outputs.sanitizer-matrix).include[0] != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.gate.outputs.sanitizer-matrix) }}
+    uses: ./.github/workflows/reusable-sanitizer.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+      name: ${{ matrix.name }}
+      file-env: ${{ matrix.file-env }}
+      timeout: ${{ matrix.timeout }}
+      cache-save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      enable-usdt: ${{ matrix.enable-usdt || false }}
+      configure-aslr: ${{ matrix.configure-aslr }}
+
+  linux-fuzz:
+    name: Linux native full fuzz corpus
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_fuzz.sh
+      ROOTS_CI_CADENCE: nightly
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      - name: Restore caches
+        uses: ./.github/actions/cache/restore
+        with:
+          provider: gha
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run full fuzz corpus
+        run: ./ci/test_run_all.sh
+      - name: Preserve failed assurance output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+
+  macos-fuzz:
+    name: macOS native full fuzz corpus
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz')
+    runs-on: macos-15
+    timeout-minutes: 360
+    env:
+      DANGER_RUN_CI_ON_HOST: 1
+      BASE_ROOT_DIR: ${{ github.workspace }}
+      FILE_ENV: ./ci/test/00_setup_env_mac_native_fuzz.sh
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          set -Eeuo pipefail
+          brew install --quiet python@3 || brew link --overwrite python@3
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
+      - name: Set compiler cache directory
+        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: no
+          key: macos-arm64-appleclang-fuzz
+          restore-keys: macos-arm64-appleclang-fuzz
+          max-size: 500M
+          append-timestamp: true
+          save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      - name: Run full fuzz corpus
+        run: ./ci/test_run_all.sh
+      - name: Preserve failed assurance output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+
+  windows-fuzz:
+    name: Windows x86_64 full fuzz corpus
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'windows-fuzz')
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 360
+    env:
+      PYTHONUTF8: 1
+      TEST_RUNNER_TIMEOUT_FACTOR: 40
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up VS Developer Prompt
+        shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
+        run: |
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswherePath -latest -property installationPath
+          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" | foreach-object {
+            $name, $value = $_ -split '=', 2
+            echo "$name=$value" >> $env:GITHUB_ENV
+          }
+      - name: Record tool versions
+        shell: pwsh
+        run: |
+          cmake -version | Tee-Object -FilePath cmake_version
+          msbuild -version | Tee-Object -FilePath msbuild_version
+          $env:VCToolsVersion | Tee-Object -FilePath toolset_version
+          py -3 --version
+      - name: Configure vcpkg
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
+          sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+      - name: Restore vcpkg tools cache
+        id: vcpkg-tools-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: C:/vcpkg/downloads/tools
+          key: ${{ github.job }}-vcpkg-tools
+      - name: Restore vcpkg binary cache
+        id: vcpkg-binary-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+      - name: Generate build system
+        shell: pwsh
+        run: |
+          cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="wallet" -DBUILD_GUI=OFF -DWITH_ZMQ=OFF -DBUILD_FOR_FUZZING=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+      - name: Build fuzz targets
+        working-directory: build
+        shell: pwsh
+        run: cmake --build . --config Release --parallel
+      - name: Clone fuzz corpora
+        shell: pwsh
+        run: |
+          git clone --depth=1 https://github.com/bitcoin-core/qa-assets "$env:RUNNER_TEMP\qa-assets"
+          Set-Location "$env:RUNNER_TEMP\qa-assets"
+          Write-Host "Using qa-assets repo from commit ..."
+          git log -1
+      - name: Run every fuzz target
+        working-directory: build
+        shell: cmd
+        env:
+          BITCOINFUZZ: ${{ github.workspace }}\build\bin\Release\fuzz.exe
+        run: py -3 test\fuzz\test_runner.py --par %NUMBER_OF_PROCESSORS% --loglevel DEBUG %RUNNER_TEMP%\qa-assets\fuzz_corpora
+      - name: Save vcpkg binary cache
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+      - name: Save vcpkg tools cache
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch && steps.vcpkg-tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: C:/vcpkg/downloads/tools
+          key: ${{ github.job }}-vcpkg-tools
+
+      - name: Preserve failed platform output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ github.workspace }}/build/Testing/Temporary/
+            ${{ github.workspace }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+  arm32:
+    name: 32-bit ARM unit tests
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'arm32')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_arm.sh
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/cache/restore
+        with:
+          provider: gha
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run ARM32 unit tests
+        run: ./ci/test_run_all.sh
+      - name: Preserve failed assurance output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+
+
+  kernel:
+    name: native kernel library and chainstate
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'kernel')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DANGER_CI_ON_HOST_FOLDERS: 1
+      FILE_ENV: ./ci/test/00_setup_env_native_nowallet_libbitcoinkernel.sh
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Configure environment
+        uses: ./.github/actions/configure-environment
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}-${{ env.DEPENDS_HASH }}
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.CONTAINER_NAME }}
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Restore caches
+        uses: ./.github/actions/cache/restore
+        with:
+          provider: gha
+      - name: Configure Docker
+        uses: ./.github/actions/configure-docker
+      - name: Run kernel library and chainstate coverage
+        run: ./ci/test_run_all.sh
+      - name: Preserve failed assurance output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/ci/scratch/roots-failures/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+
+
+  windows-smoke:
+    name: Windows x86_64 production-like smoke
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'windows-smoke')
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Set up VS Developer Prompt
+        shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
+        run: |
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswherePath -latest -property installationPath
+          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" | foreach-object {
+            $name, $value = $_ -split '=', 2
+            echo "$name=$value" >> $env:GITHUB_ENV
+          }
+      - name: Record tool versions
+        shell: pwsh
+        run: |
+          cmake -version | Tee-Object -FilePath cmake_version
+          msbuild -version | Tee-Object -FilePath msbuild_version
+          $env:VCToolsVersion | Tee-Object -FilePath toolset_version
+      - name: Configure vcpkg
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
+          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
+          sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+      - name: Restore vcpkg tools cache
+        uses: actions/cache/restore@v5
+        with:
+          path: C:/vcpkg/downloads/tools
+          key: ${{ github.job }}-vcpkg-tools
+      - name: Restore vcpkg binary cache
+        id: vcpkg-binary-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+      - name: Configure, build, and smoke test
+        shell: pwsh
+        run: |
+          cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DVCPKG_MANIFEST_FEATURES=miniupnpc -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Preserve failed platform output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ github.workspace }}/build/Testing/Temporary/
+            ${{ github.workspace }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
+  macos-smoke:
+    name: macOS ${{ matrix.expected-arch }} native production-like smoke
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'macos-smoke')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            expected-arch: x86_64
+          - runner: macos-15
+            expected-arch: arm64
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Verify native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.expected-arch }}
+        run: |
+          set -Eeuo pipefail
+          actual_arch="$(uname -m)"
+          if [[ "${actual_arch}" != "${EXPECTED_ARCH}" ]]; then
+            echo "Expected ${EXPECTED_ARCH}, but runner reported ${actual_arch}" >&2
+            exit 1
+          fi
+      - name: Install build dependencies
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          set -Eeuo pipefail
+          brew install --quiet python@3 || brew link --overwrite python@3
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
+      - name: Set compiler cache directory
+        run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: no
+          key: macos-${{ matrix.expected-arch }}-appleclang-release-gui
+          restore-keys: macos-${{ matrix.expected-arch }}-appleclang-release-gui
+          max-size: 500M
+          append-timestamp: true
+          save: false
+      - name: Configure, build, and smoke test
+        run: |
+          set -Eeuo pipefail
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+
+      - name: Preserve failed platform output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          path: |
+            ${{ github.workspace }}/build/Testing/Temporary/
+            ${{ github.workspace }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn
