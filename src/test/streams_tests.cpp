@@ -14,6 +14,12 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <cstddef>
+#include <cstdio>
+#include <ios>
+#include <span>
+
 using namespace std::string_literals;
 using namespace util::hex_literals;
 
@@ -86,6 +92,60 @@ BOOST_AUTO_TEST_CASE(obfuscation_empty)
 
     const Obfuscation non_null_obf{"ff00ff00ff00ff00"_hex};
     BOOST_CHECK(non_null_obf);
+}
+
+BOOST_AUTO_TEST_CASE(autofile_empty_write)
+{
+    // Inspect the close/check obligation without letting the pre-fix destructor
+    // assertion abort the whole suite after an empty write marks the file dirty.
+    struct WriteTrackingFile : AutoFile {
+        using AutoFile::AutoFile;
+        bool WasWritten() const { return m_was_written; }
+        bool HasError() const { return std::ferror(m_file) != 0; }
+    };
+    const fs::path path{m_args.GetDataDirBase() / "empty_write.bin"};
+    for (const Obfuscation& obfuscation : {Obfuscation{}, Obfuscation{"ff00ff00ff00ff00"_hex}}) {
+        WriteTrackingFile file{fsbridge::fopen(path, "w+b"), obfuscation};
+        BOOST_REQUIRE(!file.IsNull());
+        BOOST_CHECK(!file.WasWritten());
+        file.write({});
+        BOOST_CHECK(!file.WasWritten());
+        BOOST_CHECK_EQUAL(file.tell(), 0);
+        BOOST_CHECK_EQUAL(file.size(), 0);
+        BOOST_CHECK(!file.HasError());
+
+        file << std::byte{0x2a};
+        BOOST_CHECK(file.WasWritten());
+        file.write({});
+        BOOST_CHECK(file.WasWritten());
+        BOOST_CHECK_EQUAL(file.tell(), 1);
+        BOOST_CHECK_EQUAL(file.size(), 1);
+        file.seek(0, SEEK_SET);
+        std::byte value;
+        file >> value;
+        BOOST_CHECK_EQUAL(value, std::byte{0x2a});
+        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        BOOST_CHECK_EXCEPTION(file.write({}), std::ios_base::failure, HasReason{"AutoFile::write: file handle is nullptr"});
+
+        WriteTrackingFile readonly{fsbridge::fopen(path, "rb"), obfuscation};
+        BOOST_REQUIRE(!readonly.IsNull());
+        readonly >> value;
+        readonly.write({});
+        BOOST_CHECK(!readonly.WasWritten());
+        BOOST_CHECK_EQUAL(readonly.tell(), 1);
+        BOOST_CHECK_EQUAL(readonly.size(), 1);
+        BOOST_CHECK_EQUAL(value, std::byte{0x2a});
+        BOOST_REQUIRE_EQUAL(readonly.fclose(), 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(autofile_empty_write_null)
+{
+    for (const Obfuscation& obfuscation : {Obfuscation{}, Obfuscation{"ff00ff00ff00ff00"_hex}}) {
+        AutoFile file{nullptr, obfuscation};
+        BOOST_CHECK_EXCEPTION(file.write({}), std::ios_base::failure, HasReason{"AutoFile::write: file handle is nullptr"});
+        BOOST_CHECK(file.IsNull());
+    }
 }
 
 BOOST_AUTO_TEST_CASE(xor_file)

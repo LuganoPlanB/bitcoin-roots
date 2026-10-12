@@ -7,12 +7,20 @@
 #include <common/args.h>
 #include <init.h>
 #include <qt/bitcoin.h>
+#include <qt/bitcoinunits.h>
 #include <qt/guiutil.h>
+#include <qt/optionsmodel.h>
 #include <qt/test/optiontests.h>
 #include <test/util/setup_common.h>
 
+#include <QByteArray>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QProcess>
 #include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QVariant>
 
 #include <univalue.h>
 
@@ -145,4 +153,67 @@ void OptionTests::extractFilter()
 
     filter = QString("Image (*.png *.jpg)");
     QCOMPARE(GUIUtil::ExtractFirstSuffixFromFilter(filter), "png");
+}
+
+int RunDisplayUnitSettingsTest(interfaces::Node& node, const QString& settings_dir, const QString& action, BitcoinUnit unit)
+{
+    // Each invocation starts with a fresh Qt metatype registry and settings
+    // cache. Redirect both scopes before the production model accesses settings.
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir);
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings_dir + "/system");
+    QCoreApplication::setApplicationName("display-unit-persistence-test");
+
+    if (action == "read") {
+        // Production initializes translations before constructing OptionsModel.
+        // Reading language parses and caches the same settings section that
+        // contains DisplayBitcoinUnit, so registration must already be ready.
+        QSettings early_settings;
+        if (early_settings.value("language").toString() != "en") return 1;
+    }
+
+    OptionsModel options{node};
+    QSettings settings;
+    const QVariant saved_unit{settings.value("DisplayBitcoinUnit")};
+    bilingual_str error;
+    if (!options.Init(error)) {
+        qWarning() << QString::fromStdString(error.original);
+        return 1;
+    }
+    if (action == "write") {
+        options.setDisplayUnit(QVariant::fromValue(unit));
+        settings.setValue("language", "en");
+        settings.sync();
+        return settings.status() == QSettings::NoError ? 0 : 1;
+    }
+    if (action == "read") {
+        // Check the stored type too: falling back to BTC must not pass the BTC
+        // case when an unregistered enum could not be restored from disk.
+        const bool restored{settings.status() == QSettings::NoError && saved_unit.canConvert<BitcoinUnit>() &&
+                            saved_unit.value<BitcoinUnit>() == unit && options.getDisplayUnit() == unit};
+        return restored ? 0 : 1;
+    }
+    return 2;
+}
+
+void OptionTests::displayUnitPersistence()
+{
+    QTemporaryDir settings_dir;
+    QVERIFY(settings_dir.isValid());
+    for (const BitcoinUnit unit : BitcoinUnits::availableUnits()) {
+        for (const QString& action : {QString{"write"}, QString{"read"}}) {
+            QProcess process;
+            process.start(QCoreApplication::applicationFilePath(),
+                          {"--test-display-unit-settings", settings_dir.path(), action, QString::number(static_cast<int>(unit))});
+            QVERIFY(process.waitForStarted());
+            if (!process.waitForFinished(10000)) {
+                process.kill();
+                process.waitForFinished();
+                QFAIL("Display-unit settings child timed out");
+            }
+            QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+            const QByteArray diagnostic{process.readAllStandardOutput() + process.readAllStandardError()};
+            QVERIFY2(process.exitCode() == 0, diagnostic.constData());
+        }
+    }
 }

@@ -24,6 +24,7 @@
 
 #include <QDebug>
 #include <QLatin1Char>
+#include <QMetaType>
 #include <QSettings>
 #include <QStringList>
 #include <QVariant>
@@ -149,6 +150,11 @@ OptionsModel::FontChoice OptionsModel::FontChoiceFromString(const QString& s)
 OptionsModel::OptionsModel(interfaces::Node& node, QObject *parent) :
     QAbstractListModel(parent), m_node{node}
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // Qt6 registers enum stream operators automatically; Qt5 needs this before
+    // QSettings loads or saves the selected display unit.
+    qRegisterMetaTypeStreamOperators<BitcoinUnit>();
+#endif
 }
 
 void OptionsModel::addOverriddenOption(const std::string &option)

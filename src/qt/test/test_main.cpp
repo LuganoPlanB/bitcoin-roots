@@ -7,6 +7,7 @@
 #include <interfaces/init.h>
 #include <interfaces/node.h>
 #include <qt/bitcoin.h>
+#include <qt/bitcoinunits.h>
 #include <qt/guiconstants.h>
 #include <qt/test/apptests.h>
 #include <qt/test/optiontests.h>
@@ -24,6 +25,7 @@
 #include <QDebug>
 #include <QObject>
 #include <QSettings>
+#include <QString>
 #include <QTest>
 
 #include <functional>
@@ -77,6 +79,13 @@ int main(int argc, char* argv[])
     {
         BitcoinApplication app;
         app.createNode(*init);
+
+        if (argc == 5 && QString::fromLocal8Bit(argv[1]) == "--test-display-unit-settings") {
+            bool valid{false};
+            const auto unit = static_cast<BitcoinUnit>(QString::fromLocal8Bit(argv[4]).toInt(&valid));
+            if (!valid || !BitcoinUnits::availableUnits().contains(unit)) return 2;
+            return RunDisplayUnitSettingsTest(app.node(), QString::fromLocal8Bit(argv[2]), QString::fromLocal8Bit(argv[3]), unit);
+        }
 
         AppTests app_tests(app);
         num_test_failures += QTest::qExec(&app_tests);

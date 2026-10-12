@@ -19,6 +19,7 @@
 #include <node/interface_ui.h>
 #include <noui.h>
 #include <qt/bitcoingui.h>
+#include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -54,6 +55,7 @@
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QMetaType>
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
@@ -91,6 +93,11 @@ static void RegisterMetaTypes()
     qRegisterMetaType<QMessageBox::Icon>("QMessageBox::Icon");
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
     qRegisterMetaType<BitcoinUnit>("BitcoinUnit");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // Translations read QSettings before OptionsModel exists. Register streams
+    // here so that parsing language cannot cache an invalid display-unit value.
+    qRegisterMetaTypeStreamOperators<BitcoinUnit>();
+#endif
 }
 
 static QString GetLangTerritory()
