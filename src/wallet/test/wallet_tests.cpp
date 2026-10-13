@@ -455,9 +455,9 @@ BOOST_FIXTURE_TEST_CASE(coin_control_interface_facts, TestChain100Setup)
     CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
     auto wallet{std::shared_ptr<CWallet>{CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey).release()}};
     const CFeeRate feerate{1000};
-    const auto available_coins{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet, /*coin_control=*/nullptr, feerate).All())};
+    const auto available_coins{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet, /*coinControl=*/nullptr, feerate).All())};
     BOOST_REQUIRE(!available_coins.empty());
-    const COutput coin{available_coins.front()};
+    const COutput& coin{available_coins.front()};
 
     WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(coin.outpoint, /*persist=*/false));
     WalletContext context;

@@ -328,7 +328,7 @@ BOOST_FIXTURE_TEST_CASE(manual_coin_control_honors_selection_and_rbf, TestChain1
     auto wallet{CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey)};
     const auto coins{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).All())};
     BOOST_REQUIRE(!coins.empty());
-    const COutput selected_coin{coins.front()};
+    const COutput& selected_coin{coins.front()};
     const CTxDestination destination{PKHash{GenerateRandomKey().GetPubKey()}};
     const CRecipient recipient{destination, COIN, /*subtract_fee=*/false};
 

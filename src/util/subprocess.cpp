@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
-#include <limits.h>
+#include <climits>
 #include <unistd.h>
 
 #ifdef __linux__
