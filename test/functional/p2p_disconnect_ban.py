@@ -10,7 +10,9 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
+    get_rpc_proxy,
     p2p_port,
+    rpc_url,
 )
 
 class DisconnectBanTest(BitcoinTestFramework):
@@ -130,7 +132,15 @@ class DisconnectBanTest(BitcoinTestFramework):
         assert_raises_rpc_error(-29, "Node not found in connected nodes", self.nodes[0].disconnectnode, address="221B Baker Street")
 
         self.log.info("disconnectnode: fail to disconnect when calling with invalid subnet")
-        assert_raises_rpc_error(-8, "Invalid subnet", self.nodes[0].disconnectnode, address="1.2.3.0/24\0")
+        # Process arguments cannot carry NUL bytes, so use JSON-RPC for this input even with --usecli.
+        node = self.nodes[0]
+        rpc = get_rpc_proxy(
+            rpc_url(node.datadir_path, node.index, self.chain, node.rpchost),
+            node.index,
+            timeout=node.rpc_timeout,
+            coveragedir=node.coverage_dir,
+        )
+        assert_raises_rpc_error(-8, "Invalid subnet", rpc.disconnectnode, address="1.2.3.0/24\0")
 
         self.log.info("disconnectnode: successfully disconnect node by address and port")
         address1 = "127.0.0.1:" + str(p2p_port(1))

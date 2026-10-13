@@ -13,7 +13,7 @@
     #include <linux/close_range.h>
 #endif
 
-#include <limits.h>
+#include <climits>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>

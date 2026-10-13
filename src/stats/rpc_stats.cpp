@@ -7,7 +7,7 @@
 #include <stats/stats.h>
 #include <util/strencodings.h>
 
-#include <stdint.h>
+#include <cstdint>
 
 #include <univalue.h>
 
