@@ -66,6 +66,7 @@ jobs:
           python3 ci/test/test_validate_release_source.py
           python3 ci/test/test_release_version.py
           python3 ci/test/test_homebrew_boost_headers.py
+          python3 ci/test/test_homebrew_capnp_headers.py
 
       - name: Generate verified patch series
         run: |
