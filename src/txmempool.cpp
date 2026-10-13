@@ -645,10 +645,10 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
     for (auto& vSPK : it->mapSPK) {
         const uint160& SPKKey = vSPK.first;
         if (mapUsedSPK[SPKKey].first == &tx) {
-            mapUsedSPK[SPKKey].first = NULL;
+            mapUsedSPK[SPKKey].first = nullptr;
         }
         if (mapUsedSPK[SPKKey].second == &tx) {
-            mapUsedSPK[SPKKey].second = NULL;
+            mapUsedSPK[SPKKey].second = nullptr;
         }
         if (!(mapUsedSPK[SPKKey].first || mapUsedSPK[SPKKey].second)) {
             mapUsedSPK.erase(SPKKey);
