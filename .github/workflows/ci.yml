@@ -59,6 +59,7 @@ jobs:
           python3 ci/test/test_sanitizer_workflows.py
           python3 ci/test/test_wallet_privacy_contract.py
           python3 ci/test/test_release_version.py
+          python3 ci/test/test_homebrew_boost_headers.py
           python3 ci/test/test_release_notices.py
           python3 ci/test/test_runner_release_notices.py
           python3 ci/test/test_create_ci_release_draft.py

@@ -31,6 +31,32 @@ function(add_boost_if_needed)
 
   find_package(Boost 1.74.0 REQUIRED CONFIG)
   mark_as_advanced(Boost_INCLUDE_DIR boost_headers_DIR)
+  if(CMAKE_HOST_APPLE AND HOMEBREW_EXECUTABLE)
+    execute_process(
+      COMMAND ${HOMEBREW_EXECUTABLE} --prefix
+      OUTPUT_VARIABLE _homebrew_prefix
+      RESULT_VARIABLE _homebrew_status
+      ERROR_QUIET
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    # An earlier search path can select Homebrew's linked headers instead of
+    # the Cellar path exported by Boost's config. Classify that spelling as
+    # system too, but only when it resolves to the same Boost installation.
+    if(_homebrew_status EQUAL 0 AND IS_DIRECTORY "${_homebrew_prefix}/include/boost")
+      file(REAL_PATH "${_homebrew_prefix}/include/boost" _linked_boost_headers)
+      get_target_property(_boost_include_dirs Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
+      foreach(_boost_include_dir IN LISTS _boost_include_dirs)
+        if(IS_DIRECTORY "${_boost_include_dir}/boost")
+          file(REAL_PATH "${_boost_include_dir}/boost" _configured_boost_headers)
+          if(_linked_boost_headers STREQUAL _configured_boost_headers)
+            target_include_directories(Boost::headers SYSTEM INTERFACE "${_homebrew_prefix}/include")
+            message(STATUS "Using matching Homebrew Boost header alias: ${_homebrew_prefix}/include")
+            break()
+          endif()
+        endif()
+      endforeach()
+    endif()
+  endif()
   # Workaround for a bug in NetBSD pkgsrc.
   # See https://gnats.netbsd.org/59856.
   if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
