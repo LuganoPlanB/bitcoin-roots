@@ -50,6 +50,12 @@ function(add_boost_if_needed)
           file(REAL_PATH "${_boost_include_dir}/boost" _configured_boost_headers)
           if(_linked_boost_headers STREQUAL _configured_boost_headers)
             target_include_directories(Boost::headers SYSTEM INTERFACE "${_homebrew_prefix}/include")
+            # CMake filters implicit include directories from generated include
+            # flags. Retain the system classification even when this alias is
+            # an implicit compiler search path.
+            target_compile_options(Boost::headers INTERFACE
+              "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"
+            )
             message(STATUS "Using matching Homebrew Boost header alias: ${_homebrew_prefix}/include")
             break()
           endif()
