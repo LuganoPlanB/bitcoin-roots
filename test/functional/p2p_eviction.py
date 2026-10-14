@@ -105,6 +105,9 @@ class P2PEvict(BitcoinTestFramework):
 
         self.log.info("Create peer that triggers the eviction mechanism")
         node.add_p2p_connection(SlowP2PInterface())
+        eviction_info = next(info for info in node.getpeerinfo() if info['id'] == current_peer + 1)
+        assert_equal(eviction_info['forced_inbound'], True)
+        assert 'forceinbound' not in eviction_info['permissions']
 
         # One of the non-protected peers must be evicted. We can't be sure which one because
         # 4 peers are protected via netgroup, which is identical for all peers,

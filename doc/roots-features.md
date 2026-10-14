@@ -262,16 +262,33 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 - **peer-controls:** retain Core's P2P protocol and inherited orphan/upload/
   whitelist controls. Roots additionally bounds compact reconstruction extras
   by count (default 32,768) and memory (10 decimal MB), excluding oversized
-  individual extras; provides `forceinbound` (implies `noban`) and explicit
+  individual extras; provides `forceinbound` (implies `noban` and `download`) and explicit
   compact-filter permissions; permits subnet disconnect; and can disable
   outbound v1 on clearnet (`v2onlyclearnet`, default false). Default fee filters
   are enabled; quantization uses a 100 sat/kvB seed below 1,000 sat/kvB
   incremental fee, and a 1,000 sat/kvB seed otherwise. Bloom service is not globally advertised by default, with
-  implicit loopback permission when not explicitly disabled. Retain inactivity
+  implicit loopback permission for inbound and manual connections when not
+  explicitly disabled. Automatic outbound connections, including full-relay,
+  block-relay-only, address-fetch, feeler and private-broadcast, receive no
+  address-based whitelist permissions or implicit loopback Bloom permission.
+  Outgoing whitelist ranges apply only to manual connections (`addnode` and
+  `connect`); incoming grants retain their direction and Tor-bind boundaries.
+  Retain inactivity
   limits, protected outbound/manual peers, bounded address scoring/cache behavior,
   duplicate manual-connection checks and block-fetch safeguards. Tor binds must
   not accidentally grant clearnet whitelist permission; SOCKS credentials must
-  not be logged. See [networking](/src/net.cpp),
+  not be logged. Bare `whitelist` and `whitebind` grant
+  `download,noban,mempool,relay`, subject to `whitelistrelay` and
+  `whitelistforcerelay`. Address privileges require explicit `addr` or `all`:
+  these bypass GETADDR response caching and the address-processing token bucket,
+  while retaining message-size/validity limits, inbound-only GETADDR and one
+  response per connection. Socket and range permissions merge additively.
+  The RPC permissions list reports `forceinbound` for explicit grants and `all`;
+  ordinary `noban` does not imply it. `forced_inbound` separately reports whether
+  accepting this connection required freeing a slot, so it remains false when
+  a privileged peer connects to an available slot. Eviction protections remain
+  unchanged.
+  See [networking](/src/net.cpp),
   [processing](/src/net_processing.cpp), [permissions](/src/net_permissions.cpp)
   and [proxy](/src/netbase.cpp). Acceptance:
   [p2p_compactblocks_extratxs.py](/test/functional/p2p_compactblocks_extratxs.py),

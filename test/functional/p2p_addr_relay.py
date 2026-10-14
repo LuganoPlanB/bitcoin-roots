@@ -27,7 +27,8 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
-    assert_greater_than_or_equal
+    assert_greater_than_or_equal,
+    p2p_port,
 )
 
 ONE_MINUTE  = 60
@@ -108,6 +109,7 @@ class AddrTest(BitcoinTestFramework):
         self.getaddr_tests()
         self.blocksonly_mode_tests()
         self.rate_limit_tests()
+        self.permission_rate_limit_tests()
 
     def setup_addr_msg(self, num, sequential_ips=True):
         addrs = []
@@ -397,6 +399,46 @@ class AddrTest(BitcoinTestFramework):
 
             self.send_addrs_and_test_rate_limiting(peer, no_relay, new_addrs=200, total_addrs=1610)
 
+            self.nodes[0].disconnect_p2ps()
+
+    def permission_rate_limit_tests(self):
+        whitebind_port = p2p_port(1)
+        for name, args, port, privileged in [
+            ("ordinary", [], p2p_port(0), False),
+            ("default whitelist", ["-whitelist=127.0.0.1"], p2p_port(0), False),
+            ("default whitebind", [f"-whitebind=127.0.0.1:{whitebind_port}"], whitebind_port, False),
+            ("explicit addr", ["-whitelist=addr@127.0.0.1"], p2p_port(0), True),
+            ("all", ["-whitelist=all@127.0.0.1"], p2p_port(0), True),
+            ("socket addr", [f"-whitebind=addr@127.0.0.1:{whitebind_port}"], whitebind_port, True),
+            ("socket all", [f"-whitebind=all@127.0.0.1:{whitebind_port}"], whitebind_port, True),
+        ]:
+            self.log.info(f"Test address-processing permission for {name}")
+            self.restart_node(0, ["-peerbloomfilters=0"] + args)
+            self.mocktime = int(time.time())
+            self.nodes[0].setmocktime(self.mocktime)
+            peer = self.nodes[0].add_p2p_connection(AddrReceiver(), dstport=port)
+            peer.send_and_ping(self.setup_addr_msg(600))
+            info = self.nodes[0].getpeerinfo()[0]
+            assert_equal(info["addr_processed"], 600 if privileged else 1)
+            assert_equal(info["addr_rate_limited"], 0 if privileged else 599)
+
+            # Mock time replenishes the ordinary bucket by ten tokens. Addr
+            # bypasses that bucket without removing the message-size bound.
+            self.mocktime += 100
+            self.nodes[0].setmocktime(self.mocktime)
+            peer.send_and_ping(self.setup_addr_msg(20))
+            info = self.nodes[0].getpeerinfo()[0]
+            assert_equal(info["addr_processed"], 620 if privileged else 11)
+            assert_equal(info["addr_rate_limited"], 0 if privileged else 609)
+            with self.nodes[0].assert_debug_log(["addr message size = 1010"]):
+                peer.send_without_ping(self.setup_addr_msg(1010))
+                if "noban" in info["permissions"]:
+                    peer.sync_with_ping()
+                    after = self.nodes[0].getpeerinfo()[0]
+                    assert_equal(after["addr_processed"], info["addr_processed"])
+                    assert_equal(after["addr_rate_limited"], info["addr_rate_limited"])
+                else:
+                    peer.wait_for_disconnect()
             self.nodes[0].disconnect_p2ps()
 
     def get_nodes_that_received_addr(self, peer, receiver_peer, addr_receivers,
