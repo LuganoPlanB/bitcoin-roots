@@ -114,7 +114,7 @@ class NetTest(BitcoinTestFramework):
         for info in peer_info:
             for peer in info:
                 assert_equal(peer["forced_inbound"], False)
-                assert_equal(peer["misbehavior_score"], 0)
+                assert "misbehavior_score" not in peer
                 if "cpu_load" in peer:
                     assert_greater_than(peer["cpu_load"], 0)
         # A zero or backwards connection duration cannot produce CPU load.
@@ -144,6 +144,8 @@ class NetTest(BitcoinTestFramework):
 
         assert_equal(peer_info[1][0]['connection_type'], 'manual')
         assert_equal(peer_info[1][1]['connection_type'], 'inbound')
+
+        assert "misbehavior_score" not in self.nodes[0].help("getpeerinfo")
 
         # Check dynamically generated networks list in getpeerinfo help output.
         assert "(ipv4, ipv6, onion, i2p, cjdns, not_publicly_routable)" in self.nodes[0].help("getpeerinfo")
@@ -182,7 +184,6 @@ class NetTest(BitcoinTestFramework):
                 "last_block": 0,
                 "last_block_announcement": 0,
                 "forced_inbound": False,
-                "misbehavior_score": 0,
                 "last_transaction": 0,
                 "lastrecv": 0 if not self.options.v2transport else no_version_peer_conntime,
                 "lastsend": 0 if not self.options.v2transport else no_version_peer_conntime,

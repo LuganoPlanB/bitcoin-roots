@@ -287,7 +287,10 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   ordinary `noban` does not imply it. `forced_inbound` separately reports whether
   accepting this connection required freeing a slot, so it remains false when
   a privileged peer connects to an available slot. Eviction protections remain
-  unchanged.
+  unchanged. `getblockfrompeer` requires an existing block header, as already
+  established in the v31 port. A rejected duplicate request to the same peer
+  preserves its in-flight tracking; requesting from a different peer replaces
+  the tracked request. Existing prune-mode safeguards remain in force.
   See [networking](/src/net.cpp),
   [processing](/src/net_processing.cpp), [permissions](/src/net_permissions.cpp)
   and [proxy](/src/netbase.cpp). Acceptance:
@@ -313,9 +316,8 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   existing peer table/detail pane. Missing state resets to unavailable, never
   another peer's stale values. Persistent table indexes resolve the current row
   after storage refresh. Node RPC adds last block announcement, forced-inbound
-  state, deprecated misbehavior score (0 or 100 pending discouragement) and
-  optional CPU load in per mille of connection duration. CPU load is omitted
-  when not measured or duration is non-positive; failed/backwards CPU-clock
+  state and optional CPU load in per mille of connection duration. CPU load is
+  omitted when not measured or duration is non-positive; failed/backwards CPU-clock
   readings are ignored. Measurement uses one scalar per current connection, with
   no history retention or content/activity feed. See [peer RPC](../src/rpc/net.cpp),
   [peer table](../src/qt/peertablemodel.cpp) and
@@ -323,7 +325,10 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   [apptests](../src/qt/test/apptests.cpp) tests empty refresh, unavailable reset and
   an optional live regtest sorting/selection/refresh profile;
   [rpc_net.py](../test/functional/rpc_net.py) covers current RPC fields and
-  zero/backwards duration. Native v31 starting-height RPC deprecation is retained.
+  zero/backwards duration. The deprecated `misbehavior_score` field is removed
+  from RPC output/help and node statistics; internal discouragement and
+  disconnection enforcement remains unchanged. Native v31 starting-height RPC
+  deprecation is retained.
   The live GUI profile captures Peers table/detail/unavailable at 1280×800 and
   1920×1080 with 100%/150% application font scale. Gap: non-Linux visual/CPU
   measurements and exhaustive timing races.

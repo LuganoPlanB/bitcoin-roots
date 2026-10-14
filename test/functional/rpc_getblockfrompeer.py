@@ -14,6 +14,7 @@ from test_framework.messages import (
 from test_framework.p2p import (
     P2P_SERVICES,
     P2PInterface,
+    p2p_lock,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -90,14 +91,39 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         self.log.info("Duplicate manual fetch from the same peer is rejected without resetting tracking")
         stalled_peer = self.nodes[0].add_p2p_connection(P2PInterface())
         stalled_id = self.nodes[0].getpeerinfo()[-1]['id']
+        short_height = self.nodes[0].getblockheader(short_tip)["height"]
+
+        def inflight(peer_id):
+            return next(peer["inflight"] for peer in self.nodes[0].getpeerinfo() if peer["id"] == peer_id)
+
+        assert_equal(inflight(stalled_id), [])
         assert_equal(self.nodes[0].getblockfrompeer(short_tip, stalled_id), {})
+        stalled_peer.wait_for_getdata([int(short_tip, 16)])
+        assert_equal(inflight(stalled_id), [short_height])
+        for _ in range(2):
+            assert_raises_rpc_error(-1, "Already requested from this peer", self.nodes[0].getblockfrompeer, short_tip, stalled_id)
+            assert_equal(inflight(stalled_id), [short_height])
         stalled_peer.sync_with_ping()
-        assert_raises_rpc_error(-1, "Already requested from this peer", self.nodes[0].getblockfrompeer, short_tip, stalled_id)
+        with p2p_lock:
+            assert_equal(stalled_peer.message_count["getdata"], 1)
+
+        self.log.info("A different peer replaces the original in-flight request")
+        replacement_peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        replacement_id = self.nodes[0].getpeerinfo()[-1]["id"]
+        assert_equal(inflight(replacement_id), [])
+        assert_equal(self.nodes[0].getblockfrompeer(short_tip, replacement_id), {})
+        replacement_peer.wait_for_getdata([int(short_tip, 16)])
+        assert_equal(inflight(stalled_id), [])
+        assert_equal(inflight(replacement_id), [short_height])
+        assert_raises_rpc_error(-1, "Already requested from this peer", self.nodes[0].getblockfrompeer, short_tip, replacement_id)
+        assert_equal(inflight(replacement_id), [short_height])
 
         self.log.info("Successful fetch")
         result = self.nodes[0].getblockfrompeer(short_tip, peer_0_peer_1_id)
         self.wait_until(lambda: self.check_for_block(node=0, hash=short_tip), timeout=1)
         assert_equal(result, {})
+        assert_equal(inflight(stalled_id), [])
+        assert_equal(inflight(replacement_id), [])
 
         self.log.info("Don't fetch blocks we already have")
         assert_raises_rpc_error(-1, "Block already downloaded", self.nodes[0].getblockfrompeer, short_tip, peer_0_peer_1_id)
