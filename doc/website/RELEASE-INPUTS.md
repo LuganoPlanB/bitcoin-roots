@@ -307,9 +307,17 @@ assets.
 ## Browsing UI and acceptance checks
 
 The website's Patches navigation uses full-document links to the standalone
-pages. The index stays chronological and highlights the newest available patch;
+pages. The index groups releases by Bitcoin Core major version (descending), keeps
+newest-publication-first ordering within each group, and highlights the newest
+available patch across all groups;
 missing releases and public prereleases remain explicit. Core-line labels come
 from the release tag, rather than implying independently verified ancestry.
+Grouping changes only the index presentation. Preserve all existing release,
+commit, file, view and pagination URLs, ordinal IDs, exact Core-line filter
+values and query parameters. Do not renumber or reconstruct published patches.
+Current maintenance releases append fixes on an exact Core base; **Folding**
+reorganizes the retained series only when porting to a new Core base, separately
+from promotion to `main`. See the [maintainer policy](../../contrib/roots/README.md#folding-at-a-new-core-base).
 Release overviews contain ordered commits and all file-change paths, including
 repeated paths in different commits. These are metadata lists, not source-diff
 payloads. Optional release/path-group searches operate on the rendered page;
