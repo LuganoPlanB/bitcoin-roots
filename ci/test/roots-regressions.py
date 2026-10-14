@@ -18,7 +18,7 @@ GROUPS = {
     "policy": ("feature_policy_args.py", "mempool_datacarrier.py", "mempool_subdust_fee_penalty.py", "mempool_dynamic_dust.py", "mempool_roots_local_policy.py"),
     "mining": ("mining_roots_template.py", "mempool_truc.py"),
     "wallet": ("wallet_send.py", "wallet_sweepprivkeys.py", "wallet_signer.py"),
-    "net": ("p2p_filter.py", "p2p_invalid_messages.py", "rpc_net.py"),
+    "net": ("p2p_filter.py", "p2p_invalid_messages.py", "rpc_net.py", "p2p_permissions.py", "p2p_addr_relay.py", "p2p_getaddr_caching.py", "p2p_roots_controls.py", "rpc_getblockfrompeer.py"),
     "runtime": ("feature_config_args.py", "rpc_effective_policy.py", "rpc_uptime.py"),
 }
 FUZZ = {
@@ -44,8 +44,10 @@ def affected(files):
             continue
         if path.startswith(('src/wallet/', 'src/qt/')) or path.startswith('test/functional/wallet_'):
             groups.add('wallet')
-        elif path.startswith(('src/net', 'src/protocol', 'test/functional/p2p_')) or path.endswith('rpc_net.py'):
+        elif path.startswith(('src/net', 'src/protocol', 'test/functional/p2p_')) or path in ('test/functional/rpc_net.py', 'test/functional/rpc_getblockfrompeer.py'):
             groups.add('net')
+        elif path in ('src/rpc/net.cpp', 'src/rpc/blockchain.cpp'):
+            groups.update(('net', 'runtime', 'policy'))
         elif path.startswith(('src/node/miner', 'src/rpc/mining')) or 'mining_' in path:
             groups.update(('mining', 'policy'))
         elif path.startswith('src/node/mempool'):

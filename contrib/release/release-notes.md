@@ -1,8 +1,8 @@
-# Bitcoin Roots v31.1-roots.1
+# Bitcoin Roots v31.1-roots.2
 
 This candidate release-note template does not announce publication.
 
-Bitcoin Roots v31.1-roots.1 is based directly on the official Bitcoin Core
+Bitcoin Roots v31.1-roots.2 is based directly on the official Bitcoin Core
 v31.1 release (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). It carries the
 reviewed Roots semantic series onto that base, preserving the Core 31.1
 implementation and fixes. Bitcoin Knots `29.3.knots20260507` describes
@@ -13,6 +13,33 @@ Roots remains compatible with Bitcoin Core consensus and does not enforce
 RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
+
+## Changes from v31.1-roots.1
+
+- `getpeerinfo` no longer returns the deprecated `misbehavior_score` field.
+  Consumers must stop expecting it; discouragement and disconnection enforcement
+  are unchanged.
+- Bare `-whitelist` and `-whitebind` no longer grant `addr`. Their defaults are
+  `download,noban,mempool,relay`, subject to `-whitelistrelay` and
+  `-whitelistforcerelay`. Grant `addr` explicitly, or use `all`, only for peers
+  trusted to bypass GETADDR response caching and address-processing rate limits.
+  Message-size/validity limits, inbound-only GETADDR and one response per
+  connection still apply. Socket and range permissions remain additive.
+- Outgoing address-based whitelist grants now apply only to manual connections
+  (`addnode` and `connect`). Automatically selected outbound peers receive none
+  of these grants. Automatic outbound loopback connections also lose implicit
+  Bloom permission; inbound and manual loopback retain it unless explicitly
+  disabled. Onion connections retain their address-based whitelist suppression;
+  explicit socket permissions remain distinct.
+- The `getpeerinfo` permissions array now includes `forceinbound` for explicit
+  grants and `all`. Its implied `noban`/`download` permissions and eviction
+  behavior are unchanged. `forced_inbound` separately reports whether accepting
+  a connection required freeing a slot.
+- `getblockfrompeer` still requires an existing block header, as already
+  established in the v31 port. A rejected duplicate request preserves the
+  original in-flight tracking; a request from another peer may replace it.
+  Prune-mode safeguards remain unchanged. roots.2 does not introduce the
+  resolution of the older nullable-header review finding.
 
 ## Preserved and adapted Roots behavior
 
@@ -37,8 +64,10 @@ transactions are rejected by local policy.
   wallet updates invalidate transient GUI state; submission must finish once
   its final broadcast authorization boundary is crossed.
 - Peer-health details in the existing GUI Peers tab, bounded peer/network
-  resources, `getmempoolstats`, monotonic `uptime`, and Roots branding remain
+  resources, monotonic `uptime`, and Roots branding remain
   available. No Network Watch, privacy score or anonymity guarantee is added.
+  The retained statistics model is dormant; `getmempoolstats` is not exposed
+  by this candidate.
 
 ## Core 31.1 wallet and build compatibility
 
@@ -54,7 +83,7 @@ validation is tied to the canonical `roots/31.1` release tip, rather than a
 promotion commit on `main`.
 
 The portable patch applies directly to official Core v31.1 with
-`git am -3 --keep-cr <bitcoin-roots-31.1-roots.1.patch>`. It deliberately
+`git am -3 --keep-cr <bitcoin-roots-31.1-roots.2.patch>`. It deliberately
 excludes `.github/**`; every other product path must match the release tag.
 The permanent-tag workflow requires a detached signature for the SHA512
 manifest using release key `5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`
@@ -83,6 +112,11 @@ for the retained evidence, failures and limitations.
 
 ## Acknowledgements
 
+Thanks to [@danielabrozzoni](https://github.com/danielabrozzoni) for the
+[P2P review that prompted these corrections](https://gist.github.com/danielabrozzoni/142356f60b0e977fd74cc9decf6e3271).
+The adjacent `forceinbound` reporting and loopback Bloom checks were added
+during our follow-up audit.
+
 Thank you to [devjoinedthechat](https://github.com/devjoinedthechat) for
 [priority-selected ancestor accounting (#24)](https://github.com/LuganoPlanB/bitcoin-roots/pull/24)
 and [configured RBF reporting (#25)](https://github.com/LuganoPlanB/bitcoin-roots/pull/25).
@@ -93,5 +127,6 @@ release builds on.
 ## Port review and changelog
 
 - [Reviewed semantic port (#49)](https://github.com/LuganoPlanB/bitcoin-roots/pull/49).
-- [Full changelog from v29.4-roots.4](https://github.com/LuganoPlanB/bitcoin-roots/compare/v29.4-roots.4...v31.1-roots.1).
+- [Prior release changelog from v29.4-roots.4](https://github.com/LuganoPlanB/bitcoin-roots/compare/v29.4-roots.4...v31.1-roots.1).
+- [Migration changelog from v31.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.1...v31.1-roots.2) (available after a separately authorized release tag).
 - [Official Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/releases/tag/v31.1).

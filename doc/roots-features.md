@@ -450,7 +450,7 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   checks in ci/test (`ci/test`, source reference). Gap: the baseline covers one Linux headless
   wallet profile, not all optional/platform configurations. `ENABLE_TOR_SUBPROCESS`
   has no production consumer and cannot promise an automatic Tor instance.
-- **identity-desktop:** built tools identify Bitcoin Roots `v31.1-roots.1`
+- **identity-desktop:** built tools identify Bitcoin Roots `v31.1-roots.2`
   by default; `CLIENT_VERSION_TAG` accepts only `v31.1-roots.<positive revision>`
   and sets archive-build identity without Git metadata. Numeric protocol version
   and BIP14 `Satoshi` identity remain upstream-compatible. Retain Roots icons,

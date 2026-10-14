@@ -85,7 +85,10 @@ Fast functional selection and fuzz budgets are implemented by
 `ci/test/roots-regressions.py`, invoked through the existing
 `ci/test_run_all.sh` / `ci/test/03_test_script.sh` entry points. Known wallet,
 network, runtime, policy and mining paths select their acceptance groups;
-mixed paths take the union. Unknown input selects all 16 Roots functional
+mixed paths take the union. Networking selection includes peer permissions,
+address relay/cache limits, Roots controls and tracked manual block fetching.
+Network and blockchain RPC sources also retain runtime/policy coverage.
+Unknown input selects all 21 Roots functional
 regressions and 9 fuzz targets. Fast functional execution has a 900-second
 process-group timeout. Each selected libFuzzer target has a 5-second campaign,
 5-second per-input limit and 15-second outer timeout; input counts are reported
