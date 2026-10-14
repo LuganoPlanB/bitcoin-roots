@@ -16,6 +16,9 @@ for (const form of document.querySelectorAll("[data-patch-filter]")) {
             item.hidden = !item.dataset.search.toLocaleLowerCase().includes(query) || Boolean(selected && item.dataset.group !== selected);
             if (!item.hidden) count++;
         }
+        for (const releaseGroup of section.querySelectorAll("[data-release-group]")) {
+            releaseGroup.hidden = ![...releaseGroup.querySelectorAll("[data-filter-item]")].some((item) => !item.hidden);
+        }
         for (const commit of commits) {
             const matching = [...commit.querySelectorAll("[data-filter-item]")].some((item) => !item.hidden);
             commit.hidden = Boolean(query || selected) && !matching;

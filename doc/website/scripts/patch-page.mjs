@@ -28,6 +28,8 @@ export const link = (href, label) => `<a href="${escapeHtml(href)}">${escapeHtml
 export const sourceLink = (release) => link(release.patch.url, "Download original patch");
 export const seriesExplanation = "This ordered patch series shows Roots changes relative to the release’s stated base. It is not a delta from the previous Roots release; repeated file changes are counted separately. The download preserves the published export. Browse a release’s file entries to see its included paths; historical exports may differ in scope. Consult the release notes for context.";
 
+export const foldingExplanation = "Roots maintenance releases on the same exact Core base append fixes and preserve published history. Folding incorporates those fixes into thematic commits when porting to a new Core base; it is separate from promotion to main. Existing release patches and their URLs remain unchanged.";
+
 export function fileNavigation({ fileRoute, page, pageCount, view }) {
     const route = (number, selectedView) => `${fileRoute}${selectedView === "side-by-side" ? "side-by-side/" : ""}${number > 1 ? `page-${number}/` : ""}`;
     const previous = page > 1 ? link(route(page - 1, view), "Previous part") : "";

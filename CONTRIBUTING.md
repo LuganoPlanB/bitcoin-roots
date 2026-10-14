@@ -1,6 +1,12 @@
 Contributing to Bitcoin Roots
 =============================
 
+For Bitcoin Roots maintenance, follow the
+[Roots maintainer workflow](contrib/roots/README.md#folding-at-a-new-core-base):
+append fixes within an exact Core base, and use **Folding** to incorporate them
+into thematic commits when porting to a new Core base. Preserve published
+history and attribution; promotion to `main` is a separate operation.
+
 Bitcoin Roots welcomes code, review, testing, documentation, and release
 engineering contributions. This guide explains how a contribution fits the
 Roots maintenance model. General coding, build, and test requirements are in

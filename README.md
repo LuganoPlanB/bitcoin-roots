@@ -46,6 +46,13 @@ The project distinguishes local policy from consensus. Transactions rejected by
 local relay or mempool policy may still be valid under Bitcoin consensus, and
 valid blocks containing them must continue to be accepted.
 
+In every release cycle, releases sharing an exact Core base retain their
+history and append fixes. When moving to a new Core base, **Folding** incorporates
+those fixes into the relevant thematic patches, retaining attribution and the
+old releases. Each downloadable patch is the complete series for its stated
+base, not just the changes since the previous Roots release. See the
+[release and Folding policy](contrib/roots/README.md#folding-at-a-new-core-base).
+
 The contribution guide is [CONTRIBUTING.md](CONTRIBUTING.md); developer guidance
 is in [doc/developer-notes.md](doc/developer-notes.md).
 

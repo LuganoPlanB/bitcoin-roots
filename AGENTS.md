@@ -70,6 +70,15 @@ authenticated Core tag and port semantic commits; never merge an older Roots
 line into a new base or rewrite published history. Review topic branches and
 use exact canonical source/CI parity for promotions. See `contrib/roots/README.md`.
 
+For every release cycle, revisions on one exact Core base are append-only:
+each `v<core-version>-roots.<revision>` retains the previous published revision
+as an ancestor. Carry fixes forward as ordinary commits;
+do not reorganize a published series to reduce its commit count. **Folding**
+means incorporating accumulated fixes into the relevant semantic commits while
+porting to a new Core base, preserving source attribution and review evidence.
+Folding is not a Git command or promotion to `main`. Follow the
+[Folding policy](contrib/roots/README.md#folding-at-a-new-core-base).
+
 Portable patches exclude `.github/**` and replay with `git am -3 --keep-cr`;
 product paths must match the selected tip while Core hosting files stay unchanged.
 Retain author/contributor credit, including Jaromil and devjoinedthechat.

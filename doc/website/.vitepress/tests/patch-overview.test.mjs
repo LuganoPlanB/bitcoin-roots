@@ -9,7 +9,7 @@ const release = (tag, date, available = true) => ({ tag, publishedAt: `${date}T0
     integrity: { checksum: "verified", platformDigest: "missing" } });
 const local = (route) => `/bitcoin-roots/patches/${route}`;
 
-test("publication order includes missing and prerelease entries; highlight selects newest available", () => {
+test("major groups retain publication order, missing and prerelease entries; highlight selects newest available", () => {
     const newest = release("v29.4-roots.4", "2026-10-06", false);
     const available = { ...release("v29.4-roots.3", "2026-10-05"), prerelease: true };
     const older = release("v30.3-roots.1", "2026-09-01");
@@ -17,7 +17,8 @@ test("publication order includes missing and prerelease entries; highlight selec
     assert.match(html, /Newest available patch<\/p><h2 id="patch-latest">v29.4-roots.3/);
     const list = html.slice(html.indexOf('<ol class="patch-release-list">'));
     assert.ok(list.indexOf(newest.tag) < list.indexOf(available.tag));
-    assert.ok(list.indexOf(available.tag) < list.indexOf(older.tag));
+    assert.ok(list.indexOf(older.tag) < list.indexOf(newest.tag));
+    assert.ok(html.indexOf("<h3>Bitcoin Core 30</h3>") < html.indexOf("<h3>Bitcoin Core 29</h3>"));
     assert.match(list, /Prerelease/);
     assert.match(list, /Patch unavailable/);
     assert.match(list, /data-group="30.3"/);
@@ -50,4 +51,20 @@ test("overview retains distinct repeated paths, commit order, honest totals and 
 test("Patches shell link opts into full-document navigation at the configured base", async () => {
     const config = await readFile(new URL("../config.ts", import.meta.url), "utf8");
     assert.match(config, /text: "Patches", link: "\/patches\/", target: "_self"/);
+});
+
+
+test("major grouping keeps exact Core lines, all release URLs and published ordinals", () => {
+    const releases = [release("v31.1-roots.1", "2026-10-01"), release("v31.1-roots.2", "2026-10-10"),
+        release("v31.0-roots.1", "2026-09-01"), release("v31.2rc1-roots.1", "2026-10-11")];
+    const html = releaseIndex(releases, local);
+    assert.equal((html.match(/<h3>Bitcoin Core 31<\/h3>/g) ?? []).length, 1);
+    assert.match(html, /data-group="31.1"/);
+    assert.match(html, /data-group="31.0"/);
+    assert.match(html, /data-group="31.2rc1"/);
+    const list = html.slice(html.indexOf('<ol class="patch-release-list">'));
+    assert.ok(list.indexOf("v31.1-roots.2") < list.indexOf("v31.1-roots.1"));
+    for (const item of releases) assert.ok(list.includes(`href="${local(`${item.tag}/`)}"`));
+    assert.match(html, /Folding/);
+    assert.match(html, /does not imply a shared base/);
 });
