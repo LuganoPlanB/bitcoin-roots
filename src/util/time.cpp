@@ -10,6 +10,7 @@
 #include <util/check.h>
 #include <util/strencodings.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <optional>
@@ -19,13 +20,13 @@
 
 #ifdef WIN32
 #include <windows.h>
-#include <winnt.h>
-
 #include <processthreadsapi.h>
 #else
 #include <ctime>
 #endif
 
+static constexpr std::array<std::string_view, 7> weekdays{"Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"}; // 1970-01-01 was a Thursday.
+static constexpr std::array<std::string_view, 12> months{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 void UninterruptibleSleep(const std::chrono::microseconds& n) { std::this_thread::sleep_for(n); }
 
@@ -127,12 +128,22 @@ std::optional<int64_t> ParseISO8601DateTime(std::string_view str)
     return int64_t{TicksSinceEpoch<std::chrono::seconds>(tp)};
 }
 
-std::string FormatISO8601Time(int64_t nTime)
+std::string FormatRFC1123DateTime(int64_t time)
 {
-    const std::chrono::sys_seconds secs{std::chrono::seconds{nTime}};
+    if (time < -62167219200 || 253402300799 < time) {
+        // 4-digit year, so only support years 0 to 9999
+        return "";
+    }
+    const std::chrono::sys_seconds secs{std::chrono::seconds{time}};
     const auto days{std::chrono::floor<std::chrono::days>(secs)};
+    const auto w{days.time_since_epoch().count() % 7}; // will be in the range [-6, 6]
+    std::string_view weekday{weekdays.at(w >= 0 ? w : w + 7)};
+    const std::chrono::year_month_day ymd{days};
+    std::string_view month{months.at(unsigned{ymd.month()} - 1)};
     const std::chrono::hh_mm_ss hms{secs - days};
-    return strprintf("%02i:%02i:%02iZ", hms.hours().count(), hms.minutes().count(), hms.seconds().count());
+    // examples: Mon, 27 Jul 2009 12:28:53 GMT
+    //           Fri, 31 May 2024 19:18:04 GMT
+    return strprintf("%03s, %02u %03s %04i %02i:%02i:%02i GMT", weekday, unsigned{ymd.day()}, month, signed{ymd.year()}, hms.hours().count(), hms.minutes().count(), hms.seconds().count());
 }
 
 struct timeval MillisToTimeval(int64_t nTimeout)
@@ -186,15 +197,4 @@ std::chrono::nanoseconds ThreadCpuTime()
 #else
     return std::chrono::nanoseconds{0};
 #endif
-}
-
-std::chrono::nanoseconds operator+=(std::atomic<std::chrono::nanoseconds>& a, std::chrono::nanoseconds b)
-{
-    std::chrono::nanoseconds expected;
-    std::chrono::nanoseconds desired;
-    do {
-        expected = a.load();
-        desired = expected + b;
-    } while (!a.compare_exchange_weak(expected, desired));
-    return desired;
 }

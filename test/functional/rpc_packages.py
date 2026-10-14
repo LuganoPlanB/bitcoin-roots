@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2022 The Bitcoin Core developers
+# Copyright (c) 2021-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """RPCs that handle raw transaction packages."""
@@ -35,6 +35,7 @@ MAX_PACKAGE_COUNT = 25
 class RPCPackagesTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [["-maxscriptsize=1000000", "-datacarriersize=1000000"]]
         self.setup_clean_chain = True
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
@@ -263,13 +264,23 @@ class RPCPackagesTest(BitcoinTestFramework):
         ])
 
         submitres = node.submitpackage([tx1["hex"], tx2["hex"], tx_child["hex"]])
-        assert_equal(submitres, {'package_msg': 'conflict-in-package', 'tx-results': {}, 'replaced-transactions': []})
+        expected = {
+            tx1["wtxid"]: {"txid": tx1["txid"], "error": "package-not-validated"},
+            tx2["wtxid"]: {"txid": tx2["txid"], "error": "package-not-validated"},
+            tx_child["wtxid"]: {"txid": tx_child["txid"], "error": "package-not-validated"},
+        }
+        assert_equal(submitres, {"package_msg": "conflict-in-package", "tx-results": expected,"replaced-transactions": []})
 
         # Submit tx1 to mempool, then try the same package again
         node.sendrawtransaction(tx1["hex"])
 
         submitres = node.submitpackage([tx1["hex"], tx2["hex"], tx_child["hex"]])
-        assert_equal(submitres, {'package_msg': 'conflict-in-package', 'tx-results': {}, 'replaced-transactions': []})
+        expected = {
+            tx1["wtxid"]: {"txid": tx1["txid"], "error": "package-not-validated"},
+            tx2["wtxid"]: {"txid": tx2["txid"], "error": "package-not-validated"},
+            tx_child["wtxid"]: {"txid": tx_child["txid"], "error": "package-not-validated"},
+        }
+        assert_equal(submitres, {"package_msg": "conflict-in-package", "tx-results": expected,"replaced-transactions": []})
         assert tx_child["txid"] not in node.getrawmempool()
 
         # without the in-mempool ancestor tx1 included in the call, tx2 can be submitted, but
@@ -440,9 +451,7 @@ class RPCPackagesTest(BitcoinTestFramework):
         # Make chain of two transactions where parent doesn't make minfee threshold
         # but child is too high fee
         # Lower mempool limit to make it easier to fill_mempool
-        self.restart_node(0, extra_args=[
-            "-datacarriersize=100000",
-            "-maxscriptsize=100000",  # Permit synthetic mempool-filling data carriers.
+        self.restart_node(0, extra_args=self.extra_args[0] + [
             "-maxmempool=5",
             "-persistmempool=0",
         ])
@@ -471,9 +480,8 @@ class RPCPackagesTest(BitcoinTestFramework):
         assert parent["txid"] not in node.getrawmempool()
         assert child["txid"] not in node.getrawmempool()
 
-        # Reset maxmempool, datacarriersize, reset dynamic mempool minimum feerate, and empty mempool.
-        # Keep the oversized script fixture focused on maxburnamount and generic script standardness.
-        self.restart_node(0, extra_args=["-maxscriptsize=100000"])
+        # Reset maxmempool, reset dynamic mempool minimum feerate, and empty mempool.
+        self.restart_node(0)
         self.wallet.rescan_utxos()
 
         assert_equal(node.getrawmempool(), [])

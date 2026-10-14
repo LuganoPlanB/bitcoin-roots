@@ -1,10 +1,10 @@
-# Advanced wallet privacy tools (`v30.3-roots.1` candidate)
+# Advanced wallet privacy tools (v31 candidate)
 
-This guide describes the advanced wallet tools intended for the
-`v30.3-roots.1` candidate. This is candidate documentation, not a release
-announcement; the tools are not part of the published `v29.4-roots.2` release.
-Bitcoin Core v30.3 is the direct upstream base; selected Bitcoin Knots
-history is lineage only, not an upstream dependency or product specification.
+The local v31 candidate implements this contract. It is based on Bitcoin Core
+v31.1 and the pinned Roots 30.3 source; this is candidate documentation, not a
+release announcement. See [the port review](roots-v31-port-review.md) for
+implementation and verification provenance. Selected Bitcoin Knots history is
+lineage only, not a product specification.
 
 ## Sweep an external private key
 
@@ -22,11 +22,18 @@ external key, not routine wallet import or consolidation.
   watch-only, private-key-disabled, and external-signer configurations are not
   eligible destinations. Legacy wallets must be migrated to descriptor wallets;
   this port does not restore a Berkeley DB build option.
+  Local keys must satisfy a native signing path: an incomplete 2-of-2 multisig
+  destination is rejected, while 2-of-3 with two local keys is eligible. This
+  check also recognizes encrypted keys without unlocking or exporting them.
+  Signing capability does not guarantee present timelock maturity or future
+  network acceptance.
 - `broadcast=false` is the default and returns a signed preview with its input
   total, fee, input count, transaction ID, and hex. It does not submit a
   transaction. Review the destination, net amount, and fee; decode the preview
   when inspecting its fee rate and RBF state before using `broadcast=true`.
-- Fees use the current wallet fee settings and chain state. A fresh broadcast
+- Fees use the current wallet fee settings and chain state. v31 removed
+  `settxfee`/`paytxfee`; sweep uses native fee estimation and its configured
+  fallback, with one locked fee snapshot per transaction. A fresh broadcast
   can fail because an input was spent, relay or mempool policy changed, or the
   fee is no longer sufficient. Recreate and review a preview after such a
   failure; do not assume a previous preview is still valid.
@@ -62,7 +69,9 @@ anonymous.
   selected. Unsafe and immature outputs are not added merely to show a status;
   outputs excluded by those normal availability filters are absent until their
   state changes. “Not spendable” is metadata for a displayed output, not an
-  inventory of unavailable outputs.
+  inventory of unavailable outputs. Descriptor-owned watch-only coins can be
+  selected for PSBT preparation; their status describes missing signing material,
+  and does not promise that the wallet can complete every required signature.
 - Explicit input selections are honored for the prepared send. A material wallet
   change, including a competing spend or reorganization, clears the selection
   so the operator must review current inputs again.
@@ -79,9 +88,9 @@ private-key export, a transaction-history product, or any anonymity guarantee.
 ## Candidate verification
 
 The candidate behavior is exercised by
-[`wallet_sweepprivkeys.py`](/test/functional/wallet_sweepprivkeys.py),
-[`wallet_send.py`](/test/functional/wallet_send.py), wallet unit tests, and
-[`src/qt/test/wallettests.cpp`](/src/qt/test/wallettests.cpp). Before operating
+`wallet_sweepprivkeys.py` (`test/functional/wallet_sweepprivkeys.py`),
+`wallet_send.py` (`test/functional/wallet_send.py`), wallet unit tests, and
+`src/qt/test/wallettests.cpp` (`src/qt/test/wallettests.cpp`). Before operating
 on funds, compare the intended command with the built binary and inspect a
 non-broadcast preview:
 
@@ -94,4 +103,4 @@ python3 ci/test/test_wallet_privacy_contract.py
 `bitcoin-cli help sweepprivkeys` and the final transaction preview are the
 authority for a particular binary and transaction. Verify the executable's
 identity separately with `bitcoin-cli --version`; the intended
-`v30.3-roots.1` candidate label in this guide does not replace that check.
+v31 candidate label in this guide does not replace that check.

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin Core developers
+// Copyright (c) 2022-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #ifndef BITCOIN_KERNEL_MEMPOOL_OPTIONS_H
@@ -11,13 +11,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
-class CBlockPolicyEstimator;
-class CScheduler;
 class ValidationSignals;
-
-enum class RBFPolicy { Never, OptIn, Always };
-enum class TRUCPolicy { Reject, Accept, Enforce };
 
 /** Default for -maxmempool, maximum megabytes of mempool memory usage */
 static constexpr unsigned int DEFAULT_MAX_MEMPOOL_SIZE_MB{300};
@@ -25,20 +21,16 @@ static constexpr unsigned int DEFAULT_MAX_MEMPOOL_SIZE_MB{300};
 static constexpr unsigned int DEFAULT_BLOCKSONLY_MAX_MEMPOOL_SIZE_MB{5};
 /** Default for -mempoolexpiry, expiration time for mempool transactions in hours */
 static constexpr unsigned int DEFAULT_MEMPOOL_EXPIRY_HOURS{336};
-/** Default for -minrelaycoinblocks */
-static constexpr uint64_t DEFAULT_MINRELAYCOINBLOCKS{0};
-/** Default for -minrelaymaturity */
-static constexpr int DEFAULT_MINRELAYMATURITY{0};
-/** Default for -mempoolreplacement; must update docs in init.cpp manually */
-static constexpr RBFPolicy DEFAULT_MEMPOOL_RBF_POLICY{RBFPolicy::Always};
-/** Default for -mempooltruc; must update docs in init.cpp manually */
-static constexpr TRUCPolicy DEFAULT_MEMPOOL_TRUC_POLICY{TRUCPolicy::Enforce};
 /** Whether to fall back to legacy V1 serialization when writing mempool.dat */
 static constexpr bool DEFAULT_PERSIST_V1_DAT{false};
-/** Default for -acceptnonstddatacarrier */
-static constexpr bool DEFAULT_ACCEPT_NON_STD_DATACARRIER{false};
 /** Default for -acceptnonstdtxn */
 static constexpr bool DEFAULT_ACCEPT_NON_STD_TXN{false};
+/** Default for -acceptnonstddatacarrier */
+static constexpr bool DEFAULT_ACCEPT_NON_STD_DATACARRIER{false};
+
+enum class RBFPolicy { Never, OptIn, Always };
+enum class TRUCPolicy { Reject, Accept, Enforce };
+
 namespace kernel {
 /**
  * Options struct containing options for constructing a CTxMemPool. Default
@@ -48,29 +40,27 @@ namespace kernel {
  * Most of the time, this struct should be referenced as CTxMemPool::Options.
  */
 struct MemPoolOptions : StandardnessOptions {
-    /* Used to estimate appropriate transaction fees. */
-    CBlockPolicyEstimator* estimator{nullptr};
-    CScheduler* scheduler{nullptr};
     /* The ratio used to determine how often sanity checks will run.  */
     int check_ratio{0};
     int64_t max_size_bytes{DEFAULT_MAX_MEMPOOL_SIZE_MB * 1'000'000};
     std::chrono::seconds expiry{std::chrono::hours{DEFAULT_MEMPOOL_EXPIRY_HOURS}};
-    uint64_t minrelaycoinblocks{DEFAULT_MINRELAYCOINBLOCKS};
-    int minrelaymaturity{DEFAULT_MINRELAYMATURITY};
-    CFeeRate incremental_relay_feerate{CORE_INCREMENTAL_RELAY_FEE};
+    CFeeRate incremental_relay_feerate{DEFAULT_INCREMENTAL_RELAY_FEE};
     /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
     CFeeRate min_relay_feerate{DEFAULT_MIN_RELAY_TX_FEE};
-    CFeeRate dust_relay_feerate_floor{DUST_RELAY_TX_FEE};
-    /** Negative for a target number of blocks, positive for target kB into current mempool. */
-    int32_t dust_relay_target{0};
-    /** Multiplier for dustdynamic assignments, in thousandths. */
-    int dust_relay_multiplier{DEFAULT_DUST_RELAY_MULTIPLIER};
-    bool datacarrier_fullcount{DEFAULT_DATACARRIER_FULLCOUNT};
+    // Local policy controls. Dynamic dust publication is node-owned.
+    unsigned int weight_per_data_byte{WITNESS_SCALE_FACTOR};
     bool subdustfeepenalty{DEFAULT_SUBDUSTFEEPENALTY};
-    bool accept_non_std_datacarrier{DEFAULT_ACCEPT_NON_STD_DATACARRIER};
+    RBFPolicy rbf_policy{RBFPolicy::Always};
+    TRUCPolicy truc_policy{TRUCPolicy::Enforce};
+    bool reject_spk_reuse{false};
+    /** Negative: estimator target blocks; positive: native mempool position in kvB; zero: off. */
+    int32_t dust_relay_target{0};
+    int dust_relay_multiplier{3'000};
+    uint64_t minrelaycoinblocks{0};
+    int minrelaymaturity{0};
+    bool datacarrier_fullcount{DEFAULT_DATACARRIER_FULLCOUNT};
+    bool accept_non_std_datacarrier{false};
     bool require_standard{true};
-    RBFPolicy rbf_policy{DEFAULT_MEMPOOL_RBF_POLICY};
-    TRUCPolicy truc_policy{DEFAULT_MEMPOOL_TRUC_POLICY};
     bool persist_v1_dat{DEFAULT_PERSIST_V1_DAT};
     MemPoolLimits limits{};
 

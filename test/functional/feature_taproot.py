@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2022 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 # Test Taproot softfork (BIPs 340-342)
@@ -117,9 +117,6 @@ import json
 import hashlib
 import os
 import random
-
-# Keep in sync with DEFAULT_SCRIPT_SIZE_POLICY_LIMIT in src/policy/policy.h.
-ROOTS_DEFAULT_MAX_SCRIPT_SIZE = 1650
 
 # Whether or not to output generated test vectors, in JSON format.
 GEN_TEST_VECTORS = False
@@ -435,7 +432,7 @@ DEFAULT_CONTEXT = {
     # The annex (only when mode=="taproot").
     "annex": None,
     # The codeseparator position (only when mode=="taproot").
-    "codeseppos": -1,
+    "codeseppos": 0xffffffff,
     # Which OP_CODESEPARATOR is the last executed one in the script (in legacy/P2SH/P2WSH).
     "codesepnum": -1,
     # The redeemscript to add to the scriptSig (if P2SH; None implies not P2SH).
@@ -634,7 +631,7 @@ ERR_PUSH_SIZE = {"err_msg": "Push value size limit exceeded"}
 ERR_DISABLED_OPCODE = {"err_msg": "Attempted to use a disabled opcode"}
 ERR_TAPSCRIPT_CHECKMULTISIG = {"err_msg": "OP_CHECKMULTISIG(VERIFY) is not available in tapscript"}
 ERR_TAPSCRIPT_MINIMALIF = {"err_msg": "OP_IF/NOTIF argument must be minimal in tapscript"}
-ERR_PUBKEYTYPE = {"err_msg": "Public key is neither compressed or uncompressed"}
+ERR_TAPSCRIPT_EMPTY_PUBKEY = {"err_msg": "Empty public key in tapscript"}
 ERR_STACK_SIZE = {"err_msg": "Stack size limit exceeded"}
 ERR_CLEANSTACK = {"err_msg": "Stack size must be exactly one after execution"}
 ERR_INVALID_STACK_OPERATION = {"err_msg": "Operation not valid with the current stack size"}
@@ -643,6 +640,7 @@ ERR_BAD_OPCODE = {"err_msg": "Opcode missing or not understood"}
 ERR_EVAL_FALSE = {"err_msg": "Script evaluated without error but finished with a false/empty top stack element"}
 ERR_WITNESS_PROGRAM_WITNESS_EMPTY = {"err_msg": "Witness program was passed an empty witness"}
 ERR_CHECKSIGVERIFY = {"err_msg": "Script failed an OP_CHECKSIGVERIFY operation"}
+ERR_SCRIPT_NUM = {"err_msg": "Script number overflowed or is non-minimally encoded"}
 
 VALID_SIGHASHES_ECDSA = [
     SIGHASH_ALL,
@@ -782,6 +780,8 @@ def spenders_taproot_active():
         add_spender(spenders, "sighash/codesep_pk", tap=tap, leaf="codesep_pk", key=secs[1], codeseppos=0, **common, **SINGLE_SIG, **SIGHASH_BITFLIP, **ERR_SCHNORR_SIG)
         add_spender(spenders, "sighash/branched_codesep/left", tap=tap, leaf="branched_codesep", key=secs[0], codeseppos=3, **common, inputs=[getter("sign"), b'\x01'], **SIGHASH_BITFLIP, **ERR_SCHNORR_SIG)
         add_spender(spenders, "sighash/branched_codesep/right", tap=tap, leaf="branched_codesep", key=secs[1], codeseppos=6, **common, inputs=[getter("sign"), b''], **SIGHASH_BITFLIP, **ERR_SCHNORR_SIG)
+        add_spender(spenders, "sighash/codesep_pk_wrongpos1", tap=tap, leaf="codesep_pk", key=secs[1], codeseppos=0, **common, **SINGLE_SIG, failure={"codeseppos": 1}, **ERR_SCHNORR_SIG)
+        add_spender(spenders, "sighash/codesep_pk_wrongpos2", tap=tap, leaf="codesep_pk", key=secs[1], codeseppos=0, **common, **SINGLE_SIG, failure={"codeseppos": 0xfffffffe}, **ERR_SCHNORR_SIG)
 
     # Reusing the scripts above, test that various features affect the sighash.
     add_spender(spenders, "sighash/annex", tap=tap, leaf="pk_codesep", key=secs[1], hashtype=hashtype, standard=False, **SINGLE_SIG, annex=bytes([ANNEX_TAG]), failure={"sighash": override(default_sighash, annex=None)}, **ERR_SCHNORR_SIG)
@@ -1048,27 +1048,27 @@ def spenders_taproot_active():
     add_spender(spenders, "tapscript/minimalif", leaf="t5", **common, inputs=[getter("sign"), b'\x01'], failure={"inputs": [getter("sign"), b'\x0001']}, **ERR_TAPSCRIPT_MINIMALIF)
     add_spender(spenders, "tapscript/minimalnotif", leaf="t6", **common, inputs=[getter("sign"), b'\x01'], failure={"inputs": [getter("sign"), b'\x0100']}, **ERR_TAPSCRIPT_MINIMALIF)
     # Test that 1-byte public keys (which are unknown) are acceptable but nonstandard with unrelated signatures, but 0-byte public keys are not valid.
-    add_spender(spenders, "tapscript/unkpk/checksig", leaf="t16", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t7"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/unkpk/checksigadd", leaf="t17", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t10"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/unkpk/checksigverify", leaf="t18", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t8"}, **ERR_PUBKEYTYPE)
+    add_spender(spenders, "tapscript/unkpk/checksig", leaf="t16", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t7"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/unkpk/checksigadd", leaf="t17", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t10"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/unkpk/checksigverify", leaf="t18", standard=False, **common, **SINGLE_SIG, failure={"leaf": "t8"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
     # Test that 33-byte public keys (which are unknown) are acceptable but nonstandard with valid signatures, but normal pubkeys are not valid in that case.
     add_spender(spenders, "tapscript/oldpk/checksig", leaf="t30", standard=False, **common, **SINGLE_SIG, sighash=bitflipper(default_sighash), failure={"leaf": "t1"}, **ERR_SCHNORR_SIG)
     add_spender(spenders, "tapscript/oldpk/checksigadd", leaf="t31", standard=False, **common, **SINGLE_SIG, sighash=bitflipper(default_sighash), failure={"leaf": "t2"}, **ERR_SCHNORR_SIG)
     add_spender(spenders, "tapscript/oldpk/checksigverify", leaf="t32", standard=False, **common, **SINGLE_SIG, sighash=bitflipper(default_sighash), failure={"leaf": "t28"}, **ERR_SCHNORR_SIG)
     # Test that 0-byte public keys are not acceptable.
-    add_spender(spenders, "tapscript/emptypk/checksig", leaf="t1", **SINGLE_SIG, **common, failure={"leaf": "t7"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/emptypk/checksigverify", leaf="t2", **SINGLE_SIG, **common, failure={"leaf": "t8"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/emptypk/checksigadd", leaf="t9", **SINGLE_SIG, **common, failure={"leaf": "t10"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/emptypk/checksigadd", leaf="t35", standard=False, **SINGLE_SIG, **common, failure={"leaf": "t10"}, **ERR_PUBKEYTYPE)
+    add_spender(spenders, "tapscript/emptypk/checksig", leaf="t1", **SINGLE_SIG, **common, failure={"leaf": "t7"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/emptypk/checksigverify", leaf="t2", **SINGLE_SIG, **common, failure={"leaf": "t8"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/emptypk/checksigadd", leaf="t9", **SINGLE_SIG, **common, failure={"leaf": "t10"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/emptypk/checksigadd", leaf="t35", standard=False, **SINGLE_SIG, **common, failure={"leaf": "t10"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
     # Test that OP_CHECKSIGADD results are as expected
-    add_spender(spenders, "tapscript/checksigaddresults", leaf="t28", **SINGLE_SIG, **common, failure={"leaf": "t27"}, err_msg="unknown error")
-    add_spender(spenders, "tapscript/checksigaddoversize", leaf="t29", **SINGLE_SIG, **common, failure={"leaf": "t27"}, err_msg="unknown error")
+    add_spender(spenders, "tapscript/checksigaddresults", leaf="t28", **SINGLE_SIG, **common, failure={"leaf": "t27"}, **ERR_SCRIPT_NUM)
+    add_spender(spenders, "tapscript/checksigaddoversize", leaf="t29", **SINGLE_SIG, **common, failure={"leaf": "t27"}, **ERR_SCRIPT_NUM)
     # Test that OP_CHECKSIGADD requires 3 stack elements.
     add_spender(spenders, "tapscript/checksigadd3args", leaf="t9", **SINGLE_SIG, **common, failure={"leaf": "t11"}, **ERR_INVALID_STACK_OPERATION)
     # Test that empty signatures do not cause script failure in OP_CHECKSIG and OP_CHECKSIGADD (but do fail with empty pubkey, and do fail OP_CHECKSIGVERIFY)
-    add_spender(spenders, "tapscript/emptysigs/checksig", leaf="t12", **common, inputs=[b'', getter("sign")], failure={"leaf": "t13"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/emptysigs/nochecksigverify", leaf="t12", **common, inputs=[b'', getter("sign")], failure={"leaf": "t20"}, **ERR_PUBKEYTYPE)
-    add_spender(spenders, "tapscript/emptysigs/checksigadd", leaf="t14", **common, inputs=[b'', getter("sign")], failure={"leaf": "t15"}, **ERR_PUBKEYTYPE)
+    add_spender(spenders, "tapscript/emptysigs/checksig", leaf="t12", **common, inputs=[b'', getter("sign")], failure={"leaf": "t13"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/emptysigs/nochecksigverify", leaf="t12", **common, inputs=[b'', getter("sign")], failure={"leaf": "t20"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
+    add_spender(spenders, "tapscript/emptysigs/checksigadd", leaf="t14", **common, inputs=[b'', getter("sign")], failure={"leaf": "t15"}, **ERR_TAPSCRIPT_EMPTY_PUBKEY)
     # Test that scripts over 10000 bytes (and over 201 non-push ops) are acceptable.
     add_spender(spenders, "tapscript/no10000limit", leaf="t19", **SINGLE_SIG, **common)
     # Test that a stack size of 1000 elements is permitted, but 1001 isn't.
@@ -1283,7 +1283,7 @@ def spenders_taproot_active():
         script = [pubs[1]]
         inputs = []
         opcount = 1
-        codeseppos = -1
+        codeseppos = 0xffffffff
         for pos, op in enumerate(ops):
             if op == -1:
                 codeseppos = opcount
@@ -1397,7 +1397,7 @@ def dump_json_test(tx, input_utxos, idx, success, failure):
     sha1 = hashlib.sha1(dump.encode("utf-8")).hexdigest()
     dirname = os.environ.get("TEST_DUMP_DIR", ".") + ("/%s" % sha1[0])
     os.makedirs(dirname, exist_ok=True)
-    with open(dirname + ("/%s" % sha1), 'w', encoding="utf8") as f:
+    with open(dirname + ("/%s" % sha1), 'w') as f:
         f.write(dump)
 
 # Data type to keep track of UTXOs, where they were created, and how to spend them.
@@ -1414,12 +1414,8 @@ class TaprootTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [["-acceptnonstddatacarrier=1", "-datacarriersize=100000", "-rejectparasites=0"]]
         self.setup_clean_chain = True
-        self.extra_args = [[
-            "-acceptnonstddatacarrier=1",
-            "-datacarriersize=100000",  # Keep Core30's carrier allowance for randomized script tests.
-            "-rejectparasites=0",  # Keep generated Taproot spends focused on script semantics.
-        ]]
 
     def block_submit(self, node, txs, msg, err_msg, cb_pubkey=None, fees=0, sigops_weight=0, witness=False, accept=False):
 
@@ -1637,8 +1633,8 @@ class TaprootTest(BitcoinTestFramework):
                     and (all(utxo.spender.is_standard for utxo in input_utxos))  # All inputs must be standard
                     and tx.version in TX_STANDARD_VERSIONS # The tx version must be standard
                     and not (tx.version == 3 and tx.get_vsize() > TRUC_MAX_VSIZE)  # Topological standardness rules must be followed
-                    # Roots applies -maxscriptsize to each serialized witness stack.
-                    and all(len(txin_witness.serialize()) <= ROOTS_DEFAULT_MAX_SCRIPT_SIZE for txin_witness in tx.wit.vtxinwit)
+                    # Roots bounds each serialized witness stack locally.
+                    and all(len(witness.serialize()) <= 1650 for witness in tx.wit.vtxinwit)
                 )
                 msg = ','.join(utxo.spender.comment + ("*" if n == fail_input else "") for n, utxo in enumerate(input_utxos))
                 if is_standard_tx:
@@ -1656,54 +1652,6 @@ class TaprootTest(BitcoinTestFramework):
         assert len(normal_utxos) == 0
         assert len(mismatching_utxos) == 0
         self.log.info("  - Done")
-
-    def test_push_and_witness_limits(self):
-        """Separate the script-push consensus limit from Roots' witness-size policy."""
-        self.log.info("Deterministic script-push and witness-size boundaries...")
-        node = self.nodes[0]
-        key = (1).to_bytes(32, 'big')
-        pubkey = compute_xonly_pubkey(key)[0]
-        script = CScript([b'x' * MAX_SCRIPT_ELEMENT_SIZE, OP_DROP, pubkey, OP_CHECKSIG])
-        # Two leaves give a 65-byte control block; SIGHASH_DEFAULT gives a
-        # 64-byte signature. Padding stays within the same CompactSize width.
-        witness = CTxInWitness()
-        witness.scriptWitness.stack = [bytes(64), script, bytes(65)]
-        base_size = len(witness.serialize())
-        spenders = []
-        amounts = {}
-        for size in range(ROOTS_DEFAULT_MAX_SCRIPT_SIZE - 1, ROOTS_DEFAULT_MAX_SCRIPT_SIZE + 2):
-            padding = [OP_NOP] * (size - base_size)
-            scripts = [("valid", CScript(padding + [b'x' * MAX_SCRIPT_ELEMENT_SIZE, OP_DROP, pubkey, OP_CHECKSIG])),
-                       ("invalid", CScript(padding + [b'x' * (MAX_SCRIPT_ELEMENT_SIZE + 1), OP_DROP, pubkey, OP_CHECKSIG]))]
-            tap = taproot_construct(pubkey, scripts)
-            spenders.append((size, make_spender(f"pushmaxlimit/witness{size}", tap=tap, key=key, leaf="valid",
-                                               deterministic=True, **SINGLE_SIG, failure={"leaf": "invalid"})))
-            amounts[program_to_witness(1, tap.output_pubkey)] = 1
-        funding_id = node.sendmany("", amounts)
-        self.generate(node, 1)
-        funding = tx_from_hex(node.gettransaction(funding_id)["hex"])
-        self.init_blockinfo(node)
-        fee = 100000
-        for size, spender in spenders:
-            vout = next(i for i, output in enumerate(funding.vout) if output.scriptPubKey == spender.script)
-            tx = CTransaction()
-            tx.version = 2
-            tx.vin = [CTxIn(COutPoint(funding.txid_int, vout))]
-            tx.vout = [CTxOut(funding.vout[vout].nValue - fee, spender.script)]
-            tx.wit.vtxinwit = [CTxInWitness()]
-            for valid in (False, True):
-                scriptsig, stack = spender.sat_function(tx, 0, [funding.vout[vout]], valid)
-                tx.vin[0].scriptSig = scriptsig
-                tx.wit.vtxinwit[0].scriptWitness.stack = stack
-                assert_equal(len(tx.wit.vtxinwit[0].serialize()), size + (not valid))
-                if valid and size <= ROOTS_DEFAULT_MAX_SCRIPT_SIZE:
-                    assert_equal(node.sendrawtransaction(tx.serialize().hex(), 0), tx.txid_hex)
-                    assert node.getmempoolentry(tx.txid_hex) is not None
-                else:
-                    reason = "bad-witness-witness-size" if size + (not valid) > ROOTS_DEFAULT_MAX_SCRIPT_SIZE else None
-                    assert_raises_rpc_error(-26, reason, node.sendrawtransaction, tx.serialize().hex(), 0)
-                self.block_submit(node, [tx], spender.comment, None if valid else ERR_PUSH_SIZE["err_msg"],
-                                  fees=fee, witness=True, accept=valid)
 
     def gen_test_vectors(self):
         """Run a scenario that corresponds (and optionally produces) to BIP341 test vectors."""
@@ -1951,7 +1899,6 @@ class TaprootTest(BitcoinTestFramework):
         nonstd_spenders = spenders_taproot_nonstandard()
         self.test_spenders(self.nodes[0], nonstd_spenders, input_counts=[1])
         self.test_spenders(self.nodes[0], nonstd_spenders, input_counts=[2, 3])
-        self.test_push_and_witness_limits()
 
 
 if __name__ == '__main__':

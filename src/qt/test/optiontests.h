@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,6 +10,10 @@
 #include <univalue.h>
 
 #include <QObject>
+#include <QString>
+
+/** Run one isolated writer or reader for the fresh-process display-unit test. */
+int RunDisplayUnitSettingsTest(interfaces::Node& node, const QString& settings_dir, const QString& action, BitcoinUnit unit);
 
 class OptionTests : public QObject
 {

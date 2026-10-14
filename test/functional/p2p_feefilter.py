@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2016-2021 The Bitcoin Core developers
+# Copyright (c) 2016-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test processing of feefilter messages."""
@@ -62,6 +62,9 @@ class FeeFilterTest(BitcoinTestFramework):
         self.test_feefilter_forcerelay()
         self.test_feefilter()
         self.test_feefilter_blocksonly()
+        self.log.info("Explicit -feefilter=0 suppresses local announcements")
+        self.restart_node(0, self.extra_args[0] + ['-feefilter=0'])
+        self.nodes[0].add_p2p_connection(FeefilterConn()).assert_feefilter_received(False)
 
     def test_feefilter_forcerelay(self):
         self.log.info('Check that peers without forcerelay permission (default) get a feefilter message')

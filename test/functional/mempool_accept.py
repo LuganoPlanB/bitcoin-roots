@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2022 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test mempool acceptance of raw transactions."""
@@ -60,8 +60,8 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            '-txindex', '-permitbaredatacarrier=1', '-permitbaremultisig=0',
-            '-datacarriersize=100000', '-maxscriptsize=100000',
+            '-txindex', '-permitbaremultisig=0', '-permitbaredatacarrier=1',
+            '-maxscriptsize=100000', '-datacarriersize=100000',
         ]] * self.num_nodes
         self.supports_cli = False
 

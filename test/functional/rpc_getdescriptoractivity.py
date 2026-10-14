@@ -13,9 +13,9 @@ from test_framework.wallet import MiniWallet, MiniWalletMode, getnewdestination
 
 class GetBlocksActivityTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.extra_args = [['-permitbarepubkey=1']]  # Addressless output fixture.
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [["-permitbarepubkey=1"]]
 
     def run_test(self):
         node = self.nodes[0]

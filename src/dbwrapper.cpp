@@ -4,6 +4,22 @@
 
 #include <dbwrapper.h>
 
+#include <bitcoin-build-config.h>
+
+#include <leveldb/cache.h>
+#include <leveldb/db.h>
+#include <leveldb/env.h>
+#include <leveldb/filter_policy.h>
+#if EMBEDDED_LEVELDB
+#include <leveldb/helpers/memenv/memenv.h>
+#else
+#include <memenv.h>
+#endif
+#include <leveldb/iterator.h>
+#include <leveldb/options.h>
+#include <leveldb/slice.h>
+#include <leveldb/status.h>
+#include <leveldb/write_batch.h>
 #include <logging.h>
 #include <random.h>
 #include <serialize.h>
@@ -11,6 +27,7 @@
 #include <streams.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
+#include <util/log.h>
 #include <util/obfuscation.h>
 #include <util/strencodings.h>
 
@@ -19,16 +36,6 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
-#include <leveldb/cache.h>
-#include <leveldb/db.h>
-#include <leveldb/env.h>
-#include <leveldb/filter_policy.h>
-#include <leveldb/helpers/memenv/memenv.h>
-#include <leveldb/iterator.h>
-#include <leveldb/options.h>
-#include <leveldb/slice.h>
-#include <leveldb/status.h>
-#include <leveldb/write_batch.h>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -47,8 +54,8 @@ static void HandleError(const leveldb::Status& status)
     if (status.ok())
         return;
     const std::string errmsg = "Fatal LevelDB error: " + status.ToString();
-    LogPrintf("%s\n", errmsg);
-    LogPrintf("You can use -debug=leveldb to get more complete diagnostic messages\n");
+    LogError("%s", errmsg);
+    LogInfo("You can use -debug=leveldb to get more complete diagnostic messages");
     throw dbwrapper_error(errmsg);
 }
 
@@ -57,7 +64,7 @@ public:
     // This code is adapted from posix_logger.h, which is why it is using vsprintf.
     // Please do not do this in normal code
     void Logv(const char * format, va_list ap) override {
-            if (!LogAcceptCategory(BCLog::LEVELDB, BCLog::Level::Debug)) {
+            if (!LogAcceptCategory(BCLog::LEVELDB, util::log::Level::Debug)) {
                 return;
             }
             char buffer[500];
@@ -214,7 +221,7 @@ struct LevelDBContext {
 };
 
 CDBWrapper::CDBWrapper(const DBParams& params)
-    : m_db_context{std::make_unique<LevelDBContext>()}, m_name{fs::PathToString(params.path.stem())}, m_path{params.path}, m_is_memory{params.memory_only}
+    : m_db_context{std::make_unique<LevelDBContext>()}, m_name{fs::PathToString(params.path.stem())}
 {
     DBContext().penv = nullptr;
     DBContext().readoptions.verify_checksums = true;
@@ -274,9 +281,9 @@ CDBWrapper::~CDBWrapper()
     DBContext().options.env = nullptr;
 }
 
-bool CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
+void CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
 {
-    const bool log_memory = LogAcceptCategory(BCLog::LEVELDB, BCLog::Level::Debug);
+    const bool log_memory = LogAcceptCategory(BCLog::LEVELDB, util::log::Level::Debug);
     double mem_before = 0;
     if (log_memory) {
         mem_before = DynamicMemoryUsage() / 1024.0 / 1024;
@@ -288,7 +295,6 @@ bool CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
         LogDebug(BCLog::LEVELDB, "WriteBatch memory usage: db=%s, before=%.1fMiB, after=%.1fMiB\n",
                  m_name, mem_before, mem_after);
     }
-    return true;
 }
 
 std::optional<std::string> CDBWrapper::GetProperty(const std::string& property) const
@@ -317,7 +323,7 @@ std::optional<std::string> CDBWrapper::ReadImpl(std::span<const std::byte> key) 
     if (!status.ok()) {
         if (status.IsNotFound())
             return std::nullopt;
-        LogPrintf("LevelDB read failure: %s\n", status.ToString());
+        LogError("LevelDB read failure: %s", status.ToString());
         HandleError(status);
     }
     return strValue;
@@ -332,7 +338,7 @@ bool CDBWrapper::ExistsImpl(std::span<const std::byte> key) const
     if (!status.ok()) {
         if (status.IsNotFound())
             return false;
-        LogPrintf("LevelDB read failure: %s\n", status.ToString());
+        LogError("LevelDB read failure: %s", status.ToString());
         HandleError(status);
     }
     return true;

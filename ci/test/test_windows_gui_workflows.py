@@ -49,8 +49,8 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         gui_cmake = (ROOT / "src/qt/CMakeLists.txt").read_text(encoding="utf-8")
         self.assertNotIn("find_program(RSVG_CONVERT", gui_cmake)
 
-    def test_pr_smoke_builds_and_tests_windows_gui(self):
-        windows_smoke = job(CI_WORKFLOW, "windows-smoke")
+    def test_nightly_smoke_builds_and_tests_windows_gui(self):
+        windows_smoke = job(ROOT / ".github/workflows/nightly.yml", "windows-smoke")
         self.assert_static_gui_assets(windows_smoke)
         self.assertIn("-DBUILD_GUI=ON", windows_smoke)
         self.assertNotIn("-DBUILD_GUI=OFF", windows_smoke)
@@ -62,7 +62,7 @@ class WindowsGuiWorkflowTest(unittest.TestCase):
         self.assert_static_gui_assets(windows_release)
         self.assertIn("-DBUILD_GUI=ON", windows_release)
         self.assertNotIn("-DBUILD_GUI=OFF", windows_release)
-        self.assertIn("-DWERROR=ON", windows_release)
+        self.assertIn("-DCMAKE_COMPILE_WARNING_AS_ERROR=ON", windows_release)
         self.assertIn("python ci/release/archive.py root-name", windows_release)
         self.assertIn("Compress-Archive -Path $installDir", windows_release)
         self.assertNotIn('Compress-Archive -Path (Join-Path $installDir "*")', windows_release)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2016-2022 The Bitcoin Core developers
+# Copyright (c) 2016-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test segwit transactions and blocks on P2P network."""
@@ -82,6 +82,7 @@ from test_framework.script_util import (
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_not_equal,
+    assert_greater_than_or_equal,
     assert_equal,
     assert_raises_rpc_error,
     ensure_for,
@@ -215,24 +216,11 @@ class SegWitTest(BitcoinTestFramework):
         self.noban_tx_relay = True
         # This test tests SegWit both pre and post-activation, so use the normal BIP9 activation.
         self.extra_args = [
-            # Keep Roots' independent data-carrier and script-size policies from masking the
-            # SegWit standardness limits exercised by this test.
             # -par=1 should not affect validation outcome or logging/reported failures. It is kept
             # here to exercise the code path still (as it is distinct for multithread script
             # validation).
-            [
-                "-acceptnonstdtxn=1",
-                "-acceptnonstddatacarrier=1",
-                f"-testactivationheight=segwit@{SEGWIT_HEIGHT}",
-                "-maxscriptsize=100000",
-                "-par=1",
-            ],
-            [
-                "-acceptnonstdtxn=0",
-                "-acceptnonstddatacarrier=1",
-                f"-testactivationheight=segwit@{SEGWIT_HEIGHT}",
-                "-maxscriptsize=100000",
-            ],
+            ["-acceptnonstdtxn=1", "-acceptnonstddatacarrier=1", "-datacarriersize=100000", "-maxscriptsize=100000", f"-testactivationheight=segwit@{SEGWIT_HEIGHT}", "-par=1"],
+            ["-acceptnonstdtxn=0", "-acceptnonstddatacarrier=1", "-datacarriersize=100000", "-maxscriptsize=100000", f"-testactivationheight=segwit@{SEGWIT_HEIGHT}"],
         ]
 
     # Helper functions
@@ -835,7 +823,6 @@ class SegWitTest(BitcoinTestFramework):
         assert block.get_weight() > MAX_BLOCK_WEIGHT
 
         # We can't send over the p2p network, because this is too big to relay
-        # TODO: repeat this test with a block that can be relayed
         assert_equal('bad-witness-nonce-size', self.nodes[0].submitblock(block.serialize().hex()))
 
         assert_not_equal(self.nodes[0].getbestblockhash(), block.hash_hex)
@@ -845,6 +832,36 @@ class SegWitTest(BitcoinTestFramework):
         assert_equal(None, self.nodes[0].submitblock(block.serialize().hex()))
 
         assert self.nodes[0].getbestblockhash() == block.hash_hex
+
+        # Build a relayable-but-invalid block
+        relayable_block = self.build_next_block()
+        add_witness_commitment(relayable_block)
+        relayable_block.solve()
+
+        # Append extra witness data to the coinbase input that triggers the
+        # same validation rejection but keeps the block under the weight limit
+        # so it can be sent via P2P.
+        relayable_block.vtx[0].wit.vtxinwit[0].scriptWitness.stack.append(b'a' * 100_000)
+
+        # Ensure it's relayable by weight
+        assert_greater_than_or_equal(MAX_BLOCK_WEIGHT, relayable_block.get_weight())
+
+        # Send over P2P and expect rejection for the same reason
+        test_witness_block(self.nodes[0], self.test_node, relayable_block,
+                           accepted=False, reason='bad-witness-nonce-size')
+
+        # Node should still be on the previous tip
+        assert_not_equal(self.nodes[0].getbestblockhash(), relayable_block.hash_hex)
+
+        # Now fix the block by removing the extra witness data
+        relayable_block.vtx[0].wit.vtxinwit[0].scriptWitness.stack.pop()
+
+        # Confirm the block is still relayable by weight
+        assert relayable_block.get_weight() <= MAX_BLOCK_WEIGHT
+
+        # Send the corrected block and expect acceptance
+        test_witness_block(self.nodes[0], self.test_node, relayable_block, accepted=True)
+        assert_equal(self.nodes[0].getbestblockhash(), relayable_block.hash_hex)
 
         # Now make sure that malleating the witness reserved value doesn't
         # result in a block permanently marked bad.
@@ -1181,8 +1198,8 @@ class SegWitTest(BitcoinTestFramework):
         block.vtx = [block.vtx[0]]
         self.update_witness_block_with_transactions(block, [tx2])
         # This block doesn't result in a specific reject reason, but an iostream exception:
-        # "Exception 'CDataStream::read(): end of data: unspecified iostream_category error' (...) caught"
-        test_witness_block(self.nodes[0], self.test_node, block, accepted=False)
+        with self.nodes[0].assert_debug_log(["Exception 'DataStream::read(): end of data"]):
+            test_witness_block(self.nodes[0], self.test_node, block, accepted=False)
 
         # Now make one of the intermediate witnesses be incorrect
         tx2.wit.vtxinwit.append(CTxInWitness())

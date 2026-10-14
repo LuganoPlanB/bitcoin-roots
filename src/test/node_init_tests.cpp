@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Core developers
+// Copyright (c) 2025-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,6 +7,7 @@
 #include <rpc/server.h>
 
 #include <boost/test/unit_test.hpp>
+#include <test/util/common.h>
 #include <test/util/setup_common.h>
 
 using node::NodeContext;
@@ -39,11 +40,10 @@ BOOST_AUTO_TEST_CASE(init_test)
 {
     // Clear state set by BasicTestingSetup that AppInitMain assumes is unset.
     LogInstance().DisconnectTestLogger();
-    // Initialize both read-only and Roots read/write configuration paths in
-    // the fixture's isolated datadir, as normal node startup does.
-    m_node.args->ForceSetArg("-chain", "regtest");
+    // Initialize both configuration paths as production startup does. The
+    // disposable fixture datadir has no configuration files to load.
     std::string error;
-    BOOST_REQUIRE_MESSAGE(m_node.args->ReadConfigFiles(error), error);
+    BOOST_REQUIRE(m_node.args->ReadConfigFiles(error));
 
     // Prevent the test from trying to listen on ports 8332 and 8333.
     m_node.args->ForceSetArg("-server", "0");

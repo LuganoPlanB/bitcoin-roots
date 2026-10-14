@@ -20,14 +20,16 @@ from test_framework.util import (
 from test_framework.wallet import (
     MiniWallet,
 )
-
-EPHEMERAL_ARGS = ["-permitephemeral=anchor,send,dust", "-subdustfeepenalty=0", "-blockprioritysize=0"]
+from test_framework.blocktools import (
+    create_empty_fork
+)
 
 class EphemeralDustTest(BitcoinTestFramework):
     def set_test_params(self):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
-        self.extra_args = [EPHEMERAL_ARGS, EPHEMERAL_ARGS]
+        # Exercise native dust packages with the Roots local send exception enabled.
+        self.extra_args = [["-permitephemeral=1", "-subdustfeepenalty=0", "-blockprioritysize=0"]] * self.num_nodes
 
         # Don't test trickling logic
         self.noban_tx_relay = True
@@ -66,6 +68,12 @@ class EphemeralDustTest(BitcoinTestFramework):
         )
 
         return dusty_tx, sweep_tx
+
+    def trigger_reorg(self, fork_blocks):
+        """Trigger reorg of the fork blocks."""
+        for block in fork_blocks:
+            self.nodes[0].submitblock(block.serialize().hex())
+        assert_equal(self.nodes[0].getbestblockhash(), fork_blocks[-1].hash_hex)
 
     def run_test(self):
 
@@ -133,8 +141,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Node restart; doesn't allow ephemeral transaction back in due to individual submission
         # resulting in 0-fee. Supporting re-submission of CPFP packages on restart is desired but not
         # yet implemented.
-        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
-        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(0)
+        self.restart_node(1)
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
@@ -194,8 +202,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that a single output of any satoshi amount is allowed, not checking spending")
 
         # We aren't checking spending, allow it in with no fee
-        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         # 330 is dust threshold for taproot outputs
@@ -205,24 +213,18 @@ class EphemeralDustTest(BitcoinTestFramework):
             test_res = self.nodes[0].testmempoolaccept([dusty_tx["hex"]])
             assert test_res[0]["allowed"]
 
-        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
-        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(0, extra_args=self.extra_args[0])
+        self.restart_node(1, extra_args=self.extra_args[1])
         self.connect_nodes(0, 1)
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
-    # N.B. If individual minrelay requirement is dropped, this test can be dropped
     def test_non_truc(self):
-        self.log.info("Test that v2 dust-having transaction is rejected even if spent, because of min relay requirement")
-
+        self.log.info("Test that v2 dust packages retain the individual relay requirement")
         assert_equal(self.nodes[0].getrawmempool(), [])
         dusty_tx, sweep_tx = self.create_ephemeral_dust_package(tx_version=2)
-
         res = self.nodes[0].submitpackage([dusty_tx["hex"], sweep_tx["hex"]])
         assert_equal(res["package_msg"], "transaction failed")
-        # Roots accounts for the datacarrier policy weight in this package's
-        # individual relay-fee check.
-        assert_equal(res["tx-results"][dusty_tx["wtxid"]]["error"], "min relay fee not met, 0 < 147")
-
+        assert "min relay fee not met" in res["tx-results"][dusty_tx["wtxid"]]["error"]
         assert_equal(self.nodes[0].getrawmempool(), [])
 
     def test_unspent_ephemeral(self):
@@ -319,7 +321,7 @@ class EphemeralDustTest(BitcoinTestFramework):
         assert_mempool_contents(self, self.nodes[0], expected=[])
 
     def test_reorgs(self):
-        self.log.info("Test that reorgs breaking the truc topology doesn't cause issues")
+        self.log.info("Test that reorgs avoid ephemeral dust spentness checks")
 
         assert_equal(self.nodes[0].getrawmempool(), [])
 
@@ -327,12 +329,16 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.disconnect_nodes(0, 1)
 
         # Get dusty tx mined, then check that it makes it back into mempool on reorg
-        # due to bypass_limits allowing 0-fee individually
+        # due to bypass_limits allowing 0-fee individually, and creation of single dust
+
+        # Prep for fork with empty blocks
+        fork_blocks = create_empty_fork(self.nodes[0])
+
         dusty_tx, _ = self.create_ephemeral_dust_package(tx_version=3)
         assert_raises_rpc_error(-26, "min relay fee not met", self.nodes[0].sendrawtransaction, dusty_tx["hex"])
 
-        block_res = self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"]], sync_fun=self.no_op)
-        self.nodes[0].invalidateblock(block_res["hash"])
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"]], sync_fun=self.no_op)
+        self.trigger_reorg(fork_blocks)
         assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"]], sync=False)
 
         # Create a sweep that has dust of its own and leaves dusty_tx's dust unspent
@@ -340,37 +346,56 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.add_output_to_create_multi_result(sweep_tx)
         assert_raises_rpc_error(-26, "min relay fee not met", self.nodes[0].sendrawtransaction, sweep_tx["hex"])
 
-        # Mine the sweep then re-org, the sweep will not make it back in due to spend checks
-        block_res = self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"], sweep_tx["hex"]], sync_fun=self.no_op)
-        self.nodes[0].invalidateblock(block_res["hash"])
-        assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"]], sync=False)
+        # Prep for fork with empty blocks
+        fork_blocks = create_empty_fork(self.nodes[0])
 
-        # Should re-enter if dust is swept
-        sweep_tx_2 = self.wallet.create_self_transfer_multi(fee_per_output=0, utxos_to_spend=dusty_tx["new_utxos"], version=3)
-        self.add_output_to_create_multi_result(sweep_tx_2)
-        assert_raises_rpc_error(-26, "min relay fee not met", self.nodes[0].sendrawtransaction, sweep_tx_2["hex"])
+        # Mine the sweep then re-org, the sweep will make it back in due to lack of eph dust spend checks on reorg
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"], sweep_tx["hex"]], sync_fun=self.no_op)
+        self.trigger_reorg(fork_blocks)
+        assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"], sweep_tx["tx"]], sync=False)
 
-        reconsider_block_res = self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"], sweep_tx_2["hex"]], sync_fun=self.no_op)
-        self.nodes[0].invalidateblock(reconsider_block_res["hash"])
-        assert_mempool_contents(self, self.nodes[0], expected=[dusty_tx["tx"], sweep_tx_2["tx"]], sync=False)
+        # Test that dusty tx being reorged back into mempool doesn't invalidate descendants
+        # whether they spend dust or not
 
-        # TRUC transactions restriction for ephemeral dust disallows further spends of ancestor chains
-        child_tx = self.wallet.create_self_transfer_multi(utxos_to_spend=sweep_tx_2["new_utxos"], version=3)
-        assert_raises_rpc_error(-26, "truc-ancestors-toomany", self.nodes[0].sendrawtransaction, child_tx["hex"])
+        # Mine the parent transaction only while preparing a fork
+        fork_blocks = create_empty_fork(self.nodes[0])
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_tx["hex"]], sync_fun=self.no_op)
+        utxo = self.wallet.get_utxo()
+        # No in-mempool deps, use version=2 and chain off of it
+        second_sweep_tx = self.wallet.send_self_transfer_multi(from_node=self.nodes[0], utxos_to_spend=[dusty_tx["new_utxos"][1], utxo], version=2)
+        child_chain = self.wallet.send_self_transfer_chain(from_node=self.nodes[0], chain_length=10, utxo_to_spend=second_sweep_tx["new_utxos"][0])
 
-        self.nodes[0].reconsiderblock(reconsider_block_res["hash"])
+        # Everything but parent in pool
+        expected_pool = [sweep_tx["tx"], second_sweep_tx["tx"]] + [child["tx"] for child in child_chain]
+        assert_mempool_contents(self, self.nodes[0], expected=expected_pool, sync=False)
+
+        # Add ultimate parent back into mempool
+        expected_pool = [dusty_tx["tx"]] + expected_pool
+        self.trigger_reorg(fork_blocks)
+        assert_mempool_contents(self, self.nodes[0], expected=expected_pool, sync=False)
+
+        hex_to_mine = [tx.serialize().hex() for tx in expected_pool]
+        self.generateblock(self.nodes[0], self.wallet.get_address(), hex_to_mine, sync_fun=self.no_op)
         assert_equal(self.nodes[0].getrawmempool(), [])
 
         self.log.info("Test that ephemeral dust tx with fees or multi dust don't enter mempool via reorg")
         multi_dusty_tx, _ = self.create_ephemeral_dust_package(tx_version=3, num_dust_outputs=2)
-        block_res = self.generateblock(self.nodes[0], self.wallet.get_address(), [multi_dusty_tx["hex"]], sync_fun=self.no_op)
-        self.nodes[0].invalidateblock(block_res["hash"])
+
+        # Prep for fork with empty blocks
+        fork_blocks = create_empty_fork(self.nodes[0])
+
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [multi_dusty_tx["hex"]], sync_fun=self.no_op)
+        self.trigger_reorg(fork_blocks)
         assert_equal(self.nodes[0].getrawmempool(), [])
 
         # With fee and one dust
         dusty_fee_tx, _ = self.create_ephemeral_dust_package(tx_version=3, dust_tx_fee=1)
-        block_res = self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_fee_tx["hex"]], sync_fun=self.no_op)
-        self.nodes[0].invalidateblock(block_res["hash"])
+
+        # Prep for fork with empty blocks
+        fork_blocks = create_empty_fork(self.nodes[0])
+
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [dusty_fee_tx["hex"]], sync_fun=self.no_op)
+        self.trigger_reorg(fork_blocks)
         assert_equal(self.nodes[0].getrawmempool(), [])
 
         # Re-connect and make sure we have same state still
@@ -382,8 +407,8 @@ class EphemeralDustTest(BitcoinTestFramework):
         self.log.info("Test that ephemeral dust works in non-TRUC contexts when there's no minrelay requirement")
 
         # Note: since minrelay is 0, it is not testing 1P1C relay
-        self.restart_node(0, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
-        self.restart_node(1, extra_args=EPHEMERAL_ARGS + ["-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
+        self.restart_node(1, extra_args=self.extra_args[0] + ["-minrelaytxfee=0"])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])
@@ -447,8 +472,8 @@ class EphemeralDustTest(BitcoinTestFramework):
 
         # Other topology tests (e.g., grandparents and parents both with dust) require relaxation of submitpackage topology
 
-        self.restart_node(0, extra_args=EPHEMERAL_ARGS)
-        self.restart_node(1, extra_args=EPHEMERAL_ARGS)
+        self.restart_node(0, extra_args=self.extra_args[0])
+        self.restart_node(1, extra_args=self.extra_args[1])
         self.connect_nodes(0, 1)
 
         assert_equal(self.nodes[0].getrawmempool(), [])

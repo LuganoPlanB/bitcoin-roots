@@ -26,6 +26,7 @@ function(_try_leveldb_compile libs cachevar)
   list(APPEND CMAKE_REQUIRED_INCLUDES "${LevelDB_MemEnv_INCLUDE_DIR}")
   list(APPEND CMAKE_REQUIRED_LIBRARIES "${libs}")
   set(CMAKE_REQUIRED_QUIET 1)
+  unset(${cachevar} CACHE)
   check_source_compiles(
     CXX
     [[
@@ -50,11 +51,24 @@ function(find_leveldb_libs release_type suffixes _LevelDB_lib_hint)
   )
   mark_as_advanced("LevelDB_LIBRARY_${release_type}")
 
+  if(NOT LevelDB_LIBRARY_${release_type})
+    set("LevelDB_MemEnv_LINKABLE_${release_type}" OFF PARENT_SCOPE)
+    return()
+  endif()
+
   _try_leveldb_compile("${LevelDB_LIBRARY_${release_type}}" "LevelDB_memenv_works_without_helper_lib_${release_type}")
   if(LevelDB_memenv_works_without_helper_lib_${release_type})
-    set("LevelDB_MemEnv_LIBRARY_${release_type}" "" CACHE STRING "")
+    # This configuration needs no helper; do not link a previously cached one.
+    set("LevelDB_MemEnv_LIBRARY_${release_type}" "" PARENT_SCOPE)
     set("LevelDB_MemEnv_LINKABLE_${release_type}" ON PARENT_SCOPE)
   else()
+    # Older successful integrated probes cached an empty helper path. CMake's
+    # find_library treats that as resolved, even after the selected base library
+    # changes to a package that needs a separate helper.
+    if("${LevelDB_MemEnv_LIBRARY_${release_type}}" STREQUAL "")
+      unset("LevelDB_MemEnv_LIBRARY_${release_type}" CACHE)
+      unset("LevelDB_MemEnv_LIBRARY_${release_type}")
+    endif()
     find_library("LevelDB_MemEnv_LIBRARY_${release_type}"
       NAMES memenv
       HINTS "${_LevelDB_lib_hint}"

@@ -1,495 +1,85 @@
-# AGENTS.md
+# Bitcoin Roots contributor and agent guide
 
-This file is the operational guide for AI agents working in this repository. It
-applies to the whole tree unless a more specific `AGENTS.md` is added below it.
+The released v31.1-roots.1 product is based directly on authenticated Bitcoin Core
+v31.1 (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). Selected Bitcoin Knots
+`29.3.knots20260507` behavior is historical lineage, not another upstream or a
+consensus specification. Read `README.md`, `doc/roots-features.md`,
+`doc/wallet-privacy.md` and `doc/roots-v31-port-review.md` before changing behavior.
 
-## Project identity and non-negotiable invariants
+## Invariants and scope
 
-This repository is **Bitcoin Roots**, not an unmodified Bitcoin Core or Bitcoin
-Knots checkout. It is a C++20 full-node, wallet, GUI, and utility suite based directly on
-Bitcoin Core v30.3, with selected historical policy features inherited from Bitcoin Knots
-`29.3.knots20260507`.
+- Roots remains compatible with Bitcoin Core consensus. Local mempool, relay
+  and template rejection must not invalidate consensus-valid blocks.
+- Do not add or imply RDTS/BIP110 enforcement. Dormant statistics, historical
+  notes and unused support helpers do not establish active features.
+- Preserve wallet authorization, transient-secret handling, descriptor/SQLite
+  boundaries and the separation of wallet, node and GUI through interfaces.
+- Keep consensus, serialization, validation, networking, wallet and cryptographic
+  changes minimal, with observable regressions. Avoid incidental refactoring.
+- Keep historical/upstream attribution and protocol identifiers. Do not mass
+  rebrand comments, translated text, old release notes or embedded subtrees.
+- Use disposable explicit regtest datadirs, including for daemon/wallet/GUI help
+  generation. Early option setup can access wallet directories before printing
+  help; do not point development commands at a real wallet/datadir.
+- Preserve unrelated work and public refs. No dependency installation, system
+  install, release dispatch, tagging, signing, publication or main promotion
+  is authorized merely by an implementation task.
 
-Read `README.md` before changing behavior. In particular:
+`src/` owns production C++; `test/functional/` owns isolated RPC/P2P integration;
+`src/qt/test/` owns GUI tests; `ci/test/` owns maintenance fixtures and cadence;
+`ci/release/` owns Git-native release validation/export; `depends/` owns pinned
+release dependencies. Follow `doc/design/libraries.md` and
+`doc/developer-notes.md`. Do not cosmetically edit vendored subtrees or manually
+edit generated translations. Register added files in the relevant CMake target.
 
-- Bitcoin Roots stays compatible with Bitcoin Core consensus.
-- Conservative transaction relay and mempool policy is intentional and
-  configurable. A transaction rejected by local policy can still be valid by
-  consensus; blocks containing it must remain acceptable.
-- This revision deliberately does **not** enforce RDTS/BIP110 consensus rules.
-  Do not add, imply, or silently enable those rules, and do not confuse the
-  startup warning/consent code with consensus enforcement.
-- Consensus, validation, serialization, wallet, networking, and cryptographic
-  changes are security-critical. Make the smallest justified change and add
-  regression coverage. Never “clean up” consensus-adjacent code incidentally.
+## Builds and evidence
 
-Much of `doc/`, comments, scripts, and test output still uses the inherited
-names “Bitcoin Core” or “Bitcoin Knots.” Do not mass-rebrand this text. Determine
-whether a name is a historical/upstream reference, a protocol compatibility
-identifier, or user-facing Roots branding before changing it. The current
-`doc/release-notes.md` is inherited and contains RDTS migration language that is
-not an authoritative statement of Roots policy. For fork identity and policy,
-prefer, in order: current source behavior and tests, root `README.md`, current
-build configuration, then inherited documentation.
+Use out-of-source CMake and conservative fixed parallelism. Minimums include
+CMake 3.22, Python 3.10, GCC 12.1 or Clang 17, Boost 1.74 and libevent 2.1.8;
+see `doc/dependencies.md` for actual supported profiles. Wallet/tests default on,
+GUI defaults off, embedded libraries default on. Qt5/Qt6 selection is supported.
+Optional IPC/USDT/ZeroMQ/system-library/platform gaps are not passing evidence.
+Windows GUI builds that request MiniUPnPc also request its optional vcpkg feature.
 
-## Repository map
-
-- `src/`: production C++ and internal libraries.
-  - `bitcoind.cpp`, `bitcoin-cli.cpp`, `bitcoin-tx.cpp`, `bitcoin-util.cpp`, and
-    `bitcoin-wallet.cpp` are command-line entry points.
-  - `qt/` contains the `bitcoin-qt` GUI and GUI tests.
-  - `node/` owns P2P/RPC server orchestration and node-specific behavior.
-  - `kernel/` is the validation/consensus engine being separated from the node.
-  - `consensus/`, `script/`, `primitives/`, and much of `validation.cpp` are
-    consensus-sensitive.
-  - `policy/` and mempool code define local admission, relay, and mining policy;
-    policy must not leak into block-validity decisions.
-  - `wallet/` contains wallet databases, coin selection, signing, and wallet RPC.
-  - `rpc/` contains non-wallet RPC implementations; `interfaces/` contains
-    abstract boundaries between node, wallet, and GUI.
-  - `common/` is higher-level shared application code; `util/` is lower-level,
-    broadly reusable platform/support code; `crypto/` is standalone primitives.
-  - `index/`, `zmq/`, `ipc/`, `init/`, and `logging/` are feature-focused areas.
-  - `test/`, `wallet/test/`, and `qt/test/` contain C++ unit tests.
-- `test/functional/`: Python integration tests that launch isolated regtest
-  nodes and drive RPC/P2P behavior. `test_framework/` is their shared harness.
-- `test/lint/`: repository lint checks; its runner is a Rust crate.
-- `test/fuzz/` and `src/test/fuzz/`: fuzz runner and C++ fuzz targets.
-- `cmake/`, root `CMakeLists.txt`, and `src/**/CMakeLists.txt`: the primary build
-  system. This tree no longer uses Autotools for the main build.
-- `depends/`: reproducible pinned third-party dependency builder, used for
-  release and cross builds.
-- `ci/` and `.github/workflows/`: canonical CI configurations. CI intentionally
-  exercises different feature/compiler/platform combinations.
-- `contrib/`: developer, packaging, tracing, deployment, and maintenance tools.
-- `doc/`: build, runtime, interface, design, and contributor documentation.
-- `share/`: example configuration, desktop integration, icons, and RPC auth tool.
-
-Embedded `src/secp256k1`, `src/leveldb`, `src/crc32c`, `src/crypto/ctaes`, and
-`src/minisketch` are maintained as upstream subtrees. Avoid direct cosmetic or
-cross-cutting edits there. Fix upstream when possible and use
-`test/lint/git-subtree-check.sh` when intentionally updating a subtree.
-
-### Library boundaries
-
-Follow `doc/design/libraries.md`. The important dependency direction is:
-
-- `crypto` has no internal dependencies.
-- `consensus` depends only on `crypto`.
-- `util` depends only on `crypto` and must remain suitable for kernel users.
-- `common` depends only on `util`, `consensus`, and `crypto`.
-- `kernel` depends only on `util`, `consensus`, and `crypto`; internally only
-  `node` should depend on `kernel`.
-- Node, wallet, and GUI implementations must not link directly to one another.
-  Communicate through abstract types in `src/interfaces/`.
-
-When adding production C++ files, add them to the appropriate library target in
-`src/CMakeLists.txt` or the nearest feature `CMakeLists.txt`. When adding a unit
-test file, register it in `src/test/CMakeLists.txt`,
-`src/wallet/test/CMakeLists.txt`, or `src/qt/test/CMakeLists.txt`.
-
-## Toolchain and dependencies
-
-The minimums documented by this checkout are CMake 3.22, Python 3.10, GCC 11.1
-or Clang 16, Boost 1.74, and libevent 2.1.8. The code is compiled as C++20.
-The default build is `RelWithDebInfo` (`-O2 -g` on typical Unix compilers).
-
-Minimal Debian/Ubuntu setup for a headless descriptor-wallet build:
-
-```bash
-sudo apt-get install build-essential cmake pkgconf python3 \
-  libevent-dev libboost-dev libsqlite3-dev capnproto libcapnp-dev
+```sh
+cmake -S . -B build -DENABLE_IPC=OFF
+cmake --build build --target bitcoind test_bitcoin -j 2
+python3 ci/test/roots-regressions.py plan --cadence fast \
+  --files-json '["src/policy/policy.cpp"]'
+python3 -m unittest discover -s ci/test
 ```
 
-Common optional packages are `python3-zmq`, `libzmq3-dev`,
-`libminiupnpc-dev`, `systemtap-sdt-dev`, `libqrencode-dev`, and Qt development
-packages. See `doc/build-unix.md` and `doc/dependencies.md` for the current full
-list and the macOS/BSD/Windows-specific documents under `doc/` for those hosts.
-
-Descriptor wallets use SQLite and are enabled by default. Core 30.3 does not
-build Berkeley DB legacy wallets. Migration tests use pinned previous-release
-fixtures where needed. A node-only build avoids the wallet database with
-`-DENABLE_WALLET=OFF`.
-
-Do not install dependencies or run package-manager commands without user
-authorization. Prefer reporting the exact missing dependency. The `depends/`
-system is the source of pinned release dependencies and toolchain files; read
-`depends/README.md` before using it.
-
-## Configure and build
-
-Always build out of source. The conventional directory is `build/`:
-
-```bash
-cmake -B build
-cmake --build build -j 4
-```
-
-Use a conservative fixed `-j` value on memory-limited hosts; compilation needs
-roughly 1.5 GiB or more and highly parallel C++ builds can exhaust RAM. Inspect
-available configuration switches with `cmake -B build -LH`.
-
-Useful configurations:
-
-```bash
-# Debug symbols, assertions, lock-order and lock-contention instrumentation
-cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
-
-# Headless node without wallet or GUI dependencies
-cmake -B build-node -DENABLE_WALLET=OFF -DBUILD_GUI=OFF
-
-# GUI (Qt 6 by default; use -DWITH_QT_VERSION=5 for optional Qt 5)
-cmake -B build-gui -DBUILD_GUI=ON
-
-# Treat warnings as errors for CI-like compilation
-cmake -B build -DWERROR=ON
-
-# Generate compile_commands.json for tooling
-cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-```
-
-The `dev-mode` preset enables nearly every optional target and dependency and
-uses `build_dev_mode/`; it is useful only when those dependencies are installed:
-
-```bash
-cmake --preset dev-mode
-cmake --build build_dev_mode -j 4
-```
-
-Native Core IPC/libmultiprocess support is retained. Use `-DENABLE_IPC=OFF`
-for a deliberately limited profile when Cap'n Proto is unavailable; do not
-claim that profile proves IPC functionality. Treat the generated CMake summary
-as truth when checking which optional components a preset enables.
-
-Build only the target needed during iteration, for example:
-
-```bash
-cmake --build build --target bitcoind -j 4
-cmake --build build --target test_bitcoin -j 4
-cmake --build build --target bitcoin-qt -j 4
-```
-
-Binaries are emitted under `build/bin/`. Installation is optional:
-`cmake --install build`. Never install system-wide unless explicitly requested.
-
-## Running safely
-
-Use regtest and a disposable, explicit data directory for development. Never
-point tests or experimental builds at a user's real mainnet wallet/datadir.
-
-```bash
-build/bin/bitcoind -regtest -datadir=/absolute/path/to/disposable-dir \
-  -daemon -fallbackfee=0.0002
-build/bin/bitcoin-cli -regtest -datadir=/absolute/path/to/disposable-dir \
-  getblockchaininfo
-build/bin/bitcoin-cli -regtest -datadir=/absolute/path/to/disposable-dir stop
-```
-
-By default the data directory is `~/.bitcoin` on Linux,
-`~/Library/Application Support/Bitcoin` on macOS, and `%LOCALAPPDATA%\Bitcoin`
-on Windows. Chain state is below `regtest/`, `signet/`, `testnet3/`, or
-`testnet4/`; `bitcoin.conf` is normally at the datadir root. Command-line values
-override configuration values. Do not edit `settings.json` while the program is
-running; changes may be ignored or overwritten.
-
-`bitcoind -help` is the authority for options in the built revision. RPC help is
-available through `bitcoin-cli help [command]`. Prefer graceful shutdown via
-the `stop` RPC and wait for the process to exit before reusing a datadir.
-
-## Testing and validation
-
-Choose the narrowest test that proves the changed behavior, then expand based
-on risk. Do not claim success without running the relevant command on the final
-working tree.
-
-### C++ unit and utility tests
-
-```bash
-ctest --test-dir build --output-on-failure
-build/bin/test_bitcoin --list_content
-build/bin/test_bitcoin -l all -t getarg_tests
-build/bin/test_bitcoin -l all -t getarg_tests/doubledash
-```
-
-`ctest` also runs tests from embedded subprojects and utility tests. Use
-`ctest --test-dir build -N` to list registered tests and `-R <regex>` to select
-one. Failure details are saved in `build/Testing/Temporary/LastTest.log`.
-
-### Functional tests
-
-Configure and build first. Run from the repository root so paths and globs are
-unambiguous:
-
-```bash
-build/test/functional/test_runner.py feature_rbf.py
-build/test/functional/test_runner.py --jobs=4
-build/test/functional/test_runner.py --extended
-```
-
-An individual generated test script can also be invoked directly, for example
-`build/test/functional/feature_rbf.py`. The default suite is already large;
-`--extended` is larger still. Run the focused test while iterating, then the
-appropriate suite before handoff.
-
-Functional tests launch isolated regtest nodes. Their first output line gives
-the temporary directory. On failure inspect:
-
-- `<tmpdir>/test_framework.log`
-- `<tmpdir>/nodeN/regtest/debug.log`
-- merged output from
-  `build/test/functional/combine_logs.py -c <tmpdir> | less -r`
-
-Useful flags are `--nocleanup`, `--tracerpc`, `--jobs=N`, `--tmpdir=...`, and
-the per-test `-l debug`. Run the runner with `-h` for the current set. Do not
-kill all host `bitcoind` processes as a routine cleanup step; that can destroy
-an unrelated user's running node. Identify and terminate only test-owned PIDs.
-
-When changing RPC/P2P behavior, add or update a functional test. Reuse helpers
-from `test/functional/test_framework/`, use deterministic assertions, and avoid
-wall-clock sleeps. If the framework already exposes a synchronization helper,
-use it.
-
-### Lint and formatting
-
-The full lint runner requires Rust plus the tools listed in
-`test/lint/README.md` and `ci/lint/04_install.sh`:
-
-```bash
-(cd test/lint/test_runner && cargo fmt && cargo clippy && \
-  RUST_BACKTRACE=1 cargo run)
-```
-
-Run selected lints with, for example:
-
-```bash
-(cd test/lint/test_runner && \
-  RUST_BACKTRACE=1 cargo run -- --lint=doc --lint=trailing_whitespace)
-```
-
-Format only changed C++ lines, not whole legacy files:
-
-```bash
-git diff -U0 --no-color | contrib/devtools/clang-format-diff.py -p1 -i
-```
-
-Python formatting/lint behavior is defined by `.style.yapf` and the lint runner
-(which invokes pinned tools such as Ruff). Check `git diff --check` for
-whitespace errors.
-
-### Fuzzing, sanitizers, and benchmarks
-
-```bash
-cmake --preset=libfuzzer
-cmake --build build_fuzz -j 4
-FUZZ=process_message build_fuzz/bin/fuzz /path/to/corpus
-
-cmake -B build-asan -DSANITIZERS=address,undefined
-cmake --build build-asan -j 4
-
-cmake -B build-bench -DBUILD_BENCH=ON
-cmake --build build-bench --target bench_bitcoin -j 4
-build-bench/bin/bench_bitcoin
-```
-
-The fuzz seed corpora live in the separate `bitcoin-core/qa-assets` repository.
-Do not add arbitrary corpora or crash artifacts to this repository. Address and
-thread sanitizers are mutually incompatible. Use the suppressions in
-`test/sanitizer_suppressions/` as documented in `doc/developer-notes.md`.
-Performance claims should include a focused `bench_bitcoin` comparison and, for
-user-visible paths such as IBD, an end-to-end measurement where practical.
-
-## Debugging workflow
-
-1. Reproduce with the smallest deterministic unit or functional test.
-2. Record the exact configure flags, executable, arguments, and datadir.
-3. Read the relevant `debug.log`; enable categories with `-debug=<category>`
-   and severity with `-loglevel=<level>`. Runtime categories can be toggled via
-   the `logging` RPC. Qt `qDebug()` output uses the `qt` category.
-4. Use a Debug or sanitizer build when the symptom warrants it.
-5. Form a concrete root-cause hypothesis before editing and add a regression
-   test that fails for the original bug.
-
-Common commands:
-
-```bash
-gdb --args build/bin/bitcoind -regtest -datadir=/path/to/test-datadir
-gdb build/bin/test_bitcoin
-build/bin/test_bitcoin --catch_system_errors=no -t suite/test
-```
-
-A Debug build enables `DEBUG_LOCKORDER` and `DEBUG_LOCKCONTENTION`. Use
-`-debug=lock` or the runtime `logging` RPC for contention records. For a unit
-test that needs a persistent temporary datadir, pass application arguments
-after `--`, for example:
-
-```bash
-build/bin/test_bitcoin -t getarg_tests/doubledash -- \
-  -testdatadir=/absolute/path/to/test-output -printtoconsole=1
-```
-
-Do not “fix” flaky functional tests by increasing sleeps. Check stale test
-processes, port conflicts, the generated cache under `build/test/cache`, and
-the combined logs. Only remove generated test cache after confirming its exact
-path and that no test is using it.
-
-## Coding rules that matter most
-
-The complete rules are in `doc/developer-notes.md`; functional-test rules are
-in `test/functional/README.md`. Preserve these essentials:
-
-- Four spaces, no tabs (except Makefile recipes), LF endings, final newline,
-  and no trailing whitespace. CMake/YAML commonly use two spaces as specified
-  by `.editorconfig`.
-- New C++ uses `snake_case` variables/namespaces, `m_` members, `g_` globals,
-  `UPPER_CASE` constants, and `PascalCase` classes/functions/methods. Do not
-  rename broad legacy surfaces merely to match modern style.
-- Prefer RAII, value returns, `std::optional` for genuine optional values,
-  `nullptr`, list initialization, explicit namespace qualification, named
-  casts, and `++i`.
-- Keep includes minimal and in the order enforced by project lint. Include the
-  corresponding header first in implementation files where the project does so.
-- Use project synchronization annotations/macros and established lock order.
-  Do not call unknown/external code while holding a lock without analyzing
-  reentrancy and order. Run a Debug build for synchronization changes.
-- Use `Assert`, `Assume`, `CHECK_NONFATAL`, or explicit error handling according
-  to the distinctions documented under “Assertions and Checks”; never rely on
-  assertions for untrusted input validation.
-- Monetary RPC values must use `AmountFromValue`/`ValueFromAmount`, not floating
-  point or hand parsing. RPC methods are lowercase; new argument/result fields
-  use established names or `snake_case`. Treat omitted and `null` arguments
-  consistently.
-- Keep GUI work off the GUI thread when it can block. Preserve node/wallet/GUI
-  separation through interfaces.
-- Python functional tests use `snake_case`, named constants instead of magic
-  values, precise `assert_equal`-style helpers, and framework synchronization.
-- Add comments for why and for invariants, not line-by-line narration. Keep
-  patches reviewable; avoid unrelated refactors and formatting churn.
-
-For new user-facing strings, follow the translation helpers already used by
-the surrounding component. Do not manually edit translated
-`src/qt/locale/bitcoin_*.ts` files. `bitcoin_en.ts` is generated with the
-`translate` target as described in `doc/translation_process.md`.
-
-## Change-specific checklist
-
-- **Consensus/validation/script/serialization:** obtain explicit intent; verify
-  compatibility with historical data and peers; add unit, functional, and/or
-  fuzz coverage; test reindex/load paths when relevant. Preserve the Roots
-  consensus-neutral invariant.
-- **Policy/mempool/mining:** prove the rule affects admission/relay/template
-  policy only unless a consensus change was explicitly requested. Test both
-  rejection and block acceptance where that boundary is at risk.
-- **RPC:** update implementation, help text, argument/result schemas, and
-  functional tests together. Run `bitcoin-cli help <rpc>` and relevant doc lint.
-- **Wallet/database:** test descriptor-wallet behavior by default and legacy
-  BDB behavior only with a compatible BDB build. Cover upgrade, unload/reload,
-  backup, and watch-only/signing implications as applicable.
-- **P2P/networking:** test malformed and adversarial input, disconnect/ban
-  behavior, permissions, and resource bounds. Prefer P2P test-framework helpers
-  and add fuzz coverage for parsers.
-- **GUI:** build with `-DBUILD_GUI=ON`, run `test_bitcoin-qt` when enabled, and
-  manually check the affected interaction without a real wallet/datadir.
-- **Build/CI/platform:** configure at least one affected minimal combination;
-  remember options interact. Consult `ci/test/00_setup_env_*.sh` rather than
-  assuming the default build represents CI.
-- **User-visible feature/config/API:** add `doc/release-notes-<PR>.md` when a PR
-  number is known. Do not invent a number; report the need in the handoff.
-
-## Generated files, docs, and repository hygiene
-
-- Never edit files in a build directory as source; reconfigure/regenerate them.
-- Manpages in `doc/man/` and `share/examples/bitcoin.conf` are generated from
-  built help output using `contrib/devtools/gen-manpages.py` and
-  `contrib/devtools/gen-bitcoin-conf.sh`. Regenerate them only when their source
-  help/config interface changes and verify the diff.
-- Do not commit build trees, functional-test caches/temp dirs, fuzz artifacts,
-  core dumps, coverage output, editor metadata, or local `.gestalt/` data.
-- Preserve unrelated working-tree changes. Check `git status --short` before
-  and after work. Do not reset, clean, or delete files you did not create.
-- Do not update lockfiles, vendored subtrees, generated translations, snapshots,
-  or release artifacts as collateral effects.
-- Documentation links and commands may be inherited from upstream. When a
-  statement is fork-sensitive, verify it against this checkout before repeating
-  it. Fix only the stale material relevant to the current change.
-
-## Before handing off
-
-Summarize what changed and why, list exact verification commands and outcomes,
-and disclose anything not run or any dependency that prevented it. At minimum:
-
-```bash
-git diff --check
-git status --short
-git diff --stat
-```
-
-Then run the focused test(s), an appropriate `ctest`/functional subset, and
-relevant lint. Review the final diff for accidental consensus changes, policy
-boundary violations, generated-file churn, branding regressions, secrets,
-absolute local paths, and test-only debug code. A successful compile alone is
-not sufficient evidence for behavioral changes.
-
-## Git-native Roots patch and release workflow
-
-Git history is the source of truth for Roots patches. Keep each supported Core
-version as a linear semantic series on `roots/<core-version>`, starting at the
-exact matching Bitcoin Core tag. Use reviewable `topic/<core-version>/<area>`
-branches for development, disposable `integration/<core-version>` branches for
-combined CI, `promote/<core-version>` branches to merge a canonical tree into
-`main`, and `archive/*` only to preserve superseded public history. Release
-tags point to canonical `roots/*` tips, not promotion commits on `main`.
-
-For a new Core generation, create `roots/<new-version>` directly from the new
-official Core tag. Port the prior Roots commits semantically in logical order,
-usually with `git cherry-pick -x`, dropping behavior Core adopted and explaining
-material rewrites. Do not merge the previous Roots branch into the new Core
-branch. Compare generations with `git range-diff`, keep policy rejection out of
-block validity, and rerun the tests owned by every ported feature.
-
-Do not check generated patch files into Git. Release automation exports the
-canonical range with `git format-patch`, excludes `.github/**` from the portable
-product patch, and verifies replay onto the matching Core base. Because the
-series contains inherited CRLF files, apply the released mbox with
-`git am -3 --keep-cr <bitcoin-roots-*.patch>`.
-
-For canonical CI, main promotion and release tagging:
-
-1. Complete independent source review and required candidate CI, then integrate
-   canonical by fast-forward. Open the main promotion only after that exact
-   candidate CI succeeds. The promotion verifies canonical-tip/tree/workflow
-   parity and exact successful canonical-target CI before reusing compiled
-   test results; classifier/lint and applicable main docs/site checks remain.
-   Missing or mismatched promotion proof fails. Explicit ci:* labels request
-   fresh coverage. Merge the reviewed promotion with its enumerated main-only
-   exceptions as described in `contrib/roots/README.md`; require full tree
-   equality when none exist.
-2. Optional manual `Release artifacts` dispatch may rehearse an absent future
-   tag at its full canonical commit. It builds all five platforms with read-only
-   permissions; it cannot sign or
-   create a release. It is not a prerequisite for the normal tag release.
-3. Review the source, required CI and any optional rehearsal evidence. Keep the
-   canonical tip stable. Re-fetch refs, check out the reviewed commit in a
-   dedicated release worktree and create one annotated tag explicitly there.
-   Run the release-source validator and push only that tag. Never move it.
-4. The tag push builds all five platforms anew, stages canonical COPYING and
-   generates/replays the portable patch. Only the
-   tag-only `release` environment job receives the organization signing secret.
-   It requires a manifest signature with the checked-in release-key fingerprint,
-   verifies exactly eight assets and creates only a new draft. Missing signing
-   capability or an existing draft/public release fails; no clobber or deletion.
-5. Independently download all eight draft assets. Verify tag/source, checksums,
-   signature trust, archive safety/COPYING, patch replay, contributor credit and
-   separate Git-tag/platform-code signing disclosures. Public visibility needs
-   separate authority after this concrete verification.
-6. Repeat verification through an unauthenticated client after publication.
-   Never replace a published tag or asset. Interrupted draft creation requires
-   operator inspection, not an automatic create/upload retry.
-
-The detailed commands and branch maintenance rules are in
-`contrib/roots/README.md`. Authenticate the official Core tag and its signer
-key through independent trusted sources, run `git verify-tag v30.3`, and record
-both the signature result and its trust basis before claiming verification.
-
-For this release, the user deferred expanded dependency copyright/REUSE coverage
-to future releases. The normal pipeline retains project license files and
-canonical COPYING; optional notice tools do not establish complete coverage.
+Use affected regressions and short time-bounded smoke checks while editing;
+retain one full applicable suite at acceptance. Reuse evidence only when tested
+code, binaries and fixtures match, recording provenance. Broad optional-platform,
+extended and longer sanitizer/fuzz coverage belongs to scheduled/manual assurance;
+see `ci/README.md` for exact budgets and commands. Input counts are results, not
+campaign quotas. Preserve failure logs and state executed/skipped counts; a
+compile or local YAML check does not establish a hosted or cross-platform pass.
+Never relink binaries while dependent tests use the same build directory.
+
+Manpages and `share/examples/bitcoin.conf` come only from current candidate help
+through `contrib/devtools/gen-manpages.py` and `gen-bitcoin-conf.sh`. Use isolated
+help wrappers when needed. Inspect generated diffs for profile-specific omissions
+and reproducible output. Do not substitute older help or hand-edit the manuals.
+
+## Maintenance and release boundaries
+
+Git history is the source of Roots patches. Start `roots/<version>` at its exact
+authenticated Core tag and port semantic commits; never merge an older Roots
+line into a new base or rewrite published history. Review topic branches and
+use exact canonical source/CI parity for promotions. See `contrib/roots/README.md`.
+
+Portable patches exclude `.github/**` and replay with `git am -3 --keep-cr`;
+product paths must match the selected tip while Core hosting files stay unchanged.
+Retain author/contributor credit, including Jaromil and devjoinedthechat.
+Signing and new-draft creation stay confined to the permanent tag workflow's
+release environment; manual rehearsal remains read-only and cannot publish.
+Existing draft/public releases block replacement. Manifest signing, Git-tag
+signing and platform signing are distinct; expanded notice coverage is deferred.
+
+Before handoff, run focused tests, relevant lint, `git diff --check`, and inspect
+sorted intended scope/status. Disclose missing tools, dependencies and platform
+coverage. Do not commit build trees, caches, fuzz crash artifacts, generated
+patch exports or workspace-local coordination/evidence data. Org plans are never
+Git deliverables; inspect staged names and bytes before an accepted commit.

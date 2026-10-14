@@ -14,7 +14,7 @@ COIN = Decimal(100_000_000)
 class SweepPrivKeysTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.extra_args = [['-deprecatedrpc=settxfee'], []]
+        self.extra_args = [[], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -85,7 +85,43 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         watch.importdescriptors([{'desc': descsum_create(f"wpkh({wallet.getaddressinfo(destination)['pubkey']})"), 'timestamp': 'now'}])
         assert_raises_rpc_error(-4, 'Destination is not controlled', watch.sweepprivkeys, [wif], destination)
 
-        wallet.settxfee(Decimal('0.00001000'))
+        # Native descriptor import rejects a wholly public-only descriptor in a
+        # local-key wallet; it must not turn into an eligible sweep destination.
+        _, public_only_pubkey = generate_keypair(wif=True)
+        public_only_destination = key_to_p2wpkh(public_only_pubkey)
+        imported = wallet.importdescriptors([{'desc': descsum_create(f'wpkh({public_only_pubkey.hex()})'), 'timestamp': 'now'}])
+        assert_equal(imported[0]['success'], False)
+        assert_equal(imported[0]['error']['message'], 'Cannot import descriptor without private keys to a wallet with private keys enabled')
+        assert_equal(wallet.getaddressinfo(public_only_destination)['ismine'], False)
+        assert_raises_rpc_error(-4, 'Destination is not controlled', wallet.sweepprivkeys, [wif], public_only_destination)
+
+        # Ownership alone includes partial descriptors. Require a satisfiable
+        # local signature threshold, while accepting a sufficient subset.
+        local1, _ = generate_keypair(wif=True)
+        local2, _ = generate_keypair(wif=True)
+        _, foreign = generate_keypair(wif=True)
+        partial_destinations = []
+        for keys, sufficient in (([local1, foreign.hex()], False), ([local1, local2, foreign.hex()], True)):
+            descriptor = descsum_create(f'wsh(multi(2,{",".join(keys)}))')
+            assert_equal(wallet.importdescriptors([{'desc': descriptor, 'timestamp': 'now'}])[0]['success'], True)
+            partial_destination = node.deriveaddresses(node.getdescriptorinfo(descriptor)['descriptor'])[0]
+            assert_equal(wallet.getaddressinfo(partial_destination)['ismine'], True)
+            partial_destinations.append((partial_destination, sufficient))
+            if sufficient:
+                assert_equal(wallet.sweepprivkeys([wif], partial_destination)['broadcast'], False)
+            else:
+                assert_raises_rpc_error(-4, 'Destination is not controlled', wallet.sweepprivkeys, [wif], partial_destination)
+
+        self.restart_node(0, extra_args=['-fallbackfee=0.00001000'])
+        self.connect_nodes(0, 1)
+        node = self.nodes[0]
+        wallet = node.get_wallet_rpc(node.listwallets()[0])
+        self.sync_blocks()
+        # Loading may refresh descriptor metadata; compare the same loaded state
+        # immediately before and after the operation to test no-key-import.
+        descriptors = wallet.listdescriptors()
+        labels = wallet.listlabels()
+        keypoolsize = wallet.getwalletinfo()['keypoolsize']
         preview = wallet.sweepprivkeys(privkeys=[wif, uncompressed_wif], destination=destination)
         assert_equal(preview['broadcast'], False)
         assert_equal(preview['inputs'], 4)
@@ -101,6 +137,12 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         assert_equal(wallet.getrawmempool(), [conflict_id])
 
         wallet.encryptwallet('pass')
+        for partial_destination, sufficient in partial_destinations:
+            if sufficient:
+                assert_equal(wallet.sweepprivkeys([wif], partial_destination)['broadcast'], False)
+            else:
+                assert_raises_rpc_error(-4, 'Destination is not controlled', wallet.sweepprivkeys, [wif], partial_destination)
+        assert_equal(wallet.getwalletinfo()['unlocked_until'], 0)
         sent = wallet.sweepprivkeys([wif, uncompressed_wif], destination, True)
         assert_equal(sent['broadcast'], True)
         assert_equal(sent['txid'], preview['txid'])
@@ -124,10 +166,39 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         miner.sendtoaddress(key_to_p2pkh(small_pubkey), Decimal('0.00010000'))
         self.generate(miner, 1)
         self.sync_blocks()
+        # Integrated runtime configuration must feed the same initialized
+        # relay fee used by reporting and sweep's required-fee calculation.
+        wallet_name = wallet.getwalletinfo()['walletname']
+        rw_path = node.chain_path / 'bitcoin_rw.conf'
+        self.stop_node(0)
+        rw_path.write_text('minrelaytxfee=0.00100000\n', encoding='utf-8')
+        self.start_node(0)
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
+        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
+        assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
+        self.restart_node(0, extra_args=['-minrelaytxfee=0.00001000'])
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
+        assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
+        assert_equal(wallet.sweepprivkeys([small_wif], destination)['broadcast'], False)
+        self.stop_node(0)
+        rw_path.unlink()
+        self.start_node(0)
+        self.connect_nodes(0, 1)
+        wallet = node.get_wallet_rpc(wallet_name)
+        wallet.walletpassphrase('pass', 60)
+        wallet_name = wallet.getwalletinfo()['walletname']
         dust_destination = wallet.getnewaddress(address_type='legacy')
-        wallet.settxfee(Decimal('0.00052000'))
+        self.restart_node(0, extra_args=['-fallbackfee=0.00052000'])
+        self.connect_nodes(0, 1)
+        wallet = self.nodes[0].get_wallet_rpc(wallet_name)
         assert_raises_rpc_error(-4, 'Swept output would be dust', wallet.sweepprivkeys, [small_wif], dust_destination)
-        wallet.settxfee(Decimal('0.10000000'))
+        self.restart_node(0, extra_args=['-fallbackfee=0.10000000'])
+        self.connect_nodes(0, 1)
+        wallet = self.nodes[0].get_wallet_rpc(wallet_name)
         assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
         assert wif not in Path(self.options.tmpdir, 'node0', 'regtest', 'debug.log').read_text()
 
@@ -153,7 +224,7 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         wallet.lockunspent(True, [lifecycle_input])
 
         wallet_name = wallet.getwalletinfo()['walletname']
-        self.restart_node(0)
+        self.restart_node(0, expected_stderr='Warning: -fallbackfee is set very high! This is the transaction fee you may pay when fee estimates are not available.')
         wallet = self.nodes[0].get_wallet_rpc(wallet_name)
         assert_equal(wallet.getaddressinfo(key_to_p2pkh(pubkey))['ismine'], False)
         assert wif not in Path(self.options.tmpdir, 'node0', 'regtest', 'debug.log').read_text()

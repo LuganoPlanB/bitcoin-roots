@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-2022 The Bitcoin Core developers
+# Copyright (c) 2020-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test per-peer message capture capability.
@@ -62,8 +62,6 @@ class MessageCaptureTest(BitcoinTestFramework):
         # Connect a node so that the handshake occurs
         self.nodes[0].add_p2p_connection(P2PDataStore())
         self.nodes[0].disconnect_p2ps()
-        self.wait_until(lambda: glob.glob(os.path.join(capturedir, "*/msgs_recv.dat")))
-        self.wait_until(lambda: glob.glob(os.path.join(capturedir, "*/msgs_sent.dat")))
         recv_file = glob.glob(os.path.join(capturedir, "*/msgs_recv.dat"))[0]
         mini_parser(recv_file)
         sent_file = glob.glob(os.path.join(capturedir, "*/msgs_sent.dat"))[0]

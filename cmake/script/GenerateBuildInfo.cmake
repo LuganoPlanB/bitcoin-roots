@@ -15,8 +15,7 @@ if(DEFINED BUILD_INFO_HEADER_PATH AND IS_ABSOLUTE "${BUILD_INFO_HEADER_PATH}")
     file(STRINGS ${BUILD_INFO_HEADER_PATH} INFO LIMIT_COUNT 1)
   endif()
 else()
-  unset(INFO)
-  set(BUILD_INFO_HEADER_PATH "/dev/stdout")
+  fatal_error()
 endif()
 
 if(DEFINED SOURCE_DIR)
@@ -41,22 +40,6 @@ if(NOT "$ENV{BITCOIN_GENBUILD_NO_GIT}" STREQUAL "1")
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET
     )
-    if(IS_INSIDE_WORK_TREE)
-      # This check ensures that we are actually part of the intended git repository, and not just getting info about some unrelated git repository that the code happens to be in a directory under
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} status --porcelain -uall --ignored cmake/script/GenerateBuildInfo.cmake
-        WORKING_DIRECTORY ${WORKING_DIR}
-        RESULT_VARIABLE SCRIPT_STATUS_EXITCODE
-        OUTPUT_VARIABLE SCRIPT_STATUS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-      )
-      if(SCRIPT_STATUS_EXITCODE)
-        set(IS_INSIDE_WORK_TREE 0)
-      elseif(SCRIPT_STATUS MATCHES "\\?")
-        set(IS_INSIDE_WORK_TREE 0)
-      endif()
-    endif()
     if(IS_INSIDE_WORK_TREE)
       # Clean 'dirty' status of touched files that haven't been modified.
       execute_process(
@@ -121,9 +104,7 @@ if(GIT_TAG)
 elseif(GIT_COMMIT)
   set(NEWINFO "#define BUILD_GIT_COMMIT \"${GIT_COMMIT}\"")
 else()
-  # NOTE: The NEWINFO line below this comment gets replaced by a string-match in contrib/guix/libexec/make_release_tarball.sh
-  # If changing it, update the script too!
-  set(NEWINFO [[// No build information available]])
+  set(NEWINFO "// No build information available")
 endif()
 
 # Only update the header if necessary.

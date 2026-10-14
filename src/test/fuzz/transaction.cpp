@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -30,7 +30,7 @@ void initialize_transaction()
 FUZZ_TARGET(transaction, .init = initialize_transaction)
 {
     SeedRandomStateForTest(SeedRand::ZEROS);
-    DataStream ds{buffer};
+    SpanReader ds{buffer};
     bool valid_tx = true;
     const CTransaction tx = [&] {
         try {
@@ -41,10 +41,9 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
         }
     }();
     bool valid_mutable_tx = true;
-    DataStream ds_mtx{buffer};
     CMutableTransaction mutable_tx;
     try {
-        ds_mtx >> TX_WITH_WITNESS(mutable_tx);
+        SpanReader{buffer} >> TX_WITH_WITNESS(mutable_tx);
     } catch (const std::ios_base::failure&) {
         valid_mutable_tx = false;
     }
@@ -59,19 +58,16 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
         Assert(res == state_with_dupe_check.IsValid());
     }
 
+    const CFeeRate dust_relay_fee{DUST_RELAY_TX_FEE};
     std::string reason;
-    StandardnessOptions standardness_opts;
-    standardness_opts.permit_bare_pubkey = true;
-    standardness_opts.permit_bare_multisig = true;
-    const bool is_standard_with_permit_bare_multisig = IsStandardTx(tx, standardness_opts, reason);
-    standardness_opts.permit_bare_multisig = false;
-    const bool is_standard_without_permit_bare_multisig = IsStandardTx(tx, standardness_opts, reason);
+    const bool is_standard_with_permit_bare_multisig = IsStandardTx(tx, std::nullopt, /* permit_bare_multisig= */ true, dust_relay_fee, reason);
+    const bool is_standard_without_permit_bare_multisig = IsStandardTx(tx, std::nullopt, /* permit_bare_multisig= */ false, dust_relay_fee, reason);
     if (is_standard_without_permit_bare_multisig) {
         assert(is_standard_with_permit_bare_multisig);
     }
 
     (void)tx.GetHash();
-    (void)tx.GetTotalSize();
+    (void)tx.ComputeTotalSize();
     try {
         (void)tx.GetValueOut();
     } catch (const std::runtime_error&) {
@@ -93,10 +89,12 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
     CCoinsView coins_view;
     const CCoinsViewCache coins_view_cache(&coins_view);
     (void)AreInputsStandard(tx, coins_view_cache);
-    std::string reject_reason;
-    (void)IsWitnessStandard(tx, coins_view_cache, "fuzz", reject_reason);
+    (void)IsWitnessStandard(tx, coins_view_cache);
+    // Carrier recognition and budget discovery are local admission helpers.
+    // Exercise their script/witness parsing under the same hostile transaction input.
+    (void)DatacarrierBytes(tx, coins_view_cache);
 
-    if (tx.GetTotalSize() < 250'000) { // Avoid high memory usage (with msan) due to json encoding
+    if (tx.ComputeTotalSize() < 250'000) { // Avoid high memory usage (with msan) due to json encoding
         {
             UniValue u{UniValue::VOBJ};
             TxToUniv(tx, /*block_hash=*/uint256::ZERO, /*entry=*/u);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test node responses to invalid transactions.
@@ -25,7 +25,7 @@ class InvalidTxRequestTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
-            "-acceptnonstdtxn=1",
+            "-acceptnonstdtxn=1", "-acceptnonstddatacarrier=1", "-datacarriersize=1000000",
         ]]
         self.setup_clean_chain = True
 
@@ -33,8 +33,8 @@ class InvalidTxRequestTest(BitcoinTestFramework):
         """Add a P2P connection to the node.
 
         Helper to connect and wait for version handshake."""
-        for i in range(num_connections):
-            self.nodes[0].add_outbound_p2p_connection(P2PDataStore(), p2p_idx=i)
+        for _ in range(num_connections):
+            self.nodes[0].add_p2p_connection(P2PDataStore())
 
     def reconnect_p2p(self, **kwargs):
         """Tear down and bootstrap the P2P connection to the node.

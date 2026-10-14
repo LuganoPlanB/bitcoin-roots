@@ -1,28 +1,87 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <consensus/amount.h>
+#include <algorithm>
+#include <barrier>
+#include <thread>
+#include <util/rbf.h>
+#include <wallet/fees.h>
 #include <interfaces/wallet.h>
+#include <consensus/amount.h>
 #include <key.h>
-#include <policy/fees.h>
+#include <key_io.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <policy/policy.h>
 #include <random.h>
 #include <script/solver.h>
-#include <util/rbf.h>
+#include <script/descriptor.h>
+#include <util/strencodings.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
-#include <wallet/fees.h>
+#include <wallet/context.h>
 #include <wallet/spend.h>
 #include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
-
-#include <algorithm>
 
 #include <boost/test/unit_test.hpp>
 
 namespace wallet {
 BOOST_FIXTURE_TEST_SUITE(spend_tests, WalletTestingSetup)
+
+BOOST_AUTO_TEST_CASE(sweep_destination_requires_local_signature_satisfaction)
+{
+    auto wallet{std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockableWalletDatabase())};
+    const CKey local1{GenerateRandomKey()}, local2{GenerateRandomKey()}, foreign{GenerateRandomKey()};
+    const std::string private1{EncodeSecret(local1)}, private2{EncodeSecret(local2)}, public_foreign{HexStr(foreign.GetPubKey())};
+    const auto add_descriptor = [&](const std::string& text) {
+        FlatSigningProvider keys, public_data;
+        std::string error;
+        auto descriptors{Parse(text, keys, error, /*require_checksum=*/false)};
+        BOOST_REQUIRE_MESSAGE(descriptors.size() == 1, error);
+        std::vector<CScript> scripts;
+        BOOST_REQUIRE(descriptors[0]->Expand(0, keys, scripts, public_data));
+        BOOST_REQUIRE_EQUAL(scripts.size(), 1);
+        WalletDescriptor descriptor{std::move(descriptors[0]), 0, 0, 0, 0};
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->AddWalletDescriptor(descriptor, keys, "", false));
+        return scripts[0];
+    };
+    WITH_LOCK(wallet->cs_wallet, wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS));
+    const auto incomplete{add_descriptor("wsh(multi(2," + private1 + "," + public_foreign + "))")};
+    const auto sufficient{add_descriptor("wsh(multi(2," + private1 + "," + private2 + "," + public_foreign + "))")};
+    const auto script_path{add_descriptor("tr(" + public_foreign.substr(2) + ",pk(" + private1 + "))")};
+    const auto absent_paths{add_descriptor("tr(" + public_foreign.substr(2) + ",pk(" + public_foreign.substr(2) + "))")};
+    const auto musig_partial{add_descriptor("tr(musig(" + private1 + "," + public_foreign + "))")};
+    const auto musig_complete{add_descriptor("tr(musig(" + private1 + "," + private2 + "))")};
+    const auto check = [&] {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK(wallet->IsMine(incomplete));
+        BOOST_CHECK(!CanSweepTo(*wallet, incomplete));
+        BOOST_CHECK(CanSweepTo(*wallet, sufficient));
+        BOOST_CHECK(CanSweepTo(*wallet, script_path));
+        BOOST_CHECK(!CanSweepTo(*wallet, absent_paths));
+        BOOST_CHECK(!CanSweepTo(*wallet, musig_partial));
+        BOOST_CHECK(CanSweepTo(*wallet, musig_complete));
+    };
+    check();
+    BOOST_REQUIRE(wallet->EncryptWallet(SecureString{"test-passphrase"}));
+    BOOST_REQUIRE(wallet->IsLocked());
+    check();
+    WalletContext context;
+    auto interface{interfaces::MakeWallet(context, wallet)};
+    const SecureString supplied{private2.begin(), private2.end()};
+    CTxDestination destination;
+    BOOST_REQUIRE(ExtractDestination(incomplete, destination));
+    auto rejected{interface->sweepPrivateKey(supplied, destination, false, std::nullopt, std::make_shared<interfaces::SweepAuthorization>())};
+    BOOST_CHECK(!rejected);
+    BOOST_CHECK_EQUAL(util::ErrorString(rejected).original, "Destination is not controlled by this wallet");
+    BOOST_REQUIRE(ExtractDestination(sufficient, destination));
+    auto accepted{interface->sweepPrivateKey(supplied, destination, false, std::nullopt, std::make_shared<interfaces::SweepAuthorization>())};
+    BOOST_CHECK(!accepted);
+    BOOST_CHECK_EQUAL(util::ErrorString(accepted).original, "No spendable UTXOs found");
+    BOOST_CHECK(wallet->IsLocked());
+}
 
 BOOST_AUTO_TEST_CASE(max_signed_input_size_uses_external_outpoint)
 {
@@ -51,6 +110,21 @@ BOOST_AUTO_TEST_CASE(anti_fee_sniping_avoids_reserved_policy_locktime)
             BOOST_CHECK_LE(lock_time, height);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(sweep_cancel_and_broadcast_are_mutually_exclusive)
+{
+    interfaces::SweepAuthorization authorization;
+    std::barrier start{3};
+    bool cancelled{false}, broadcast{false};
+    std::thread cancellation{[&] { start.arrive_and_wait(); cancelled = authorization.Cancel(); }};
+    std::thread submission{[&] { start.arrive_and_wait(); broadcast = authorization.BeginBroadcast(); }};
+    start.arrive_and_wait();
+    cancellation.join();
+    submission.join();
+    BOOST_CHECK(cancelled != broadcast);
+    BOOST_CHECK_EQUAL(authorization.IsCancelled(), cancelled);
+    BOOST_CHECK_EQUAL(authorization.BroadcastStarted(), broadcast);
 }
 
 BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
@@ -114,11 +188,11 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_uses_one_fee_snapshot, TestChain100Set
     const std::map<COutPoint, Coin> coins{{COutPoint{Txid{}, 1}, Coin{CTxOut{COIN, script}, 1, false}}};
     const CFeeRate initial_rate{1000};
     const CFeeRate changed_rate{10000};
-    WITH_LOCK(wallet->cs_wallet, wallet->m_pay_tx_fee = initial_rate);
+    WITH_LOCK(wallet->cs_wallet, wallet->m_fallback_fee = initial_rate);
 
     // Change the wallet setting when signing the fee-adjusted transaction,
     // after the operation has selected its fee rate. This deterministically
-    // models a concurrent settxfee without timing-sensitive threads.
+    // models a a fee-settings change without timing-sensitive threads.
     class FeeChangingProvider final : public SigningProvider
     {
         CWallet& m_wallet;
@@ -137,7 +211,7 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_uses_one_fee_snapshot, TestChain100Set
         {
             AssertLockNotHeld(m_wallet.cs_wallet);
             if (++key_requests == 2) {
-                WITH_LOCK(m_wallet.cs_wallet, m_wallet.m_pay_tx_fee = m_changed_rate);
+                WITH_LOCK(m_wallet.cs_wallet, m_wallet.m_fallback_fee = m_changed_rate);
             }
             return m_provider.GetKey(id, key_out);
         }
@@ -154,7 +228,7 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_uses_one_fee_snapshot, TestChain100Set
     }, authorization)};
     BOOST_REQUIRE(result);
     BOOST_CHECK_GE(provider.key_requests, 2);
-    BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->m_pay_tx_fee == changed_rate));
+    BOOST_CHECK(WITH_LOCK(wallet->cs_wallet, return wallet->m_fallback_fee == changed_rate));
     const auto vsize{GetVirtualTransactionSize(*result->tx)};
     BOOST_CHECK_GE(result->fee, initial_rate.GetFee(vsize));
     BOOST_CHECK_LT(result->fee, changed_rate.GetFee(vsize));

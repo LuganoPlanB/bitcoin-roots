@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test processing of unrequested blocks.
@@ -80,7 +80,7 @@ class AcceptBlockTest(BitcoinTestFramework):
         return False
 
     def run_test(self):
-        test_node = self.nodes[0].add_outbound_p2p_connection(P2PInterface(), p2p_idx=0)
+        test_node = self.nodes[0].add_p2p_connection(P2PInterface())
         min_work_node = self.nodes[1].add_p2p_connection(P2PInterface())
 
         # 1. Have nodes mine a block (leave IBD)
@@ -203,7 +203,7 @@ class AcceptBlockTest(BitcoinTestFramework):
         self.nodes[0].disconnect_p2ps()
         self.nodes[1].disconnect_p2ps()
 
-        test_node = self.nodes[0].add_outbound_p2p_connection(P2PInterface(), p2p_idx=2)
+        test_node = self.nodes[0].add_p2p_connection(P2PInterface())
 
         test_node.send_and_ping(msg_block(block_h1f))
         assert_equal(self.nodes[0].getblockcount(), 2)
@@ -275,7 +275,7 @@ class AcceptBlockTest(BitcoinTestFramework):
         test_node.wait_for_disconnect()
 
         self.nodes[0].disconnect_p2ps()
-        test_node = self.nodes[0].add_outbound_p2p_connection(P2PInterface(), p2p_idx=3)
+        test_node = self.nodes[0].add_p2p_connection(P2PInterface())
 
         # We should have failed reorg and switched back to 290 (but have block 291)
         assert_equal(self.nodes[0].getblockcount(), 290)

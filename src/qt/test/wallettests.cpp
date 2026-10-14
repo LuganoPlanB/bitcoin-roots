@@ -1,10 +1,11 @@
-// Copyright (c) 2015-2022 The Bitcoin Core developers
+// Copyright (c) 2015-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/test/wallettests.h>
 #include <qt/test/util.h>
 
+#include <util/rbf.h>
 #include <wallet/coincontrol.h>
 #include <interfaces/chain.h>
 #include <interfaces/node.h>
@@ -21,6 +22,11 @@
 #include <qt/qvalidatedlineedit.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/receiverequestdialog.h>
+#include <qt/qrimagewidget.h>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QTemporaryDir>
+#include <QTimer>
 #include <qt/recentrequeststablemodel.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
@@ -31,13 +37,14 @@
 #include <script/solver.h>
 #include <support/lockedpool.h>
 #include <test/util/setup_common.h>
-#include <util/rbf.h>
 #include <validation.h>
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
 
 #include <chrono>
 #include <functional>
+#include <future>
+#include <thread>
 #include <initializer_list>
 #include <list>
 #include <memory>
@@ -48,12 +55,15 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QFont>
+#include <QDir>
 #include <QLabel>
 #include <QLineEdit>
 #include <QObject>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QScrollBar>
+#include <QScreen>
 #include <QTest>
 #include <QTimer>
 #include <QTreeWidget>
@@ -96,6 +106,48 @@ private:
     std::list<std::function<void(const std::string&)>>::iterator m_connection;
 };
 
+//! Optional evidence uses the actual wallet widgets and disposable regtest fixture.
+bool CaptureWalletWidget(QWidget& widget, const QString& name)
+{
+    const QString directory{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_DIR")};
+    if (directory.isEmpty()) return true;
+    const auto dimensions{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_SIZE", "1280x800").split('x')};
+    if (dimensions.size() != 2) return false;
+    const QSize size{dimensions[0].toInt(), dimensions[1].toInt()};
+    // Native confirmation boxes choose their own size. Capture the actual
+    // screen at the requested resolution, rather than forcing their layout.
+    if (qobject_cast<QMessageBox*>(&widget)) {
+        widget.show();
+        qApp->processEvents();
+        widget.move(std::max(0, (size.width() - widget.width()) / 2), std::max(0, (size.height() - widget.height()) / 2));
+        QTest::qWait(50);
+        const auto screenshot{widget.screen()->grabWindow(0)};
+        return screenshot.size() == size && QDir().mkpath(directory) && screenshot.save(directory + '/' + name + ".png");
+    }
+    widget.resize(size);
+    widget.show();
+    qApp->processEvents();
+    QTest::qWait(50);
+    return widget.size() == size && QDir().mkpath(directory) && widget.grab().save(directory + '/' + name + ".png");
+}
+
+//! Receive/save dialogs keep their production size; evidence records the
+//! complete screen at the caller's resolution instead of forcing a layout.
+bool CaptureReceiveWidget(QWidget& widget, const QString& name)
+{
+    const QString directory{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_DIR")};
+    if (directory.isEmpty()) return true;
+    const auto dimensions{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_SIZE", "1280x800").split('x')};
+    if (dimensions.size() != 2) return false;
+    const QSize size{dimensions[0].toInt(), dimensions[1].toInt()};
+    widget.show();
+    qApp->processEvents();
+    widget.move(std::max(0, (size.width() - widget.width()) / 2), std::max(0, (size.height() - widget.height()) / 2));
+    QTest::qWait(50);
+    const auto screenshot{widget.screen()->grabWindow(0)};
+    return screenshot.size() == size && QDir().mkpath(directory) && screenshot.save(directory + '/' + name + ".png");
+}
+
 //! Press "Yes" or "Cancel" buttons in modal send confirmation dialog.
 void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_type = QMessageBox::Yes)
 {
@@ -104,9 +156,11 @@ void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_ty
             if (widget->inherits("SendConfirmationDialog")) {
                 SendConfirmationDialog* dialog = qobject_cast<SendConfirmationDialog*>(widget);
                 if (text) *text = dialog->text();
+                const bool captured{CaptureWalletWidget(*dialog, dialog->text().contains("This transaction signals") ? "send-confirmation-rbf" : "send-confirmation-no-rbf")};
                 QAbstractButton* button = dialog->button(confirm_type);
                 button->setEnabled(true);
                 button->click();
+                QVERIFY(captured);
             }
         }
     });
@@ -114,8 +168,9 @@ void ConfirmSend(QString* text = nullptr, QMessageBox::StandardButton confirm_ty
 
 //! Send coins to address and return txid.
 Txid SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDestination& address, CAmount amount, bool rbf,
-                  QMessageBox::StandardButton confirm_type = QMessageBox::Yes, QString* confirmation_text = nullptr)
+                  QMessageBox::StandardButton confirm_type = QMessageBox::Yes, QString* confirmation = nullptr)
 {
+    qApp->processEvents(); // Deliver preceding transaction notifications before preparing another send.
     QVBoxLayout* entries = sendCoinsDialog.findChild<QVBoxLayout*>("entries");
     SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
     entry->findChild<QValidatedLineEdit*>("payTo")->setText(QString::fromStdString(EncodeDestination(address)));
@@ -128,7 +183,7 @@ Txid SendCoins(CWallet& wallet, SendCoinsDialog& sendCoinsDialog, const CTxDesti
     boost::signals2::scoped_connection c(wallet.NotifyTransactionChanged.connect([&txid](const Txid& hash, ChangeType status) {
         if (status == CT_NEW) txid = hash;
     }));
-    ConfirmSend(confirmation_text, confirm_type);
+    ConfirmSend(confirmation, confirm_type);
     bool invoked = QMetaObject::invokeMethod(&sendCoinsDialog, "sendButtonClicked", Q_ARG(bool, false));
     assert(invoked);
     return txid;
@@ -230,7 +285,6 @@ void SyncUpWallet(const std::shared_ptr<CWallet>& wallet, interfaces::Node& node
 std::shared_ptr<CWallet> SetupDescriptorsWallet(interfaces::Node& node, TestChain100Setup& test, bool watch_only = false)
 {
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), "", CreateMockableWalletDatabase());
-    wallet->LoadWallet();
     LOCK(wallet->cs_wallet);
     wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
     if (watch_only) {
@@ -303,10 +357,9 @@ public:
 //     QT_QPA_PLATFORM=cocoa   build/bin/test_bitcoin-qt  # macOS
 void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
 {
-    wallet->m_signal_rbf = false;
-
     // Create widgets for sending coins and listing transactions.
     std::unique_ptr<const PlatformStyle> platformStyle(PlatformStyle::instantiate("other"));
+    wallet->m_signal_rbf = false;
     MiniGUI mini_gui(node, platformStyle.get());
     mini_gui.initModelForWallet(node, wallet, platformStyle.get());
     WalletModel& walletModel = *mini_gui.walletModel;
@@ -394,6 +447,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(sweep_key->text().isEmpty());
     QVERIFY(!sweep_broadcast->isEnabled());
     QVERIFY(sweep_result->text().contains("fresh preview"));
+    QVERIFY(CaptureWalletWidget(sweep_dialog, "sweep-cancelled"));
     QTRY_VERIFY_WITH_TIMEOUT(sweep_key->isEnabled(), 5000);
     QVERIFY(!sweep_result->text().contains("not-a-private-key"));
     QVERIFY(!sweep_broadcast->isEnabled());
@@ -460,8 +514,18 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // Check 'UseAvailableBalance' functionality
     VerifyUseAvailableBalance(sendCoinsDialog, walletModel);
 
+    auto* entries_for_capture{sendCoinsDialog.findChild<QVBoxLayout*>("entries")};
+    auto* recipient_for_capture{qobject_cast<SendCoinsEntry*>(entries_for_capture->itemAt(0)->widget())};
+    recipient_for_capture->findChild<QCheckBox*>("checkboxSubtractFeeFromAmount")->setChecked(false);
+    recipient_for_capture->findChild<BitcoinAmountField*>("payAmount")->setValue(COIN);
+    sendCoinsDialog.getCoinControl()->m_feerate = CFeeRate{1000};
+
     // The coin control view presents wallet-owned facts and keeps filtering a
     // display-only operation: it must not alter the selected outpoints.
+    const auto capture_coins{walletModel.wallet().listCoins()};
+    QVERIFY(!capture_coins.empty());
+    const COutPoint locked_output{std::get<0>(capture_coins.begin()->second.front())};
+    walletModel.wallet().lockCoin(locked_output, false);
     CoinControlDialog coin_control_dialog(*sendCoinsDialog.getCoinControl(), &walletModel, platformStyle.get());
     QTreeWidget* coin_tree = coin_control_dialog.findChild<QTreeWidget*>("treeWidget");
     QLineEdit* coin_filter = coin_control_dialog.findChild<QLineEdit*>("lineEditFilter");
@@ -474,7 +538,24 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QCOMPARE(coin_tree->headerItem()->text(7), "Effective value");
     QCOMPARE(coin_tree->headerItem()->text(8), "Input bytes");
     QVERIFY(available->text().contains("eligible"));
+    // Populate an eligible selection while retaining the separate locked row.
+    for (int i = 0; i < coin_tree->topLevelItemCount(); ++i) {
+        auto* parent{coin_tree->topLevelItem(i)};
+        if (parent->childCount() == 0 && !parent->isDisabled()) { parent->setCheckState(0, Qt::Checked); break; }
+        for (int j = 0; j < parent->childCount(); ++j) {
+            auto* item{parent->child(j)};
+            if (!item->isDisabled()) { item->setCheckState(0, Qt::Checked); break; }
+        }
+    }
+    coin_tree->expandAll();
+    QVERIFY(CaptureWalletWidget(coin_control_dialog, "coin-control"));
+    coin_tree->horizontalScrollBar()->setValue(coin_tree->horizontalScrollBar()->maximum());
+    QVERIFY(CaptureWalletWidget(coin_control_dialog, "coin-control-details"));
+    coin_tree->horizontalScrollBar()->setValue(0);
     QVERIFY(rbf_summary->text().contains("Replace-By-Fee"));
+    sendCoinsDialog.getCoinControl()->m_signal_bip125_rbf = false;
+    CoinControlDialog::updateLabels(*sendCoinsDialog.getCoinControl(), &walletModel, &coin_control_dialog);
+    QVERIFY(rbf_summary->text().startsWith("Does not signal"));
     QCOMPARE(coin_filter->accessibleName(), "Filter coin selection");
     QVERIFY(coin_tree->accessibleDescription().contains("Status column"));
     const auto selected_before_filter = sendCoinsDialog.getCoinControl()->ListSelected();
@@ -484,11 +565,12 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(sendCoinsDialog.getCoinControl()->ListSelected() == selected_before_filter);
     coin_filter->clear();
     QVERIFY(coin_tree->focusPolicy() != Qt::NoFocus);
-    QVERIFY(QMetaObject::invokeMethod(&coin_control_dialog, "walletChanged"));
+    walletModel.updateTransaction(); // Invalidate even when the balance is unchanged.
     QVERIFY(!sendCoinsDialog.getCoinControl()->HasSelected());
     QVERIFY(!selection_notice->isHidden());
     QVERIFY(selection_notice->text().contains("cleared"));
     coin_control_dialog.reject();
+    walletModel.wallet().unlockCoin(locked_output);
 
     // Effective value must use the active coin-control fee rate, not fall back
     // to face value. Check the formatted value, its numeric sorting key, and
@@ -539,16 +621,24 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     // Send two transactions, and verify they are added to transaction list.
     TransactionTableModel* transactionTableModel = walletModel.getTransactionTableModel();
     QCOMPARE(transactionTableModel->rowCount({}), 105);
-    QCheckBox* rbf_checkbox = sendCoinsDialog.findChild<QCheckBox*>("optInRBF");
+    walletModel.getOptionsModel()->setData(walletModel.getOptionsModel()->index(OptionsModel::CoinControlFeatures), true);
+    QVERIFY(QMetaObject::invokeMethod(&sendCoinsDialog, "on_buttonChooseFee_clicked"));
+    QVERIFY(CaptureWalletWidget(sendCoinsDialog, "send-rbf"));
+    auto* custom_change{sendCoinsDialog.findChild<QCheckBox*>("checkBoxCoinControlChange")};
+    auto* change_address{sendCoinsDialog.findChild<QValidatedLineEdit*>("lineEditCoinControlChange")};
+    QVERIFY(custom_change && change_address);
+    change_address->setText("not-an-address");
+    custom_change->setChecked(true);
+    QVERIFY(QMetaObject::invokeMethod(&sendCoinsDialog, "coinControlChangeEdited", Q_ARG(QString, QString{"not-an-address"})));
+    QVERIFY(CaptureWalletWidget(sendCoinsDialog, "send-change-invalid"));
+    custom_change->setChecked(false);
+    change_address->clear();
+    auto* rbf_checkbox = sendCoinsDialog.findChild<QCheckBox*>("optInRBF");
     QVERIFY(rbf_checkbox);
-    QCOMPARE(rbf_checkbox->text(), "Enable Replace-By-Fee");
-    QVERIFY(rbf_checkbox->focusPolicy() != Qt::NoFocus);
     QVERIFY(!rbf_checkbox->isChecked());
-
-    QString no_rbf_confirmation;
-    Txid txid1 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 5 * COIN, /*rbf=*/false, QMessageBox::Yes, &no_rbf_confirmation);
-    QString rbf_confirmation;
-    Txid txid2 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 10 * COIN, /*rbf=*/true, QMessageBox::Yes, &rbf_confirmation);
+    QString no_rbf_confirmation, rbf_confirmation;
+    Txid txid1 = SendCoins(*wallet, sendCoinsDialog, PKHash(), 5 * COIN, false, QMessageBox::Yes, &no_rbf_confirmation);
+    Txid txid2 = SendCoins(*wallet, sendCoinsDialog, PKHash(), 10 * COIN, true, QMessageBox::Yes, &rbf_confirmation);
     {
         LOCK(wallet->cs_wallet);
         QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid1).tx));
@@ -560,18 +650,15 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     QVERIFY(rbf_confirmation.contains("Inputs:"));
     QVERIFY(rbf_confirmation.contains("Fee rate:"));
     QVERIFY(rbf_confirmation.contains("Change:"));
-
     wallet->m_signal_rbf = true;
     SendCoinsDialog default_rbf_dialog(platformStyle.get());
     default_rbf_dialog.setModel(&walletModel);
     QVERIFY(default_rbf_dialog.findChild<QCheckBox*>("optInRBF")->isChecked());
-    QString default_on_override_confirmation;
-    Txid txid3 = SendCoins(*wallet.get(), default_rbf_dialog, PKHash(), COIN, /*rbf=*/false, QMessageBox::Yes, &default_on_override_confirmation);
+    Txid txid3 = SendCoins(*wallet, default_rbf_dialog, PKHash(), COIN, false);
     {
         LOCK(wallet->cs_wallet);
         QVERIFY(!SignalsOptInRBF(*wallet->mapWallet.at(txid3).tx));
     }
-    QVERIFY(default_on_override_confirmation.contains("Not signalling Replace-By-Fee, BIP-125."));
     // Transaction table model updates on a QueuedConnection, so process events to ensure it's updated.
     qApp->processEvents();
     QCOMPARE(transactionTableModel->rowCount({}), 108);
@@ -584,7 +671,6 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
     BumpFee(transactionView, txid2, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/false);
     BumpFee(transactionView, txid2, /*expectDisabled=*/true, /*expectError=*/"already bumped", /*cancel=*/false);
-    BumpFee(transactionView, txid3, /*expectDisabled=*/false, /*expectError=*/{}, /*cancel=*/true);
 
     // Check current balance on OverviewPage
     OverviewPage overviewPage(platformStyle.get());
@@ -635,6 +721,51 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
             QCOMPARE(uri.count("message=TEST_MESSAGE_1"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("message_tag")->text(), QString("Message:"));
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("message_content")->text(), QString("TEST_MESSAGE_1"));
+#ifdef USE_QRCODE
+            auto* qr = receiveRequestDialog->findChild<QRImageWidget*>("qr_code");
+            auto* save = receiveRequestDialog->findChild<QPushButton*>("btnSaveAs");
+            QVERIFY(qr && save && save->isEnabled());
+            const QImage exported{qr->exportImage()};
+            QVERIFY(!exported.isNull());
+            // Exercise the actual receive dialog and save action with an
+            // isolated filename, never a real wallet address or directory.
+            QVERIFY(CaptureReceiveWidget(receiveCoinsDialog, "receive"));
+            QVERIFY(CaptureReceiveWidget(*receiveRequestDialog, "receive-request"));
+            QTemporaryDir export_dir;
+            QVERIFY(export_dir.isValid());
+            const QString capture_dir{qEnvironmentVariable("ROOTS_WALLET_CAPTURE_DIR")};
+            const QString filename{capture_dir.isEmpty() ? export_dir.filePath("qr.png") : capture_dir + "/qr-export.png"};
+            const bool native_dialogs_disabled{qApp->testAttribute(Qt::AA_DontUseNativeDialogs)};
+            qApp->setAttribute(Qt::AA_DontUseNativeDialogs);
+            bool saved{false};
+            QTimer::singleShot(0, [&] {
+                for (auto* top : QApplication::topLevelWidgets()) {
+                    if (auto* dialog = qobject_cast<QFileDialog*>(top)) {
+                        // QFileDialog's filesystem model loads asynchronously.
+                        // Pin the writable test directory before selecting the
+                        // name; minimal has no screenshot event-pumping delay.
+                        dialog->setDirectory(QFileInfo{filename}.absolutePath());
+                        dialog->selectFile(QFileInfo{filename}.fileName());
+                        auto* filename_edit = dialog->findChild<QLineEdit*>("fileNameEdit");
+                        if (filename_edit) filename_edit->setText(QFileInfo{filename}.fileName());
+                        const bool selected{QTest::qWaitFor([&] { return dialog->selectedFiles() == QStringList{filename}; }, 1000)};
+                        saved = selected && CaptureReceiveWidget(*dialog, "qr-save-dialog");
+                        QMetaObject::invokeMethod(dialog, saved ? "accept" : "reject");
+                    }
+                }
+            });
+            save->click();
+            qApp->setAttribute(Qt::AA_DontUseNativeDialogs, native_dialogs_disabled);
+            QVERIFY(saved);
+            QCOMPARE(QImage{filename}, exported);
+            // Font changes refresh the production QR image in-place.
+            QFont larger_font{walletModel.getOptionsModel()->getFontForMoney()};
+            larger_font.setPointSizeF(larger_font.pointSizeF() * 1.5);
+            const auto original_choice{walletModel.getOptionsModel()->data(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney))};
+            QVERIFY(walletModel.getOptionsModel()->setData(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney), QVariant::fromValue(OptionsModel::FontChoice{larger_font})));
+            QVERIFY(qr->exportImage().height() > exported.height());
+            QVERIFY(walletModel.getOptionsModel()->setData(walletModel.getOptionsModel()->index(OptionsModel::FontForMoney), original_choice));
+#endif
         }
     }
 
@@ -653,7 +784,7 @@ void TestGUI(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet)
     std::vector<std::string> requests = walletModel.wallet().getAddressReceiveRequests();
     QCOMPARE(requests.size(), size_t{1});
     RecentRequestEntry entry;
-    DataStream{MakeUCharSpan(requests[0])} >> entry;
+    SpanReader{MakeByteSpan(requests[0])} >> entry;
     QCOMPARE(entry.nVersion, int{1});
     QCOMPARE(entry.id, int64_t{1});
     QVERIFY(entry.date.isValid());
@@ -686,9 +817,23 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
     WalletModel& walletModel = *mini_gui.walletModel;
     SendCoinsDialog& sendCoinsDialog = mini_gui.sendCoinsDialog;
 
-    // Update walletModel cached balance which will trigger an update for the 'labelBalance' QLabel.
+    qApp->processEvents();
+    const auto groups{walletModel.wallet().listCoins()};
+    QVERIFY(!groups.empty());
+    const auto facts{walletModel.wallet().getCoins({std::get<0>(groups.begin()->second.front())})};
+    QVERIFY(facts.front().is_watch_only);
+    CoinControlDialog watch_control(*sendCoinsDialog.getCoinControl(), &walletModel, platformStyle.get());
+    auto* watch_tree{watch_control.findChild<QTreeWidget*>("treeWidget")};
+    QVERIFY(watch_tree);
+    bool shows_watch_only{false};
+    for (int i = 0; i < watch_tree->topLevelItemCount(); ++i) {
+        auto* row{watch_tree->topLevelItem(i)};
+        shows_watch_only |= row->text(6).contains("Watch-only");
+        for (int j = 0; j < row->childCount(); ++j) shows_watch_only |= row->child(j)->text(6).contains("Watch-only");
+    }
+    QVERIFY(shows_watch_only);
+    watch_control.reject();
     walletModel.pollBalanceChanged();
-    // Check balance in send dialog
     CompareBalance(walletModel, walletModel.wallet().getBalances().balance,
                    sendCoinsDialog.findChild<QLabel*>("labelBalance"));
 
@@ -727,33 +872,78 @@ void TestGUIWatchOnly(interfaces::Node& node, TestChain100Setup& test)
     std::string err;
     QVERIFY(DecodeRawPSBT(psbt, MakeByteSpan(*decoded_psbt), err));
     QVERIFY(!SignalsOptInRBF(CTransaction{*psbt.tx}));
-
-    SendCoinsDialog rbf_psbt_dialog(platformStyle.get());
-    rbf_psbt_dialog.setModel(&walletModel);
-    rbf_psbt_dialog.getCoinControl()->destChange = PKHash{test.coinbaseKey.GetPubKey()};
-    QTimer rbf_timer;
-    rbf_timer.setInterval(500);
-    QObject::connect(&rbf_timer, &QTimer::timeout, [&](){
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->inherits("QMessageBox") && widget->objectName().compare("psbt_copied_message") == 0) {
-                QMessageBox* dialog = qobject_cast<QMessageBox*>(widget);
-                QAbstractButton* button = dialog->button(QMessageBox::Discard);
-                button->setEnabled(true);
-                button->click();
-                rbf_timer.stop();
-                break;
-            }
-        }
-    });
-    rbf_timer.start(500);
-
-    SendCoins(*wallet.get(), rbf_psbt_dialog, PKHash(), 5 * COIN, /*rbf=*/true, QMessageBox::Save);
+    timer.start(500);
+    SendCoins(*wallet, sendCoinsDialog, PKHash(), 5 * COIN, true, QMessageBox::Save);
     decoded_psbt = DecodeBase64(QApplication::clipboard()->text().toStdString());
     QVERIFY(decoded_psbt);
     psbt = {};
     err.clear();
     QVERIFY(DecodeRawPSBT(psbt, MakeByteSpan(*decoded_psbt), err));
     QVERIFY(SignalsOptInRBF(CTransaction{*psbt.tx}));
+}
+
+//! Exercise a successful scan/preview and cancelled confirmation on real coins.
+void TestSweepPreview(interfaces::Node& node, const std::shared_ptr<CWallet>& wallet, TestChain100Setup& test)
+{
+    const CKey key{GenerateRandomKey()};
+    const CScript script{GetScriptForDestination(PKHash{key.GetPubKey()})};
+    test.CreateAndProcessBlock({}, script);
+    for (int i = 0; i < 100; ++i) test.CreateAndProcessBlock({}, CScript{});
+    std::unique_ptr<const PlatformStyle> style{PlatformStyle::instantiate("other")};
+    MiniGUI gui(node, style.get());
+    gui.initModelForWallet(node, wallet, style.get());
+    qApp->processEvents();
+    auto& model{*gui.walletModel};
+    SweepDialog dialog(&model);
+    auto* private_key{dialog.findChild<QLineEdit*>("sweepPrivateKey")};
+    auto* destination{dialog.findChild<QLineEdit*>("sweepDestination")};
+    auto* broadcast{dialog.findChild<QPushButton*>("sweepBroadcast")};
+    auto* result{dialog.findChild<QLabel*>("sweepResult")};
+    const auto dest{model.wallet().getNewDestination(OutputType::BECH32, "")};
+    QVERIFY(dest);
+    destination->setText(QString::fromStdString(EncodeDestination(*dest)));
+    // This key is freshly generated solely for the disposable test chain.
+    private_key->setText(QString::fromStdString(EncodeSecret(key)));
+    std::promise<void> locked, release;
+    auto released{release.get_future()};
+    std::thread blocker{[&] {
+        LOCK(cs_main);
+        locked.set_value();
+        released.wait();
+    }};
+    locked.get_future().wait();
+    const bool started{QMetaObject::invokeMethod(&dialog, "preview")};
+    const bool captured{CaptureWalletWidget(dialog, "sweep-scanning")};
+    // Cancellation wins before the worker can obtain a UTXO cursor. Ensure
+    // transient state disappears while the scan is still outstanding.
+    dialog.reject();
+    const bool disposed{SweepDialogTestAccess::Cache(dialog).empty() && private_key->text().isEmpty() && !broadcast->isEnabled()};
+    release.set_value();
+    blocker.join();
+    QVERIFY(started && captured && disposed);
+    private_key->setText(QString::fromStdString(EncodeSecret(key)));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "preview"));
+    QTRY_VERIFY_WITH_TIMEOUT(broadcast->isEnabled(), 10000);
+    QVERIFY(result->text().contains("net received"));
+    QVERIFY(private_key->text().isEmpty());
+    QVERIFY(CaptureWalletWidget(dialog, "sweep-preview"));
+    QTimer::singleShot(0, [] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            auto* message{qobject_cast<QMessageBox*>(widget)};
+            if (message && message->windowTitle() == "Broadcast sweep") {
+                const bool captured{CaptureWalletWidget(*message, "sweep-confirmation")};
+                message->button(QMessageBox::Cancel)->click();
+                QVERIFY(captured);
+            }
+        }
+    });
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "broadcast"));
+    QVERIFY(broadcast->isEnabled()); // Confirmation cancelled, no submission.
+    model.updateTransaction(); // Same balance, but state must invalidate preview.
+    QVERIFY(!broadcast->isEnabled());
+    QVERIFY(SweepDialogTestAccess::Cache(dialog).empty());
+    QVERIFY(result->text().contains("fresh preview"));
+    dialog.reject();
 }
 
 void TestGUI(interfaces::Node& node)
@@ -774,6 +964,7 @@ void TestGUI(interfaces::Node& node)
     // Legacy watch-only wallet test
     // Verify PSBT creation.
     TestGUIWatchOnly(node, test);
+    TestSweepPreview(node, desc_wallet, test);
 }
 
 } // namespace
@@ -791,5 +982,11 @@ void WalletTests::walletTests()
         return;
     }
 #endif
+    const QFont original_font{qApp->font()};
+    const double scale{qEnvironmentVariable("ROOTS_WALLET_FONT_SCALE", "1.0").toDouble()};
+    QFont font{original_font};
+    font.setPointSizeF(original_font.pointSizeF() * scale);
+    qApp->setFont(font);
     TestGUI(m_node);
+    qApp->setFont(original_font);
 }

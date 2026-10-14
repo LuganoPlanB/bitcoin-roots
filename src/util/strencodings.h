@@ -9,10 +9,11 @@
 #ifndef BITCOIN_UTIL_STRENCODINGS_H
 #define BITCOIN_UTIL_STRENCODINGS_H
 
-#include <crypto/hex_base.h> // IWYU pragma: export
+#include <crypto/hex_base.h>
 #include <span.h>
 #include <util/string.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <charconv>
@@ -20,8 +21,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <string>      // IWYU pragma: export
-#include <string_view> // IWYU pragma: export
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <vector>
@@ -33,7 +34,6 @@ enum SafeChars
     SAFE_CHARS_UA_COMMENT, //!< BIP-0014 subset
     SAFE_CHARS_FILENAME, //!< Chars allowed in filenames
     SAFE_CHARS_URI, //!< Chars allowed in URIs (RFC 3986)
-    SAFE_CHARS_PRINTABLE, //!< The full set of printable chars
 };
 
 /**
@@ -60,7 +60,7 @@ enum class ByteUnit : uint64_t {
 * @param[in] rule   The set of safe chars to choose (default: least restrictive)
 * @return           A new string without unsafe chars
 */
-std::string SanitizeString(std::string_view str, int rule = SAFE_CHARS_DEFAULT, bool escape = false);
+std::string SanitizeString(std::string_view str, int rule = SAFE_CHARS_DEFAULT);
 /** Parse the hex string into bytes (uint8_t or std::byte). Ignores whitespace. Returns nullopt on invalid input. */
 template <typename Byte = std::byte>
 std::optional<std::vector<Byte>> TryParseHex(std::string_view str);
@@ -163,24 +163,25 @@ constexpr bool IsDigit(char c)
  * @param[in] c     character to test
  * @return          true if the argument is a whitespace character; otherwise false
  */
-constexpr inline bool IsSpace(const char c) noexcept {
-    return c <= ' ' && (c == ' ' || (c >= '\t' && c <= '\r'));
+constexpr inline bool IsSpace(char c) noexcept {
+    return c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v';
 }
 
 /**
  * Convert string to integral type T. Leading whitespace, a leading +, or any
  * trailing character fail the parsing. The required format expressed as regex
- * is `-?[0-9]+`. The minus sign is only permitted for signed integer types.
+ * is `-?[0-9]+` by default (or `-?[0-9a-fA-F]+` if base = 16).
+ * The minus sign is only permitted for signed integer types.
  *
  * @returns std::nullopt if the entire string could not be parsed, or if the
  *   parsed value is not in the range representable by the type T.
  */
 template <typename T>
-std::optional<T> ToIntegral(std::string_view str)
+std::optional<T> ToIntegral(std::string_view str, size_t base = 10)
 {
     static_assert(std::is_integral_v<T>);
     T result;
-    const auto [first_nonmatching, error_condition] = std::from_chars(str.data(), str.data() + str.size(), result);
+    const auto [first_nonmatching, error_condition] = std::from_chars(str.data(), str.data() + str.size(), result, base);
     if (first_nonmatching != str.data() + str.size() || error_condition != std::errc{}) {
         return std::nullopt;
     }
@@ -352,6 +353,20 @@ struct Hex {
     }
 };
 } // namespace detail
+
+struct AsciiCaseInsensitiveKeyEqual {
+    bool operator()(std::string_view s1, std::string_view s2) const
+    {
+        return ToLower(s1) == ToLower(s2);
+    }
+};
+
+struct AsciiCaseInsensitiveHash {
+    size_t operator()(std::string_view s) const
+    {
+        return std::hash<std::string>{}(ToLower(s));
+    }
+};
 
 /**
  * ""_hex is a compile-time user-defined literal returning a

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test BIP66 (DER SIG).
@@ -50,8 +50,8 @@ class BIP66Test(BitcoinTestFramework):
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
         self.extra_args = [[
+            '-permitbarepubkey=1',  # Preserve the legacy signature rejection fixture.
             f'-testactivationheight=dersig@{DERSIG_HEIGHT}',
-            '-permitbarepubkey=1',  # reach DER validation for the synthetic P2PK spends
         ]]
         self.setup_clean_chain = True
         self.rpc_timeout = 240

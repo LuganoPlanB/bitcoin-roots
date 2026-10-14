@@ -12,6 +12,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 
 get_target_property(qt_lib_type Qt${WITH_QT_VERSION}::Core TYPE)
+if(qt_lib_type STREQUAL "STATIC_LIBRARY" AND NOT COMMAND qt${WITH_QT_VERSION}_import_plugins)
+  message(FATAL_ERROR "Static Qt requires the import_plugins CMake command (Qt 5.14 or newer for Qt 5).")
+endif()
 
 function(import_plugins target)
   if(qt_lib_type STREQUAL "STATIC_LIBRARY")
@@ -20,15 +23,15 @@ function(import_plugins target)
       list(APPEND plugins Qt${WITH_QT_VERSION}::QXcbIntegrationPlugin)
     elseif(WIN32)
       list(APPEND plugins Qt${WITH_QT_VERSION}::QWindowsIntegrationPlugin)
-      if(WITH_QT_VERSION STREQUAL "6")
-        list(APPEND plugins Qt6::QModernWindowsStylePlugin)
-      else()
+      if(WITH_QT_VERSION STREQUAL "5")
         list(APPEND plugins Qt5::QWindowsVistaStylePlugin)
+      else()
+        list(APPEND plugins Qt6::QModernWindowsStylePlugin)
       endif()
     elseif(APPLE)
       list(APPEND plugins Qt${WITH_QT_VERSION}::QCocoaIntegrationPlugin Qt${WITH_QT_VERSION}::QMacStylePlugin)
     endif()
-    cmake_language(CALL "qt${WITH_QT_VERSION}_import_plugins" ${target}
+    cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins ${target}
       INCLUDE ${plugins}
       EXCLUDE_BY_TYPE
         accessiblebridge
@@ -55,12 +58,19 @@ endfunction()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOMOC_MOC_OPTIONS "-p${CMAKE_CURRENT_SOURCE_DIR}")
-set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
-
+set(CMAKE_AUTORCC OFF)
 configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
+cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_QRC bitcoin.qrc)
+cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
+# See: https://bugreports.qt.io/browse/QTBUG-141858.
+get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
+if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
+  set_source_files_properties(${BITCOIN_QRC} ${BITCOIN_LOCALE_QRC} PROPERTIES COMPILE_OPTIONS -Wno-trailing-whitespace)
+endif()
+unset(warn_flags)
 
 # The bitcoinqt sources have to include headers in
 # order to parse them to collect translatable strings.
@@ -125,8 +135,8 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   utilitydialog.h
   $<$<PLATFORM_ID:Windows>:winshutdownmonitor.cpp>
   $<$<PLATFORM_ID:Windows>:winshutdownmonitor.h>
-  bitcoin.qrc
-  ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc
+  ${BITCOIN_QRC}
+  ${BITCOIN_LOCALE_QRC}
 )
 target_compile_definitions(bitcoinqt
   PUBLIC
@@ -153,6 +163,7 @@ target_link_libraries(bitcoinqt
     $<$<PLATFORM_ID:Darwin>:-framework\ AppKit>
     $<$<CXX_COMPILER_ID:MSVC>:shlwapi>
 )
+
 if(ENABLE_WALLET)
   target_sources(bitcoinqt
     PRIVATE
@@ -231,21 +242,14 @@ if(WITH_DBUS)
 endif()
 
 if(WITH_TASKBAR_PROGRESS)
-  target_sources(bitcoinqt
-    PRIVATE
-      $<$<PLATFORM_ID:Windows>:wintaskbarprogress.cpp>
-      $<$<PLATFORM_ID:Windows>:wintaskbarprogress.h>
-  )
-  target_link_libraries(bitcoinqt
-    PRIVATE
-      $<$<PLATFORM_ID:Windows>:ole32>
-  )
+  target_sources(bitcoinqt PRIVATE wintaskbarprogress.cpp wintaskbarprogress.h)
+  target_link_libraries(bitcoinqt PRIVATE ole32)
 endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   # We want to define static plugins to link ourselves, thus preventing
   # automatic linking against a "sane" set of default static plugins.
-  cmake_language(CALL "qt${WITH_QT_VERSION}_import_plugins" bitcoinqt
+  cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins bitcoinqt
     EXCLUDE_BY_TYPE
       accessiblebridge
       platforms

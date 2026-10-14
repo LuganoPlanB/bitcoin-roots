@@ -3,25 +3,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <util/fs_helpers.h>
-
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
-#include <logging.h>
+#include <util/fs_helpers.h>
+
 #include <random.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <util/check.h>
 #include <util/fs.h>
+#include <util/log.h>
 #include <util/syserror.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -31,9 +32,8 @@
 #include <sys/resource.h>
 #include <unistd.h>
 #else
-#include <io.h> /* For _get_osfhandle, _chsize */
-#include <shlobj.h> /* For SHGetSpecialFolderPathW */
-#include <windows.h>
+#include <io.h>
+#include <shlobj.h>
 #endif // WIN32
 
 #ifdef __APPLE__
@@ -56,7 +56,7 @@ LockResult LockDirectory(const fs::path& directory, const fs::path& lockfile_nam
     fs::path pathLockFile = directory / lockfile_name;
 
     // If a lock for this directory already exists in the map, don't try to re-lock it
-    if (dir_locks.count(fs::PathToString(pathLockFile))) {
+    if (dir_locks.contains(fs::PathToString(pathLockFile))) {
         return LockResult::Success;
     }
 
@@ -173,15 +173,12 @@ int RaiseFileDescriptorLimit(int nMinFD)
             const auto current_limit{limitFD.rlim_cur};
             limitFD.rlim_cur = std::in_range<rlim_t>(nMinFD) ? static_cast<rlim_t>(nMinFD) : limitFD.rlim_max;
             // Don't raise soft limit beyond hard limit
-            if (limitFD.rlim_max != RLIM_INFINITY && (
-                limitFD.rlim_cur > limitFD.rlim_max
-                )
-            ) {
+            if (limitFD.rlim_max != RLIM_INFINITY && limitFD.rlim_cur > limitFD.rlim_max) {
                 limitFD.rlim_cur = limitFD.rlim_max;
             }
             if (current_limit != limitFD.rlim_cur) {
-            setrlimit(RLIMIT_NOFILE, &limitFD);
-            getrlimit(RLIMIT_NOFILE, &limitFD);
+                setrlimit(RLIMIT_NOFILE, &limitFD);
+                getrlimit(RLIMIT_NOFILE, &limitFD);
             }
         }
         // Check the (possibly raised) current soft limit against the special
@@ -201,7 +198,7 @@ int RaiseFileDescriptorLimit(int nMinFD)
 
 /**
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
- * it is advisory, and the range specified in the arguments will never contain live data
+ * It is advisory and must preserve existing bytes in the requested range.
  */
 void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
 {
@@ -210,28 +207,13 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     LARGE_INTEGER nFileSize;
     int64_t nEndPos = (int64_t)offset + length;
-    if (GetFileSizeEx(hFile, &nFileSize) && (int64_t{nFileSize.u.HighPart} << 32 | nFileSize.u.LowPart) <= nEndPos) {
+    if (GetFileSizeEx(hFile, &nFileSize) && nFileSize.QuadPart < nEndPos) {
         nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
         nFileSize.u.HighPart = nEndPos >> 32;
         if (SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN)) {
             SetEndOfFile(hFile);
         }
     }
-#elif 0
-    // OSX specific version
-    // NOTE: Contrary to other OS versions, the OSX version assumes that
-    // NOTE: offset is the size of the file.
-    fstore_t fst;
-    fst.fst_flags = F_ALLOCATECONTIG;
-    fst.fst_posmode = F_PEOFPOSMODE;
-    fst.fst_offset = 0;
-    fst.fst_length = length; // mac os fst_length takes the # of free bytes to allocate, not desired file size
-    fst.fst_bytesalloc = 0;
-    if (fcntl(fileno(file), F_PREALLOCATE, &fst) == -1) {
-        fst.fst_flags = F_ALLOCATEALL;
-        fcntl(fileno(file), F_PREALLOCATE, &fst);
-    }
-    ftruncate(fileno(file), static_cast<off_t>(offset) + length);
 #else
 #if defined(HAVE_POSIX_FALLOCATE)
     // Version using posix_fallocate
@@ -265,50 +247,6 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
         length -= now;
     }
 #endif
-}
-
-FILE* AdviseSequential(FILE *file) {
-#ifdef _POSIX_C_SOURCE
-# if _POSIX_C_SOURCE >= 200112L
-    // Since this whole thing is advisory anyway, we can ignore any errors
-    // encountered up to and including the posix_fadvise call. However, we must
-    // rewind the file to the appropriate position if we've changed the seek
-    // offset.
-    if (file == nullptr) {
-        return nullptr;
-    }
-    const int fd = fileno(file);
-    if (fd == -1) {
-        return file;
-    }
-    const off_t start = lseek(fd, 0, SEEK_CUR);
-    if (start == -1) {
-        return file;
-    }
-    posix_fadvise(fd, start, 0, POSIX_FADV_WILLNEED);
-    posix_fadvise(fd, start, 0, POSIX_FADV_SEQUENTIAL);
-# endif
-#endif
-    return file;
-}
-
-int CloseAndUncache(FILE *file) {
-#ifdef _POSIX_C_SOURCE
-# if _POSIX_C_SOURCE >= 200112L
-    // Ignore any errors up to and including the posix_fadvise call since it's
-    // advisory.
-    if (file != nullptr) {
-        const int fd = fileno(file);
-        if (fd != -1) {
-            const off_t end = lseek(fd, 0, SEEK_END);
-            if (end != (off_t)-1) {
-                posix_fadvise(fd, 0, end, POSIX_FADV_DONTNEED);
-            }
-        }
-    }
-# endif
-#endif
-    return std::fclose(file);
 }
 
 #ifdef WIN32
@@ -354,55 +292,23 @@ std::string PermsToSymbolicString(fs::perms p)
 {
     std::string perm_str(9, '-');
 
-    auto set_perm = [&](size_t pos, fs::perms required_perm, char letter, char else_letter = '\0') {
+    auto set_perm = [&](size_t pos, fs::perms required_perm, char letter) {
         if ((p & required_perm) != fs::perms::none) {
             perm_str[pos] = letter;
-        } else if (else_letter) {
-            perm_str[pos] = else_letter;
         }
     };
 
     set_perm(0, fs::perms::owner_read,   'r');
     set_perm(1, fs::perms::owner_write,  'w');
-    if ((p & fs::perms::owner_exec) != fs::perms::none) {
-        set_perm(2, fs::perms::set_uid,  's', 'x');
-    } else {
-        set_perm(2, fs::perms::set_uid,  'S');
-    }
-
+    set_perm(2, fs::perms::owner_exec,   'x');
     set_perm(3, fs::perms::group_read,   'r');
     set_perm(4, fs::perms::group_write,  'w');
-    if ((p & fs::perms::group_exec) != fs::perms::none) {
-        set_perm(5, fs::perms::set_gid,  's', 'x');
-    } else {
-        set_perm(5, fs::perms::set_gid,  'S');
-    }
-
+    set_perm(5, fs::perms::group_exec,   'x');
     set_perm(6, fs::perms::others_read,  'r');
     set_perm(7, fs::perms::others_write, 'w');
-    if ((p & fs::perms::others_exec)  != fs::perms::none) {
-        set_perm(8, fs::perms::sticky_bit, 't', 'x');
-    } else {
-        set_perm(8, fs::perms::sticky_bit, 'T');
-    }
+    set_perm(8, fs::perms::others_exec,  'x');
 
     return perm_str;
-}
-
-static std::optional<unsigned> StringToOctal(const std::string& str)
-{
-    unsigned ret = 0;
-    for (char c : str) {
-        if (c < '0' || c > '7') return std::nullopt;
-        ret = (ret << 3) | (c - '0');
-    }
-    return ret;
-}
-
-static auto ConvertPermsToOctal(const std::string& str) noexcept -> std::optional<unsigned>
-{
-    if ((str.length() == 3) || (str.length() == 4)) return StringToOctal(str);
-    return std::nullopt;
 }
 
 std::optional<fs::perms> InterpretPermString(const std::string& s)
@@ -416,8 +322,6 @@ std::optional<fs::perms> InterpretPermString(const std::string& s)
         return fs::perms::owner_read | fs::perms::owner_write |
                fs::perms::group_read |
                fs::perms::others_read;
-    } else if (auto octal_perms = ConvertPermsToOctal(s)) {
-        return static_cast<fs::perms>(*octal_perms);
     } else {
         return std::nullopt;
     }
@@ -434,6 +338,7 @@ FSType GetFilesystemType(const fs::path& path)
     return FSType::OTHER;
 }
 #endif
+
 bool IsDirWritable(const fs::path& dir_path)
 {
     // Attempt to create a tmp file in the directory

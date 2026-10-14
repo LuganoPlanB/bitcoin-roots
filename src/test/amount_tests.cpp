@@ -4,6 +4,7 @@
 
 #include <consensus/amount.h>
 #include <policy/feerate.h>
+#include <policy/policy.h>
 
 #include <limits>
 
@@ -116,6 +117,20 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     BOOST_CHECK(5 * feeRate == CFeeRate(0));
 }
 
+BOOST_AUTO_TEST_CASE(FeeRateSaturatedEvaluation)
+{
+    constexpr CAmount maximum{std::numeric_limits<CAmount>::max()};
+    constexpr CAmount minimum{std::numeric_limits<CAmount>::min()};
+    BOOST_CHECK_EQUAL(CFeeRate(maximum, 1).GetFee(2), maximum);
+    BOOST_CHECK_EQUAL(CFeeRate(minimum, 1).GetFee(2), minimum);
+    BOOST_CHECK_EQUAL(CFeeRate(maximum, 1).GetFee(1), maximum);
+    BOOST_CHECK_EQUAL(CFeeRate(minimum, 1).GetFee(1), minimum);
+    BOOST_CHECK_EQUAL(CFeeRate(maximum).GetFee(0), 0);
+    const CTxOut large_output{0, CScript{} << std::vector<unsigned char>(1000, 1) << OP_DROP << OP_TRUE};
+    BOOST_CHECK_EQUAL(GetDustThreshold(large_output, CFeeRate{maximum}), maximum);
+    BOOST_CHECK_EQUAL(CFeeRate(maximum).GetFee(999), maximum / 1000 * 999 + (maximum % 1000 * 999 + 999) / 1000);
+}
+
 BOOST_AUTO_TEST_CASE(BinaryOperatorTest)
 {
     CFeeRate a, b;
@@ -138,8 +153,23 @@ BOOST_AUTO_TEST_CASE(ToStringTest)
     CFeeRate feeRate;
     feeRate = CFeeRate(1);
     BOOST_CHECK_EQUAL(feeRate.ToString(), "0.00000001 BTC/kvB");
-    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::BTC_KVB), "0.00000001 BTC/kvB");
-    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::SAT_VB), "0.001 sat/vB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(FeeRateFormat::BTC_KVB), "0.00000001 BTC/kvB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(FeeRateFormat::SAT_VB), "0.001 sat/vB");
+}
+
+BOOST_AUTO_TEST_CASE(DynamicDustScaling)
+{
+    constexpr CAmount maximum{std::numeric_limits<CAmount>::max()};
+    BOOST_CHECK_EQUAL(CFeeRate(maximum, 1).GetFeePerK(), maximum);
+    BOOST_CHECK_EQUAL(CFeeRate(std::numeric_limits<CAmount>::min(), 1).GetFeePerK(), std::numeric_limits<CAmount>::min());
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{1234}, 1000).GetFeePerK(), 1234);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{1234}, 3000).GetFeePerK(), 3702);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{1234}, 1).GetFeePerK(), 1);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{maximum}, 1000).GetFeePerK(), maximum);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{maximum}, INT32_MAX).GetFeePerK(), maximum);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{-1}, INT32_MAX).GetFeePerK(), 0);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{0}, INT32_MAX).GetFeePerK(), 0);
+    BOOST_CHECK_EQUAL(ScaleDustFee(CFeeRate{maximum / 3000 * 1000}, 3000).GetFeePerK(), maximum / 3000 * 3000);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

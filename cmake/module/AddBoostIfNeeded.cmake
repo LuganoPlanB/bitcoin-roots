@@ -3,25 +3,6 @@
 # file COPYING or https://opensource.org/license/mit/.
 
 function(add_boost_if_needed)
-  if(BUILD_DAEMON)
-  elseif(BUILD_CLI)
-  # BUILD_BITCOINCONSENSUS_LIB does NOT require boost
-  elseif(BUILD_TX)
-  elseif(BUILD_UTIL)
-  elseif(BUILD_UTIL_CHAINSTATE)
-  elseif(BUILD_KERNEL_LIB)
-  elseif(BUILD_WALLET_TOOL)
-  elseif(BUILD_GUI)
-  elseif(BUILD_TESTS)
-  elseif(BUILD_GUI_TESTS)
-  elseif(BUILD_BENCH)
-  elseif(BUILD_FUZZ_BINARY)
-  else()
-    # No targets that require boost; but we still define them, so make a dummy "library"
-    add_library(Boost::headers INTERFACE IMPORTED)
-    return()
-  endif()
-
   #[=[
   TODO: Not all targets, which will be added in the future, require
         Boost. Therefore, a proper check will be appropriate here.
@@ -50,13 +31,47 @@ function(add_boost_if_needed)
 
   find_package(Boost 1.74.0 REQUIRED CONFIG)
   mark_as_advanced(Boost_INCLUDE_DIR boost_headers_DIR)
+  if(CMAKE_HOST_APPLE AND HOMEBREW_EXECUTABLE)
+    execute_process(
+      COMMAND ${HOMEBREW_EXECUTABLE} --prefix
+      OUTPUT_VARIABLE _homebrew_prefix
+      RESULT_VARIABLE _homebrew_status
+      ERROR_QUIET
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    # An earlier search path can select Homebrew's linked headers instead of
+    # the Cellar path exported by Boost's config. Classify that spelling as
+    # system too, but only when it resolves to the same Boost installation.
+    if(_homebrew_status EQUAL 0 AND IS_DIRECTORY "${_homebrew_prefix}/include/boost")
+      file(REAL_PATH "${_homebrew_prefix}/include/boost" _linked_boost_headers)
+      get_target_property(_boost_include_dirs Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
+      foreach(_boost_include_dir IN LISTS _boost_include_dirs)
+        if(IS_DIRECTORY "${_boost_include_dir}/boost")
+          file(REAL_PATH "${_boost_include_dir}/boost" _configured_boost_headers)
+          if(_linked_boost_headers STREQUAL _configured_boost_headers)
+            target_include_directories(Boost::headers SYSTEM INTERFACE "${_homebrew_prefix}/include")
+            # CMake filters implicit include directories from generated include
+            # flags. Retain the system classification even when this alias is
+            # an implicit compiler search path.
+            target_compile_options(Boost::headers INTERFACE
+              "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"
+            )
+            message(STATUS "Using matching Homebrew Boost header alias: ${_homebrew_prefix}/include")
+            break()
+          endif()
+        endif()
+      endforeach()
+    endif()
+  endif()
   # Workaround for a bug in NetBSD pkgsrc.
-  # See: https://github.com/NetBSD/pkgsrc/issues/167.
+  # See https://gnats.netbsd.org/59856.
   if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
     get_filename_component(_boost_include_dir "${boost_headers_DIR}/../../../include/" ABSOLUTE)
-    set_target_properties(Boost::headers PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES ${_boost_include_dir}
-    )
+    if(_boost_include_dir MATCHES "^/usr/pkg/")
+      set_target_properties(Boost::headers PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES ${_boost_include_dir}
+      )
+    endif()
     unset(_boost_include_dir)
   endif()
   set_target_properties(Boost::headers PROPERTIES IMPORTED_GLOBAL TRUE)

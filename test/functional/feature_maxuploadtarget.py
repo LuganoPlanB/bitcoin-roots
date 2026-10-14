@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test behavior of -maxuploadtarget.
@@ -50,9 +50,8 @@ class MaxUploadTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             f"-maxuploadtarget={UPLOAD_TARGET_MB}M",
-            "-blockmaxsize=1000000",  # Produce the large blocks assumed by the upload accounting below.
-            "-datacarriersize=100000",
-            "-maxscriptsize=100000",  # Permit the synthetic 67 kB data carriers used to build large blocks.
+            "-blockmaxsize=1000000",  # Source large-block upload accounting profile.
+            "-maxscriptsize=1000000", "-datacarriersize=1000000",  # Large-block padding.
         ]]
 
     def assert_uploadtarget_state(self, *, target_reached, serve_historical_blocks):

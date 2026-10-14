@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin Core developers
+// Copyright (c) 2022-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,6 +20,10 @@ struct MemPoolOptions;
 };
 
 [[nodiscard]] util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optstr, unsigned int max_fee_estimate_blocks);
+/** Parse vbytes per carrier byte, rounding exact hundredths upward to integral weight. */
+[[nodiscard]] util::Result<unsigned int> ParseDataCarrierCost(std::string_view value);
+/** Validate effective Roots policy values without changing inherited Core option parsing. */
+[[nodiscard]] util::Result<void> ValidateRootsPolicyOptions(const ArgsManager& argsman);
 void ApplyPermitEphemeralOption(const common::SettingsValue& value, kernel::MemPoolOptions& mempool_opts);
 
 /**

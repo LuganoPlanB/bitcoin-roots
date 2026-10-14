@@ -14,6 +14,47 @@ This is a wrapper around find_package()/pkg_check_modules() commands that:
 
 #]=======================================================================]
 
+function(add_homebrew_libevent_header_alias target)
+  if(NOT CMAKE_HOST_APPLE)
+    return()
+  endif()
+  find_program(HOMEBREW_EXECUTABLE brew)
+  if(NOT HOMEBREW_EXECUTABLE)
+    return()
+  endif()
+  execute_process(
+    COMMAND ${HOMEBREW_EXECUTABLE} --prefix
+    OUTPUT_VARIABLE _homebrew_prefix
+    RESULT_VARIABLE _homebrew_status
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT _homebrew_status EQUAL 0 OR NOT IS_DIRECTORY "${_homebrew_prefix}/include/event2")
+    return()
+  endif()
+  get_target_property(_libevent_target ${target} ALIASED_TARGET)
+  if(NOT _libevent_target)
+    set(_libevent_target ${target})
+  endif()
+  file(REAL_PATH "${_homebrew_prefix}/include/event2" _linked_libevent_headers)
+  get_target_property(_libevent_include_dirs ${_libevent_target} INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(_libevent_include_dir IN LISTS _libevent_include_dirs)
+    if(IS_DIRECTORY "${_libevent_include_dir}/event2")
+      file(REAL_PATH "${_libevent_include_dir}/event2" _configured_libevent_headers)
+      if(_linked_libevent_headers STREQUAL _configured_libevent_headers)
+        # The compiler can select the linked spelling before the Cellar path.
+        # Retain its system flag even when CMake filters implicit include paths.
+        target_include_directories(${_libevent_target} SYSTEM INTERFACE "${_homebrew_prefix}/include")
+        target_compile_options(${_libevent_target} INTERFACE
+          "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"
+        )
+        message(STATUS "Using matching Homebrew Libevent header alias for ${target}: ${_homebrew_prefix}/include")
+        break()
+      endif()
+    endif()
+  endforeach()
+endfunction()
+
 # Check whether evhttp_connection_get_peer expects const char**.
 # See https://github.com/libevent/libevent/commit/a18301a2bb160ff7c3ffaf5b7653c39ffe27b385
 function(check_evhttp_connection_get_peer target)
@@ -59,6 +100,9 @@ if(Libevent_FOUND)
     REQUIRED_VARS Libevent_DIR
     VERSION_VAR Libevent_VERSION
   )
+  foreach(component IN LISTS _libevent_components)
+    add_homebrew_libevent_header_alias(libevent::${component})
+  endforeach()
   check_evhttp_connection_get_peer(libevent::extra)
 else()
   find_package(PkgConfig REQUIRED)
@@ -71,6 +115,7 @@ else()
     if(TARGET PkgConfig::libevent_${component} AND NOT TARGET libevent::${component})
       add_library(libevent::${component} ALIAS PkgConfig::libevent_${component})
     endif()
+    add_homebrew_libevent_header_alias(libevent::${component})
   endforeach()
   find_package_handle_standard_args(Libevent
     REQUIRED_VARS libevent_core_LIBRARY_DIRS

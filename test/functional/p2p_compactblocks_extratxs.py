@@ -338,6 +338,18 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         assert_equal(result["missing_indices"], [0])
         self.log.info("✓ Negative value correctly treated as disabled")
 
+        # Negative memory disables caching; malformed values retain the source default.
+        self.restart_node_with_limit(memory_mb=-1)
+        rejected_txs = self.populate_extra_pool(1)
+        assert_equal(self.send_compact_block(rejected_txs, [0])["missing_indices"], [0])
+        self.restart_node_with_limit(memory_mb="malformed")
+        rejected_txs = self.populate_extra_pool(1)
+        assert_equal(self.send_compact_block(rejected_txs, [0])["missing_indices"], [])
+        # An extreme count with a tiny memory budget must not preallocate that count.
+        self.restart_node_with_limit(memory_mb=0.0001, count=4294967295)
+        rejected_txs = self.populate_extra_pool(1)
+        assert_equal(self.send_compact_block(rejected_txs, [0])["missing_indices"], [0])
+
      # TEST: blockreconstructionextratxnsize
 
     def test_extratxnsize_zero_limit(self):

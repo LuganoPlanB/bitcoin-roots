@@ -6,10 +6,9 @@
 #ifndef BITCOIN_UTIL_TIME_H
 #define BITCOIN_UTIL_TIME_H
 
-#include <atomic>
+#include <functional>
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -142,8 +141,13 @@ T GetTime()
  */
 std::string FormatISO8601DateTime(int64_t nTime);
 std::string FormatISO8601Date(int64_t nTime);
-std::string FormatISO8601Time(int64_t nTime);
 std::optional<int64_t> ParseISO8601DateTime(std::string_view str);
+
+/**
+ * RFC1123 formatting https://www.rfc-editor.org/rfc/rfc1123#section-5.2.14
+ * Used in HTTP/1.1 responses
+ */
+std::string FormatRFC1123DateTime(int64_t nTime);
 
 /**
  * Convert milliseconds to a struct timeval for e.g. select.
@@ -183,18 +187,13 @@ public:
 
     ~CpuTimer()
     {
-        m_finished_cb(ThreadCpuTime() - m_start);
+        const auto end{ThreadCpuTime()};
+        if (m_start > 0ns && end >= m_start) m_finished_cb(end - m_start);
     }
 
 private:
     const std::chrono::nanoseconds m_start;
     FinishedCB m_finished_cb;
 };
-
-/**
- * Add `b` nanoseconds to a nanoseconds atomic.
- * @return The value of `a` immediately after the operation.
- */
-std::chrono::nanoseconds operator+=(std::atomic<std::chrono::nanoseconds>& a, std::chrono::nanoseconds b);
 
 #endif // BITCOIN_UTIL_TIME_H

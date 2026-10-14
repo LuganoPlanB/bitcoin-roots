@@ -16,31 +16,6 @@ manifest before creating a new draft. Public publication needs separate approval
 Unsafe or unassembled packages fail before upload or final preparation. No
 prior binary is substituted for a fresh build.
 
-Full matching-Core block compatibility is a prerequisite of all platform builds
-for both manual rehearsal and tag pushes. `release-metadata-tests` first runs the
-existing release-source validator, then derives the official matching Core base
-and forwards full immutable candidate/base SHAs to the reusable comparison. The
-comparison builds fresh pinned-source node binaries and requires all six full
-cases, including reconnect/restart; missing/skipped/failed comparison prevents
-platform builds and therefore draft creation. No prior result from a different
-source, configuration or profile substitutes for it.
-
-The report, bounded sanitized diagnostics, source envelope and run status are
-downloadable CI artifacts named
-`block-compatibility-full-<candidate-sha>-<core-sha>`. They are not additional
-release assets; the signed create-only eight-asset inventory stays unchanged.
-Inspect the exact source/run identity, `qualified=true`, complete passing cases,
-in-run binary/build provenance and configuration alongside source validation,
-patch replay and five-platform/signature checks. Failed evidence requires repair
-and a complete rerun. The corpus proves named fixture/configuration outcomes only;
-it does not prove exhaustive consensus equivalence or tag-signer authentication.
-The existing release-source validator still accepts Core RC tag forms. This
-comparison currently qualifies final Core 30.3 only, so RC and new-generation
-rehearsal/release attempts fail explicitly until reviewed matching-base fixtures
-are added. An RC cannot reuse comparison against the final Core tag.
-See the [maintainer handoff](../../contrib/roots/README.md#release-handoff) for
-artifact inspection commands and the separate publication authority boundary.
-
 ## Optional dependency notice tooling
 
 The following interface remains available for future coverage work. It is not
@@ -75,7 +50,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    python3 ci/release/repack.py intermediate.tar.gz assembled.tar.gz \
-     bitcoin-roots-30.3-roots.1 notice-inputs/index.json linux-x86_64
+     bitcoin-roots-31.1-roots.1 notice-inputs/index.json linux-x86_64
    ```
 
    The repacker adds canonical `COPYING` and `notices/` at the archive root,
@@ -90,7 +65,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    ci/release/prepare-release.sh assembled-downloads release-assets \
-     contrib/release/bitcoin-roots-release-key.asc v30.3-roots.1 5
+     contrib/release/bitcoin-roots-release-key.asc v31.1-roots.1 5
    ```
 
    This final gate derives each expected platform from its exact asset filename,

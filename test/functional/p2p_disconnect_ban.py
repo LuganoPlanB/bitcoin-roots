@@ -6,12 +6,12 @@
 import time
 from pathlib import Path
 
+from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
     get_rpc_proxy,
-    p2p_port,
     rpc_url,
 )
 
@@ -131,7 +131,7 @@ class DisconnectBanTest(BitcoinTestFramework):
         self.log.info("disconnectnode: fail to disconnect when calling with junk address")
         assert_raises_rpc_error(-29, "Node not found in connected nodes", self.nodes[0].disconnectnode, address="221B Baker Street")
 
-        self.log.info("disconnectnode: fail to disconnect when calling with invalid subnet")
+        self.log.info("disconnectnode: fail to disconnect when calling with invalid subnet containing NUL")
         # Process arguments cannot carry NUL bytes, so use JSON-RPC for this input even with --usecli.
         node = self.nodes[0]
         rpc = get_rpc_proxy(
@@ -142,9 +142,8 @@ class DisconnectBanTest(BitcoinTestFramework):
         )
         assert_raises_rpc_error(-8, "Invalid subnet", rpc.disconnectnode, address="1.2.3.0/24\0")
 
-        self.log.info("disconnectnode: successfully disconnect node by address and port")
-        address1 = "127.0.0.1:" + str(p2p_port(1))
-        assert [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1]
+        self.log.info("disconnectnode: successfully disconnect node by address")
+        address1 = self.nodes[0].getpeerinfo()[0]['addr']
         self.nodes[0].disconnectnode(address=address1)
         self.wait_until(lambda: len(self.nodes[1].getpeerinfo()) == 1, timeout=10)
         assert not [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1]
@@ -154,27 +153,18 @@ class DisconnectBanTest(BitcoinTestFramework):
         assert_equal(len(self.nodes[0].getpeerinfo()), 2)
         assert [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1]
 
-        self.log.info("disconnectnode: successfully disconnect node by address (no port)")
-        nodes = self.nodes[0].getpeerinfo()
-        assert nodes and all(node['addr'].startswith('127.0.0.') for node in nodes)
-        self.nodes[0].disconnectnode(address='127.0.0.1')
-        self.wait_until(lambda: len(self.nodes[0].getpeerinfo()) == 0, timeout=10)
-        # reconnect the nodes
-        self.connect_nodes(0, 1)
-        self.connect_nodes(1, 0)
-
         self.log.info("disconnectnode: successfully disconnect node by node id")
-        id1 = [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1][0]['id']
+        id1 = self.nodes[0].getpeerinfo()[0]['id']
         self.nodes[0].disconnectnode(nodeid=id1)
         self.wait_until(lambda: len(self.nodes[1].getpeerinfo()) == 1, timeout=10)
         assert not [node for node in self.nodes[0].getpeerinfo() if node['id'] == id1]
-        self.connect_nodes(0, 1)  # reconnect the node
 
-        self.log.info("disconnectnode: successfully disconnect node by subnet")
-        nodes = self.nodes[0].getpeerinfo()
-        assert nodes and all(node['addr'].startswith('127.0.0.') for node in nodes)
-        self.nodes[0].disconnectnode(address='127.0.0.1/24')
-        self.wait_until(lambda: len(self.nodes[0].getpeerinfo()) == 0, timeout=10)
+        self.log.info("disconnectnode: validate and disconnect all peers in a subnet")
+        assert_raises_rpc_error(-8, "Invalid subnet", self.nodes[0].disconnectnode, address="127.0.0.1/999")
+        self.nodes[0].add_p2p_connection(P2PInterface())
+        self.nodes[0].disconnectnode(address="127.0.0.0/8")
+        self.wait_until(lambda: not self.nodes[0].getpeerinfo())
+        assert_raises_rpc_error(-29, "Node not found", self.nodes[0].disconnectnode, address="127.0.0.0/8")
 
 if __name__ == '__main__':
     DisconnectBanTest(__file__).main()

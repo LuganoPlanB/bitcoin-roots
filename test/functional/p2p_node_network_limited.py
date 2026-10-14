@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2021 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Tests NODE_NETWORK_LIMITED.
@@ -11,6 +11,7 @@ and that it responds to getdata requests for blocks correctly:
 from test_framework.messages import (
     CInv,
     MSG_BLOCK,
+    NODE_BLOOM,
     NODE_NETWORK_LIMITED,
     NODE_P2P_V2,
     NODE_WITNESS,
@@ -46,11 +47,7 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 3
-        self.extra_args = [
-            ['-prune=550', '-peerbloomfilters=0'],
-            [],
-            [],
-        ]
+        self.extra_args = [['-prune=550'], [], []]
 
     def disconnect_all(self):
         self.disconnect_nodes(0, 1)
@@ -127,7 +124,7 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
             expected_services |= NODE_P2P_V2
 
         self.log.info("Check that node has signalled expected services.")
-        assert_equal(node.nServices, expected_services)
+        assert_equal(node.nServices, expected_services | NODE_BLOOM)  # Implicit loopback bloom is per-peer only.
 
         self.log.info("Check that the localservices is as expected.")
         assert_equal(int(self.nodes[0].getnetworkinfo()['localservices'], 16), expected_services)

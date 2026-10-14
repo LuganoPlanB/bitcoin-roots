@@ -19,8 +19,6 @@
 #include <util/string.h>
 
 #ifdef WIN32
-#include <codecvt>
-#include <shellapi.h>
 #include <shlobj.h>
 #endif
 
@@ -34,7 +32,6 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 
@@ -116,6 +113,10 @@ std::optional<common::SettingsValue> InterpretValue(const KeyInfo& key, const st
             error = strprintf("Negating of -%s is meaningless and therefore forbidden", key.name);
             return std::nullopt;
         }
+        if ((flags & ArgsManager::STRICT_NEGATION) && value && !value->empty() && *value != "0" && *value != "1") {
+            error = strprintf("Invalid -no%s value: '%s' (expected empty, 0, or 1)", key.name, *value);
+            return std::nullopt;
+        }
         // Double negatives like -nofoo=0 are supported (but discouraged)
         if (value && !InterpretBool(*value)) {
             LogWarning("Parsed potentially confusing double-negative -%s=%s", key.name, *value);
@@ -169,7 +170,7 @@ std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
 
     LOCK(cs_args);
     std::list<SectionInfo> unrecognized = m_config_sections;
-    unrecognized.remove_if([](const SectionInfo& appeared){ return available_sections.find(appeared.m_name) != available_sections.end(); });
+    unrecognized.remove_if([](const SectionInfo& appeared){ return available_sections.contains(appeared.m_name); });
     return unrecognized;
 }
 
@@ -488,48 +489,33 @@ std::string SettingToString(const common::SettingsValue& value, const std::strin
     return SettingToString(value).value_or(strDefault);
 }
 
-int64_t ArgsManager::GetIntArg(const std::string& strArg, int64_t nDefault) const
+template <std::integral Int>
+Int ArgsManager::GetArg(const std::string& strArg, Int nDefault) const
 {
-    return GetIntArg(strArg).value_or(nDefault);
+    return GetArg<Int>(strArg).value_or(nDefault);
 }
 
-std::optional<int64_t> ArgsManager::GetIntArg(const std::string& strArg) const
+template <std::integral Int>
+std::optional<Int> ArgsManager::GetArg(const std::string& strArg) const
 {
     const common::SettingsValue value = GetSetting(strArg);
-    return SettingToInt(value);
+    return SettingTo<Int>(value);
 }
 
-std::optional<int64_t> SettingToInt(const common::SettingsValue& value)
+template <std::integral Int>
+std::optional<Int> SettingTo(const common::SettingsValue& value)
 {
     if (value.isNull()) return std::nullopt;
     if (value.isFalse()) return 0;
     if (value.isTrue()) return 1;
-    if (value.isNum()) return value.getInt<int64_t>();
-    return LocaleIndependentAtoi<int64_t>(value.get_str());
+    if (value.isNum()) return value.getInt<Int>();
+    return LocaleIndependentAtoi<Int>(value.get_str());
 }
 
-int64_t SettingToInt(const common::SettingsValue& value, int64_t nDefault)
+template <std::integral Int>
+Int SettingTo(const common::SettingsValue& value, Int nDefault)
 {
-    return SettingToInt(value).value_or(nDefault);
-}
-
-std::optional<int64_t> ArgsManager::GetFixedPointArg(const std::string& arg, int decimals) const
-{
-    const common::SettingsValue value = GetSetting(arg);
-    return SettingToFixedPoint(value, decimals);
-}
-
-std::optional<int64_t> SettingToFixedPoint(const common::SettingsValue& value, int decimals)
-{
-    if (value.isNull()) return std::nullopt;
-    if (value.isFalse()) return 0;
-    if (value.isTrue()) return 1;
-    if (!value.isNum()) value.get_str();  // throws an exception if type is wrong
-    int64_t v;
-    if (!ParseFixedPoint(value.getValStr(), decimals, &v)) {
-        throw std::runtime_error(strprintf("Parse error ('%s')", value.getValStr()));
-    }
-    return v;
+    return SettingTo<Int>(value).value_or(nDefault);
 }
 
 bool ArgsManager::GetBoolArg(const std::string& strArg, bool fDefault) const
@@ -545,27 +531,33 @@ std::optional<bool> ArgsManager::GetBoolArg(const std::string& strArg) const
 
 std::optional<bool> SettingToBool(const common::SettingsValue& value)
 {
-    switch (value.getType()) {
-        case UniValue::VNULL:
-            return std::nullopt;
-        case UniValue::VBOOL:
-            return value.get_bool();
-        case UniValue::VOBJ:
-        case UniValue::VARR:
-            // Throws an exception
-            value.get_str();
-            assert(false);
-        case UniValue::VSTR:
-        case UniValue::VNUM:
-            return InterpretBool(value.getValStr());
-    }
-    assert(false);
+    if (value.isNull()) return std::nullopt;
+    if (value.isBool()) return value.get_bool();
+    if (value.isNum()) return InterpretBool(value.getValStr());
+    return InterpretBool(value.get_str());
 }
 
 bool SettingToBool(const common::SettingsValue& value, bool fDefault)
 {
     return SettingToBool(value).value_or(fDefault);
 }
+
+#define INSTANTIATE_INT_TYPE(Type)                                                    \
+    template Type ArgsManager::GetArg<Type>(const std::string&, Type) const;          \
+    template std::optional<Type> ArgsManager::GetArg<Type>(const std::string&) const; \
+    template Type SettingTo<Type>(const common::SettingsValue&, Type);                \
+    template std::optional<Type> SettingTo<Type>(const common::SettingsValue&)
+
+INSTANTIATE_INT_TYPE(int8_t);
+INSTANTIATE_INT_TYPE(uint8_t);
+INSTANTIATE_INT_TYPE(int16_t);
+INSTANTIATE_INT_TYPE(uint16_t);
+INSTANTIATE_INT_TYPE(int32_t);
+INSTANTIATE_INT_TYPE(uint32_t);
+INSTANTIATE_INT_TYPE(int64_t);
+INSTANTIATE_INT_TYPE(uint64_t);
+
+#undef INSTANTIATE_INT_TYPE
 
 bool ArgsManager::SoftSetArg(const std::string& strArg, const std::string& strValue)
 {
@@ -585,18 +577,8 @@ bool ArgsManager::SoftSetBoolArg(const std::string& strArg, bool fValue)
 
 void ArgsManager::ForceSetArg(const std::string& strArg, const std::string& strValue)
 {
-    ForceSetArgV(strArg, common::SettingsValue{strValue});
-}
-
-void ArgsManager::ForceSetArg(const std::string& arg, const int64_t value)
-{
-    ForceSetArg(arg, util::ToString(value));
-}
-
-void ArgsManager::ForceSetArgV(const std::string& arg, const common::SettingsValue& value)
-{
     LOCK(cs_args);
-    m_settings.forced_settings[SettingName(arg)] = value;
+    m_settings.forced_settings[SettingName(strArg)] = strValue;
 }
 
 void ArgsManager::AddCommand(const std::string& cmd, const std::string& help)
@@ -632,10 +614,10 @@ void ArgsManager::AddArg(const std::string& name, const std::string& help, unsig
     }
 }
 
-void ArgsManager::AddHiddenArgs(const std::vector<std::string>& names, unsigned int flags)
+void ArgsManager::AddHiddenArgs(const std::vector<std::string>& names)
 {
     for (const std::string& name : names) {
-        AddArg(name, "", flags, OptionsCategory::HIDDEN);
+        AddArg(name, "", ArgsManager::ALLOW_ANY, OptionsCategory::HIDDEN);
     }
 }
 
@@ -749,8 +731,8 @@ bool HelpRequested(const ArgsManager& args)
 
 void SetupHelpOptions(ArgsManager& args)
 {
-    args.AddArg("-help", "Print this help message and exit (also -h or -?)", ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
-    args.AddHiddenArgs({"-h", "-?"}, ArgsManager::DISALLOW_NEGATION);
+    args.AddArg("-help", "Print this help message and exit (also -h or -?)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    args.AddHiddenArgs({"-h", "-?"});
 }
 
 static const int screenWidth = 79;
@@ -887,7 +869,7 @@ std::variant<ChainType, std::string> ArgsManager::GetChainArg() const
 
 bool ArgsManager::UseDefaultSection(const std::string& arg) const
 {
-    return m_network == ChainTypeToString(ChainType::MAIN) || m_network_only_args.count(arg) == 0;
+    return m_network == ChainTypeToString(ChainType::MAIN) || !m_network_only_args.contains(arg);
 }
 
 common::SettingsValue ArgsManager::GetSetting(const std::string& arg) const
@@ -915,7 +897,7 @@ void ArgsManager::logArgsPrefix(
             std::optional<unsigned int> flags = GetArgFlags('-' + arg.first);
             if (flags) {
                 std::string value_str = (*flags & SENSITIVE) ? "****" : value.write();
-                LogPrintf("%s %s%s=%s\n", prefix, section_str, arg.first, value_str);
+                LogInfo("%s %s%s=%s\n", prefix, section_str, arg.first, value_str);
             }
         }
     }
@@ -928,7 +910,7 @@ void ArgsManager::LogArgs() const
         logArgsPrefix("Config file arg:", section.first, section.second);
     }
     for (const auto& setting : m_settings.rw_settings) {
-        LogPrintf("Setting file arg: %s = %s\n", setting.first, setting.second.write());
+        LogInfo("Setting file arg: %s = %s\n", setting.first, setting.second.write());
     }
     logArgsPrefix("R/W config file arg:", "", m_settings.rw_config);
     logArgsPrefix("Command-line arg:", "", m_settings.command_line_options);
@@ -936,21 +918,24 @@ void ArgsManager::LogArgs() const
 
 namespace {
 
-    // Like std::getline, but includes the EOL character in the result
+    // Like std::getline, but includes the EOL character in the result.
+    // A failed read must never turn an incomplete config into a replacement file.
     bool getline_with_eol(std::istream& stream, std::string& result)
     {
-        int current_char;
-        current_char = stream.get();
-        if (current_char == std::char_traits<char>::eof()) {
-            return false;
-        }
+        const auto read_char = [&stream] {
+            const auto current_char{stream.get()};
+            if (stream.bad() || (stream.fail() && !stream.eof())) {
+                throw std::ios_base::failure("Failed to read R/W config stream");
+            }
+            return current_char;
+        };
+        auto current_char{read_char()};
+        if (current_char == std::char_traits<char>::eof()) return false;
         result.clear();
         result.push_back(char(current_char));
         while (current_char != '\n') {
-            current_char = stream.get();
-            if (current_char == std::char_traits<char>::eof()) {
-                break;
-            }
+            current_char = read_char();
+            if (current_char == std::char_traits<char>::eof()) break;
             result.push_back(char(current_char));
         }
         return true;
@@ -1039,6 +1024,9 @@ void ModifyRWConfigStream(std::istream& stream_in, std::ostream& stream_out, con
         n = s.find('=');
         if (n == std::string::npos) {
             // Bad line; this causes boost to throw an exception when parsing, so we comment out the entire file
+            // A valid final line without a newline leaves eof/fail set. The
+            // reader already rejected I/O failures, so clear only that EOF state.
+            if (stream_in.eof() && !stream_in.bad()) stream_in.clear();
             stream_in.seekg(0, std::ios_base::beg);
             stream_out.seekp(0, std::ios_base::beg);
             if (!(stream_in.good() && stream_out.good())) {
@@ -1104,14 +1092,18 @@ void ArgsManager::ModifyRWConfigFile(const std::map<std::string, std::string>& s
     rwconf_new_path += ".new";
     try {
         fs::remove(rwconf_new_path);
-        std::ofstream streamRWConfigOut(rwconf_new_path, std::ios_base::out | std::ios_base::trunc);
+        std::ofstream streamRWConfigOut;
+        streamRWConfigOut.exceptions(std::ios::failbit | std::ios::badbit);
+        streamRWConfigOut.open(rwconf_new_path.std_path(), std::ios_base::out | std::ios_base::trunc);
         if (fs::exists(rwconf_path)) {
-            std::ifstream streamRWConfig(rwconf_path);
+            std::ifstream streamRWConfig(rwconf_path.std_path());
+            if (!streamRWConfig.is_open()) throw std::ios_base::failure("Failed to read R/W config file");
             ::ModifyRWConfigStream(streamRWConfig, streamRWConfigOut, settings_to_change);
         } else {
             std::istringstream streamIn;
             ::ModifyRWConfigStream(streamIn, streamRWConfigOut, settings_to_change);
         }
+        streamRWConfigOut.close();
     } catch (...) {
         fs::remove(rwconf_new_path);
         throw;
@@ -1152,35 +1144,8 @@ void ArgsManager::EraseRWConfigFile()
     fs::path rwconf_reset_path = rwconf_path;
     rwconf_reset_path += ".reset";
     if (!RenameOver(rwconf_path, rwconf_reset_path)) {
-        if (fs::remove(rwconf_path)) {
+        if (!fs::remove(rwconf_path)) {
             throw std::ios_base::failure(strprintf("Failed to remove %s", fs::PathToString(rwconf_path)));
         }
     }
 }
-
-namespace common {
-#ifdef WIN32
-WinCmdLineArgs::WinCmdLineArgs()
-{
-    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> utf8_cvt;
-    argv = new char*[argc];
-    args.resize(argc);
-    for (int i = 0; i < argc; i++) {
-        args[i] = utf8_cvt.to_bytes(wargv[i]);
-        argv[i] = &*args[i].begin();
-    }
-    LocalFree(wargv);
-}
-
-WinCmdLineArgs::~WinCmdLineArgs()
-{
-    delete[] argv;
-}
-
-std::pair<int, char**> WinCmdLineArgs::get()
-{
-    return std::make_pair(argc, argv);
-}
-#endif
-} // namespace common

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2022 The Bitcoin Core developers
+# Copyright (c) 2014-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the rawtransaction RPCs.
@@ -69,9 +69,9 @@ class RawTransactionsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.extra_args = [
-            ["-txindex", "-permitbaredatacarrier=1"],
-            ["-permitbaredatacarrier=1"],
-            ["-fastprune", "-prune=1", "-permitbaredatacarrier=1"],
+            ["-txindex"],
+            [],
+            ["-fastprune", "-prune=1", "-permitbaredatacarrier=1"],  # Burn-only RPC fixtures.
         ]
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True

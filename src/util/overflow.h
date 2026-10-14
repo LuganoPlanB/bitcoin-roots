@@ -1,11 +1,9 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_UTIL_OVERFLOW_H
 #define BITCOIN_UTIL_OVERFLOW_H
-
-#include <util/check.h>
 
 #include <climits>
 #include <concepts>
@@ -33,6 +31,14 @@ template <class T>
     return i + j;
 }
 
+template <std::unsigned_integral T, std::unsigned_integral U>
+[[nodiscard]] constexpr bool TrySub(T& i, const U j) noexcept
+{
+    if (i < T{j}) return false;
+    i -= T{j};
+    return true;
+}
+
 template <class T>
 [[nodiscard]] T SaturatingAdd(const T i, const T j) noexcept
 {
@@ -49,21 +55,6 @@ template <class T>
         }
     }
     return i + j;
-}
-
-/**
- * @brief Integer ceiling division (for non-negative values).
- *
- * Computes the smallest integer q such that q * divisor >= dividend.
- * Both dividend and divisor must be non-negative, and divisor must be non-zero.
- *
- * The implementation avoids overflow that can occur with `(dividend + divisor - 1) / divisor`.
- */
-template <std::integral Dividend, std::integral Divisor>
-[[nodiscard]] constexpr auto CeilDiv(const Dividend dividend, const Divisor divisor)
-{
-    Assert(dividend >= 0 && divisor > 0);
-    return dividend / divisor + (dividend % divisor != 0);
 }
 
 /**

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023 The Bitcoin Core developers
+# Copyright (c) 2023-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test sigop limit mempool policy (`-bytespersigop` parameter)"""
@@ -52,8 +52,8 @@ MAX_PUBKEYS_PER_MULTISIG = 20
 class BytesPerSigOpTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        # allow large datacarrier output to pad transactions
-        self.extra_args = [['-datacarriersize=100000', '-datacarriercost=0.25', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1']]
+        # Isolate native sigop-adjusted vsize from Roots' carrier-data weight.
+        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1', '-datacarriercost=0']]
 
     def create_p2wsh_spending_tx(self, witness_script, output_script):
         """Create a 1-input-1-output P2WSH spending transaction with only the
@@ -171,14 +171,14 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         assert_equal(parent_individual_testres["vsize"], max_multisig_vsize)
 
         # But together, it's exceeding limits in the *package* context. If sigops adjusted vsize wasn't being checked
-        # here, it would get further in validation and give too-long-mempool-chain error instead.
+        # here, it would get further in validation and give too-large-cluster error instead.
         packet_test = self.nodes[0].testmempoolaccept([tx_parent.serialize().hex(), tx_child.serialize().hex()])
-        expected_package_error = f"package-mempool-limits, package size {2*max_multisig_vsize} exceeds ancestor size limit [limit: 101000]"
+        expected_package_error = "too-large-cluster"
         assert_equal([x["package-error"] for x in packet_test], [expected_package_error] * 2)
 
-        # When we actually try to submit, the parent makes it into the mempool, but the child would exceed ancestor vsize limits
+        # When we actually try to submit, the parent makes it into the mempool, but the child would exceed cluster vsize limits
         res = self.nodes[0].submitpackage([tx_parent.serialize().hex(), tx_child.serialize().hex()])
-        assert "too-long-mempool-chain" in res["tx-results"][tx_child.wtxid_hex]["error"]
+        assert "too-large-cluster" in res["tx-results"][tx_child.wtxid_hex]["error"]
         assert tx_parent.txid_hex in self.nodes[0].getrawmempool()
 
         # Transactions are tiny in weight
@@ -187,8 +187,8 @@ class BytesPerSigOpTest(BitcoinTestFramework):
     def test_legacy_sigops_stdness(self):
         self.log.info("Test a transaction with too many legacy sigops in its inputs is non-standard.")
 
-        # Restart with the legacy sigop limit under test.
-        self.restart_node(0, extra_args=self.extra_args[0] + [f"-maxtxlegacysigops={MAX_STD_LEGACY_SIGOPS}"])
+        # Restart with the default settings
+        self.restart_node(0)
 
         # Create a P2SH script with 15 sigops.
         _, dummy_pubkey = generate_keypair()
@@ -238,6 +238,14 @@ class BytesPerSigOpTest(BitcoinTestFramework):
 
         self.test_sigops_package()
         self.test_legacy_sigops_stdness()
+        self.log.info("Extreme policy vsize rejects safely while a valid block remains acceptable")
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-bytespersigop=2147483647"])
+        script = CScript([OP_FALSE, OP_IF] + [OP_CHECKSIG] * 5 + [OP_ENDIF, OP_TRUE])
+        tx = self.create_p2wsh_spending_tx(script, self.wallet.get_output_script())
+        self.generate(self.wallet, 1)
+        result = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        assert_equal(result["reject-reason"], "too-large-cluster")
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [tx.serialize().hex()])
 
 
 if __name__ == '__main__':

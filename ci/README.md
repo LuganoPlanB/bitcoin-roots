@@ -66,36 +66,99 @@ so `ci/release/create-patch-series.sh` excludes `.github/**` from the
 downloadable patch applied on top of Bitcoin Core. Source tests and CI support
 under `test/**`, `src/**/test/**`, and `ci/**` remain in that patch.
 
-### Pull-request selection
+### Fast PR and development coverage
 
-`ci/change-classifier.py` reads the complete PR file list using
-`ci/change-classifier-policy.json`. Mixed changes receive the union of their
-coverage. Incomplete, truncated, empty, ambiguous, and unknown inputs fail open
-to broad coverage.
+`ci/change-classifier.py` retains additive categories and labels. Complete file
+lists select affected groups; malformed, truncated, empty and unknown input
+selects broad **fast** coverage. Lint/classifier checks always run. The stable
+`required result` check rejects failure, cancellation or skipping of a selected
+job. Verified pure promotions may reuse exact successful canonical CI; explicit
+`ci:*` labels still request fresh coverage.
 
-| Change | Automatic coverage in addition to lint |
+| Change | Automatic fast coverage beyond lint |
 | --- | --- |
-| Documentation only | No build job. |
-| Branding or GUI | GUI/resource build and Qt tests. |
-| Wallet | Compatibility, sanitizers, and platform smoke tests. |
-| General C/C++ | Sanitizers, ARM32, native kernel/chainstate, Windows, and both native macOS architectures. |
-| Critical, build, CI, or unknown | Broad coverage, including GUI and previous-release compatibility. |
+| Documentation only | No compiled job. |
+| Branding or GUI | Actual Qt/resource build and GUI unit tests. |
+| Wallet, general C/C++, critical/build/unknown | Headless ASan/UBSan unit tests, affected Roots functional regressions, bounded libFuzzer smoke. |
 
-The stable `required result` job is the branch-protection check to require. It
-fails if classification, lint, or any selected job fails.
+Fast functional selection and fuzz budgets are implemented by
+`ci/test/roots-regressions.py`, invoked through the existing
+`ci/test_run_all.sh` / `ci/test/03_test_script.sh` entry points. Known wallet,
+network, runtime, policy and mining paths select their acceptance groups;
+mixed paths take the union. Unknown input selects all 16 Roots functional
+regressions and 9 fuzz targets. Fast functional execution has a 900-second
+process-group timeout. Each selected libFuzzer target has a 5-second campaign,
+5-second per-input limit and 15-second outer timeout; input counts are reported
+results, never a campaign quota. Fixed seed 1 makes smoke commands reproducible.
+Fast fuzz does not download or replay the full external corpus.
 
-Maintainers can add coverage with `ci:sanitizers`, `ci:fuzz`,
-`ci:compat`, `ci:platforms`, or `ci:full` PR labels. Labels add tests;
-they never suppress automatic coverage.
+Developer commands using an already configured/built profile:
 
-### Nightly assurance and caches
+```sh
+python3 ci/test/roots-regressions.py plan --cadence fast \
+  --files-json '["src/wallet/spend.cpp"]'
+python3 ci/test/roots-regressions.py functional --cadence fast \
+  --files-json '["src/wallet/spend.cpp"]' --build-dir build \
+  --artifacts /tmp/roots-fast-functional -- -j2 --quiet
+python3 ci/test/roots-regressions.py fuzz --cadence fast \
+  --files-json '["src/policy/policy.cpp"]' --build-dir build_fuzz \
+  --artifacts /tmp/roots-fast-fuzz
+python3 -m unittest discover -s ci/test
+```
 
-Nightly assurance retains TSan, MSan, clang-tidy/dependency checks, i686 Debug,
-extended functional tests, previous-release compatibility, and native Linux,
-macOS, and Windows fuzz corpora. A scheduled run skips expensive jobs only
-after the same commit has already completed successfully; failures retry and
-unavailable history fails open.
+Fuzz execution requires the native libFuzzer build (`--preset libfuzzer` or
+`00_setup_env_native_fuzz.sh`), not a plain standalone corpus-replay binary.
+Selection/result JSON and per-command logs are temporary failure artifacts,
+not a second source of configuration or a release-state ledger. Timed-out owned
+process groups are terminated; unowned node processes are untouched.
 
-GitHub-hosted compiler and dependency caches are read by PRs and updated only
-from the repository's default branch. Cache misses make jobs slower but do not
-change which tests run.
+Hosted runners set `ROOTS_ARTIFACTS_DIR` to an absolute host directory and
+bind-mount it at the same path inside the test container. The regression
+runner writes per-target logs, result JSON and crash artifacts there; workflow
+uploads use that exact directory. Local runs without the setting retain the
+scratch-directory fallback. Failed commands also print the exit status, full
+log path and at most 12 tail lines of 240 characters from the last 4 KiB.
+The artifact keeps complete output; the bounded console tail may omit earlier
+diagnostics. Ordinary mock-runner tests cover transport and retention without
+executing a fuzz campaign.
+
+### Nightly/manual assurance and caches
+
+`nightly.yml` keeps cron `23 2 * * *` (UTC), `workflow_dispatch` and explicit
+label-triggered reusable calls. Ordinary PRs do not run the broad platform
+matrix. Nightly/manual coverage includes full ASan/USDT/Qt, TSan, MSan,
+clang-tidy/dependency boundaries, i686 no-IPC, ARM32, native kernel/chainstate,
+previous-release extended compatibility, extended functional tests, Windows and
+both macOS architecture smokes, and native Linux/macOS/Windows full fuzz corpora.
+Selected empty matrices are skipped before strategy expansion. The schedule
+skips only after the same SHA's preceding completed scheduled run succeeded;
+failed or unavailable/malformed history retries conservatively.
+
+| Execution | Explicit budget |
+| --- | --- |
+| PR classifier/result and lint | 10 / 20 minutes. |
+| PR native ASan and fuzz builds plus bounded regressions | 60 minutes each. |
+| PR GUI build/unit checks | 120 minutes. |
+| Nightly ASan | 180 minutes; full applicable native suite. |
+| Nightly TSan/MSan/i686/Linux full corpus | 240 minutes each. |
+| Previous-release extended compatibility | 300 minutes. |
+| Extended functional/tidy/native platform fuzz | 360 minutes. |
+| Nightly selected Roots fuzz campaigns | 60 seconds/target, 75-second outer timeout, after full Linux corpus replay. |
+
+Direct `--cadence nightly` functional execution has a 7200-second outer budget;
+full/extended hosted suites use their existing native runners and job budgets.
+Labels `ci:sanitizers`, `ci:fuzz`, `ci:platforms` and `ci:full` explicitly request
+reusable heavy coverage; `ci:compat` requests fresh fast compatibility
+regressions. Manual suite selection can request previous-release/extended
+coverage independently. Failure artifacts retain native test logs, CTest
+output and fuzz crashes/results. Job timeouts are bounds, not measured cold
+build predictions. Local selector/fixture validation does not establish a
+hosted job pass or Windows/macOS/32-bit execution.
+
+Compiler/dependency caches remain read-only to PR code; trusted default-branch
+nightly/manual compiler cache saves retain the source behavior. Native v31
+cache-action paths, compiler profiles, no-IPC i686 profile and VS2026 static
+preset replace obsolete v30 names. Windows GUI workflows request the optional
+vcpkg `miniupnpc` feature when enabling `WITH_MINIUPNPC`; fuzz builds explicitly
+disable ZMQ to match their wallet-only dependency manifest. Release signing
+secrets never enter these test containers.

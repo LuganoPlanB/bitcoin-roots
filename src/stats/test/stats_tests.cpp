@@ -13,6 +13,7 @@ BOOST_FIXTURE_TEST_SUITE(stats_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(stats)
 {
+    BOOST_CHECK(!CStats::m_stats_enabled);
     CStats::DefaultStats()->setMaxMemoryUsageTarget(CStats::DEFAULT_MAX_STATS_MEMORY);
 
     uint64_t start = GetTime();
@@ -32,6 +33,9 @@ BOOST_AUTO_TEST_CASE(stats)
     BOOST_CHECK_EQUAL(samples[1].m_time_delta, 5U);
     BOOST_CHECK_EQUAL(samples[1].m_tx_count, 3);
     BOOST_CHECK_EQUAL(samples[1].m_dyn_mem_usage, 4);
+    BOOST_CHECK_EQUAL(samples[1].m_min_fee_per_k, 3);
+    BOOST_CHECK_EQUAL(queryFromTime, start);
+    BOOST_CHECK_EQUAL(queryToTime, start + 5);
 
     // check retrieving a subset of the available samples
     queryFromTime = start;
@@ -71,6 +75,9 @@ BOOST_AUTO_TEST_CASE(stats)
     queryToTime = 0;   // no range  limits
     samples = CStats::DefaultStats()->mempoolGetValuesInRange(queryFromTime, queryToTime);
     BOOST_CHECK_EQUAL(samples.size() < 1000U, true);
+    CStats::DefaultStats()->setMaxMemoryUsageTarget(0);
+    BOOST_CHECK(!CStats::m_stats_enabled);
+    BOOST_CHECK(CStats::DefaultStats()->mempoolGetValuesInRange(queryFromTime, queryToTime).empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

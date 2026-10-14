@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -485,7 +485,10 @@ RPCConsole::RPCConsole(interfaces::Node& node, const PlatformStyle *_platformSty
         tr("Outbound Feeler: short-lived, for testing addresses"),
         /*: Explanatory text for a short-lived outbound peer connection that is used
             to request addresses from a peer. */
-        tr("Outbound Address Fetch: short-lived, for soliciting addresses")};
+        tr("Outbound Address Fetch: short-lived, for soliciting addresses"),
+        /*: Explanatory text for a short-lived outbound peer connection that is used
+            to broadcast privacy-sensitive data (like our transactions). */
+        tr("Private broadcast: short-lived, for broadcasting privacy-sensitive transactions")};
     const QString connection_types_list{"<ul><li>" + Join(CONNECTION_TYPE_DOC, QString("</li><li>")) + "</li></ul>"};
     ui->peerConnectionTypeLabel->setToolTip(ui->peerConnectionTypeLabel->toolTip().arg(connection_types_list));
     const std::vector<QString> TRANSPORT_TYPE_DOC{
@@ -1173,14 +1176,8 @@ void RPCConsole::updateDetailWidget()
     ui->peerBytesRecv->setText(GUIUtil::formatBytes(stats->nodeStats.nRecvBytes));
     ui->peerPingTime->setText(GUIUtil::formatPingTime(stats->nodeStats.m_last_ping_time));
     ui->peerMinPing->setText(GUIUtil::formatPingTime(stats->nodeStats.m_min_ping_time));
-    ui->peerVersion->setText(ts.na);
-    ui->peerSubversion->setText(ts.na);
-    if (stats->nodeStats.nVersion) {
-        ui->peerVersion->setText(QString::number(stats->nodeStats.nVersion));
-    }
-    if (!stats->nodeStats.cleanSubVer.empty()) {
-        ui->peerSubversion->setText(QString::fromStdString(stats->nodeStats.cleanSubVer));
-    }
+    ui->peerVersion->setText(stats->nodeStats.nVersion ? QString::number(stats->nodeStats.nVersion) : ts.na);
+    ui->peerSubversion->setText(!stats->nodeStats.cleanSubVer.empty() ? QString::fromStdString(stats->nodeStats.cleanSubVer) : ts.na);
     ui->peerConnectionType->setText(GUIUtil::ConnectionTypeToQString(stats->nodeStats.m_conn_type, /*prepend_direction=*/true));
     ui->peerTransportType->setText(QString::fromStdString(TransportTypeAsString(stats->nodeStats.m_transport_type)));
     if (stats->nodeStats.m_transport_type == TransportProtocolType::V2) {
@@ -1188,6 +1185,7 @@ void RPCConsole::updateDetailWidget()
         ui->peerSessionId->setVisible(true);
         ui->peerSessionId->setText(QString::fromStdString(stats->nodeStats.m_session_id));
     } else {
+        ui->peerSessionId->clear();
         ui->peerSessionIdLabel->setVisible(false);
         ui->peerSessionId->setVisible(false);
     }
@@ -1205,8 +1203,8 @@ void RPCConsole::updateDetailWidget()
 
     resetPeerStateStats();
 
-    // This check fails, for example, if the lock was busy and node state stats
-    // could not be fetched.
+    // This check fails for example if the lock was busy and
+    // nodeStateStats couldn't be fetched.
     if (stats->fNodeStateStatsAvailable) {
         ui->timeoffset->setText(GUIUtil::formatTimeOffset(Ticks<std::chrono::seconds>(stats->nodeStateStats.time_offset)));
         ui->peerServices->setText(GUIUtil::formatServicesStr(stats->nodeStateStats.their_services));
@@ -1222,7 +1220,7 @@ void RPCConsole::updateDetailWidget()
         } else {
             ui->peerCommonHeight->setText(ts.unknown);
         }
-        ui->peerHeight->setText(QString::number(stats->nodeStateStats.m_starting_height));
+        ui->peerHeight->setText(stats->nodeStateStats.m_starting_height >= 0 ? QString::number(stats->nodeStateStats.m_starting_height) : ts.unknown);
         ui->peerPingWait->setText(GUIUtil::formatPingTime(stats->nodeStateStats.m_ping_wait));
         ui->peerAddrRelayEnabled->setText(stats->nodeStateStats.m_addr_relay_enabled ? ts.yes : ts.no);
         ui->peerAddrProcessed->setText(QString::number(stats->nodeStateStats.m_addr_processed));

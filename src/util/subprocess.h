@@ -36,8 +36,6 @@ Documentation for C++ subprocessing library.
 #ifndef BITCOIN_UTIL_SUBPROCESS_H
 #define BITCOIN_UTIL_SUBPROCESS_H
 
-#include <util/fs.h>
-#include <util/strencodings.h>
 #include <util/syserror.h>
 
 #include <algorithm>
@@ -57,16 +55,12 @@ Documentation for C++ subprocessing library.
 #include <string>
 #include <vector>
 
-#if (defined _MSC_VER) || (defined __MINGW32__)
-  #define __USING_WINDOWS__
-#endif
-
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   #include <codecvt>
 #endif
 
 extern "C" {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   #include <windows.h>
   #include <io.h>
   #include <cwchar>
@@ -173,7 +167,7 @@ public:
 //--------------------------------------------------------------------
 namespace util
 {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   inline void quote_argument(const std::wstring &argument, std::wstring &command_line,
                       bool force)
   {
@@ -334,7 +328,7 @@ namespace util
   }
 
 
-#ifndef __USING_WINDOWS__
+#ifndef WIN32
   /*!
    * Function: set_clo_on_exec
    * Sets/Resets the FD_CLOEXEC flag on the provided file descriptor
@@ -426,7 +420,7 @@ namespace util
   static inline
   int read_atmost_n(FILE* fp, char* buf, size_t read_upto)
   {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
     return (int)fread(buf, 1, read_upto, fp);
 #else
     int fd = subprocess_fileno(fp);
@@ -499,7 +493,7 @@ namespace util
     return total_bytes_read;
   }
 
-#ifndef __USING_WINDOWS__
+#ifndef WIN32
   /*!
    * Function: wait_for_child_exit
    * Waits for the process with pid `pid` to exit
@@ -537,20 +531,6 @@ namespace util
  *     Popen Arguments
  * -------------------------------
  */
-
-/*!
- * Option to close all file descriptors
- * when the child process is spawned.
- * The close fd list does not include
- * input/output/error if they are explicitly
- * set as part of the Popen arguments.
- *
- * Default value is false.
- */
-struct close_fds {
-  explicit close_fds(bool c): close_all(c) {}
-  bool close_all = false;
-};
 
 /*!
  * Base class for all arguments involving string value.
@@ -614,7 +594,7 @@ struct input
   }
   explicit input(IOTYPE typ) {
     assert (typ == PIPE && "STDOUT/STDERR not allowed");
-#ifndef __USING_WINDOWS__
+#ifndef WIN32
     std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
 #endif
   }
@@ -647,7 +627,7 @@ struct output
   }
   explicit output(IOTYPE typ) {
     assert (typ == PIPE && "STDOUT/STDERR not allowed");
-#ifndef __USING_WINDOWS__
+#ifndef WIN32
     std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
 #endif
   }
@@ -679,7 +659,7 @@ struct error
   explicit error(IOTYPE typ) {
     assert ((typ == PIPE || typ == STDOUT) && "STDERR not allowed");
     if (typ == PIPE) {
-#ifndef __USING_WINDOWS__
+#ifndef WIN32
       std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
 #endif
     } else {
@@ -733,6 +713,12 @@ class Popen;
  *---------------------------------------------------
  */
 
+// Close inherited descriptors after redirecting the child standard streams.
+struct close_fds {
+  explicit close_fds(bool c): close_all(c) {}
+  bool close_all = false;
+};
+
 namespace detail {
 /*!
  * A helper class to Popen class for setting
@@ -755,6 +741,7 @@ private:
   Popen* popen_ = nullptr;
 };
 
+#ifndef WIN32
 /*!
  * A helper class to Popen.
  * This takes care of all the fork-exec logic
@@ -776,6 +763,7 @@ private:
   Popen* parent_ = nullptr;
   int err_wr_pipe_ = -1;
 };
+#endif
 
 // Fwd Decl.
 class Streams;
@@ -897,7 +885,7 @@ public:// Yes they are public
   std::shared_ptr<FILE> output_ = nullptr;
   std::shared_ptr<FILE> error_  = nullptr;
 
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   HANDLE g_hChildStd_IN_Rd = nullptr;
   HANDLE g_hChildStd_IN_Wr = nullptr;
   HANDLE g_hChildStd_OUT_Rd = nullptr;
@@ -937,12 +925,8 @@ private:
  * API's provided by the class:
  * Popen({"cmd"}, output{..}, error{..}, ....)
  *    Command provided as a sequence.
- * Popen("cmd arg1", output{..}, error{..}, ....)
- *    Command provided in a single string.
  * wait()             - Wait for the child to exit.
  * retcode()          - The return code of the exited child.
- * poll()             - Check the status of the running child.
- * kill(sig_num)      - Kill the child. SIGTERM used by default.
  * send(...)          - Send input to the input channel of the child.
  * communicate(...)   - Get the output/error from the child and close the channels
  *                      from the parent side.
@@ -951,20 +935,9 @@ class Popen
 {
 public:
   friend struct detail::ArgumentDeducer;
+#ifndef WIN32
   friend class detail::Child;
-
-  template <typename... Args>
-  Popen(const std::string& cmd_args, Args&& ...args):
-    args_(cmd_args)
-  {
-    vargs_ = util::split(cmd_args);
-    init_args(std::forward<Args>(args)...);
-
-    // Setup the communication channels of the Popen class
-    stream_.setup_comm_channels();
-
-    execute_process();
-  }
+#endif
 
   template <typename... Args>
   Popen(std::initializer_list<const char*> cmd_args, Args&& ...args)
@@ -992,12 +965,6 @@ public:
   int retcode() const noexcept { return retcode_; }
 
   int wait() noexcept(false);
-
-  int poll() noexcept(false);
-
-  // Does not fail, Caller is expected to recheck the
-  // status with a call to poll()
-  void kill(int sig_num = 9);
 
   void set_out_buf_cap(size_t cap) { stream_.set_out_buf_cap(cap); }
 
@@ -1046,24 +1013,21 @@ private:
 private:
   detail::Streams stream_;
 
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   HANDLE process_handle_;
   std::future<void> cleanup_future_;
+#else
+  // Pid of the child process
+  int child_pid_ = -1;
 #endif
 
   bool close_fds_ = false;
 
   std::string exe_name_;
 
-  // Command in string format
-  std::string args_;
   // Command provided as sequence
   std::vector<std::string> vargs_;
   std::vector<char*> cargv_;
-
-  bool child_created_ = false;
-  // Pid of the child process
-  int child_pid_ = -1;
 
   int retcode_ = -1;
 };
@@ -1090,7 +1054,7 @@ inline void Popen::populate_c_argv()
 
 inline int Popen::wait() noexcept(false)
 {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   int ret = WaitForSingleObject(process_handle_, INFINITE);
 
   // WaitForSingleObject with INFINITE should only return when process has signaled
@@ -1121,71 +1085,9 @@ inline int Popen::wait() noexcept(false)
 #endif
 }
 
-inline int Popen::poll() noexcept(false)
-{
-#ifdef __USING_WINDOWS__
-  int ret = WaitForSingleObject(process_handle_, 0);
-  if (ret != WAIT_OBJECT_0) return -1;
-
-  DWORD dretcode_;
-  if (FALSE == GetExitCodeProcess(process_handle_, &dretcode_))
-      throw OSError("GetExitCodeProcess", 0);
-
-  retcode_ = (int)dretcode_;
-  CloseHandle(process_handle_);
-
-  return retcode_;
-#else
-  if (!child_created_) return -1; // TODO: ??
-
-  int status;
-
-  // Returns zero if child is still running
-  int ret = waitpid(child_pid_, &status, WNOHANG);
-  if (ret == 0) return -1;
-
-  if (ret == child_pid_) {
-    if (WIFSIGNALED(status)) {
-      retcode_ = WTERMSIG(status);
-    } else if (WIFEXITED(status)) {
-      retcode_ = WEXITSTATUS(status);
-    } else {
-      retcode_ = 255;
-    }
-    return retcode_;
-  }
-
-  if (ret == -1) {
-    // From subprocess.py
-    // This happens if SIGCHLD is set to be ignored
-    // or waiting for child process has otherwise been disabled
-    // for our process. This child is dead, we cannot get the
-    // status.
-    if (errno == ECHILD) retcode_ = 0;
-    else throw OSError("waitpid failed", errno);
-  } else {
-    retcode_ = ret;
-  }
-
-  return retcode_;
-#endif
-}
-
-inline void Popen::kill(int sig_num)
-{
-#ifdef __USING_WINDOWS__
-  if (!TerminateProcess(this->process_handle_, (UINT)sig_num)) {
-    throw OSError("TerminateProcess", 0);
-  }
-#else
-  ::kill(child_pid_, sig_num);
-#endif
-}
-
-
 inline void Popen::execute_process() noexcept(false)
 {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
   if (exe_name_.length()) {
     this->vargs_.insert(this->vargs_.begin(), this->exe_name_);
     this->populate_c_argv();
@@ -1236,7 +1138,7 @@ inline void Popen::execute_process() noexcept(false)
                             NULL,         // process security attributes
                             NULL,         // primary thread security attributes
                             TRUE,         // handles are inherited
-                            creation_flags,	// creation flags
+                            creation_flags, // creation flags
                             NULL,         // use parent's environment
                             NULL,         // use parent's current directory
                             &siStartInfo, // STARTUPINFOW pointer
@@ -1289,8 +1191,6 @@ inline void Popen::execute_process() noexcept(false)
     subprocess_close(err_wr_pipe);
     throw OSError("fork failed", errno);
   }
-
-  child_created_ = true;
 
   if (child_pid_ == 0)
   {
@@ -1366,17 +1266,15 @@ namespace detail {
     if (err.rd_ch_ != -1) popen_->stream_.err_read_ = err.rd_ch_;
   }
 
+
   inline void ArgumentDeducer::set_option(close_fds&& cfds) {
     popen_->close_fds_ = cfds.close_all;
   }
 
-#ifndef __USING_WINDOWS__
-  void subprocess_close_all_fds(int except_fd);
-#endif
-
+#ifndef WIN32
+  bool subprocess_close_all_fds(int& except_fd, bool force_fallback = false) noexcept;
 
   inline void Child::execute_child() {
-#ifndef __USING_WINDOWS__
     int sys_ret = -1;
     auto& stream = parent_->stream_;
 
@@ -1420,9 +1318,15 @@ namespace detail {
       if (stream.err_write_ != -1 && stream.err_write_ > 2)
         subprocess_close(stream.err_write_);
 
-      // Close all the inherited fd's except the error write pipe
+      // Close inherited descriptors except the exec error pipe and redirected standard streams.
       if (parent_->close_fds_) {
-        subprocess_close_all_fds(/*except_fd=*/ err_wr_pipe_);
+        if (!subprocess_close_all_fds(err_wr_pipe_)) {
+          // Avoid exception/string allocation in the post-fork failure path.
+          constexpr char error[] = "Unable to close inherited signer descriptors";
+          const auto written = ::write(err_wr_pipe_, error, sizeof(error) - 1);
+          (void)written;
+          _exit(EXIT_FAILURE);
+        }
       }
 
       // Replace the current image with the executable
@@ -1441,13 +1345,13 @@ namespace detail {
     // Calling application would not get this
     // exit failure
     _exit (EXIT_FAILURE);
-#endif
   }
+#endif
 
 
   inline void Streams::setup_comm_channels()
   {
-#ifdef __USING_WINDOWS__
+#ifdef WIN32
     util::configure_pipe(&this->g_hChildStd_IN_Rd, &this->g_hChildStd_IN_Wr, &this->g_hChildStd_IN_Wr);
     this->input(util::file_from_handle(this->g_hChildStd_IN_Wr, "w"));
     this->write_to_child_ = subprocess_fileno(this->input());

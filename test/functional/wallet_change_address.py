@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023 The Bitcoin Core developers
+# Copyright (c) 2023-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test wallet change address selection"""
@@ -56,18 +56,15 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         addrs = addr1 + addr2
 
         # Send 1 + 0.5 coin to each address
-        for amount in (1.0, 0.5):
-            for addr in addrs:
-                self.nodes[0].sendtoaddress(addr, amount)
-                self.nodes[0].syncwithvalidationinterfacequeue()
+        [self.nodes[0].sendtoaddress(addr, 1.0) for addr in addrs]
+        [self.nodes[0].sendtoaddress(addr, 0.5) for addr in addrs]
         self.generate(self.nodes[0], 1)
 
         for i in range(20):
             for n in [1, 2]:
                 self.log.debug(f"Send transaction from node {n}: expected change index {i}")
                 txid = self.nodes[n].sendtoaddress(self.nodes[0].getnewaddress(), 0.2)
-                self.nodes[n].syncwithvalidationinterfacequeue()
-                tx = self.nodes[n].decoderawtransaction(self.nodes[n].gettransaction(txid)["hex"])
+                tx = self.nodes[n].getrawtransaction(txid, True)
                 # find the change output and ensure that expected change index was used
                 self.assert_change_index(self.nodes[n], tx, i)
 
@@ -78,9 +75,10 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         w2 = self.nodes[2].get_wallet_rpc("w2")
         addr1 = w1.getnewaddress()
         addr2 = w2.getnewaddress()
-        for addr, amount in ((addr1, 3.0), (addr1, 0.1), (addr2, 3.0), (addr2, 0.1)):
-            self.nodes[0].sendtoaddress(addr, amount)
-            self.nodes[0].syncwithvalidationinterfacequeue()
+        self.nodes[0].sendtoaddress(addr1, 3.0)
+        self.nodes[0].sendtoaddress(addr1, 0.1)
+        self.nodes[0].sendtoaddress(addr2, 3.0)
+        self.nodes[0].sendtoaddress(addr2, 0.1)
         self.generate(self.nodes[0], 1)
 
         sendTo1 = self.nodes[0].getnewaddress()
@@ -90,7 +88,7 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         # The avoid partial spends wallet will always create a change output
         node = self.nodes[2]
         res = w2.send({sendTo1: "1.0", sendTo2: "1.0", sendTo3: "0.9999"}, options={"change_position": 0})
-        tx = node.decoderawtransaction(w2.gettransaction(res["txid"])["hex"])
+        tx = node.getrawtransaction(res["txid"], True)
         self.assert_change_pos(w2, tx, 0)
 
         # The default wallet will internally create a tx without change first,
@@ -98,7 +96,7 @@ class WalletChangeAddressTest(BitcoinTestFramework):
         # Ensure that the user-configured change position is kept
         node = self.nodes[1]
         res = w1.send({sendTo1: "1.0", sendTo2: "1.0", sendTo3: "0.9999"}, options={"change_position": 0})
-        tx = node.decoderawtransaction(w1.gettransaction(res["txid"])["hex"])
+        tx = node.getrawtransaction(res["txid"], True)
         # If the wallet ignores the user's change_position there is still a 25%
         # that the random change position passes the test
         self.assert_change_pos(w1, tx, 0)
