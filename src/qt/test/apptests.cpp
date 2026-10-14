@@ -1,10 +1,9 @@
-// Copyright (c) 2018-2022 The Bitcoin Core developers
+// Copyright (c) 2018-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/test/apptests.h>
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <chainparams.h>
 #include <key.h>
 #include <logging.h>
@@ -12,21 +11,33 @@
 #include <qt/bitcoingui.h>
 #include <qt/networkstyle.h>
 #include <qt/qrimagewidget.h>
+#include <QClipboard>
+#include <QTemporaryDir>
 #include <qt/rpcconsole.h>
+#include <qt/peertablemodel.h>
+#include <QLabel>
+#include <QTableView>
+#include <QSortFilterProxyModel>
 #include <test/util/setup_common.h>
 #include <validation.h>
+#include <interfaces/node.h>
+#include <univalue.h>
+#include <QDebug>
+#include <QDir>
+#include <QTabWidget>
+#include <QSplitter>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QItemSelectionModel>
+#include <future>
+#include <thread>
 
 #include <QAction>
-#include <QColor>
-#include <QLabel>
 #include <QLineEdit>
-#include <QPixmap>
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
-#include <QSortFilterProxyModel>
 #include <QString>
-#include <QTableView>
 #include <QTest>
 #include <QTextEdit>
 #include <QtGlobal>
@@ -56,7 +67,6 @@ void TestRpcCommand(RPCConsole* console)
     const QString pattern = QStringLiteral("\"chain\": \"(\\w+)\"");
     QCOMPARE(FindInConsole(output, pattern), QString("regtest"));
 }
-
 void TestPeerRefreshState(RPCConsole* console)
 {
     auto* peer_widget = console->findChild<QTableView*>("peerWidget");
@@ -111,12 +121,108 @@ void TestPeerRefreshState(RPCConsole* console)
     QCOMPARE(relay_txs->text(), QStringLiteral("N/A"));
 }
 
+// Optional runtime evidence profile. Peers are real regtest nodes supplied by
+// the caller; unavailable state is obtained through the production try-lock.
+void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
+{
+    const auto endpoints{qEnvironmentVariable("ROOTS_PEER_ENDPOINTS").split(',', Qt::SkipEmptyParts)};
+    if (endpoints.isEmpty()) return;
+    QVERIFY(endpoints.size() >= 2);
+    auto* table = console->findChild<QTableView*>("peerWidget");
+    auto* tabs = console->findChild<QTabWidget*>("tabWidget");
+    QVERIFY(table && tabs);
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(table->model());
+    QVERIFY(proxy);
+    auto* model = qobject_cast<PeerTableModel*>(proxy->sourceModel());
+    QVERIFY(model);
+    model->stopAutoRefresh();
+    for (const auto& endpoint : endpoints) {
+        UniValue params{UniValue::VARR};
+        params.push_back(endpoint.toStdString());
+        params.push_back("onetry");
+        node.executeRpc("addnode", params, "");
+    }
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->rowCount() == endpoints.size()), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->index(0, 0).data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()->nodeStats.nVersion > 0), 10000);
+    const auto size{qEnvironmentVariable("ROOTS_PEER_CAPTURE_SIZE", "1280x800").split('x')};
+    QCOMPARE(size.size(), 2);
+    console->resize(size[0].toInt(), size[1].toInt());
+    tabs->setCurrentIndex(3); // Native Peers tab.
+    console->show();
+    QTest::qWait(100);
+    QCOMPARE(console->size(), QSize(size[0].toInt(), size[1].toInt()));
+    qInfo() << "Live peer capture:" << console->size() << "font points" << table->font().pointSizeF() << "device pixel ratio" << console->devicePixelRatioF();
+    const auto capture_dir{qEnvironmentVariable("ROOTS_PEER_CAPTURE_DIR")};
+    const auto capture = [&](const QString& name) {
+        if (capture_dir.isEmpty()) return true;
+        return QDir().mkpath(capture_dir) && console->grab().save(capture_dir + '/' + name + ".png");
+    };
+    table->clearSelection();
+    QVERIFY(capture("table"));
+    table->selectRow(0);
+    const auto selected_id{table->selectionModel()->selectedRows().first().data().toLongLong()};
+    table->sortByColumn(PeerTableModel::Received, Qt::DescendingOrder);
+    model->refresh();
+    QCOMPARE(table->selectionModel()->selectedRows().size(), 1);
+    QCOMPARE(table->selectionModel()->selectedRows().first().data().toLongLong(), selected_id);
+    QVERIFY(console->findChild<QLabel*>("peerSubversion")->text() != QStringLiteral("N/A"));
+    // Exercise the native resizable splitter so unavailable values are legible
+    // at 150% font scale as well as in the full-width table capture.
+    console->findChild<QSplitter*>("splitter")->setSizes({console->width() / 2, console->width() / 2});
+    QTest::qWait(100); // Let the shown detail pane receive its layout geometry.
+    QVERIFY(console->findChild<QWidget*>("peersTabRightPanel")->isVisible());
+    QVERIFY(capture("detail"));
+
+    std::promise<void> locked, release;
+    auto released = release.get_future();
+    std::thread blocker{[&] {
+        LOCK(cs_main);
+        locked.set_value();
+        released.wait();
+    }};
+    locked.get_future().wait();
+    model->refresh();
+    const auto previous_row{table->selectionModel()->selectedRows().first().row()};
+    table->selectRow(previous_row == 0 ? 1 : 0);
+    const bool unavailable{!table->selectionModel()->selectedRows().first().data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()->fNodeStateStatsAvailable};
+    const bool cleared{console->findChild<QLabel*>("peerServices")->text() == QStringLiteral("N/A") &&
+        console->findChild<QLabel*>("peerSyncHeight")->text() == QStringLiteral("Unknown") &&
+        console->findChild<QLabel*>("peerHeight")->text() == QStringLiteral("Unknown") &&
+        console->findChild<QLabel*>("timeoffset")->text() == QStringLiteral("N/A")};
+    const bool captured{capture("unavailable")};
+    auto* scroll = console->findChild<QScrollArea*>("scrollArea");
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+    const bool captured_bottom{capture("unavailable-bottom")};
+    scroll->verticalScrollBar()->setValue(0);
+    release.set_value();
+    blocker.join();
+    QVERIFY(unavailable);
+    QVERIFY(cleared);
+    QVERIFY(captured);
+    QVERIFY(captured_bottom);
+    model->refresh();
+    QVERIFY(console->findChild<QLabel*>("peerServices")->text() != QStringLiteral("N/A"));
+    // Removing the selected peer must not leave its detail pane visible.
+    UniValue params{UniValue::VARR};
+    params.push_back("");
+    params.push_back(table->selectionModel()->selectedRows().first().data().toLongLong());
+    node.executeRpc("disconnectnode", params, "");
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->rowCount() == endpoints.size() - 1), 10000);
+    QVERIFY(table->selectionModel()->selectedRows().isEmpty());
+}
 void TestQrQuietZone()
 {
 #if defined(ENABLE_WALLET) && defined(USE_QRCODE)
     QRImageWidget qr;
     QVERIFY(qr.setQR(QStringLiteral("bitcoin:bc1qz0j5w6w8t8d5alw5lp4n4t3g6d7n7ld5cqqqqq")));
     const QImage image{qr.exportImage()};
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path{directory.filePath("qr.png")};
+    QVERIFY(image.save(path, "PNG"));
+    QCOMPARE(QImage{path}, image);
+    qr.copyImage();
+    QCOMPARE(QApplication::clipboard()->image(), image);
     QCOMPARE(image.width(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
     QCOMPARE(image.height(), QR_IMAGE_SIZE + 2 * QR_IMAGE_MARGIN);
     // The first matrix pixel remains white only when the four-module quiet zone
@@ -153,10 +259,13 @@ void AppTests::appTests()
     }
 #endif
 
-    TestQrQuietZone();
-    TestRootsResources();
-
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
+    const auto font_scale{qEnvironmentVariable("ROOTS_PEER_FONT_SCALE", "1.0").toDouble()};
+    if (font_scale != 1.0) {
+        auto font = m_app.font();
+        font.setPointSizeF(font.pointSizeF() * font_scale);
+        m_app.setFont(font);
+    }
     m_app.parameterSetup();
     QVERIFY(m_app.createOptionsModel(/*resetSettings=*/true));
     QScopedPointer<const NetworkStyle> style(NetworkStyle::instantiate(Params().GetChainType()));
@@ -188,8 +297,11 @@ void AppTests::guiTests(BitcoinGUI* window)
 void AppTests::consoleTests(RPCConsole* console)
 {
     HandleCallback callback{"consoleTests", *this};
+    TestQrQuietZone();
+    TestRootsResources();
     TestRpcCommand(console);
     TestPeerRefreshState(console);
+    TestLivePeerView(console, m_app.node());
 }
 
 //! Destructor to shut down after the last expected callback completes.

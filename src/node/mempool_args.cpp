@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Bitcoin Core developers
+// Copyright (c) 2022-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,24 +9,23 @@
 
 #include <common/args.h>
 #include <common/messages.h>
-#include <common/settings.h>
 #include <consensus/amount.h>
 #include <kernel/chainparams.h>
 #include <logging.h>
-#include <node/interface_ui.h>
 #include <policy/feerate.h>
-#include <policy/fees.h>
 #include <policy/policy.h>
 #include <tinyformat.h>
+#include <txgraph.h>
 #include <univalue.h>
 #include <util/moneystr.h>
-#include <util/result.h>
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/translation.h>
 
+#include <algorithm>
 #include <chrono>
-#include <cstdint>
+#include <initializer_list>
+#include <limits>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -41,14 +40,105 @@ static constexpr int MAX_32BIT_MEMPOOL_MB{500};
 namespace {
 void ApplyArgsManOptions(const ArgsManager& argsman, MemPoolLimits& mempool_limits)
 {
+    mempool_limits.cluster_count = argsman.GetIntArg("-limitclustercount", mempool_limits.cluster_count);
+
+    if (auto vkb = argsman.GetIntArg("-limitclustersize")) mempool_limits.cluster_size_vbytes = *vkb * 1'000;
+
     mempool_limits.ancestor_count = argsman.GetIntArg("-limitancestorcount", mempool_limits.ancestor_count);
 
-    if (auto vkb = argsman.GetIntArg("-limitancestorsize")) mempool_limits.ancestor_size_vbytes = *vkb * 1'000;
-
     mempool_limits.descendant_count = argsman.GetIntArg("-limitdescendantcount", mempool_limits.descendant_count);
-
-    if (auto vkb = argsman.GetIntArg("-limitdescendantsize")) mempool_limits.descendant_size_vbytes = *vkb * 1'000;
 }
+}
+
+util::Result<unsigned int> ParseDataCarrierCost(std::string_view value)
+{
+    int64_t parsed;
+    constexpr int64_t max_cost{int64_t{std::numeric_limits<unsigned int>::max()} * 100 / WITNESS_SCALE_FACTOR};
+    if (!ParseFixedPoint(value, 2, &parsed) || parsed < 0 || parsed > max_cost) {
+        return util::Error{strprintf(_("Invalid -datacarriercost value: '%s' (expected a value from 0 to 1073741823.75 exactly representable in hundredths)"), value)};
+    }
+    return static_cast<unsigned int>(((parsed * WITNESS_SCALE_FACTOR) + 99) / 100);
+}
+
+namespace {
+// Check every token, including empty tokens that SplitString would discard.
+bool ValidPolicyTokens(std::string_view value, std::initializer_list<std::string_view> allowed)
+{
+    if (value.empty() || value == "0" || value == "1") return true;
+    while (true) {
+        const auto separator = value.find_first_of(",+");
+        const auto token = value.substr(0, separator);
+        if (std::find(allowed.begin(), allowed.end(), token) == allowed.end()) return false;
+        if (separator == value.npos) return true;
+        value.remove_prefix(separator + 1);
+    }
+}
+}
+
+util::Result<void> ValidateRootsPolicyOptions(const ArgsManager& argsman)
+{
+    // Check types before GetArg converts settings to strings. These are the
+    // Roots-added controls only; inherited Core getters remain permissive.
+    for (const char* option : {
+             "-subdustfeepenalty", "-rejectparasites", "-acceptunknownwitness",
+             "-datacarrierfullcount", "-permitbareanchor", "-rejecttokens",
+             "-permitbarepubkey", "-permitbaredatacarrier", "-acceptnonstddatacarrier",
+             "-maxscriptsize", "-bytespersigopstrict", "-maxtxlegacysigops",
+             "-minrelaycoinblocks", "-minrelaymaturity", "-blockmaxsize",
+             "-blockprioritysize", "-datacarriercost", "-dustdynamic",
+             "-mempoolreplacement", "-mempooltruc", "-permitephemeral", "-spkreuse"}) {
+        const auto value = argsman.GetSetting(option);
+        if (!value.isNull() && !value.isStr() && !value.isNum() && !value.isBool()) {
+            return util::Error{Untranslated(strprintf("Invalid %s value: expected a scalar policy value", option))};
+        }
+    }
+
+    for (const char* option : {
+             "-subdustfeepenalty", "-rejectparasites", "-acceptunknownwitness",
+             "-datacarrierfullcount", "-permitbareanchor", "-rejecttokens",
+             "-permitbarepubkey", "-permitbaredatacarrier", "-acceptnonstddatacarrier"}) {
+        if (const auto value = argsman.GetArg(option); value && !value->empty() && *value != "0" && *value != "1") {
+            return util::Error{Untranslated(strprintf("Invalid %s value: '%s' (expected empty, 0, or 1)", option, *value))};
+        }
+    }
+
+    for (const auto& [option, maximum] : {
+             std::pair<const char*, int64_t>{"-maxscriptsize", std::numeric_limits<unsigned int>::max()},
+             {"-bytespersigopstrict", std::numeric_limits<unsigned int>::max()},
+             {"-maxtxlegacysigops", std::numeric_limits<unsigned int>::max()},
+             {"-minrelaycoinblocks", std::numeric_limits<int64_t>::max()},
+             {"-minrelaymaturity", std::numeric_limits<int>::max()},
+             {"-blockmaxsize", MAX_BLOCK_SERIALIZED_SIZE},
+             {"-blockprioritysize", std::numeric_limits<int64_t>::max()}}) {
+        if (const auto value = argsman.GetArg(option)) {
+            std::string_view digits{*value};
+            // from_chars does not accept '+', but the existing integer syntax does.
+            if (digits.starts_with('+')) digits.remove_prefix(1);
+            const auto parsed = ToIntegral<int64_t>(digits);
+            if (!parsed || *parsed < 0 || *parsed > maximum || (value->starts_with('+') && digits.starts_with('-'))) {
+                return util::Error{Untranslated(strprintf("Invalid %s value: '%s' (expected an integer from 0 to %d)", option, *value, maximum))};
+            }
+        }
+    }
+
+    if (const auto value = argsman.GetArg("-datacarriercost")) {
+        const auto parsed = ParseDataCarrierCost(*value);
+        if (!parsed) return util::Error{util::ErrorString(parsed)};
+    }
+
+    if (const auto value = argsman.GetArg("-mempoolreplacement"); value && !ValidPolicyTokens(*value, {"fee", "optin", "-optin"})) {
+        return util::Error{Untranslated(strprintf("Invalid -mempoolreplacement value: '%s' (expected empty, 0, 1, or fee/optin/-optin tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-mempooltruc"); value && !ValidPolicyTokens(*value, {"reject", "accept", "enforce", "optin", "-enforce", "-optin", "0"})) {
+        return util::Error{Untranslated(strprintf("Invalid -mempooltruc value: '%s' (expected empty, 0, 1, or reject/accept/enforce/optin/-enforce/-optin tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-permitephemeral"); value && !ValidPolicyTokens(*value, {"anchor", "dust", "send", "reject", "0", "-anchor", "-dust", "-send", "-reject", "-0"})) {
+        return util::Error{Untranslated(strprintf("Invalid -permitephemeral value: '%s' (expected empty, 0, 1, or optionally '-' prefixed anchor/dust/send/reject/0 tokens separated by ',' or '+')", *value))};
+    }
+    if (const auto value = argsman.GetArg("-spkreuse"); value && !value->empty() && *value != "0" && *value != "1" && *value != "allow" && *value != "conflict") {
+        return util::Error{Untranslated(strprintf("Invalid -spkreuse value: '%s' (expected allow, conflict, empty, 0, or 1)", *value))};
+    }
+    return {};
 }
 
 util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optstr, const unsigned int max_fee_estimate_blocks)
@@ -96,7 +186,8 @@ util::Result<std::pair<int32_t, int>> ParseDustDynamicOpt(std::string_view optst
 void ApplyPermitEphemeralOption(const common::SettingsValue& value, MemPoolOptions& mempool_opts)
 {
     std::optional<bool> flag_anchor, flag_send, flag_dust;
-    if (SettingToBool(value, false)) {
+    const auto text = SettingToString(value).value_or("0");
+    if (text.empty() || text == "1") {
         flag_anchor = flag_send = flag_dust = true;
     }
     for (auto& opt : util::SplitString(SettingToString(value).value_or(""), ",+")) {
@@ -133,6 +224,7 @@ void ApplyPermitEphemeralOption(const common::SettingsValue& value, MemPoolOptio
 
 util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainParams& chainparams, MemPoolOptions& mempool_opts)
 {
+    if (auto result = ValidateRootsPolicyOptions(argsman); !result) return result;
     mempool_opts.check_ratio = argsman.GetIntArg("-checkmempool", mempool_opts.check_ratio);
 
     if (auto mb = argsman.GetIntArg("-maxmempool")) {
@@ -145,9 +237,6 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
 
     if (auto hours = argsman.GetIntArg("-mempoolexpiry")) mempool_opts.expiry = std::chrono::hours{*hours};
 
-    mempool_opts.minrelaycoinblocks = argsman.GetIntArg("-minrelaycoinblocks", mempool_opts.minrelaycoinblocks);
-    mempool_opts.minrelaymaturity = argsman.GetIntArg("-minrelaymaturity", mempool_opts.minrelaymaturity);
-
     // incremental relay fee sets the minimum feerate increase necessary for replacement in the mempool
     // and the amount the mempool min fee increases above the feerate of txs evicted due to mempool limiting.
     if (const auto arg{argsman.GetArg("-incrementalrelayfee")}) {
@@ -158,7 +247,6 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         }
     }
 
-    static_assert(DEFAULT_MIN_RELAY_TX_FEE == DEFAULT_INCREMENTAL_RELAY_FEE);
     if (const auto arg{argsman.GetArg("-minrelaytxfee")}) {
         if (std::optional<CAmount> min_relay_feerate = ParseMoney(*arg)) {
             // High fee check is done afterward in CWallet::Create()
@@ -181,18 +269,16 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
             return util::Error{AmountErrMsg("dustrelayfee", *arg)};
         }
     }
-    if (argsman.IsArgSet("-dustdynamic")) {
-        const auto optstr = argsman.GetArg("-dustdynamic", DEFAULT_DUST_DYNAMIC);
-        // TODO: Should probably reject target-based dustdynamic if there's no estimator, but currently we're checking parameters long before we have the fee estimator initialised
-        const auto max_fee_estimate_blocks = mempool_opts.estimator ? mempool_opts.estimator->HighestTargetTracked(FeeEstimateHorizon::LONG_HALFLIFE) : (CBlockPolicyEstimator::LONG_BLOCK_PERIODS * CBlockPolicyEstimator::LONG_SCALE);
-        const auto parsed = ParseDustDynamicOpt(optstr, max_fee_estimate_blocks);
-        if (!parsed) {
-            return util::Error{strprintf(_("Invalid mode for dustdynamic: %s"), util::ErrorString(parsed))};
-        }
-        mempool_opts.dust_relay_target = parsed->first;
-        mempool_opts.dust_relay_multiplier = parsed->second;
-    }
 
+    if (const auto value = argsman.GetArg("-datacarriercost")) {
+        mempool_opts.weight_per_data_byte = *ParseDataCarrierCost(*value);
+    }
+    mempool_opts.subdustfeepenalty = argsman.GetBoolArg("-subdustfeepenalty", mempool_opts.subdustfeepenalty);
+    const auto reuse = argsman.GetArg("-spkreuse", "allow");
+    mempool_opts.reject_spk_reuse = reuse != "allow" && !argsman.GetBoolArg("-spkreuse", false);
+
+    mempool_opts.minrelaycoinblocks = argsman.GetIntArg("-minrelaycoinblocks", 0);
+    mempool_opts.minrelaymaturity = argsman.GetIntArg("-minrelaymaturity", 0);
     mempool_opts.maxtxlegacysigops = argsman.GetIntArg("-maxtxlegacysigops", mempool_opts.maxtxlegacysigops);
 
     mempool_opts.permitbareanchor = argsman.GetBoolArg("-permitbareanchor", mempool_opts.permitbareanchor);
@@ -205,7 +291,6 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
 
     mempool_opts.reject_tokens = argsman.GetBoolArg("-rejecttokens", DEFAULT_REJECT_TOKENS);
 
-    mempool_opts.subdustfeepenalty = argsman.GetBoolArg("-subdustfeepenalty", DEFAULT_SUBDUSTFEEPENALTY);
 
     if (argsman.GetBoolArg("-datacarrier", DEFAULT_ACCEPT_DATACARRIER)) {
         mempool_opts.max_datacarrier_bytes = argsman.GetIntArg("-datacarriersize", MAX_OP_RETURN_RELAY);
@@ -213,7 +298,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         mempool_opts.max_datacarrier_bytes = std::nullopt;
     }
     mempool_opts.datacarrier_fullcount = argsman.GetBoolArg("-datacarrierfullcount", DEFAULT_DATACARRIER_FULLCOUNT);
-    mempool_opts.accept_non_std_datacarrier = argsman.GetBoolArg("-acceptnonstddatacarrier", DEFAULT_ACCEPT_NON_STD_DATACARRIER);
+    mempool_opts.accept_non_std_datacarrier = argsman.GetBoolArg("-acceptnonstddatacarrier", false);
 
     mempool_opts.permitbaredatacarrier = argsman.GetBoolArg("-permitbaredatacarrier", mempool_opts.permitbaredatacarrier);
 
@@ -248,7 +333,6 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
             const bool mempoolreplacement_false{argsman.IsArgSet("-mempoolreplacement") && !(fee_flag || optin_flag.has_value())};
             if (mempoolreplacement_false) {
                 // This is a contradiction, but override rather than error
-                InitWarning(_("False mempoolreplacement option contradicts true mempoolfullrbf; disallowing all RBF"));
                 mempool_opts.rbf_policy = RBFPolicy::Never;
             } else {
                 mempool_opts.rbf_policy = RBFPolicy::Always;
@@ -309,10 +393,21 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
     if (argsman.IsArgSet("-permitephemeral")) {
         ApplyPermitEphemeralOption(argsman.GetSetting("-permitephemeral"), mempool_opts);
     }
+    if (const auto value = argsman.GetArg("-dustdynamic")) {
+        // v31's long estimator horizon is 1008 blocks. L8 runtime wiring will
+        // additionally validate against the initialized estimator's horizon.
+        const auto parsed = ParseDustDynamicOpt(*value, 1008);
+        if (!parsed) return util::Error{strprintf(_("Invalid mode for dustdynamic: %s (value: '%s'; expected off or [multiplier*]target:blocks or [multiplier*]mempool:kvB)"), util::ErrorString(parsed), *value)};
+        std::tie(mempool_opts.dust_relay_target, mempool_opts.dust_relay_multiplier) = parsed.value();
+    }
 
     mempool_opts.persist_v1_dat = argsman.GetBoolArg("-persistmempoolv1", mempool_opts.persist_v1_dat);
 
     ApplyArgsManOptions(argsman, mempool_opts.limits);
+
+    if (mempool_opts.limits.cluster_count > MAX_CLUSTER_COUNT_LIMIT) {
+        return util::Error{Untranslated(strprintf("limitclustercount must be less than or equal to %d", MAX_CLUSTER_COUNT_LIMIT))};
+    }
 
     return {};
 }

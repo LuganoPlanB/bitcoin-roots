@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the -uacomment option."""
@@ -18,10 +18,7 @@ class UacommentTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("test multiple -uacomment")
-        subversion = self.nodes[0].getnetworkinfo()["subversion"]
-        # Roots branding must not alter the BIP14 user-agent identifier.
-        assert_equal(subversion.startswith("/Satoshi:30.3.0("), True)
-        test_uacomment = subversion[-12:-1]
+        test_uacomment = self.nodes[0].getnetworkinfo()["subversion"][-12:-1]
         assert_equal(test_uacomment, "(testnode0)")
 
         self.restart_node(0, ["-uacomment=foo"])

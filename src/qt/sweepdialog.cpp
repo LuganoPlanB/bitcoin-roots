@@ -30,6 +30,12 @@ class SecureLineEdit final : public QLineEdit
 public:
     using QLineEdit::QLineEdit;
 
+    void ClearText()
+    {
+        setText(QString(text().size(), QChar{' '}));
+        clear();
+    }
+
     SecureString TakeText()
     {
         QByteArray encoded{text().toLatin1()};
@@ -38,8 +44,7 @@ public:
         // QLineEdit does not expose its internal buffer for cleansing. Replace
         // its visible contents before clearing; Qt does not guarantee physical
         // erasure of every internal QString or undo-buffer copy.
-        setText(QString(text().size(), QChar{' '}));
-        clear();
+        ClearText();
         return result;
     }
 
@@ -118,7 +123,7 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
     connect(m_wallet_model, &WalletModel::sweepRequestInvalidated, this, [this](uint64_t) {
         m_request_generation = 0;
         const QSignalBlocker block{m_private_key};
-        m_private_key->clear();
+        static_cast<SecureLineEdit*>(m_private_key)->ClearText();
         clearPrivateKeyCache();
         m_preview_txid.clear();
         setBusy(false);
@@ -259,7 +264,7 @@ void SweepDialog::clearSensitive()
     if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) return;
     m_request_generation = 0;
     const QSignalBlocker block{m_private_key};
-    m_private_key->clear();
+    static_cast<SecureLineEdit*>(m_private_key)->ClearText();
     clearPrivateKeyCache();
     m_preview_txid.clear();
     m_preview_current = false;

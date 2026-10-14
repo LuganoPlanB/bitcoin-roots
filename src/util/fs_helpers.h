@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2023 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -71,15 +71,6 @@ bool CheckDiskSpace(const fs::path& dir, uint64_t additional_bytes = 0);
  * @return The file size or max
  */
 std::streampos GetFileSize(const char* path, std::streamsize max = std::numeric_limits<std::streamsize>::max());
-
-//! Return the original FILE* unchanged. On systems that support it,
-//! also advise the OS that the file will be accessed sequentially.
-FILE* AdviseSequential(FILE*);
-
-//! Close a file and return the result of fclose(). On systems that
-//! support it, advise the OS to remove the file contents from the page
-//! cache (which can help on memory-constrained systems).
-int CloseAndUncache(FILE*);
 
 /** Release all directory locks. This is used for unit testing only, at runtime
  * the global destructor will take care of the locks.

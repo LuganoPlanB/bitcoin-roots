@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <policy/fees.h>
-#include <policy/fees_args.h>
+#include <policy/fees/block_policy_estimator.h>
+#include <policy/fees/block_policy_estimator_args.h>
 #include <policy/policy.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
@@ -16,23 +16,6 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, ChainTestingSetup)
-
-BOOST_AUTO_TEST_CASE(BypassedPolicyIsNotEstimated)
-{
-    CBlockPolicyEstimator estimator{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
-    CMutableTransaction tx;
-    tx.vin.resize(1);
-    tx.vin[0].prevout.n = 0;
-    tx.vout.emplace_back(COIN, CScript{});
-    for (const auto& ignored : {empty_ignore_rejects, ignore_rejects_type{"mempool full"}}) {
-        const auto txref{MakeTransactionRef(tx)};
-        const NewMempoolTransactionInfo info{txref, 1000, GetVirtualTransactionSize(*txref), 0,
-                                             ignored, false, true, true};
-        estimator.processTransaction(info);
-        BOOST_CHECK_EQUAL(estimator.removeTx(txref->GetHash()), ignored.empty());
-        ++tx.vin[0].prevout.n;
-    }
-}
 
 BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
 {
@@ -80,15 +63,15 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                 tx.vin[0].prevout.n = 10000*blocknum+100*j+k; // make transaction unique
                 {
                     LOCK2(cs_main, mpool.cs);
-                    AddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
+                    TryAddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
                     // Since TransactionAddedToMempool callbacks are generated in ATMP,
-                    // not AddToMempool, we cheat and create one manually here
+                    // not TryAddToMempool, we cheat and create one manually here
                     const int64_t virtual_size = GetVirtualTransactionSize(*MakeTransactionRef(tx));
                     const NewMempoolTransactionInfo tx_info{NewMempoolTransactionInfo(MakeTransactionRef(tx),
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      empty_ignore_rejects,
+                                                                                      /*mempool_limit_bypassed=*/false,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};
@@ -180,15 +163,15 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                 tx.vin[0].prevout.n = 10000*blocknum+100*j+k;
                 {
                     LOCK2(cs_main, mpool.cs);
-                    AddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
+                    TryAddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
                     // Since TransactionAddedToMempool callbacks are generated in ATMP,
-                    // not AddToMempool, we cheat and create one manually here
+                    // not TryAddToMempool, we cheat and create one manually here
                     const int64_t virtual_size = GetVirtualTransactionSize(*MakeTransactionRef(tx));
                     const NewMempoolTransactionInfo tx_info{NewMempoolTransactionInfo(MakeTransactionRef(tx),
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      empty_ignore_rejects,
+                                                                                      /*mempool_limit_bypassed=*/false,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};
@@ -243,15 +226,15 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
                 tx.vin[0].prevout.n = 10000*blocknum+100*j+k;
                 {
                     LOCK2(cs_main, mpool.cs);
-                    AddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
+                    TryAddToMempool(mpool, entry.Fee(feeV[j]).Time(Now<NodeSeconds>()).Height(blocknum).FromTx(tx));
                     // Since TransactionAddedToMempool callbacks are generated in ATMP,
-                    // not AddToMempool, we cheat and create one manually here
+                    // not TryAddToMempool, we cheat and create one manually here
                     const int64_t virtual_size = GetVirtualTransactionSize(*MakeTransactionRef(tx));
                     const NewMempoolTransactionInfo tx_info{NewMempoolTransactionInfo(MakeTransactionRef(tx),
                                                                                       feeV[j],
                                                                                       virtual_size,
                                                                                       entry.nHeight,
-                                                                                      empty_ignore_rejects,
+                                                                                      /*mempool_limit_bypassed=*/false,
                                                                                       /*submitted_in_package=*/false,
                                                                                       /*chainstate_is_current=*/true,
                                                                                       /*has_no_mempool_parents=*/true)};

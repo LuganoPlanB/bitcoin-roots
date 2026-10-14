@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2021 The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """
@@ -68,12 +68,8 @@ class ConnectionType(Enum):
 class TxDownloadTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.extra_args = [[
-            '-datacarriersize=100000',
-            '-maxscriptsize=100000',  # Permit synthetic mempool-filling data carriers.
-            '-maxmempool=5',
-            '-persistmempool=0',
-        ]] * self.num_nodes
+        # Allow the large carrier padding used by fill_mempool().
+        self.extra_args = [['-maxmempool=5', '-persistmempool=0', '-maxscriptsize=1000000', '-datacarriersize=1000000']] * self.num_nodes
 
     def test_tx_requests(self):
         self.log.info("Test that we request transactions from all our peers, eventually")
@@ -215,7 +211,7 @@ class TxDownloadTest(BitcoinTestFramework):
     def test_preferred_inv(self, connection_type: ConnectionType):
         if connection_type == ConnectionType.WHITELIST:
             self.log.info('Check invs from preferred (whitelisted) peers are downloaded immediately')
-            self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1'])
+            self.restart_node(0, extra_args=self.extra_args[0] + ['-whitelist=noban@127.0.0.1'])
         elif connection_type == ConnectionType.OUTBOUND:
             self.log.info('Check invs from preferred (outbound) peers are downloaded immediately')
             self.restart_node(0)
@@ -295,7 +291,7 @@ class TxDownloadTest(BitcoinTestFramework):
 
     def test_txid_inv_delay(self, glob_wtxid=False):
         self.log.info('Check that inv from a txid-relay peers are delayed by {} s, with a wtxid peer {}'.format(TXID_RELAY_DELAY, glob_wtxid))
-        self.restart_node(0, extra_args=['-whitelist=noban@127.0.0.1'])
+        self.restart_node(0, extra_args=self.extra_args[0] + ['-whitelist=noban@127.0.0.1'])
         mock_time = int(time.time() + 1)
         self.nodes[0].setmocktime(mock_time)
         peer = self.nodes[0].add_p2p_connection(TestP2PConn(wtxidrelay=False))
@@ -311,7 +307,7 @@ class TxDownloadTest(BitcoinTestFramework):
 
     def test_large_inv_batch(self):
         self.log.info('Test how large inv batches are handled with relay permission')
-        self.restart_node(0, extra_args=['-whitelist=relay@127.0.0.1'])
+        self.restart_node(0, extra_args=self.extra_args[0] + ['-whitelist=relay@127.0.0.1'])
         peer = self.nodes[0].add_p2p_connection(TestP2PConn())
         peer.send_without_ping(msg_inv([CInv(t=MSG_WTX, h=wtxid) for wtxid in range(MAX_PEER_TX_ANNOUNCEMENTS + 1)]))
         peer.wait_until(lambda: peer.tx_getdata_count == MAX_PEER_TX_ANNOUNCEMENTS + 1)

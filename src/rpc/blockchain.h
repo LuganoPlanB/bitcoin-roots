@@ -5,26 +5,29 @@
 #ifndef BITCOIN_RPC_BLOCKCHAIN_H
 #define BITCOIN_RPC_BLOCKCHAIN_H
 
+#include <set>
+#include <map>
+#include <functional>
+#include <atomic>
+#include <script/script.h>
+#include <interfaces/chain.h>
 #include <coins.h>
 #include <consensus/amount.h>
 #include <core_io.h>
-#include <interfaces/chain.h>
-#include <script/script.h>
 #include <streams.h>
 #include <sync.h>
+#include <threadsafety.h>
 #include <util/fs.h>
 #include <validation.h>
 
 #include <any>
-#include <atomic>
 #include <cstdint>
-#include <functional>
-#include <map>
-#include <set>
+#include <optional>
 #include <vector>
 
 class CBlock;
 class CBlockIndex;
+class CChain;
 class Chainstate;
 class UniValue;
 namespace node {
@@ -56,10 +59,10 @@ static constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
 double GetDifficulty(const CBlockIndex& blockindex);
 
 /** Block description to JSON */
-UniValue blockToJSON(node::BlockManager& blockman, const CBlock& block, const CBlockIndex& tip, const CBlockIndex& blockindex, TxVerbosity verbosity, const uint256 pow_limit) LOCKS_EXCLUDED(cs_main);
+UniValue blockToJSON(node::BlockManager& blockman, const CBlock& block, const CBlockIndex& tip, const CBlockIndex& blockindex, TxVerbosity verbosity, uint256 pow_limit) LOCKS_EXCLUDED(cs_main);
 
 /** Block header to JSON */
-UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex, const uint256 pow_limit) LOCKS_EXCLUDED(cs_main);
+UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex, uint256 pow_limit) LOCKS_EXCLUDED(cs_main);
 
 /** Used by getblockstats to get feerates at different percentiles by weight  */
 void CalculatePercentilesByWeight(CAmount result[NUM_GETBLOCKSTATS_PERCENTILES], std::vector<std::pair<CAmount, int64_t>>& scores, int64_t total_weight);

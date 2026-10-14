@@ -5,6 +5,7 @@
 #include <flatfile.h>
 #include <node/blockstorage.h>
 #include <streams.h>
+#include <test/util/common.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/fs.h>
@@ -12,6 +13,12 @@
 #include <util/strencodings.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <array>
+#include <cstddef>
+#include <cstdio>
+#include <ios>
+#include <span>
 
 using namespace std::string_literals;
 using namespace util::hex_literals;
@@ -89,20 +96,55 @@ BOOST_AUTO_TEST_CASE(obfuscation_empty)
 
 BOOST_AUTO_TEST_CASE(autofile_empty_write)
 {
+    // Inspect the close/check obligation without letting the pre-fix destructor
+    // assertion abort the whole suite after an empty write marks the file dirty.
+    struct WriteTrackingFile : AutoFile {
+        using AutoFile::AutoFile;
+        bool WasWritten() const { return m_was_written; }
+        bool HasError() const { return std::ferror(m_file) != 0; }
+    };
     const fs::path path{m_args.GetDataDirBase() / "empty_write.bin"};
-    const std::vector<std::byte> empty;
-    {
-        AutoFile file{fsbridge::fopen(path, "wb")};
-        file << std::span{empty};
+    for (const Obfuscation& obfuscation : {Obfuscation{}, Obfuscation{"ff00ff00ff00ff00"_hex}}) {
+        WriteTrackingFile file{fsbridge::fopen(path, "w+b"), obfuscation};
+        BOOST_REQUIRE(!file.IsNull());
+        BOOST_CHECK(!file.WasWritten());
+        file.write({});
+        BOOST_CHECK(!file.WasWritten());
+        BOOST_CHECK_EQUAL(file.tell(), 0);
+        BOOST_CHECK_EQUAL(file.size(), 0);
+        BOOST_CHECK(!file.HasError());
+
         file << std::byte{0x2a};
-        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
-    }
-    {
-        AutoFile file{fsbridge::fopen(path, "rb")};
+        BOOST_CHECK(file.WasWritten());
+        file.write({});
+        BOOST_CHECK(file.WasWritten());
+        BOOST_CHECK_EQUAL(file.tell(), 1);
+        BOOST_CHECK_EQUAL(file.size(), 1);
+        file.seek(0, SEEK_SET);
         std::byte value;
         file >> value;
         BOOST_CHECK_EQUAL(value, std::byte{0x2a});
-        BOOST_CHECK_EXCEPTION(file >> value, std::ios_base::failure, HasReason{"AutoFile::read: end of file"});
+        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        BOOST_CHECK_EXCEPTION(file.write({}), std::ios_base::failure, HasReason{"AutoFile::write: file handle is nullptr"});
+
+        WriteTrackingFile readonly{fsbridge::fopen(path, "rb"), obfuscation};
+        BOOST_REQUIRE(!readonly.IsNull());
+        readonly >> value;
+        readonly.write({});
+        BOOST_CHECK(!readonly.WasWritten());
+        BOOST_CHECK_EQUAL(readonly.tell(), 1);
+        BOOST_CHECK_EQUAL(readonly.size(), 1);
+        BOOST_CHECK_EQUAL(value, std::byte{0x2a});
+        BOOST_REQUIRE_EQUAL(readonly.fclose(), 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(autofile_empty_write_null)
+{
+    for (const Obfuscation& obfuscation : {Obfuscation{}, Obfuscation{"ff00ff00ff00ff00"_hex}}) {
+        AutoFile file{nullptr, obfuscation};
+        BOOST_CHECK_EXCEPTION(file.write({}), std::ios_base::failure, HasReason{"AutoFile::write: file handle is nullptr"});
+        BOOST_CHECK(file.IsNull());
     }
 }
 
@@ -120,6 +162,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
         BOOST_CHECK_EXCEPTION(xor_file << std::byte{}, std::ios_base::failure, HasReason{"AutoFile::write: file handle is nullptr"});
         BOOST_CHECK_EXCEPTION(xor_file >> std::byte{}, std::ios_base::failure, HasReason{"AutoFile::read: file handle is nullptr"});
         BOOST_CHECK_EXCEPTION(xor_file.ignore(1), std::ios_base::failure, HasReason{"AutoFile::ignore: file handle is nullptr"});
+        BOOST_CHECK_EXCEPTION(xor_file.size(), std::ios_base::failure, HasReason{"AutoFile::size: file handle is nullptr"});
     }
     {
 #ifdef __MINGW64__
@@ -130,6 +173,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
 #endif
         AutoFile xor_file{raw_file(mode), obfuscation};
         xor_file << test1 << test2;
+        BOOST_CHECK_EQUAL(xor_file.size(), 7);
         BOOST_REQUIRE_EQUAL(xor_file.fclose(), 0);
     }
     {
@@ -140,6 +184,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
         BOOST_CHECK_EQUAL(HexStr(raw), "fc01fd03fd04fa");
         // Check that no padding exists
         BOOST_CHECK_EXCEPTION(non_xor_file.ignore(1), std::ios_base::failure, HasReason{"AutoFile::ignore: end of file"});
+        BOOST_CHECK_EQUAL(non_xor_file.size(), 7);
     }
     {
         AutoFile xor_file{raw_file("rb"), obfuscation};
@@ -149,6 +194,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
         BOOST_CHECK_EQUAL(HexStr(read2), HexStr(test2));
         // Check that eof was reached
         BOOST_CHECK_EXCEPTION(xor_file >> std::byte{}, std::ios_base::failure, HasReason{"AutoFile::read: end of file"});
+        BOOST_CHECK_EQUAL(xor_file.size(), 7);
     }
     {
         AutoFile xor_file{raw_file("rb"), obfuscation};
@@ -160,6 +206,7 @@ BOOST_AUTO_TEST_CASE(xor_file)
         // Check that ignore and read fail now
         BOOST_CHECK_EXCEPTION(xor_file.ignore(1), std::ios_base::failure, HasReason{"AutoFile::ignore: end of file"});
         BOOST_CHECK_EXCEPTION(xor_file >> std::byte{}, std::ios_base::failure, HasReason{"AutoFile::read: end of file"});
+        BOOST_CHECK_EQUAL(xor_file.size(), 7);
     }
 }
 
@@ -798,6 +845,43 @@ BOOST_AUTO_TEST_CASE(streams_hashed)
     hash_verifier >> result;
     BOOST_CHECK_EQUAL(data, result);
     BOOST_CHECK_EQUAL(hash_writer.GetHash(), hash_verifier.GetHash());
+}
+
+BOOST_AUTO_TEST_CASE(size_preserves_position)
+{
+    const fs::path path = m_args.GetDataDirBase() / "size_pos_test.bin";
+    AutoFile f{fsbridge::fopen(path, "w+b")};
+    for (uint8_t j = 0; j < 10; ++j) {
+        f << j;
+    }
+
+    // Test that usage of size() does not change the current position
+    //
+    // Case: Pos at beginning of the file
+    f.seek(0, SEEK_SET);
+    (void)f.size();
+    uint8_t first{};
+    f >> first;
+    BOOST_CHECK_EQUAL(first, 0);
+
+    // Case: Pos at middle of the file
+    f.seek(0, SEEK_SET);
+    // Move pos to middle
+    f.ignore(4);
+    (void)f.size();
+    uint8_t middle{};
+    f >> middle;
+    // Pos still at 4
+    BOOST_CHECK_EQUAL(middle, 4);
+
+    // Case: Pos at EOF
+    f.seek(0, SEEK_END);
+    (void)f.size();
+    uint8_t end{};
+    BOOST_CHECK_EXCEPTION(f >> end, std::ios_base::failure, HasReason{"AutoFile::read: end of file"});
+
+    BOOST_REQUIRE_EQUAL(f.fclose(), 0);
+    fs::remove(path);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

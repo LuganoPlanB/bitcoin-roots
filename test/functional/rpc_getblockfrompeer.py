@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-2022 The Bitcoin Core developers
+# Copyright (c) 2020-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the getblockfrompeer RPC."""
@@ -86,6 +86,13 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         assert_equal(len(peers), 2)
         presegwit_peer_id = peers[1]["id"]
         assert_raises_rpc_error(-1, "Pre-SegWit peer", self.nodes[0].getblockfrompeer, short_tip, presegwit_peer_id)
+
+        self.log.info("Duplicate manual fetch from the same peer is rejected without resetting tracking")
+        stalled_peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        stalled_id = self.nodes[0].getpeerinfo()[-1]['id']
+        assert_equal(self.nodes[0].getblockfrompeer(short_tip, stalled_id), {})
+        stalled_peer.sync_with_ping()
+        assert_raises_rpc_error(-1, "Already requested from this peer", self.nodes[0].getblockfrompeer, short_tip, stalled_id)
 
         self.log.info("Successful fetch")
         result = self.nodes[0].getblockfrompeer(short_tip, peer_0_peer_1_id)

@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2022 The Bitcoin Core developers
+# Copyright (c) 2017-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test multiwallet.
 
 Verify that a bitcoind node can load multiple wallet files
 """
-from decimal import Decimal
 from threading import Thread
 import os
 import platform
@@ -46,7 +45,7 @@ class MultiWalletTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 2
         self.rpc_timeout = 120
-        self.extra_args = [["-nowallet", "-deprecatedrpc=settxfee"], []]
+        self.extra_args = [["-nowallet"], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -180,7 +179,7 @@ class MultiWalletTest(BitcoinTestFramework):
         self.nodes[0].assert_start_raises_init_error(['-walletdir=bad'], 'Error: Specified -walletdir "bad" does not exist')
         # should not initialize if the specified walletdir is not a directory
         not_a_dir = wallet_dir('notadir')
-        open(not_a_dir, 'a', encoding="utf8").close()
+        open(not_a_dir, 'a').close()
         self.nodes[0].assert_start_raises_init_error(['-walletdir=' + not_a_dir], 'Error: Specified -walletdir "' + not_a_dir + '" is not a directory')
 
         # if wallets/ doesn't exist, datadir should be the default wallet dir
@@ -202,6 +201,16 @@ class MultiWalletTest(BitcoinTestFramework):
         w5 = wallet("w5")
         assert_equal(w5.getbalances()["mine"]["immature"], 50)
 
+        if platform.system() != 'Windows' and os.geteuid() != 0:
+            self.log.info("Reject opening a wallet whose database directory cannot be written")
+            node.unloadwallet('w5')
+            os.chmod(data_dir('w5'), stat.S_IRUSR | stat.S_IXUSR)
+            try:
+                assert_raises_rpc_error(-4, 'directory is not writable', node.loadwallet, 'w5')
+            finally:
+                os.chmod(data_dir('w5'), stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            node.loadwallet('w5')
+
         self.log.info("Verify wallet discovery does not descend into node databases")
         hidden_wallet_dir = data_dir('indexes', 'wallet_discovery_fixture')
         os.makedirs(hidden_wallet_dir)
@@ -210,6 +219,18 @@ class MultiWalletTest(BitcoinTestFramework):
         assert 'w5' in discovered
         assert 'indexes/wallet_discovery_fixture' not in discovered
         shutil.rmtree(hidden_wallet_dir)
+        if os.name != 'nt':
+            self.log.info("Verify wallet discovery does not descend through symlinks")
+            linked_wallet_dir = os.path.join(self.options.tmpdir, 'linked_wallet_fixture')
+            nested_wallet_dir = os.path.join(linked_wallet_dir, 'nested')
+            os.makedirs(nested_wallet_dir)
+            w5.backupwallet(os.path.join(nested_wallet_dir, 'wallet.dat'))
+            link = data_dir('wallet_discovery_link')
+            os.symlink(linked_wallet_dir, link, target_is_directory=True)
+            discovered = {w['name'] for w in node.listwalletdir()['wallets']}
+            assert 'wallet_discovery_link/nested' not in discovered
+            os.unlink(link)
+            shutil.rmtree(linked_wallet_dir)
 
         competing_wallet_dir = os.path.join(self.options.tmpdir, 'competing_walletdir')
         os.mkdir(competing_wallet_dir)
@@ -258,13 +279,6 @@ class MultiWalletTest(BitcoinTestFramework):
         batch = w1.batch([w1.getblockchaininfo.get_request(), w1.getwalletinfo.get_request()])
         assert_equal(batch[0]["result"]["chain"], self.chain)
         assert_equal(batch[1]["result"]["walletname"], "w1")
-
-        self.log.info('Check for per-wallet settxfee call')
-        assert_equal(w1.getwalletinfo()['paytxfee'], 0)
-        assert_equal(w2.getwalletinfo()['paytxfee'], 0)
-        w2.settxfee(0.001)
-        assert_equal(w1.getwalletinfo()['paytxfee'], 0)
-        assert_equal(w2.getwalletinfo()['paytxfee'], Decimal('0.00100000'))
 
         self.log.info("Test dynamic wallet loading")
 

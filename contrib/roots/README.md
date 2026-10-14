@@ -1,8 +1,9 @@
 # Bitcoin Roots maintainer workflow
 
 Bitcoin Roots is maintained as a small, reviewable Git history on top of
-Bitcoin Core. Each canonical line names its exact upstream version; for example,
-`roots/29.4` starts at `v29.4` and `roots/30.3` starts at `v30.3`.
+Bitcoin Core. Bitcoin Core v31.1 is the authenticated direct base of the
+published v31.1-roots.1 release.
+Publishing, release tags and main promotion require separate authorization.
 Bitcoin Knots is historical provenance for selected Roots policy features, not
 an upstream, a dependency, or a source of consensus rules.
 
@@ -10,6 +11,29 @@ Git history is the canonical representation of Roots changes. Do not maintain
 replay frameworks, patch manifests, generated evidence, frozen candidate state,
 or promotion metadata alongside it. The archived replay branch is historical
 evidence only; do not rewrite or depend on it.
+
+## Continuing development after v31.1-roots.1
+
+`main` integrates the released 31.1 product while retaining the website,
+clangd setup, and external 30.3 compatibility tooling. The integration merge
+preserves both histories; product C++, build inputs and functional tests come
+from the published release. The release tag and its assets remain immutable.
+Main-only documentation, website/lint support and tooling are not a new release.
+
+The retained external compatibility harness is qualified only for 30.3 and is
+not called by 31.1 PR, nightly or release workflows. Its source-tool regressions
+still run. Qualifying 31.1 requires a separate fixture review; do not weaken the
+generation guard or report retained tooling as executed compatibility coverage.
+
+Start product fixes on `topic/31.1/<area>` from `roots/31.1`, review and test
+them, then advance that canonical branch normally and integrate into `main`.
+Start website or main-only tooling work from current `main`. Never base new
+31.1 product work on the old 30.3 checkout or overwrite the published tag.
+
+A pure promotion may reuse canonical CI only under the proof below. An
+integration that also retains or changes main-only tooling uses a `topic/`
+branch and ordinary CI; it must not claim pure-promotion tree parity or bypass
+the proof by adding exceptions for build/test/workflow changes.
 
 ## Branch roles
 
@@ -25,14 +49,12 @@ release artifacts separate:
   rebuilt and must not be used as the base for durable work.
 - `main` is the currently promoted product history. An explicit promotion merge
   connects it to a reviewed canonical release line; the merge result must have
-  the same product files as that canonical tip. Reviewed repository-only
-  website, contribution guidance, and website lint integration may remain on
-  `main`; list every such difference in the promotion PR.
+  exactly the same tree as that canonical tip.
 - `archive/*` preserves superseded candidates and retired maintenance systems.
   Archive branches are evidence, not dependencies or release inputs.
 
-For example, `roots/29.4` starts directly at `v29.4`, while `roots/30.3`
-starts directly at `v30.3`. Do not merge the complete 29.4 branch into the 30.3
+For example, `roots/29.4` starts directly at `v29.4`, while `roots/31.1`
+starts directly at `v31.1`. Do not merge the complete 29.4 branch into the 31.1
 branch. Port the semantic Roots commits to the new Core base, dropping behavior
 that Core has adopted and adapting or splitting commits when its APIs changed.
 
@@ -40,21 +62,16 @@ Pull requests that promote a release into `main` and pull requests that review
 the canonical patch series have different bases. Never rebase or squash the
 canonical series merely to make a promotion pull request appear linear. Build
 the promotion from `main`, retain the canonical tip as a merge parent, and
-verify product equality and enumerate repository-only differences before
-publishing it.
-
-Run the command sequences below in Bash with `set -euo pipefail`, substitute
-reviewed values for placeholders, and stop on any failed check. Use clean,
-dedicated worktrees for mutations.
+verify tree equality before publishing it.
 
 ## Inspecting a maintenance branch
 
-Start from a clean worktree and name the Core base explicitly. For the v30.3
-work, the peeled Core commit is `49faec4f87f5cd19c88db01a82e5c68b087c8227`.
+Start from a clean worktree and name the Core base explicitly. For the v31.1
+work, the peeled Core commit is `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
 The following commands inspect history without changing it:
 
 ```sh
-core_base=49faec4f87f5cd19c88db01a82e5c68b087c8227
+core_base=9be056a8a72b624dae9623b2f7bded92c2a21c91
 git status --short
 git show --no-patch --decorate "$core_base"
 git log --oneline --decorate "$core_base"..HEAD
@@ -69,7 +86,7 @@ from a graph view. Confirm object identities with `git rev-parse <ref>^{commit}`
 
 Authenticate the official tag and its signer key through independent trusted
 sources before claiming verification. A missing local signer key is not proof
-of an invalid signature. Run `git verify-tag v30.3` with the authenticated key
+of an invalid signature. Run `git verify-tag v31.1` with the authenticated key
 and record both the signature result and its trust basis.
 
 ## Exporting and reviewing a series
@@ -107,117 +124,14 @@ ordinary Git operations:
 
 ```sh
 core_remote=<configured-bitcoin-core-remote>
-core_tag=v30.3
+core_tag=v31.1
 git remote get-url "$core_remote"
-git fetch --no-tags "$core_remote" "refs/tags/${core_tag}:refs/tags/${core_tag}"
-git verify-tag "$core_tag" # Authenticate the signer key separately.
+git fetch "$core_remote" --tags
 core_commit=$(git rev-parse "$core_tag^{commit}")
 git show --no-patch --decorate "$core_commit"
-git switch --create roots/30.3 "$core_commit"
-git switch --create topic/30.3/port
+git switch --create roots/31.1 "$core_commit"
 git cherry-pick -x <semantic-roots-commit>
 ```
-
-If the destination branch already exists, inspect its ancestry and coordinate
-with its owner instead of recreating or overwriting it. Pin the source Roots
-tip and account for every source commit as kept, adapted, adopted upstream, or
-intentionally dropped. Include implementation, tests, help and recent fixes.
-
-### The semantic review unit
-
-Each new port commit should carry one independently maintainable behavior and
-the tests, help and documentation needed to maintain it. File count is not the
-criterion: a behavior can cross several libraries, while two unrelated options
-in one file may need separate commits. Keep unrelated cleanup out of the port.
-For each retained behavior, the commit message and port PR must identify:
-
-- the operator-visible behavior, its owner and why Roots still needs it;
-- the full source commit IDs, including follow-up fixes and original attribution;
-- which source changes are kept unchanged, adapted, adopted upstream, or
-  deliberately dropped, with reasons and destination commit IDs or upstream
-  references;
-- relevant upstream API or ownership changes and how adaptations preserve the
-  intended behavior and policy/consensus boundary;
-- the owning focused test commands and results, plus help/default checks and
-  any broader verification required by the affected paths.
-
-Account for every source change, not just every source commit: a mixed source
-commit may contain all four dispositions. Put retained/adapted provenance in
-the destination commit messages; put omitted changes and their reasons in the
-port PR. The PR ties those messages together as a review index. Do not create a
-checked-in inventory, generated manifest, or patch database alongside Git.
-
-If a cross-cutting change cannot be separated without breaking its invariant,
-document the dependency, the inseparable behavior and its combined checks in
-the message and PR. Reviewers should be able to explain why the unit belongs
-together; do not force an artificial split or impose an arbitrary size limit.
-
-For example, historical `1b73fe3d21` combines policy/network controls across 78
-files and `85257a0986` combines runtime controls across 44. Inspect their full
-IDs, messages and touched paths before planning a future port:
-
-```sh
-git rev-parse 1b73fe3d21^{commit} 85257a0986^{commit}
-git show --stat --oneline 1b73fe3d21
-git show --stat --oneline 85257a0986
-git show --format=fuller 1b73fe3d21 -- src/policy test/functional
-```
-
-These published commits are reference inputs, not candidates for rewriting.
-A future port can separate independently owned datacarrier, sigop and other
-controls, include their focused tests/help in each new unit, and cite the same
-old commit in each adapted message. Account explicitly for the remaining
-changes rather than treating the source commit as wholly retained.
-
-### Comparing dispositions across generations
-
-Pin both Core bases and Roots tips as full commit IDs before review; branches
-can advance. After substituting those four reviewed IDs, these checks are
-read-only:
-
-```sh
-old_core=REPLACE_WITH_OLD_CORE_40_HEX_COMMIT
-old_tip=REPLACE_WITH_OLD_ROOTS_40_HEX_COMMIT
-new_core=REPLACE_WITH_NEW_CORE_40_HEX_COMMIT
-new_tip=REPLACE_WITH_NEW_ROOTS_40_HEX_COMMIT
-git merge-base --is-ancestor "$old_core" "$old_tip"
-git merge-base --is-ancestor "$new_core" "$new_tip"
-git log --reverse --format='%H %s' "$old_core..$old_tip"
-git log --reverse --format='%H %s' "$new_core..$new_tip"
-git rev-list --merges "$new_core..$new_tip" # Must print nothing.
-git range-diff "$old_core..$old_tip" "$new_core..$new_tip"
-git diff --check "$new_core..$new_tip"
-```
-
-In range-diff, `=` denotes a matched unchanged patch, `!` a matched changed
-patch, `<` an unmatched old commit and `>` an unmatched new commit. Matching
-is heuristic: it does not prove semantic preservation or reliably label a
-one-to-many split. For a split, the PR must map the full old ID to every new
-ID and explain the scope of each. For `<`, explain adoption upstream or a
-deliberate drop; for `>`, explain a split, adaptation or justified new work.
-Inspect the actual patches and owning tests alongside this comparison.
-
-Use the earlier `git cherry-pick -x` example only for actual faithful picks.
-For a material adaptation or split, edit the new implementation and its tests
-on an unpublished topic branch, then create each semantic commit normally:
-
-```sh
-git diff --check
-git add -- path/to/behavior path/to/owning-test path/to/help
-git diff --cached
-git commit # Name source IDs, dispositions, adaptation and verification.
-```
-
-These are placeholders for the reviewed paths, not commands to run against
-the historical ports. Perform any split or rebase only in unpublished review
-history; preserve published canonical commits and tags.
-
-A new branch at the upstream tag initially lacks Roots CI support. Port the
-reviewed workflow and the scripts it invokes together before relying on Roots
-PR checks. Some jobs use the PR workflow while explicitly checking out its head;
-a newer workflow with an older source tree can fail on missing scripts. Verify
-which revision every job tests. Push events alone are not evidence that the
-full PR test matrix ran.
 
 Repeat the cherry-pick for each semantic commit after deciding whether that
 change is still needed. `-x` records the source commit when the new commit is a
@@ -228,13 +142,8 @@ misleading cherry-pick identity.
 Compare the old and new generations as patch series:
 
 ```sh
-git range-diff v29.4..roots/29.4 v30.3..roots/30.3
+git range-diff v29.4..roots/29.4 v31.1..roots/31.1
 ```
-
-Review topic PRs against the canonical branch and integrate them linearly.
-Rebase-merging can change commit IDs; record and verify the final canonical
-commit and run any required checks not covered by equivalent tested content.
-Never squash the complete port or create merge commits in the canonical range.
 
 Resolve only identified conflicts, inspect the result with `git diff` and
 targeted tests, then use `git cherry-pick --continue`. If the port premise is
@@ -259,37 +168,20 @@ Create the promotion in a separate worktree so that the canonical branch stays
 clean:
 
 ```sh
-canonical_ref=origin/roots/30.3
-git switch --create promote/30.3 origin/main
+canonical_ref=origin/roots/31.1
+git switch --create promote/31.1 origin/main
 git merge --no-ff --no-commit "$canonical_ref"
 # Resolve deliberately, then verify the proposed index and worktree.
 git diff --cached --name-status
 git commit
-git diff --name-status "$canonical_ref"..HEAD
-# Review every difference; only explicitly approved repository-only paths
-# may differ. Product source, build inputs, and feature tests must match.
-git diff --exit-code "$canonical_ref"..HEAD -- src CMakeLists.txt cmake depends
+git diff --exit-code "$canonical_ref"..HEAD
+test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$canonical_ref^{tree}")"
 ```
 
-For a new Core generation, a normal merge can retain obsolete files or old
-product changes from `main`. Review every difference from canonical, including
-unconflicted paths, rather than assuming a clean merge is correct. Preserve the
-website and other approved repository-only work, but reconcile product files
-to the new canonical tree. Merge the promotion PR with **Create a merge commit**;
-do not squash or rebase it.
-
-The merge must retain the canonical tip as a parent. Its product files must
-match that tip; the source/build command above is a partial check, not a
-substitute for reviewing the complete difference list. When there are no
-repository-only exceptions, also require complete tree equality. Any exception
-must name exact paths and explain why they do not alter the released product.
-For website preservation, this can include `doc/website/**`, its deployment
-workflow, contribution/maintainer guidance, and the lint exclusions required by
-the website mirror. Other CI and feature tests still match the canonical tip.
-
-Release tags and artifacts continue to use the canonical branch, never the
-promotion commit. A promotion branch is review state and may be rebuilt with a
-force-with-lease; the canonical release branch is not rewritten after publication.
+The last two commands are the defining promotion check: the merge records both
+histories, but its product tree is identical to the canonical release tip. A
+promotion branch is review state and may be rebuilt with a force-with-lease;
+the canonical release branch is not rewritten after publication.
 
 ## Editing policy safely
 
@@ -303,15 +195,6 @@ consensus-valid transaction locally, test both sides of the boundary:
 
 1. the configured node rejects it from admission, relay, or template selection;
 2. a consensus-valid block containing it is still accepted.
-
-For Core ports and changes affecting policy, validation or serialization,
-include the source-pinned paired block/state evidence described in the
-[compatibility review contract](compatibility/README.md). Name expected local
-admission differences separately from block acceptance and chain state.
-The contract defines smoke/full profiles for external qualification tooling;
-this documentation alone does not establish that the tooling has run.
-Docs-only changes state why runtime evidence is inapplicable and need no node
-build. Keep the existing feature-owned tests and required CI checks.
 
 Never add RDTS/BIP110 consensus enforcement. Audit every essential touch to
 `src/consensus/`, `src/script/`, or validation code, and make no incidental
@@ -372,63 +255,13 @@ promotion after source CI passes so no duplicate matrix is scheduled while
 candidate evidence is incomplete. Optional checks do not claim reproducible
 binaries, and existing release tags cannot be manually rehearsed.
 
-Matching-Core block compatibility always runs fresh for a promotion candidate.
-The existing source/tree/workflow proof still governs reuse of other compiled
-checks; generic prior CI success does not establish this fixture evidence.
-
-## Matching Core block compatibility in CI
-
-`matching Core block compatibility` is separate from previous-release wallet
-and interoperability checks. PRs select smoke for critical policy, validation,
-kernel, script, consensus and transaction changes, compatibility tooling and
-workflow changes, and unknown/incomplete changed-file inventories. Ordinary
-documentation changes can skip it. `ci:compat` requests both compatibility lanes;
-`ci:full` requests full nightly assurance, including one full block comparison,
-and avoids an overlapping smoke run.
-
-Nightly `all` includes full comparison. The standalone `block-compatibility`
-suite runs it without unrelated assurance matrices. Manual requests run even
-when scheduled assurance would skip an unchanged source:
-
-```sh
-gh workflow run nightly.yml --ref topic/30.3/release-methodology \
-    -f suite=block-compatibility -f context-ref=roots/30.3
-```
-
-The separate nightly `i686 Debug` selection uses the existing 32-bit Debug
-profile with `NO_IPC=1`; it does not establish multiprocess/IPC coverage.
-
-The workflow derives the official Core tag commit from the reviewed generation
-branch convention and verifies its ancestry in candidate and canonical source.
-For `main`, committed package metadata narrows the generation, then official tag
-pinning and ancestry confirm its reviewed canonical base; a version string alone
-does not authenticate it. Unknown or ambiguous generations fail; the current fixtures support Core 30.3 only. A new
-Core generation needs reviewed fixture expectations before qualification.
-Official repository/tag commit pinning does not authenticate the tag signer.
-Core RC tag forms remain valid release-source inputs, but this fixture lane
-supports final Core 30.3 only. It explicitly blocks an RC rehearsal/release until
-RC-specific matching-base and fixture expectations have been reviewed and added;
-it never substitutes the final Core tag for an RC base.
-
-Both nodes build in-run from immutable Git exports with the same recorded
-node-only configuration and no compiled-binary cache. Reports account for all
-three smoke or six full cases and record source trees, binary/configuration
-digests, fixture/serialization provenance and cleanup. Missing, skipped,
-malformed, stale or failed selected evidence fails the required result. Review
-bounded sanitized artifacts on failures, fix the cause, then rerun complete
-coverage; never reinterpret a skip as qualification. These are finite fixture
-results, not exhaustive consensus equivalence or wallet/relay interoperability.
-
 ## Release handoff
-
-Complete independent review of the canonical implementation before assigning a
-permanent tag. Artifact inspection and post-publication checks complement that
-review; they cannot replace it.
 
 Release tags use the Roots form `v<core-version>-roots.<positive-integer>`;
 release candidates may use `v<core-version>rc<n>-roots.<positive-integer>`.
-Before creating a permanent tag, merge the reviewed promotion so the trusted
-workflow is present on the default branch. The default path tags the reviewed
+Before creating a permanent tag, verify the release workflow in the reviewed
+canonical source. The tag-push path uses that tagged workflow and does not
+require a promotion into `main`. The default path tags the reviewed
 canonical source once; the tag runs fresh five-platform builds, required
 manifest signing and new-draft creation. Independently verify that draft before
 separate publication approval.
@@ -441,52 +274,11 @@ each disposable runner checkout, and builds the same five-platform artifact
 set. It has read-only repository permissions and cannot create a GitHub
 release. It also refuses to run if the future tag already exists remotely.
 
-Both manual rehearsal and permanent tag builds require full matching-Core block
-compatibility at the exact resolved release-source commit before any platform
-build. The metadata job retains canonical-source/tag validation and resolves the
-matching official Core base; changed source/configuration/profile requires new
-evidence. Failed or skipped comparison blocks platform builds and draft creation.
-Compatibility evidence is a CI artifact, separate from the eight release assets.
-
-Inspect the run and download its report alongside the existing patch/package
-checks (substitute the run ID and full immutable identities):
+For an explicitly requested optional rehearsal:
 
 ```sh
-gh run view "$RUN_ID" --repo LuganoPlanB/bitcoin-roots
-gh run download "$RUN_ID" --repo LuganoPlanB/bitcoin-roots \
-    --name "block-compatibility-full-${ROOTS_SHA}-${CORE_SHA}" --dir compatibility-evidence
-```
-
-Require `status=passed`, `qualified=true`, the full six-case inventory, both
-expected source commits/trees, in-run build provenance and current configuration.
-Inspect `sources.json` and `status.json` for source/run identity and confirm the
-artifact came from the selected run. Sanitized reports retain bounded diagnostics;
-credential-like lines are redacted. A local/mock test does not substitute for an
-actual successful reusable workflow run.
-
-Coordinate a stable canonical tip through required CI, immutable tagging and
-signed CI draft verification. Each build job and the CI draft helper refreshes
-canonical-tip equality; pinned inputs alone do not prevent branch advancement
-from invalidating a gate. If source changes before tagging, renew source review
-and required CI. The permanent tag triggers fresh builds of all five platforms;
-prior rehearsal packages are inspection evidence, not final release assets.
-After tagging, never move the tag to repair a failed handoff.
-
-The manual workflow comes from `main`, but build scripts are checked out from
-the requested canonical commit. A permanent tag push runs the workflow and
-scripts from that tagged source, builds all five platforms anew, then signs the
-manifest and creates a new draft in the `release` environment. Require the
-workflow and script interfaces to agree between reviewed main and canonical
-revisions. Include necessary workflow fixes on the canonical branch before
-promotion and tagging (and any optional rehearsal). Public publication still
-needs separate approval after independent signed-draft verification.
-
-For an explicitly requested optional rehearsal (substitute the reviewed candidate):
-
-```sh
-release_tag=v30.3-roots.1
-git fetch origin roots/30.3
-release_commit=$(git rev-parse origin/roots/30.3^{commit})
+release_tag=v31.1-roots.1
+release_commit=$(git rev-parse origin/roots/31.1^{commit})
 gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
 ```
@@ -500,28 +292,21 @@ Fetch again and verify the annotated tag target and ancestry
 immediately before pushing:
 
 ```sh
-# In a dedicated release worktree, retain the reviewed canonical commit.
-release_tag=v30.3-roots.1
-release_commit=REPLACE_WITH_REVIEWED_40_HEX_COMMIT
+release_tag=v31.1-roots.1
 git check-ref-format "refs/tags/$release_tag"
-git fetch origin roots/30.3
-git fetch --no-tags https://github.com/bitcoin/bitcoin.git \
-    refs/tags/v30.3:refs/tags/v30.3
-test "$release_commit" = "$(git rev-parse origin/roots/30.3^{commit})"
-git switch --detach "$release_commit"
-# Confirm the release tag is absent both locally and remotely before creating it.
+git fetch origin roots/31.1
+git fetch https://github.com/bitcoin/bitcoin.git \
+    refs/tags/v31.1:refs/tags/v31.1
+release_commit=$(git rev-parse origin/roots/31.1^{commit})
 git tag --annotate "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
+git rev-parse "$release_tag^{commit}"
+test "$(git rev-parse "$release_tag^{commit}")" = \
+    "$(git rev-parse origin/roots/31.1^{commit})"
 ci/release/validate-release-source.sh "$release_tag"
 ```
 
-The validator requires `HEAD` to equal the tagged commit, as well as requiring
-the tag to equal the current canonical tip. Run it in that release worktree,
-not on the promotion merge. An annotated tag is not necessarily signed; verify
-and describe tag and checksum signatures separately. Rehearsal tags must live
-in disposable clones (worktrees share a tag namespace), so an ephemeral tag
-cannot be accidentally pushed as the permanent release.
-
-Run the retained release metadata tests before pushing:
+Run the retained CI/release metadata tests before pushing (this includes signing,
+portable-patch replay, archive/COPYING and signed-draft gates):
 
 ```sh
 python3 -m unittest discover -s ci/test
@@ -578,45 +363,10 @@ download and verify all eight draft assets and notes before separately authorize
 visibility-only publication. Verify the public release again unauthenticated.
 Never replace published tags/assets; maintenance uses a reviewed new release.
 
+## Development verification cadence
 
-Before publication, verify the release notes and contributor acknowledgements.
-Curated notes must include changes ported from an earlier generation.
-The signed CI draft includes the source-controlled curated notes and actual
-run/source provenance; the helper refuses any existing draft and never replaces
-its body or assets.
-Prepare notes before approving publication, then publish the inspected draft
-without rebuilding or replacing its assets.
-
-Never replace public release tags or assets, use `--clobber`, or repeat a
-release operation to rewrite public assets. Diagnose a failed pre-publication
-handoff against the immutable tag; the helper refuses an existing draft/public
-release. Once the canonical branch advances, its tip
-is no longer evidence for an older release. Historical verification uses the
-immutable tag, authenticated upstream base, public checksums/signatures and
-clean patch replay, rather than requiring the old tag to equal today's tip.
-
-After publication, repeat the tag, asset, checksum and signature-if-present
-checks through an unauthenticated client. Then refresh the website's historical
-patch browser using the separate documentation workflow from trusted `main`:
-
-```sh
-gh workflow run deploy-docs.yml --repo LuganoPlanB/bitcoin-roots --ref main
-gh run list --repo LuganoPlanB/bitcoin-roots --workflow deploy-docs.yml --branch main --limit 5
-gh run watch <refresh-run-id> --repo LuganoPlanB/bitcoin-roots --exit-status
-```
-
-Select the newly dispatched run ID. After it succeeds, check the
-[public patch index](https://plan-b.foundation/bitcoin-roots/patches/), new release
-overview, representative commit/file links and original download/checksum links.
-Confirm the public deployment receipt and catalogue account for every public
-release, including historical entries without a patch. Matching checksums do not
-by themselves authenticate a signature.
-
-The documentation workflow also checks inventory every six hours, plus GitHub
-scheduling delay, to catch missed dispatches. Release events use tag refs and
-`GITHUB_TOKEN` publication can suppress follow-on event workflows; refresh does
-not rely on either. A failed website run preserves the last successful site and
-does not invalidate the binary release. Retry `deploy-docs.yml` after diagnosis;
-never replace published assets or move the tag to repair website visibility. The website-owned
-[backfill, cache, verification and recovery guide](../../doc/website/RELEASE-INPUTS.md)
-documents the single local build command and publication diagnostics.
+Use affected regressions and bounded smoke campaigns while editing; reserve
+one full applicable suite for acceptance. Broad optional-platform, extended and
+long sanitizer/fuzz coverage runs nightly or by explicit manual selection.
+See [CI commands and budgets](../../ci/README.md#fast-pr-and-development-coverage).
+Local workflow/fixture tests do not establish hosted CI success.

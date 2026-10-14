@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022 The Bitcoin Core developers
+# Copyright (c) 2022-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the sendall RPC command."""
@@ -55,7 +55,6 @@ class SendallTest(BitcoinTestFramework):
         for a in amounts:
             self.def_wallet.sendtoaddress(self.wallet.getnewaddress(), a)
         self.generate(self.nodes[0], 1)
-        self.nodes[0].syncwithvalidationinterfacequeue()
         assert_greater_than(self.wallet.getbalances()["mine"]["trusted"], 0)
         return self.wallet.getbalances()["mine"]["trusted"]
 

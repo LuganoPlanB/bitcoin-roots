@@ -30,6 +30,16 @@ on:
         description: Enable the ASan-only USDT coverage configuration
         required: true
         type: boolean
+      cadence:
+        description: Fast affected regressions or full nightly assurance
+        required: false
+        default: nightly
+        type: string
+      files-json:
+        description: Complete changed file list, or null for broad selection
+        required: false
+        default: "null"
+        type: string
       configure-aslr:
         description: Lower ASLR entropy for sanitizer runtimes that require it
         required: true
@@ -47,6 +57,8 @@ jobs:
     env:
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ${{ inputs.file-env }}
+      ROOTS_CI_CADENCE: ${{ inputs.cadence }}
+      ROOTS_CHANGED_FILES_JSON: ${{ inputs.files-json }}
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -68,7 +80,9 @@ jobs:
           append-timestamp: true
           save: ${{ inputs.cache-save }}
       - name: Restore caches
-        uses: ./.github/actions/restore-caches
+        uses: ./.github/actions/cache/restore
+        with:
+          provider: gha
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
       - name: Enable USDT coverage
@@ -80,3 +94,13 @@ jobs:
         run: sudo sysctl -w vm.mmap_rnd_bits=28
       - name: Run sanitizer coverage
         run: ./ci/test_run_all.sh
+      - name: Preserve sanitizer failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-failures-${{ inputs.name }}
+          path: |
+            ${{ env.ROOTS_ARTIFACTS_DIR }}/
+            ${{ runner.temp }}/ci/scratch/test_runner/
+            ${{ runner.temp }}/build/Testing/Temporary/
+          if-no-files-found: warn

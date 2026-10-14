@@ -26,6 +26,9 @@
 #include <utility>
 #include <vector>
 
+// Standardness also links into standalone wallet tools through bitcoin_common.
+unsigned int g_script_size_policy_limit = DEFAULT_SCRIPT_SIZE_POLICY_LIMIT;
+
 CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
 {
     // "Dust" is defined in terms of dustRelayFee,
@@ -334,9 +337,9 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
 }
 
 /**
- * Check the total number of non-witness sigops across the whole transaction, as per BIP54.
+ * Check the local transaction limit for potentially executed legacy sigops.
  */
-static bool CheckSigopsBIP54(const CTransaction& tx, const CCoinsViewCache& inputs, const StandardnessOptions& opts)
+static bool CheckLegacyPolicySigops(const CTransaction& tx, const CCoinsViewCache& inputs, const StandardnessOptions& opts)
 {
     Assert(!tx.IsCoinBase());
 
@@ -378,7 +381,7 @@ static bool CheckSigopsBIP54(const CTransaction& tx, const CCoinsViewCache& inpu
  *
  * Note that only the non-witness portion of the transaction is checked here.
  *
- * We also check the total number of non-witness sigops across the whole transaction, as per BIP54.
+ * We also check the local transaction limit for potentially executed legacy sigops.
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, const StandardnessOptions& opts, const std::string& reason_prefix, std::string& out_reason, const ignore_rejects_type& ignore_rejects)
 {
@@ -386,7 +389,7 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs,
         return true; // Coinbases don't use vin normally
     }
 
-    if (!CheckSigopsBIP54(tx, mapInputs, opts)) {
+    if (!CheckLegacyPolicySigops(tx, mapInputs, opts)) {
         MaybeReject("sigops-toomany-overall");
     }
 
@@ -598,9 +601,14 @@ bool SpendsNonAnchorWitnessProg(const CTransaction& tx, const CCoinsViewCache& p
     return false;
 }
 
+int64_t GetSigOpsAdjustedWeight(int64_t weight, int64_t sigop_cost, unsigned int bytes_per_sigop)
+{
+    return std::max(weight, sigop_cost * bytes_per_sigop);
+}
+
 int64_t GetVirtualTransactionSize(int64_t nWeight, int64_t nSigOpCost, unsigned int bytes_per_sigop)
 {
-    return (std::max(nWeight, nSigOpCost * bytes_per_sigop) + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR;
+    return (GetSigOpsAdjustedWeight(nWeight, nSigOpCost, bytes_per_sigop) + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR;
 }
 
 int64_t GetVirtualTransactionSize(const CTransaction& tx, int64_t nSigOpCost, unsigned int bytes_per_sigop)
@@ -679,6 +687,13 @@ std::pair<size_t, size_t> DatacarrierBytes(const CTransaction& tx, const CCoinsV
     }
 
     return ret;
+}
+
+
+bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& inputs)
+{
+    std::string reason;
+    return IsWitnessStandard(tx, inputs, "", reason);
 }
 
 int32_t CalculateExtraTxWeight(const CTransaction& tx, const CCoinsViewCache& view, const unsigned int weight_per_data_byte)

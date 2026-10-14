@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -40,12 +40,12 @@ bool IsProtected(int num_peers,
 
     size_t unprotected_count{0};
     for (const NodeEvictionCandidate& candidate : candidates) {
-        if (protected_peer_ids.count(candidate.id)) {
+        if (protected_peer_ids.contains(candidate.id)) {
             // this peer should have been removed from the eviction candidates
             BOOST_TEST_MESSAGE(strprintf("expected candidate to be protected: %d", candidate.id));
             return false;
         }
-        if (unprotected_peer_ids.count(candidate.id)) {
+        if (unprotected_peer_ids.contains(candidate.id)) {
             // this peer remains in the eviction candidates, as expected
             ++unprotected_count;
         }
@@ -573,11 +573,11 @@ BOOST_AUTO_TEST_CASE(peer_protection_test)
 bool IsEvicted(std::vector<NodeEvictionCandidate> candidates, const std::unordered_set<NodeId>& node_ids, FastRandomContext& random_context)
 {
     std::shuffle(candidates.begin(), candidates.end(), random_context);
-    const std::optional<NodeId> evicted_node_id = SelectNodeToEvict(std::move(candidates), /*force=*/false);
+    const std::optional<NodeId> evicted_node_id = SelectNodeToEvict(std::move(candidates));
     if (!evicted_node_id) {
         return false;
     }
-    return node_ids.count(*evicted_node_id);
+    return node_ids.contains(*evicted_node_id);
 }
 
 // Create number_of_nodes random nodes, apply setup function candidate_setup_fn,
@@ -666,20 +666,38 @@ BOOST_AUTO_TEST_CASE(peer_eviction_test)
         // four peers by net group, eight by lowest ping time, four by last time of novel tx, up to eight non-tx-relay
         // peers by last novel block time, and four more peers by last novel block time.
         if (number_of_nodes >= 29) {
-            BOOST_CHECK(SelectNodeToEvict(GetRandomNodeEvictionCandidates(number_of_nodes, random_context), /*force=*/false));
+            BOOST_CHECK(SelectNodeToEvict(GetRandomNodeEvictionCandidates(number_of_nodes, random_context)));
         }
 
         // No eviction is expected given <= 20 random eviction candidates. The eviction logic protects at least
         // four peers by net group, eight by lowest ping time, four by last time of novel tx and four peers by last
         // novel block time.
         if (number_of_nodes <= 20) {
-            BOOST_CHECK(!SelectNodeToEvict(GetRandomNodeEvictionCandidates(number_of_nodes, random_context), /*force=*/false));
+            BOOST_CHECK(!SelectNodeToEvict(GetRandomNodeEvictionCandidates(number_of_nodes, random_context)));
         }
 
         // Cases left to test:
         // * "If any remaining peers are preferred for eviction consider only them. [...]"
         // * "Identify the network group with the most connections and youngest member. [...]"
     }
+}
+
+BOOST_AUTO_TEST_CASE(force_eviction_preserves_unconditional_protection)
+{
+    NodeEvictionCandidate candidate{};
+    candidate.id = 17;
+    candidate.m_conn_type = ConnectionType::INBOUND;
+    BOOST_CHECK(!SelectNodeToEvict({candidate}));
+    BOOST_CHECK_EQUAL(*SelectNodeToEvict({candidate}, true), 17);
+    candidate.m_noban = true;
+    BOOST_CHECK(!SelectNodeToEvict({candidate}, true));
+    candidate.m_noban = false;
+    for (const auto type : {ConnectionType::MANUAL, ConnectionType::OUTBOUND_FULL_RELAY,
+                           ConnectionType::BLOCK_RELAY, ConnectionType::FEELER}) {
+        candidate.m_conn_type = type;
+        BOOST_CHECK(!SelectNodeToEvict({candidate}, true));
+    }
+    BOOST_CHECK(!SelectNodeToEvict({}, true));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

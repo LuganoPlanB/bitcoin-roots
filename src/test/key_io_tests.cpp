@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,6 +19,24 @@
 #include <algorithm>
 
 BOOST_FIXTURE_TEST_SUITE(key_io_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(secure_wif_decode_matches_script_key_forms)
+{
+    for (const bool compressed : {false, true}) {
+        CKey key;
+        key.MakeNewKey(compressed);
+        const std::string encoded{EncodeSecret(key)};
+        const SecureString secure{encoded.begin(), encoded.end()};
+        const CKey decoded{DecodeSecret(secure)};
+        BOOST_CHECK(decoded == key);
+        BOOST_CHECK_EQUAL(decoded.IsCompressed(), compressed);
+        SecureString embedded_nul{secure};
+        embedded_nul.push_back('\0');
+        BOOST_CHECK(!DecodeSecret(embedded_nul).IsValid());
+        BOOST_CHECK(!DecodeSecret(SecureString{"invalid-WIF"}).IsValid());
+    }
+}
+
 
 // Goal: check that parsed keys match test payload
 BOOST_AUTO_TEST_CASE(key_io_valid_parse)
@@ -145,18 +163,6 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
             BOOST_CHECK_MESSAGE(!privkey.IsValid(), "IsValid privkey in mainnet:" + strTest);
         }
     }
-}
-
-BOOST_AUTO_TEST_CASE(secure_string_private_key_decode)
-{
-    SelectParams(ChainType::REGTEST);
-    const CKey key{GenerateRandomKey()};
-    const std::string encoded{EncodeSecret(key)};
-    SecureString secure_encoded{encoded.begin(), encoded.end()};
-    BOOST_CHECK(DecodeSecret(secure_encoded) == key);
-
-    secure_encoded.insert(secure_encoded.begin() + 1, '\0');
-    BOOST_CHECK(!DecodeSecret(secure_encoded).IsValid());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

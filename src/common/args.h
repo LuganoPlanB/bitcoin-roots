@@ -11,6 +11,7 @@
 #include <util/chaintype.h>
 #include <util/fs.h>
 
+#include <concepts>
 #include <cstdint>
 #include <iosfwd>
 #include <list>
@@ -91,10 +92,11 @@ struct SectionInfo {
 std::string SettingToString(const common::SettingsValue&, const std::string&);
 std::optional<std::string> SettingToString(const common::SettingsValue&);
 
-int64_t SettingToInt(const common::SettingsValue&, int64_t);
-std::optional<int64_t> SettingToInt(const common::SettingsValue&);
+template <std::integral Int>
+Int SettingTo(const common::SettingsValue&, Int);
 
-std::optional<int64_t> SettingToFixedPoint(const common::SettingsValue&, int decimals);
+template <std::integral Int>
+std::optional<Int> SettingTo(const common::SettingsValue&);
 
 bool SettingToBool(const common::SettingsValue&, bool);
 std::optional<bool> SettingToBool(const common::SettingsValue&);
@@ -115,6 +117,7 @@ public:
         // ALLOW_STRING = 0x08,   //!< unimplemented, draft implementation in #16545
         // ALLOW_LIST = 0x10,     //!< unimplemented, draft implementation in #16545
         DISALLOW_NEGATION = 0x20, //!< disallow -nofoo syntax
+        STRICT_NEGATION = 0x80, //!< require empty, 0 or 1 before negation conversion
         DISALLOW_ELISION = 0x40,  //!< disallow -foo syntax that doesn't assign any value
 
         DEBUG_ONLY = 0x100,
@@ -148,7 +151,7 @@ protected:
     std::list<SectionInfo> m_config_sections GUARDED_BY(cs_args);
     std::optional<fs::path> m_config_path GUARDED_BY(cs_args);
     std::optional<fs::path> m_rwconf_path GUARDED_BY(cs_args);
-    bool m_rwconf_had_prune_option{false};
+    bool m_rwconf_had_prune_option GUARDED_BY(cs_args){false};
     mutable fs::path m_cached_blocks_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_datadir_path GUARDED_BY(cs_args);
     mutable fs::path m_cached_network_datadir_path GUARDED_BY(cs_args);
@@ -195,7 +198,7 @@ protected:
     fs::path GetRWConfigFilePath() const;
     [[nodiscard]] bool ReadConfigFiles(std::string& error, bool ignore_invalid_keys = false);
 
-    bool RWConfigHasPruneOption() const { return m_rwconf_had_prune_option; }
+    bool RWConfigHasPruneOption() const { LOCK(cs_args); return m_rwconf_had_prune_option; }
     void ModifyRWConfigFile(const std::map<std::string, std::string>& settings_to_change, bool also_settings_json = true);
     void ModifyRWConfigFile(const std::string& setting_to_change, const std::string& new_value, bool also_settings_json = true);
     void EraseRWConfigFile();
@@ -307,17 +310,14 @@ protected:
      * @param nDefault (e.g. 1)
      * @return command-line argument (0 if invalid number) or default value
      */
-    int64_t GetIntArg(const std::string& strArg, int64_t nDefault) const;
-    std::optional<int64_t> GetIntArg(const std::string& strArg) const;
+    template <std::integral Int>
+    Int GetArg(const std::string& strArg, Int nDefault) const;
 
-    /**
-     * Return fixed-point argument
-     *
-     * @param arg Argument to get (e.g. "-foo")
-     * @param decimals Number of fractional decimal digits to accept
-     * @return Command-line argument (0 if invalid number) multiplied by 10**decimals
-     */
-    std::optional<int64_t> GetFixedPointArg(const std::string& arg, int decimals) const;
+    template <std::integral Int>
+    std::optional<Int> GetArg(const std::string& strArg) const;
+
+    int64_t GetIntArg(const std::string& strArg, int64_t nDefault) const { return GetArg<int64_t>(strArg, nDefault); }
+    std::optional<int64_t> GetIntArg(const std::string& strArg) const { return GetArg<int64_t>(strArg); }
 
     /**
      * Return boolean argument or default value
@@ -349,9 +349,7 @@ protected:
 
     // Forces an arg setting. Called by SoftSetArg() if the arg hasn't already
     // been set. Also called directly in testing.
-    void ForceSetArg(const std::string& arg, const std::string& value);
-    void ForceSetArg(const std::string& arg, int64_t value);
-    void ForceSetArgV(const std::string& arg, const common::SettingsValue& value);
+    void ForceSetArg(const std::string& strArg, const std::string& strValue);
 
     /**
      * Returns the appropriate chain type from the program arguments.
@@ -380,7 +378,7 @@ protected:
     /**
      * Add many hidden arguments
      */
-    void AddHiddenArgs(const std::vector<std::string>& args, unsigned int flags = ArgsManager::ALLOW_ANY);
+    void AddHiddenArgs(const std::vector<std::string>& args);
 
     /**
      * Clear available arguments
@@ -504,22 +502,5 @@ std::string HelpMessageGroup(const std::string& message);
  * @return the formatted string
  */
 std::string HelpMessageOpt(const std::string& option, const std::string& message);
-
-namespace common {
-#ifdef WIN32
-class WinCmdLineArgs
-{
-public:
-    WinCmdLineArgs();
-    ~WinCmdLineArgs();
-    std::pair<int, char**> get();
-
-private:
-    int argc;
-    char** argv;
-    std::vector<std::string> args;
-};
-#endif
-} // namespace common
 
 #endif // BITCOIN_COMMON_ARGS_H

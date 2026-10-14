@@ -27,8 +27,8 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 # Project / Package metadata
 #=============================
 set(CLIENT_NAME "Bitcoin Roots")
-set(CLIENT_VERSION_MAJOR 30)
-set(CLIENT_VERSION_MINOR 3)
+set(CLIENT_VERSION_MAJOR 31)
+set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
 set(CLIENT_VERSION_IS_RELEASE "true")
@@ -53,13 +53,9 @@ set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
 project(BitcoinCore
   VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
   DESCRIPTION "Bitcoin client software"
-  HOMEPAGE_URL "https://plan-b.foundation/bitcoin-roots/"
+  HOMEPAGE_URL "https://github.com/luganoplanb/bitcoin-roots/"
   LANGUAGES NONE
 )
-
-set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 # Keep the user-visible Roots release name separate from the numeric protocol
 # version. Release builders supply CLIENT_VERSION_TAG even when Git metadata
@@ -78,13 +74,22 @@ else()
   string(APPEND CLIENT_VERSION_STRING "-roots.1")
 endif()
 
+set(COPYRIGHT_HOLDERS "The %s developers")
+set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
+set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
+
 #=============================
 # Language setup
 #=============================
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_HOST_APPLE)
+if(CMAKE_VERSION VERSION_LESS 4.2 AND CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_HOST_APPLE)
   # We do not use the install_name_tool when cross-compiling for macOS.
+  # However, CMake < 4.2 still searches for Apple's version of the tool,
+  # which causes an error during configuration.
+  # See:
+  # - https://gitlab.kitware.com/cmake/cmake/-/issues/27069
+  # - https://gitlab.kitware.com/cmake/cmake/-/merge_requests/10955
   # So disable this tool check in further enable_language() commands.
-  set(CMAKE_PLATFORM_HAS_INSTALLNAME FALSE)
+  set(CMAKE_INSTALL_NAME_TOOL "${CMAKE_COMMAND} -E true")
 endif()
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 20)
@@ -109,8 +114,6 @@ include(CMakeDependentOption)
 option(BUILD_BITCOIN_BIN "Build bitcoin executable." ON)
 option(BUILD_DAEMON "Build bitcoind executable." ON)
 option(BUILD_GUI "Build bitcoin-qt executable." OFF)
-set(WITH_QT_VERSION "6" CACHE STRING "Choose 5 or 6.")
-set_property(CACHE WITH_QT_VERSION PROPERTY STRINGS "5" "6")
 option(BUILD_CLI "Build bitcoin-cli executable." ON)
 
 option(BUILD_TESTS "Build test_bitcoin and other unit test executables." ON)
@@ -119,56 +122,21 @@ option(BUILD_UTIL "Build bitcoin-util executable." ${BUILD_TESTS})
 
 option(BUILD_UTIL_CHAINSTATE "Build experimental bitcoin-chainstate executable." OFF)
 option(BUILD_KERNEL_LIB "Build experimental bitcoinkernel library." ${BUILD_UTIL_CHAINSTATE})
+cmake_dependent_option(BUILD_KERNEL_TEST "Build tests for the experimental bitcoinkernel library." ON "BUILD_KERNEL_LIB" OFF)
 
-option(WITH_SYSTEM_LEVELDB "Build with system LevelDB instead of embedded fork." OFF)
+option(WITH_SYSTEM_LEVELDB "Build with system LevelDB instead of the embedded fork." OFF)
 mark_as_advanced(WITH_SYSTEM_LEVELDB)
+set(EMBEDDED_LEVELDB TRUE)
 if(WITH_SYSTEM_LEVELDB)
+  set(EMBEDDED_LEVELDB FALSE)
   find_package(LevelDB MODULE REQUIRED)
-else()
-  set(EMBEDDED_LEVELDB TRUE)
-endif()  # WITH_SYSTEM_LEVELDB
+endif()
 
-option(WITH_SYSTEM_LIBSECP256K1 "Build with system libsecp256k1 instead of embedded copy." OFF)
+option(WITH_SYSTEM_LIBSECP256K1 "Build with system libsecp256k1 instead of the embedded copy." OFF)
 mark_as_advanced(WITH_SYSTEM_LIBSECP256K1)
 if(WITH_SYSTEM_LIBSECP256K1)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(libsecp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)
-  add_library(secp256k1 ALIAS PkgConfig::libsecp256k1)
-
-  if(NOT (libsecp256k1_HAS_SECP256K1_ELLSWIFT_CREATE AND libsecp256k1_HAS_SECP256K1_XONLY_PUBKEY_PARSE AND libsecp256k1_HAS_SECP256K1_ECDSA_RECOVER AND libsecp256k1_HAS_SECP256K1_SCHNORRSIG_VERIFY AND libsecp256k1_HAS_SECP256K1_MUSIG_PUBKEY_AGG))
-    include(CheckSymbolExists)
-    include(CMakePushCheckState)
-    cmake_push_check_state(RESET)
-    string(APPEND CMAKE_REQUIRED_FLAGS " ${libsecp256k1_CFLAGS_OTHER}")
-    list(APPEND CMAKE_REQUIRED_INCLUDES ${libsecp256k1_INCLUDE_DIRS})
-    list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${libsecp256k1_LDFLAGS})
-    list(APPEND CMAKE_REQUIRED_LIBRARIES ${libsecp256k1_LIBRARIES})
-    unset(missing_modules)
-    macro(check_secp256k1_module module symbol)
-      string(TOUPPER "${symbol}" VAR)
-      set(VAR "libsecp256k1_HAS_${VAR}")
-      unset(${VAR})
-      check_symbol_exists("${symbol}" "secp256k1_${module}.h" ${VAR})
-      if(NOT ${VAR})
-        list(APPEND missing_modules "${module}")
-      endif()
-    endmacro()
-    message(CHECK_START "Checking for required libsecp256k1 modules")
-    list(APPEND CMAKE_MESSAGE_INDENT "  ")
-    check_secp256k1_module(ellswift secp256k1_ellswift_create)
-    check_secp256k1_module(extrakeys secp256k1_xonly_pubkey_parse)
-    check_secp256k1_module(recovery secp256k1_ecdsa_recover)
-    check_secp256k1_module(schnorrsig secp256k1_schnorrsig_verify)
-    check_secp256k1_module(musig secp256k1_musig_pubkey_agg)
-    list(POP_BACK CMAKE_MESSAGE_INDENT)
-    if(missing_modules)
-      list(JOIN missing_modules ", " missing_modules)
-      message(FATAL_ERROR "System-installed libsecp256k1 lacks these required modules: ${missing_modules}.")
-    endif()
-    message(CHECK_PASS "all were found")
-    cmake_pop_check_state()
-  endif()
-endif()  # WITH_SYSTEM_LIBSECP256K1
+  include(CheckSystemSecp256k1)
+endif()
 
 option(ENABLE_WALLET "Enable wallet." ON)
 if(ENABLE_WALLET)
@@ -186,18 +154,20 @@ endif()
 cmake_dependent_option(BUILD_WALLET_TOOL "Build bitcoin-wallet tool." ${BUILD_TESTS} "ENABLE_WALLET" OFF)
 
 option(REDUCE_EXPORTS "Attempt to reduce exported symbols in the resulting executables." OFF)
-option(WERROR "Treat compiler warnings as errors." OFF)
+option(CMAKE_COMPILE_WARNING_AS_ERROR "Treat compiler warnings as errors." OFF)
 option(WITH_CCACHE "Attempt to use ccache for compiling." ON)
-
-option(WITH_MINIUPNPC "Enable UPnP." OFF)
-if(WITH_MINIUPNPC)
-  find_package(MiniUPnPc MODULE REQUIRED)
-endif()
 
 option(WITH_ZMQ "Enable ZMQ notifications." OFF)
 if(WITH_ZMQ)
   find_package(ZeroMQ 4.0.0 MODULE REQUIRED)
 endif()
+
+option(WITH_MINIUPNPC "Discover MiniUPnPc for deferred Roots UPnP integration." OFF)
+if(WITH_MINIUPNPC)
+  find_package(MiniUPnPc MODULE REQUIRED)
+endif()
+
+option(WITH_EMBEDDED_ASMAP "Embed default ASMap data." ON)
 
 option(WITH_USDT "Enable tracepoints for Userspace, Statically Defined Tracing." OFF)
 if(WITH_USDT)
@@ -206,17 +176,16 @@ endif()
 
 option(ENABLE_EXTERNAL_SIGNER "Enable external signer support." ON)
 
-option(ENABLE_TOR_SUBPROCESS "Enable support for executing a dedicated Tor node." ON)
-
 cmake_dependent_option(WITH_QRENCODE "Enable QR code support." ON "BUILD_GUI" OFF)
 if(WITH_QRENCODE)
   find_package(QRencode MODULE REQUIRED)
   set(USE_QRCODE TRUE)
 endif()
 
-cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI" OFF)
-
 cmake_dependent_option(WITH_TASKBAR_PROGRESS "Enable GUI taskbar progress." ON "CMAKE_SYSTEM_NAME STREQUAL \"Windows\" AND BUILD_GUI" OFF)
+set(BITCOIN_QT_WIN_TASKBAR ${WITH_TASKBAR_PROGRESS})
+
+cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI" OFF)
 
 cmake_dependent_option(ENABLE_IPC "Build multiprocess bitcoin-node and bitcoin-gui executables in addition to monolithic bitcoind and bitcoin-qt executables." ON "NOT WIN32" OFF)
 cmake_dependent_option(WITH_EXTERNAL_LIBMULTIPROCESS "Build with external libmultiprocess library instead of with local git subtree when ENABLE_IPC is enabled. This is not normally recommended, but can be useful for developing libmultiprocess itself." OFF "ENABLE_IPC" OFF)
@@ -228,6 +197,11 @@ if(ENABLE_IPC AND WITH_EXTERNAL_LIBMULTIPROCESS)
 endif()
 
 cmake_dependent_option(BUILD_GUI_TESTS "Build test_bitcoin-qt executable." ON "BUILD_GUI;BUILD_TESTS" OFF)
+set(WITH_QT_VERSION "6" CACHE STRING "Qt major version to use for GUI builds (5 or 6).")
+set_property(CACHE WITH_QT_VERSION PROPERTY STRINGS 5 6)
+if(NOT WITH_QT_VERSION MATCHES "^[56]$")
+  message(FATAL_ERROR "WITH_QT_VERSION must be 5 or 6.")
+endif()
 if(BUILD_GUI)
   set(qt_components Core Gui Widgets LinguistTools)
   if(ENABLE_WALLET)
@@ -237,21 +211,18 @@ if(BUILD_GUI)
     list(APPEND qt_components DBus)
     set(USE_DBUS TRUE)
   endif()
-  if(WITH_TASKBAR_PROGRESS)
-    set(BITCOIN_QT_WIN_TASKBAR TRUE)
-  endif()
   if(BUILD_GUI_TESTS)
     list(APPEND qt_components Test)
   endif()
-  if("${WITH_QT_VERSION}" STREQUAL "6")
-    find_package(Qt 6.2 MODULE REQUIRED
-      COMPONENTS ${qt_components}
-    )
-  else()  # ! Qt 6
-    find_package(Qt 5.11.3 MODULE REQUIRED
-      COMPONENTS ${qt_components}
-    )
-  endif()  # Qt 6
+  if(WITH_QT_VERSION STREQUAL "5")
+    set(qt_min_version 5.11.3)
+  else()
+    set(qt_min_version 6.2)
+  endif()
+  find_package(Qt ${qt_min_version} MODULE REQUIRED
+    COMPONENTS ${qt_components}
+  )
+  unset(qt_min_version)
   unset(qt_components)
 endif()
 
@@ -296,11 +267,12 @@ if(BUILD_FOR_FUZZING)
   set(BUILD_UTIL OFF)
   set(BUILD_UTIL_CHAINSTATE OFF)
   set(BUILD_KERNEL_LIB OFF)
+  set(BUILD_KERNEL_TEST OFF)
   set(BUILD_WALLET_TOOL OFF)
   set(BUILD_GUI OFF)
   set(ENABLE_EXTERNAL_SIGNER OFF)
-  set(WITH_MINIUPNPC OFF)
   set(WITH_ZMQ OFF)
+  set(WITH_EMBEDDED_ASMAP OFF)
   set(BUILD_TESTS OFF)
   set(BUILD_GUI_TESTS OFF)
   set(BUILD_BENCH OFF)
@@ -312,19 +284,8 @@ if(BUILD_FOR_FUZZING)
   )
 endif()
 
-# The external_lib_interface interface library aims to encapsulate build flags, which
-# are specific to non-internal libraries.
-# It is intended to be a usage requirement for non-internal library
-# targets.
-add_library(external_lib_interface INTERFACE)
-
 include(TryAppendCXXFlags)
 include(TryAppendLinkerFlag)
-
-# Sanitizers require leaving undefined symbols in the library
-if(NOT SANITIZERS)
-try_append_linker_flag("-Wl,--no-undefined" TARGET external_lib_interface)
-endif()
 
 # Redefine/adjust per-configuration flags.
 target_compile_definitions(core_interface_debug INTERFACE
@@ -401,13 +362,6 @@ if(WIN32)
     # As a best effort, target Windows 8.
     try_append_linker_flag("-Wl,--major-subsystem-version,6" TARGET core_interface)
     try_append_linker_flag("-Wl,--minor-subsystem-version,2" TARGET core_interface)
-
-    find_library(MINGWTHRD_LIBRARY mingwthrd)
-    if (MINGWTHRD_LIBRARY)
-      target_link_libraries(core_interface INTERFACE
-        ${MINGWTHRD_LIBRARY}
-      )
-    endif()
   endif()
 
   # Workaround producing large object files, which cannot be handled by the assembler.
@@ -522,11 +476,7 @@ if(BUILD_DAEMON OR BUILD_GUI OR BUILD_CLI OR BUILD_TESTS OR BUILD_BENCH OR BUILD
   find_package(Libevent 2.1.8 MODULE REQUIRED)
 endif()
 
-include(cmake/iopriority.cmake)
-
 include(cmake/introspection.cmake)
-
-include(cmake/mempressure.cmake)
 
 include(cmake/ccache.cmake)
 
@@ -565,11 +515,13 @@ else()
   try_append_cxx_flags("-Woverloaded-virtual" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wsuggest-override" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wimplicit-fallthrough" TARGET warn_interface SKIP_LINK)
-  try_append_cxx_flags("-Wunreachable-code-loop-increment" TARGET warn_interface SKIP_LINK)
+  try_append_cxx_flags("-Wunreachable-code" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wdocumentation" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wself-assign" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wbidi-chars=any" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wundef" TARGET warn_interface SKIP_LINK)
+  try_append_cxx_flags("-Wleading-whitespace=spaces" TARGET warn_interface SKIP_LINK)
+  try_append_cxx_flags("-Wtrailing-whitespace=any" TARGET warn_interface SKIP_LINK)
 
   # Some compilers (gcc) ignore unknown -Wno-* options, but warn about all
   # unknown options if any other warning is produced. Test the -Wfoo case, and
@@ -594,8 +546,8 @@ try_append_cxx_flags("-fmacro-prefix-map=A=B" TARGET core_interface SKIP_LINK
   IF_CHECK_PASSED "-fmacro-prefix-map=${PROJECT_SOURCE_DIR}/src=."
 )
 
-# Currently all versions of gcc are subject to a class of bugs, see the
-# gccbug_90348 test case (only reproduces on GCC 11 and earlier) and
+# GCC versions 13.2 (and earlier) are subject to a class of bugs, see
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90348 and the meta bug
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111843. To work around that, set
 # -fstack-reuse=none for all gcc builds. (Only gcc understands this flag).
 try_append_cxx_flags("-fstack-reuse=none" TARGET core_interface)
@@ -673,20 +625,6 @@ if(REDUCE_EXPORTS)
   try_append_linker_flag("-Wl,-no_exported_symbols" VAR CMAKE_EXE_LINKER_FLAGS)
 endif()
 
-if(WERROR)
-  if(MSVC)
-    set(werror_flag "/WX")
-  else()
-    set(werror_flag "-Werror")
-  endif()
-  try_append_cxx_flags(${werror_flag} TARGET core_interface SKIP_LINK RESULT_VAR compiler_supports_werror)
-  if(NOT compiler_supports_werror)
-    message(FATAL_ERROR "WERROR set but ${werror_flag} is not usable.")
-  endif()
-  unset(werror_flag)
-endif()
-
-
 # Prefer Unix-style package components over frameworks on macOS.
 # This improves compatibility with Python version managers.
 set(Python3_FIND_FRAMEWORK LAST CACHE STRING "")
@@ -694,11 +632,7 @@ set(Python3_FIND_FRAMEWORK LAST CACHE STRING "")
 # improves compatibility with Python version managers that use shims.
 set(Python3_FIND_UNVERSIONED_NAMES FIRST CACHE STRING "")
 mark_as_advanced(Python3_FIND_FRAMEWORK Python3_FIND_UNVERSIONED_NAMES)
-if(BUILD_GUI)
-  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
-else()
-  find_package(Python3 3.10 COMPONENTS Interpreter)
-endif()
+find_package(Python3 3.10 COMPONENTS Interpreter)
 if(NOT TARGET Python3::Interpreter)
   list(APPEND configure_warnings
     "Minimum required Python not found."
@@ -727,18 +661,6 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29)
   set(CMAKE_SKIP_TEST_ALL_DEPENDENCY FALSE)
 endif()
 
-# TODO: The `CMAKE_SKIP_BUILD_RPATH` variable setting can be deleted
-#       in the future after reordering Guix script commands to
-#       perform binary checks after the installation step.
-# Relevant discussions:
-# - https://github.com/hebasto/bitcoin/pull/236#issuecomment-2183120953
-# - https://github.com/bitcoin/bitcoin/pull/30312#issuecomment-2191235833
-# NetBSD always requires runtime paths to be set for executables.
-if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-else()
-  set(CMAKE_SKIP_INSTALL_RPATH TRUE)
-endif()
 add_subdirectory(test)
 add_subdirectory(doc)
 
@@ -746,7 +668,6 @@ add_subdirectory(src)
 
 include(Maintenance)
 setup_split_debug_script()
-add_maintenance_targets()
 add_windows_deploy_target()
 add_macos_deploy_target()
 
@@ -762,7 +683,7 @@ else()
   set(bitcoin_daemon_status OFF)
 endif()
 message("  bitcoin-node (multiprocess) ......... ${bitcoin_daemon_status}")
-message("  bitcoin-qt (GUI) .................... ${BUILD_GUI} (Qt ${WITH_QT_VERSION})")
+message("  bitcoin-qt (GUI) .................... ${BUILD_GUI}")
 if(BUILD_GUI AND ENABLE_IPC)
   set(bitcoin_gui_status ON)
 else()
@@ -775,11 +696,10 @@ message("  bitcoin-util ........................ ${BUILD_UTIL}")
 message("  bitcoin-wallet ...................... ${BUILD_WALLET_TOOL}")
 message("  bitcoin-chainstate (experimental) ... ${BUILD_UTIL_CHAINSTATE}")
 message("  libbitcoinkernel (experimental) ..... ${BUILD_KERNEL_LIB}")
+message("  kernel-test (experimental) .......... ${BUILD_KERNEL_TEST}")
 message("Optional features:")
 message("  wallet support ...................... ${ENABLE_WALLET}")
 message("  external signer ..................... ${ENABLE_EXTERNAL_SIGNER}")
-message("  tor subprocess ...................... ${ENABLE_TOR_SUBPROCESS}")
-message("  port mapping using UPnP ............. ${WITH_MINIUPNPC}")
 message("  ZeroMQ .............................. ${WITH_ZMQ}")
 if(ENABLE_IPC)
   if (WITH_EXTERNAL_LIBMULTIPROCESS)
@@ -791,9 +711,16 @@ else()
   set(ipc_status OFF)
 endif()
 message("  IPC ................................. ${ipc_status}")
+message("  Embedded ASMap ...................... ${WITH_EMBEDDED_ASMAP}")
 message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
+message("  Windows taskbar (GUI) ............... ${WITH_TASKBAR_PROGRESS}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
+message("  Qt major version (GUI) .............. ${WITH_QT_VERSION}")
+message("  System LevelDB ...................... ${WITH_SYSTEM_LEVELDB}")
+message("  System libsecp256k1 .................. ${WITH_SYSTEM_LIBSECP256K1}")
+message("  MiniUPnPc dependency ................ ${WITH_MINIUPNPC} (UPnP runtime deferred)")
+message("  Deferred Roots behavior ............. see doc/roots-features.md")
 message("Tests:")
 message("  test_bitcoin ........................ ${BUILD_TESTS}")
 message("  test_bitcoin-qt ..................... ${BUILD_GUI_TESTS}")
@@ -809,7 +736,7 @@ message("Cross compiling ....................... ${cross_status}")
 message("C++ compiler .......................... ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}, ${CMAKE_CXX_COMPILER}")
 include(FlagsSummary)
 flags_summary()
-message("Treat compiler warnings as errors ..... ${WERROR}")
+message("Treat compiler warnings as errors ..... ${CMAKE_COMPILE_WARNING_AS_ERROR}")
 message("Use ccache for compiling .............. ${WITH_CCACHE}")
 message("\n")
 if(configure_warnings)
@@ -818,6 +745,7 @@ if(configure_warnings)
       message(WARNING "${warning}")
     endforeach()
     message("  ******\n")
+    message(AUTHOR_WARNING "Warnings have been encountered!")
 endif()
 
 # We want all build properties to be encapsulated properly.

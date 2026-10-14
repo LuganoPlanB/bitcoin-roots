@@ -1,5 +1,14 @@
 # Core and Roots compatibility review contract
 
+## Supported generation
+
+This harness and its regression tests are retained from the 30.3 development
+line. Its qualification gates explicitly accept **Core 30.3 only**. The 31.1
+PR, nightly and release workflows do not call this lane; retaining its code is
+not a claim that 31.1 has passed paired-node qualification. Port and review the
+fixture expectations before enabling it for another generation. Existing 30.3
+workflow integration remains in Git history and the maintained 30.3 line.
+
 ## Comparison command
 
 `compare.py` accepts explicit binary paths, source directories and full source

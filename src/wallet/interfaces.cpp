@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 The Bitcoin Core developers
+// Copyright (c) 2018-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
 #include <node/types.h>
-#include <policy/fees.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <primitives/transaction.h>
 #include <rpc/server.h>
 #include <scheduler.h>
@@ -151,6 +151,12 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     if (output.HasEffectiveValue()) result.effective_value = output.GetEffectiveValue();
     result.ancestor_bump_fees = output.ancestor_bump_fees;
     result.is_spendable = wallet.IsMine(output.txout);
+    // Core treats descriptor-owned outputs as selectable even without keys.
+    // Report missing signing material separately so PSBT selection remains usable.
+    result.is_watch_only = !wallet.IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER);
+    for (const auto* spkm : wallet.GetScriptPubKeyMans(output.txout.scriptPubKey)) {
+        if (spkm->HavePrivateKeys()) result.is_watch_only = false;
+    }
     result.is_solvable = output.solvable;
     result.is_safe = output.safe;
     result.is_locked = wallet.IsLockedCoin(output.outpoint);
@@ -179,7 +185,7 @@ public:
     {
         return m_wallet->EncryptWallet(wallet_passphrase);
     }
-    bool isCrypted() override { return m_wallet->IsCrypted(); }
+    bool isCrypted() override { return m_wallet->HasEncryptionKeys(); }
     bool lock() override { return m_wallet->Lock(); }
     bool unlock(const SecureString& wallet_passphrase) override { return m_wallet->Unlock(wallet_passphrase); }
     bool isLocked() override { return m_wallet->IsLocked(); }
@@ -236,7 +242,7 @@ public:
         const CScript destination_script{GetScriptForDestination(destination)};
         {
             LOCK(m_wallet->cs_wallet);
-            if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || !m_wallet->IsMine(destination_script)) {
+            if (!CanSweepTo(*m_wallet, destination_script)) {
                 return util::Error{Untranslated("Destination is not controlled by this wallet")};
             }
         }
@@ -252,7 +258,7 @@ public:
                 error = "Sweep preview is stale; create a fresh preview";
                 return false;
             }
-            return m_wallet->chain().broadcastTransaction(tx, m_wallet->m_default_max_tx_fee, /*relay=*/true, error);
+            return m_wallet->chain().broadcastTransaction(tx, m_wallet->m_default_max_tx_fee, node::TxBroadcast::MEMPOOL_AND_BROADCAST_TO_ALL, error);
         }} : SweepBroadcastFn{}, *authorization)};
         if (!swept) return util::Error{util::ErrorString(swept)};
         return WalletSweepResult{swept->tx, swept->amount, swept->fee, coins.size(), GetVirtualTransactionSize(*swept->tx), broadcast};
@@ -340,21 +346,13 @@ public:
         LOCK(m_wallet->cs_wallet);
         return m_wallet->ListLockedCoins(outputs);
     }
-    util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& recipients,
+    util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<CRecipient>& recipients,
         const CCoinControl& coin_control,
         bool sign,
-        int& change_pos,
-        CAmount& fee) override
+        std::optional<unsigned int> change_pos) override
     {
         LOCK(m_wallet->cs_wallet);
-        auto res = CreateTransaction(*m_wallet, recipients, change_pos == -1 ? std::nullopt : std::make_optional(change_pos),
-                                     coin_control, sign);
-        if (!res) return util::Error{util::ErrorString(res)};
-        const auto& txr = *res;
-        fee = txr.fee;
-        change_pos = txr.change_pos ? int(*txr.change_pos) : -1;
-
-        return txr.tx;
+        return CreateTransaction(*m_wallet, recipients, change_pos, coin_control, sign);
     }
     void commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
@@ -494,7 +492,7 @@ public:
             CoinSelectionParams params(rng);
             // Note: for now, swallow any error.
             if (auto res = FetchSelectedInputs(*m_wallet, coin_control, params)) {
-                total_amount += res->total_amount;
+                total_amount += res->GetTotalAmount();
             }
         }
 
@@ -700,16 +698,15 @@ public:
             return util::Error{error};
         }
     }
-    util::Result<std::unique_ptr<Wallet>> restoreWallet(const fs::path& backup_file, const std::string& wallet_name, std::vector<bilingual_str>& warnings) override
+    util::Result<std::unique_ptr<Wallet>> restoreWallet(const fs::path& backup_file, const std::string& wallet_name, std::vector<bilingual_str>& warnings, bool load_after_restore) override
     {
         DatabaseStatus status;
         bilingual_str error;
-        std::unique_ptr<Wallet> wallet{MakeWallet(m_context, RestoreWallet(m_context, backup_file, wallet_name, /*load_on_start=*/true, status, error, warnings))};
-        if (wallet) {
-            return wallet;
-        } else {
+        std::unique_ptr<Wallet> wallet{MakeWallet(m_context, RestoreWallet(m_context, backup_file, wallet_name, /*load_on_start=*/true, status, error, warnings, load_after_restore))};
+        if (!error.empty()) {
             return util::Error{error};
         }
+        return wallet;
     }
     util::Result<WalletMigrationResult> migrateWallet(const std::string& name, const SecureString& passphrase) override
     {
@@ -727,7 +724,7 @@ public:
     {
         auto wallets{GetWallets(m_context)};
         auto it = std::find_if(wallets.begin(), wallets.end(), [&](std::shared_ptr<CWallet> w){ return w->GetName() == wallet_name; });
-        if (it != wallets.end()) return (*it)->IsCrypted();
+        if (it != wallets.end()) return (*it)->HasEncryptionKeys();
 
         // Unloaded wallet, read db
         DatabaseOptions options;

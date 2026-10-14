@@ -2,6 +2,10 @@ UNIX BUILD NOTES
 ====================
 Some notes on how to build Bitcoin Core in Unix.
 
+For this Roots candidate, see [build portability](roots-build-portability.md)
+for Qt 5/6 selection, optional system-library probes and deferred integrations.
+The package examples below describe the default Qt 6 profile.
+
 (For BSD specific instructions, see `build-*bsd.md` in this directory.)
 
 To Build
@@ -46,9 +50,13 @@ Finally, clang (often less resource hungry) can be used instead of gcc, which is
 
 #### Dependency Build Instructions
 
-Build requirements:
+Build requirements for the latest Debian "stable" release, or the latest Ubuntu LTS release:
 
     sudo apt-get install build-essential cmake pkgconf python3
+
+For Debian "oldstable", or earlier Ubuntu LTS releases, you may need to pick a
+later compiler version, according to the [dependencies](/doc/dependencies.md)
+documentation.
 
 Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
 
@@ -66,10 +74,6 @@ Cap'n Proto is needed for IPC functionality (see [multiprocess.md](multiprocess.
 
 Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
 
-Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
-
-    sudo apt install libminiupnpc-dev
-
 ZMQ-enabled binaries are compiled with `-DWITH_ZMQ=ON` and require the following dependency:
 
     sudo apt-get install libzmq3-dev
@@ -81,10 +85,9 @@ User-Space, Statically Defined Tracing (USDT) dependencies:
 GUI dependencies:
 
 Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
-the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
-Skip if you don't intend to use the GUI.
+the necessary parts of Qt, the libqrencode and pass `-DBUILD_GUI=ON`. Skip if you don't intend to use the GUI.
 
-    sudo apt-get install qt6-base-dev qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools libgl-dev librsvg2-bin imagemagick
+    sudo apt-get install qt6-base-dev qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools libgl-dev
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
@@ -95,8 +98,6 @@ The GUI will be able to encode addresses in QR codes unless this feature is expl
     sudo apt-get install libqrencode-dev
 
 Otherwise, if you don't need QR encoding support, use the `-DWITH_QRENCODE=OFF` option to disable this feature in order to compile the GUI.
-
-Note: You can also build with Qt 6 (instead of Qt 5) by passing `-DWITH_QT_VERSION=6` to cmake.
 
 
 ### Fedora
@@ -117,10 +118,6 @@ SQLite is required for the wallet:
 
 To build Bitcoin Core without the wallet, see [*Disable-wallet mode*](#disable-wallet-mode)
 
-Optional port mapping library (see: `-DWITH_MINIUPNPC=ON`):
-
-    sudo dnf install miniupnpc-devel
-
 ZMQ-enabled binaries are compiled with `-DWITH_ZMQ=ON` and require the following dependency:
 
     sudo dnf install zeromq-devel
@@ -138,10 +135,9 @@ Compile with `-DENABLE_IPC=OFF` if you do not need IPC functionality.
 GUI dependencies:
 
 Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install
-the necessary parts of Qt and some image processing tools, and pass `-DBUILD_GUI=ON` to cmake.
-Skip if you don't intend to use the GUI.
+the necessary parts of Qt, the libqrencode and pass `-DBUILD_GUI=ON`. Skip if you don't intend to use the GUI.
 
-    sudo dnf install qt6-qtbase-devel qt6-qttools-devel librsvg2-tools ImageMagick
+    sudo dnf install qt6-qtbase-devel qt6-qttools-devel
 
 Additionally, to support Wayland protocol for modern desktop environments:
 
@@ -217,8 +213,8 @@ Setup and Build Example: Arch Linux
 -----------------------------------
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
-    pacman --sync --needed capnproto cmake boost gcc git libevent make python sqlite librsvg imagemagick
-    git clone https://github.com/luganoplanb/bitcoin-roots.git
+    pacman --sync --needed capnproto cmake boost gcc git libevent make python sqlite
+    git clone https://github.com/bitcoin/bitcoin.git
     cd bitcoin/
     cmake -B build
     cmake --build build

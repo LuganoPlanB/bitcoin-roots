@@ -27,7 +27,9 @@ from test_framework.wallet import MiniWallet
 class WalletAnchorTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-permitephemeral=1", "-subdustfeepenalty=0"]]
+        # Isolate native zero-fee ephemeral-anchor wallet behavior from Roots'
+        # enabled sub-dust modified-fee penalty (covered by policy fixtures).
+        self.extra_args = [["-subdustfeepenalty=0"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

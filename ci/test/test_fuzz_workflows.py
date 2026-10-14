@@ -22,6 +22,17 @@ def job(workflow, name):
 
 
 class FuzzWorkflowTest(unittest.TestCase):
+    def test_failure_upload_uses_the_explicit_container_artifact_path(self):
+        configure = (ROOT / '.github/actions/configure-environment/action.yml').read_text()
+        self.assertIn('ROOTS_ARTIFACTS_DIR=${{ runner.temp }}/roots-failures', configure)
+        self.assertIn('export ROOTS_ARTIFACTS_DIR=', (ROOT / 'ci/test/00_setup_env.sh').read_text())
+        runner = (ROOT / 'ci/test/03_test_script.sh').read_text()
+        self.assertEqual(runner.count('--artifacts "${ROOTS_ARTIFACTS_DIR:-${BASE_SCRATCH_DIR}/roots-failures}"'), 2)
+        for workflow in (CI_WORKFLOW, NIGHTLY_WORKFLOW, ROOT / '.github/workflows/reusable-sanitizer.yml'):
+            text = workflow.read_text()
+            self.assertIn('${{ env.ROOTS_ARTIFACTS_DIR }}/', text)
+            self.assertNotIn('${{ runner.temp }}/ci/scratch/roots-failures/', text)
+
     def test_full_linux_corpus_is_not_an_ordinary_pr_job(self):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertNotRegex(workflow, r"(?m)^  fuzz:$")

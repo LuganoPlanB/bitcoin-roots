@@ -3,8 +3,9 @@ Bitcoin Roots
 
 Connected to the trunk. Conservative in policy. Neutral in consensus.
 
-For an immediately usable binary release, see
-[plan-b.foundation/bitcoin-roots](https://plan-b.foundation/bitcoin-roots/).
+This is the local Core v31.1 development candidate. Publishing and release
+tagging are separate from this port. See the [port review](doc/roots-v31-port-review.md)
+for exact inputs, implementation dispositions and verification gaps.
 
 What is Bitcoin Roots?
 ----------------------
@@ -15,14 +16,14 @@ interface, which can be optionally built.
 
 Bitcoin Roots is based on Bitcoin Core with selected policy features from the
 Bitcoin Knots `29.3.knots20260507` code line. The Knots reference describes
-feature lineage only; Bitcoin Core v30.3 is the direct base.
+feature lineage only; Bitcoin Core v31.1 is this candidate’s direct base.
 
 Bitcoin Roots remains compatible with Bitcoin Core consensus. Its conservative
 transaction relay and mempool policy is local and configurable: a transaction
 rejected by policy can still be consensus-valid, and valid blocks containing it
 remain acceptable. Bitcoin Roots does not enforce RDTS/BIP110 consensus rules.
 
-For the selected Roots behavior available in this release, the follow-on work
+For the selected Roots behavior implemented in this candidate, the follow-on work
 that is not yet shipped, and explicit non-features, see the
 [Roots feature catalog](doc/roots-features.md).
 

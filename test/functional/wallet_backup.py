@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2022 The Bitcoin Core developers
+# Copyright (c) 2014-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet backup features.
@@ -49,13 +49,15 @@ class WalletBackupTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
-        # Nodes 0, 1, and 2 are spenders. Keep same-round change reusable; RBF behavior is tested elsewhere.
+        # nodes 1, 2, 3 are spenders, let's give them a keypool=100
         self.extra_args = [
-            ["-keypool=100", "-walletrbf=0"],
-            ["-keypool=100", "-walletrbf=0"],
-            ["-keypool=100", "-walletrbf=0"],
-            [],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-keypool=100", "-rejectparasites=0"],
+            ["-rejectparasites=0"],
         ]
+        # Wallet anti-fee-sniping can randomly choose locktime 21. Isolate
+        # backup behavior from the Roots local marker rejection policy.
         self.rpc_timeout = 120
 
     def skip_test_if_missing_module(self):
@@ -73,7 +75,6 @@ class WalletBackupTest(BitcoinTestFramework):
         if (randint(1,2) == 1):
             amount = Decimal(randint(1,10)) / Decimal(10)
             self.nodes[from_node].sendtoaddress(to_address, amount)
-            self.nodes[from_node].syncwithvalidationinterfacequeue()
 
     def do_one_round(self):
         a0 = self.nodes[0].getnewaddress()
@@ -92,29 +93,10 @@ class WalletBackupTest(BitcoinTestFramework):
         self.sync_mempools()
         self.generate(self.nodes[3], 1)
 
-    # As above, this mirrors the original bash test.
-    def start_three(self, args=()):
-        self.start_node(0, self.extra_args[0] + list(args))
-        self.start_node(1, self.extra_args[1] + list(args))
-        self.start_node(2, self.extra_args[2] + list(args))
-        self.connect_nodes(0, 3)
-        self.connect_nodes(1, 3)
-        self.connect_nodes(2, 3)
-        self.connect_nodes(2, 0)
-
-    def stop_three(self):
-        self.stop_node(0)
-        self.stop_node(1)
-        self.stop_node(2)
-
-    def erase_three(self):
-        for node_num in range(3):
-            (self.nodes[node_num].wallets_path / self.default_wallet_name / self.wallet_data_filename).unlink()
-
     def restore_invalid_wallet(self):
         node = self.nodes[3]
         invalid_wallet_file = self.nodes[0].datadir_path / 'invalid_wallet_file.bak'
-        open(invalid_wallet_file, 'a', encoding="utf8").write('invald wallet')
+        open(invalid_wallet_file, "a").write("invalid_wallet_content")
         wallet_name = "res0"
         not_created_wallet_file = node.wallets_path / wallet_name
         error_message = "Wallet file verification failed. Failed to load database path '{}'. Data is not in recognized format.".format(not_created_wallet_file)
@@ -185,19 +167,14 @@ class WalletBackupTest(BitcoinTestFramework):
         # This is also useful to test the migration recovery after failure logic
         node = self.nodes[3]
         backup_file = self.nodes[0].datadir_path / 'wallet.bak'
-        wallet_name = ""
-        res = node.restorewallet(wallet_name, backup_file)
-        assert_equal(res['name'], "")
-        assert (node.wallets_path / "wallet.dat").exists()
-        # Clean for follow-up tests
-        node.unloadwallet("")
-        os.remove(node.wallets_path / "wallet.dat")
+        assert_raises_rpc_error(-8, "Wallet name cannot be empty", node.restorewallet, "", backup_file)
+        assert not (node.wallets_path / "wallet.dat").exists()
 
     def test_pruned_wallet_backup(self):
         self.log.info("Test loading backup on a pruned node when the backup was created close to the prune height of the restoring node")
         node = self.nodes[3]
         self.restart_node(3, ["-prune=1", "-fastprune=1"])
-        # Ensure the chain tip is at height 214, because this test assume it is.
+        # Ensure the chain tip is at height 214, because this test assumes it is.
         assert_equal(node.getchaintips()[0]["height"], 214)
         # We need a few more blocks so we can actually get above an realistic
         # minimal prune height
@@ -214,9 +191,8 @@ class WalletBackupTest(BitcoinTestFramework):
 
         self.log.info("Test restore on a pruned node when the backup was beyond the pruning point")
         backup_file = self.nodes[0].datadir_path / 'wallet.bak'
-        wallet_name = ""
         error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of a pruned node)"
-        assert_raises_rpc_error(-4, error_message, node.restorewallet, wallet_name, backup_file)
+        assert_raises_rpc_error(-4, error_message, node.restorewallet, "restore_pruned", backup_file)
         assert node.wallets_path.exists() # ensure the wallets dir exists
 
     def run_test(self):

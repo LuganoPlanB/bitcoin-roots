@@ -9,8 +9,11 @@
 #include <consensus/amount.h>
 #include <net.h>
 #include <node/txorphanage.h>
+#include <private_broadcast.h>
 #include <protocol.h>
 #include <threadsafety.h>
+#include <uint256.h>
+#include <util/expected.h>
 #include <validationinterface.h>
 
 #include <atomic>
@@ -36,13 +39,12 @@ class Warnings;
 
 /** Whether transaction reconciliation protocol should be enabled by default. */
 static constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
-/** Whether to announce a fee filter to compatible transaction-relay peers. */
-static constexpr bool DEFAULT_FEEFILTER{true};
-static constexpr size_t BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT{100000};
-static const size_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE{10000000};
 /** Default number of non-mempool transactions to keep around for block reconstruction. Includes
     orphan, replaced, and rejected transactions. */
 static const uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{32768};
+static constexpr size_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE{10000000};
+static constexpr size_t BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT{100000};
+static constexpr bool DEFAULT_FEEFILTER{true};
 static const bool DEFAULT_PEERBLOOMFILTERS = false;
 static const bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
@@ -52,12 +54,16 @@ static const unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
 static const unsigned int MAX_HEADERS_RESULTS = 2000;
 
 struct CNodeStateStats {
+    std::chrono::seconds m_last_block_announcement{0};
+    int m_misbehavior_score{0}; // Deprecated: 0 or 100 when discouragement is pending.
     int nSyncHeight = -1;
     int nCommonHeight = -1;
     int m_starting_height = -1;
     std::chrono::microseconds m_ping_wait;
     std::vector<int> vHeightInFlight;
     bool m_relay_txs;
+    int m_inv_to_send = 0;
+    uint64_t m_last_inv_seq{0};
     CAmount m_fee_filter_received;
     uint64_t m_addr_processed = 0;
     uint64_t m_addr_rate_limited = 0;
@@ -65,8 +71,6 @@ struct CNodeStateStats {
     ServiceFlags their_services;
     int64_t presync_height{-1};
     std::chrono::seconds time_offset{0};
-    NodeSeconds m_last_block_announcement;
-    int m_misbehavior_score{0};
 };
 
 struct PeerManagerInfo {
@@ -86,6 +90,7 @@ public:
         //! orphan, replaced, and rejected transactions.
         uint32_t max_extra_txs{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN};
         size_t max_extra_txs_size{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE};
+        bool send_feefilter{DEFAULT_FEEFILTER};
         //! Whether all P2P messages are captured to disk
         bool capture_messages{false};
         //! Whether or not the internal RNG behaves deterministically (this is
@@ -94,6 +99,8 @@ public:
         //! Number of headers sent in one getheaders message result (this is
         //! a test-only option).
         uint32_t max_headers_result{MAX_HEADERS_RESULTS};
+        //! Whether private broadcast is used for sending transactions.
+        bool private_broadcast{DEFAULT_PRIVATE_BROADCAST};
     };
 
     static std::unique_ptr<PeerManager> make(CConnman& connman, AddrMan& addrman,
@@ -102,14 +109,12 @@ public:
     virtual ~PeerManager() = default;
 
     /**
-     * Attempt to manually fetch block from a given peer.
+     * Attempt to manually fetch block from a given peer. We must already have the header.
      *
      * @param[in]  peer_id      The peer id
      * @param[in]  block_index  The blockindex
-     * @returns std::nullopt if a request was successfully made, otherwise an error message
      */
-    std::optional<std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index);
-    virtual std::optional<std::string> FetchBlock(NodeId peer_id, const uint256& hash, const CBlockIndex* block_index) = 0;
+    virtual util::Expected<void, std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index) = 0;
 
     /** Begin running background tasks, should only be called once */
     virtual void StartScheduledTasks(CScheduler& scheduler) = 0;
@@ -122,8 +127,34 @@ public:
     /** Get peer manager info. */
     virtual PeerManagerInfo GetInfo() const = 0;
 
-    /** Relay transaction to all peers. */
-    virtual void RelayTransaction(const Txid& txid, const Wtxid& wtxid) = 0;
+    /** Get info about transactions currently being privately broadcast. */
+    virtual std::vector<PrivateBroadcast::TxBroadcastInfo> GetPrivateBroadcastInfo() const = 0;
+
+    /**
+     * Abort private broadcast attempts for transactions currently being privately broadcast.
+     *
+     * @param[in] id A transaction identifier. It will be matched against both txid and wtxid for
+     *               all transactions in the private broadcast queue.
+     *
+     * @return Transactions removed from the private broadcast queue. If the provided id matches a
+     *         txid that corresponds to multiple transactions with different wtxids, multiple
+     *         transactions may be returned.
+     */
+    virtual std::vector<CTransactionRef> AbortPrivateBroadcast(const uint256& id) = 0;
+
+    /**
+     * Initiate a transaction broadcast to eligible peers.
+     * Queue the witness transaction id to `Peer::TxRelay::m_tx_inventory_to_send`
+     * for each peer. Later, depending on `Peer::TxRelay::m_next_inv_send_time` and if
+     * the transaction is in the mempool, an `INV` about it may be sent to the peer.
+     */
+    virtual void InitiateTxBroadcastToAll(const Txid& txid, const Wtxid& wtxid) = 0;
+
+    /**
+     * Initiate a private transaction broadcast. This is done
+     * asynchronously via short-lived connections to peers on privacy networks.
+     */
+    virtual void InitiateTxBroadcastPrivate(const CTransactionRef& tx) = 0;
 
     /** Send ping message to all peers */
     virtual void SendPings() = 0;
@@ -139,10 +170,6 @@ public:
      * Public for unit testing.
      */
     virtual void CheckForStaleTipAndEvictPeers() = 0;
-
-    /** Process a single message from a peer. Public for fuzz testing */
-    virtual void ProcessMessage(CNode& pfrom, const std::string& msg_type, DataStream& vRecv,
-                                const std::chrono::microseconds time_received, const std::atomic<bool>& interruptMsgProc) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex) = 0;
 
     /** This function is used for testing the stale tip eviction logic, see denialofservice_tests.cpp */
     virtual void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) = 0;
@@ -169,7 +196,6 @@ public:
      * we do not have a confirmed set of service flags.
     */
     virtual ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const = 0;
-
 };
 
 #endif // BITCOIN_NET_PROCESSING_H

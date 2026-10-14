@@ -37,10 +37,6 @@ jobs:
     name: Release metadata and patch series
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    outputs:
-      compatibility-candidate: ${{ steps.compatibility.outputs.candidate_sha }}
-      compatibility-core: ${{ steps.compatibility.outputs.core_sha }}
-      compatibility-context: ${{ steps.compatibility.outputs.context_ref }}
     steps:
       - name: Check out release source
         uses: actions/checkout@v6
@@ -54,16 +50,6 @@ jobs:
           set -Eeuo pipefail
           ci/release/prepare-release-source.sh \
             "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ github.event_name }}"
-
-      - name: Resolve exact release compatibility inputs
-        id: compatibility
-        run: |
-          set -Eeuo pipefail
-          candidate=$(git rev-parse 'HEAD^{commit}')
-          version=${RELEASE_TAG#v}
-          version=${version%%-roots.*}
-          python3 ci/compatibility.py inputs --roots-source "$GITHUB_WORKSPACE" \
-            --candidate-sha "$candidate" --context-ref "roots/$version" --output "$GITHUB_OUTPUT"
 
       - name: Run release metadata tests
         run: |
@@ -79,6 +65,9 @@ jobs:
           python3 ci/test/test_validate_release_tag.py
           python3 ci/test/test_validate_release_source.py
           python3 ci/test/test_release_version.py
+          python3 ci/test/test_homebrew_boost_headers.py
+          python3 ci/test/test_homebrew_capnp_headers.py
+          python3 ci/test/test_homebrew_libevent_headers.py
 
       - name: Generate verified patch series
         run: |
@@ -96,22 +85,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  block-compatibility:
-    name: full release block compatibility
-    needs: release-metadata-tests
-    uses: ./.github/workflows/reusable-compatibility.yml
-    with:
-      candidate-sha: ${{ needs.release-metadata-tests.outputs.compatibility-candidate }}
-      core-sha: ${{ needs.release-metadata-tests.outputs.compatibility-core }}
-      context-ref: ${{ needs.release-metadata-tests.outputs.compatibility-context }}
-      profile: full
-      release-tag: ${{ github.event_name == 'push' && github.ref_name || '' }}
-
   linux-release:
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
-    needs: [release-metadata-tests, block-compatibility]
+    needs: release-metadata-tests
     env:
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ${{ matrix.file-env }}
@@ -182,9 +160,9 @@ jobs:
 
   windows-release:
     name: Windows x86_64 release
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 180
-    needs: [release-metadata-tests, block-compatibility]
+    needs: release-metadata-tests
     env:
       PYTHONUTF8: 1
     steps:
@@ -224,13 +202,13 @@ jobs:
       - name: Generate build system
         shell: pwsh
         run: |
-          cmake -B build --preset vs2022-static `
+          cmake -B build --preset vs2026-static `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
             `
             -DCLIENT_VERSION_TAG="$env:RELEASE_TAG" -DBUILD_GUI=ON -DWITH_QRENCODE=ON `
-            -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=OFF `
+            -DVCPKG_MANIFEST_FEATURES=miniupnpc -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=OFF `
             -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON `
-            -DBUILD_WALLET_TOOL=ON -DREDUCE_EXPORTS=ON -DWERROR=ON
+            -DBUILD_WALLET_TOOL=ON -DREDUCE_EXPORTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
 
       - name: Build and package
         shell: pwsh
@@ -265,7 +243,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
-    needs: [release-metadata-tests, block-compatibility]
+    needs: release-metadata-tests
     env:
       DANGER_RUN_CI_ON_HOST: 1
       BASE_ROOT_DIR: ${{ github.workspace }}
@@ -355,7 +333,7 @@ jobs:
   publish-release:
     name: Sign manifest and create draft
     if: github.event_name == 'push'
-    needs: [release-metadata-tests, block-compatibility, linux-release, windows-release, macos-release]
+    needs: [release-metadata-tests, linux-release, windows-release, macos-release]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release

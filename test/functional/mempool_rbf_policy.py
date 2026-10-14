@@ -32,6 +32,9 @@ POLICIES = [
     (["-mempoolfullrbf=0"], False, False, True, True),
     (["-mempoolfullrbf=1"], True, True, True, True),
     (["-mempoolreplacement=0"], False, False, False, False),
+    (["-mempoolreplacement=optin", "-mempoolfullrbf=1"], False, False, True, True),
+    (["-mempoolreplacement=0", "-mempoolfullrbf=1"], False, False, False, False),
+    (["-mempoolreplacement=fee,-optin", "-mempoolfullrbf=0"], True, True, True, True),
 ]
 
 
@@ -42,14 +45,20 @@ class MempoolRBFPolicyTest(BitcoinTestFramework):
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
 
+        previous_warning = ""
         for extra_args, fullrbf, nonsignaling_replaceable, signaling_replaceable, truc_replaceable in POLICIES:
             self.log.info(f"Check replacement policy with {extra_args or 'default options'}")
-            self.restart_node(0, extra_args=extra_args)
+            self.restart_node(0, extra_args=extra_args, expected_stderr=previous_warning)
+            previous_warning = (
+                "Warning: False mempoolreplacement option contradicts true mempoolfullrbf; disallowing all RBF"
+                if "-mempoolreplacement=0" in extra_args and "-mempoolfullrbf=1" in extra_args else ""
+            )
             assert_equal(self.nodes[0].getmempoolinfo()["fullrbf"], fullrbf)
             for version, nonsignaling in ((2, nonsignaling_replaceable), (3, truc_replaceable)):
                 self.check_replacement(version=version, sequence=SEQUENCE_FINAL, replaceable=nonsignaling)
                 self.check_replacement(version=version, sequence=MAX_BIP125_RBF_SEQUENCE, replaceable=signaling_replaceable)
             self.generate(self.nodes[0], 1)
+            self.wallet.rescan_utxos()
 
     def check_replacement(self, *, version, sequence, replaceable):
         node = self.nodes[0]

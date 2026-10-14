@@ -192,7 +192,10 @@ class RunnerNoticeTest(unittest.TestCase):
         container = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(container)
         env = {'USER': self.work.name, 'CONTAINER_NAME': 'notice-fixture',
-               'RELEASE_NOTICE_PLATFORM': 'linux-aarch64', 'BITCOIN_ROOTS_GPG_SK': 'fixture-never-export'}
+               'RELEASE_NOTICE_PLATFORM': 'linux-aarch64', 'BITCOIN_ROOTS_GPG_SK': 'fixture-never-export',
+               'PATH': os.environ.get('PATH', '/usr/bin'), 'DANGER_RUN_CI_ON_HOST': '1', 'BASE_ROOT_DIR': str(self.work),
+               'BASE_READ_ONLY_DIR': str(ROOT), 'BASE_SCRATCH_DIR': str(self.work / 'scratch'),
+               'CCACHE_DIR': str(self.work / 'ccache'), 'PREVIOUS_RELEASES_DIR': str(self.work / 'previous')}
         path = Path(f"/tmp/env-{env['USER']}-{env['CONTAINER_NAME']}")
         self.addCleanup(path.unlink, missing_ok=True)
         with patch.dict(os.environ, env, clear=True), patch.object(container, 'run', return_value=SimpleNamespace(stdout='export CONTAINER_NAME=fixture')):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2021 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test node responses to invalid network messages."""
@@ -303,13 +303,6 @@ class InvalidMessagesTest(BitcoinTestFramework):
         with self.nodes[0].assert_debug_log(['Misbehaving', 'header with invalid proof of work']):
             peer.send_without_ping(msg_headers([blockheader]))
             peer.wait_for_disconnect()
-
-        self.log.info('Test same previous scenario but with a whitelisted (noban) outbound peer. '
-                      'It should log as misbehaving but not cause a disconnection')
-        self.restart_node(0, extra_args=["-whitelist=noban,out@127.0.0.1"])
-        ob_peer = self.nodes[0].add_outbound_p2p_connection(P2PInterface(), p2p_idx=5)
-        with self.nodes[0].assert_debug_log(['Misbehaving', 'header with invalid proof of work']):
-            ob_peer.send_and_ping(msg_headers([blockheader]))
 
     def test_noncontinuous_headers_msg(self):
         self.log.info("Test headers message with non-continuous headers sequence is logged as misbehaving")

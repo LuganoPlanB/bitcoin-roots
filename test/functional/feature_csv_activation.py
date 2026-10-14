@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Bitcoin Core developers
+# Copyright (c) 2015-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test CSV soft fork activation.
@@ -99,7 +99,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.noban_tx_relay = True
         self.extra_args = [[
             f'-testactivationheight=csv@{CSV_ACTIVATION_HEIGHT}',
-            '-permitbarepubkey=1',  # permit the synthetic CSV spend fixture
+            '-permitbarepubkey=1',  # Legacy MiniWallet outputs exercise CSV activation.
         ]]
 
     def create_self_transfer_from_utxo(self, input_tx):

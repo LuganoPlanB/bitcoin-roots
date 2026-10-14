@@ -1,4 +1,4 @@
-// Copyright (c) 2023 The Bitcoin Core developers
+// Copyright (c) 2023-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -74,6 +74,10 @@ static bool GetConfigOptions(std::istream& stream, const std::string& filepath, 
         }
         ++linenr;
     }
+    if (stream.bad() || !stream.eof()) {
+        error = strprintf("Failed to read config file \"%s\".", filepath);
+        return false;
+    }
     return true;
 }
 
@@ -109,8 +113,9 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
             }
             if (settings_target) {
                 (*settings_target)[key.name].push_back(*value);
-            } else
-            m_settings.ro_config[key.section][key.name].push_back(*value);
+            } else {
+                m_settings.ro_config[key.section][key.name].push_back(*value);
+            }
         } else {
             if (ignore_invalid_keys) {
                 LogWarning("Ignoring unknown configuration value %s", option.first);
@@ -141,7 +146,7 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
             error = strprintf("Config file \"%s\" is a directory.", fs::PathToString(conf_path));
             return false;
         }
-        stream = std::ifstream{conf_path};
+        stream = std::ifstream{conf_path.std_path()};
         // If the file is explicitly specified, it must be readable
         if (IsArgSet("-conf") && !stream.good()) {
             error = strprintf("specified config file \"%s\" could not be opened.", fs::PathToString(conf_path));
@@ -193,12 +198,12 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
                     error = strprintf("Included config file \"%s\" is a directory.", fs::PathToString(include_conf_path));
                     return false;
                 }
-                std::ifstream conf_file_stream{include_conf_path};
+                std::ifstream conf_file_stream{include_conf_path.std_path()};
                 if (conf_file_stream.good()) {
                     if (!ReadConfigStream(conf_file_stream, conf_file_name, error, ignore_invalid_keys)) {
                         return false;
                     }
-                    LogPrintf("Included configuration file %s\n", conf_file_name);
+                    LogInfo("Included configuration file %s\n", conf_file_name);
                 } else {
                     error = "Failed to include configuration file " + conf_file_name;
                     return false;
@@ -238,7 +243,11 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
     LOCK(cs_args);
     m_rwconf_path = AbsPathForConfigVal(*this, GetPathArg("-confrw", BITCOIN_RW_CONF_FILENAME));
     const auto rwconf_path{GetRWConfigFilePath()};
-    std::ifstream rwconf_stream(rwconf_path);
+    std::ifstream rwconf_stream(rwconf_path.std_path());
+    if (fs::exists(rwconf_path) && !rwconf_stream.is_open()) {
+        error = strprintf("Config file \"%s\" could not be opened.", fs::PathToString(rwconf_path));
+        return false;
+    }
     if (rwconf_stream.good()) {
         if (!ReadConfigStream(rwconf_stream, fs::PathToString(rwconf_path), error, ignore_invalid_keys, &m_settings.rw_config)) {
             return false;

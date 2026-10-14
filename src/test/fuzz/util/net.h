@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,6 +21,7 @@
 #include <util/sock.h>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -139,6 +140,25 @@ public:
     }
 };
 
+class FuzzedNetEvents : public NetEventsInterface
+{
+public:
+    FuzzedNetEvents(FuzzedDataProvider& fdp) : m_fdp(fdp) {}
+
+    virtual void InitializeNode(const CNode&, ServiceFlags) override {}
+
+    virtual void FinalizeNode(const CNode&) override {}
+
+    virtual bool HasAllDesirableServiceFlags(ServiceFlags) const override { return m_fdp.ConsumeBool(); }
+
+    virtual bool ProcessMessages(CNode&, std::atomic<bool>&) override { return m_fdp.ConsumeBool(); }
+
+    virtual bool SendMessages(CNode&) override { return m_fdp.ConsumeBool(); }
+
+private:
+    FuzzedDataProvider& m_fdp;
+};
+
 class FuzzedSock : public Sock
 {
     FuzzedDataProvider& m_fuzzed_data_provider;
@@ -203,6 +223,11 @@ public:
     bool IsConnected(std::string& errmsg) const override;
 };
 
+[[nodiscard]] inline FuzzedNetEvents ConsumeNetEvents(FuzzedDataProvider& fdp) noexcept
+{
+    return FuzzedNetEvents{fdp};
+}
+
 [[nodiscard]] inline FuzzedSock ConsumeSock(FuzzedDataProvider& fuzzed_data_provider)
 {
     return FuzzedSock{fuzzed_data_provider};
@@ -210,9 +235,11 @@ public:
 
 [[nodiscard]] inline NetGroupManager ConsumeNetGroupManager(FuzzedDataProvider& fuzzed_data_provider) noexcept
 {
-    std::vector<bool> asmap = ConsumeRandomLengthBitVector(fuzzed_data_provider);
-    if (!SanityCheckASMap(asmap, 128)) asmap.clear();
-    return NetGroupManager(asmap);
+    std::vector<std::byte> asmap{ConsumeRandomLengthByteVector<std::byte>(fuzzed_data_provider)};
+    if (!CheckStandardAsmap(asmap)) {
+        return NetGroupManager::NoAsmap();
+    }
+    return NetGroupManager::WithLoadedAsmap(std::move(asmap));
 }
 
 inline CSubNet ConsumeSubNet(FuzzedDataProvider& fuzzed_data_provider) noexcept
@@ -223,6 +250,18 @@ inline CSubNet ConsumeSubNet(FuzzedDataProvider& fuzzed_data_provider) noexcept
 inline CService ConsumeService(FuzzedDataProvider& fuzzed_data_provider) noexcept
 {
     return {ConsumeNetAddr(fuzzed_data_provider), fuzzed_data_provider.ConsumeIntegral<uint16_t>()};
+}
+
+inline std::vector<CService> ConsumeServiceVector(FuzzedDataProvider& fuzzed_data_provider,
+                                                  size_t max_vector_size = 5) noexcept
+{
+    std::vector<CService> ret;
+    const size_t size = fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, max_vector_size);
+    ret.reserve(size);
+    for (size_t i = 0; i < size; ++i) {
+        ret.emplace_back(ConsumeService(fuzzed_data_provider));
+    }
+    return ret;
 }
 
 CAddress ConsumeAddress(FuzzedDataProvider& fuzzed_data_provider) noexcept;

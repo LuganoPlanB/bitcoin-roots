@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,7 +21,7 @@
 #include <key_io.h>
 #include <node/interface_ui.h>
 #include <node/types.h>
-#include <policy/fees.h>
+#include <policy/fees/block_policy_estimator.h>
 #include <txmempool.h>
 #include <util/rbf.h>
 #include <validation.h>
@@ -42,7 +42,6 @@
 
 using common::PSBTError;
 using wallet::CCoinControl;
-using wallet::DEFAULT_PAY_TX_FEE;
 
 static constexpr std::array confTargets{2, 4, 6, 12, 24, 48, 144, 504, 1008};
 int getConfTargetForIndex(int index) {
@@ -127,8 +126,6 @@ SendCoinsDialog::SendCoinsDialog(const PlatformStyle *_platformStyle, QWidget *p
         settings.setValue("nFeeRadio", 0); // recommended
     if (!settings.contains("nSmartFeeSliderPosition"))
         settings.setValue("nSmartFeeSliderPosition", 0);
-    if (!settings.contains("nTransactionFee"))
-        settings.setValue("nTransactionFee", (qint64)DEFAULT_PAY_TX_FEE);
     ui->groupFee->setId(ui->radioSmartFee, 0);
     ui->groupFee->setId(ui->radioCustomFee, 1);
     ui->groupFee->button((int)std::max(0, std::min(1, settings.value("nFeeRadio").toInt())))->setChecked(true);
@@ -164,7 +161,7 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         }
 
         connect(_model, &WalletModel::balanceChanged, this, &SendCoinsDialog::setBalance);
-        connect(_model, &WalletModel::balanceChanged, this, &SendCoinsDialog::walletChanged);
+        connect(_model, &WalletModel::walletStateChanged, this, &SendCoinsDialog::walletChanged);
         connect(_model, &WalletModel::unload, this, &SendCoinsDialog::reject);
         connect(_model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &SendCoinsDialog::refreshBalance);
         refreshBalance();
@@ -202,9 +199,7 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         updateFeeSectionControls();
         updateSmartFeeLabel();
 
-        // Initialize the one-send override from the wallet default. The
-        // checkbox remains explicit, so updateCoinControlState() always
-        // passes its selected value to transaction creation.
+        // set default rbf checkbox state
         ui->optInRBF->setChecked(model->wallet().getDefaultRbf());
 
         if (model->wallet().hasExternalSigner()) {
@@ -369,7 +364,6 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
         question_string.append("<span style='color:#aa0000; font-weight:bold;'>");
         question_string.append(BitcoinUnits::formatHtmlWithUnit(model->getOptionsModel()->getDisplayUnit(), txFee));
         question_string.append("</span><br />");
-
     }
 
     appendCoinControlSummary(question_string);
@@ -522,7 +516,7 @@ void SendCoinsDialog::invalidateSendPreview()
     coinControlUpdateLabels();
 }
 
-void SendCoinsDialog::walletChanged([[maybe_unused]] const interfaces::WalletBalances& balances)
+void SendCoinsDialog::walletChanged()
 {
     invalidateSendPreview();
 }
@@ -805,9 +799,6 @@ void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn 
         break;
     case WalletModel::AmountExceedsBalance:
         msgParams.first = tr("The amount exceeds your balance.");
-        break;
-    case WalletModel::AmountWithFeeExceedsBalance:
-        msgParams.first = tr("The total exceeds your balance when the %1 transaction fee is included.").arg(msgArg);
         break;
     case WalletModel::DuplicateAddress:
         msgParams.first = tr("Duplicate address found: addresses should only be used once each.");

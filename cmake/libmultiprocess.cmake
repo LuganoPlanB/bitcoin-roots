@@ -1,4 +1,4 @@
-# Copyright (c) 2025 The Bitcoin Core developers
+# Copyright (c) 2025-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -12,6 +12,41 @@ function(add_libmultiprocess subdir)
   target_link_libraries(multiprocess PUBLIC $<BUILD_INTERFACE:core_interface>)
   target_link_libraries(mputil PUBLIC $<BUILD_INTERFACE:core_interface>)
   target_link_libraries(mpgen PUBLIC $<BUILD_INTERFACE:core_interface>)
+  if(CMAKE_HOST_APPLE)
+    find_program(HOMEBREW_EXECUTABLE brew)
+    if(HOMEBREW_EXECUTABLE)
+      execute_process(
+        COMMAND ${HOMEBREW_EXECUTABLE} --prefix
+        OUTPUT_VARIABLE _homebrew_prefix
+        RESULT_VARIABLE _homebrew_status
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+      # CapnProto's imported targets are scoped to the vendored subdirectory.
+      # Read its configured include path without changing that dependency.
+      get_directory_property(_capnp_include_dir DIRECTORY "${subdir}" DEFINITION CAPNP_INCLUDE_DIRECTORY)
+      if(_homebrew_status EQUAL 0 AND
+         IS_DIRECTORY "${_capnp_include_dir}/capnp" AND
+         IS_DIRECTORY "${_capnp_include_dir}/kj" AND
+         IS_DIRECTORY "${_homebrew_prefix}/include/capnp" AND
+         IS_DIRECTORY "${_homebrew_prefix}/include/kj")
+        file(REAL_PATH "${_capnp_include_dir}/capnp" _configured_capnp)
+        file(REAL_PATH "${_capnp_include_dir}/kj" _configured_kj)
+        file(REAL_PATH "${_homebrew_prefix}/include/capnp" _linked_capnp)
+        file(REAL_PATH "${_homebrew_prefix}/include/kj" _linked_kj)
+        if(_configured_capnp STREQUAL _linked_capnp AND _configured_kj STREQUAL _linked_kj)
+          # CMake drops implicit include paths from generated -isystem flags.
+          # Keep the matching Homebrew alias system for IPC and its consumers.
+          foreach(_target multiprocess mputil mpgen)
+            target_compile_options(${_target} PUBLIC
+              "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"
+            )
+          endforeach()
+          message(STATUS "Using matching Homebrew CapnProto header alias: ${_homebrew_prefix}/include")
+        endif()
+      endif()
+    endif()
+  endif()
   # Mark capproto options as advanced to hide by default from cmake UI
   mark_as_advanced(CapnProto_DIR)
   mark_as_advanced(CapnProto_capnpc_IMPORTED_LOCATION)
@@ -27,7 +62,7 @@ function(add_libmultiprocess subdir)
   mark_as_advanced(CapnProto_kj-tls_IMPORTED_LOCATION)
   if(BUILD_TESTS)
     # Add tests to "all" target so ctest can run them
-    set_target_properties(mptests PROPERTIES EXCLUDE_FROM_ALL OFF)
+    set_target_properties(mptest PROPERTIES EXCLUDE_FROM_ALL OFF)
   endif()
   # Exclude examples from compilation database, because the examples are not
   # built by default, and they contain generated c++ code. Without this

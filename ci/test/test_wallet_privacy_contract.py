@@ -47,17 +47,16 @@ class WalletPrivacyContractTest(unittest.TestCase):
     def test_candidate_documents_release_state_and_verification(self):
         catalog = (ROOT / "doc/roots-features.md").read_text(encoding="utf-8")
         guide = (ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8")
-        release_notes = (ROOT / "doc/release-notes.md").read_text(encoding="utf-8")
-
-        for document in (catalog, guide, release_notes):
-            self.assertIn("v30.3-roots.1", document)
+        release_notes = (ROOT / "contrib/release/release-notes.md").read_text(encoding="utf-8")
+        for document in (catalog, guide):
+            self.assertIn("v31", document)
             self.assertIn("candidate", document)
-        self.assertIn("candidate documentation for the intended `v30.3-roots.1` release", release_notes)
-        self.assertNotIn("v30.3-roots.1 is now available", release_notes)
-        self.assertNotIn("v30.3-roots.1 has been released", release_notes)
+        self.assertIn("Bitcoin Knots", release_notes)
+        self.assertIn("devjoinedthechat", release_notes)
+        self.assertIn("Jaromil", release_notes)
         self.assertIn("bitcoin-cli help sweepprivkeys", guide)
         self.assertIn("bitcoin-cli --version", guide)
-        self.assertIn("no wallet-format migration", release_notes)
+
 
 
 if __name__ == "__main__":

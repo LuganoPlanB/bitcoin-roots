@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -106,7 +106,7 @@ CoinControlDialog::CoinControlDialog(CCoinControl& coin_control, WalletModel* _m
     // (un)select all
     connect(ui->pushButtonSelectAll, &QPushButton::clicked, this, &CoinControlDialog::buttonSelectAllClicked);
     connect(ui->lineEditFilter, &QLineEdit::textChanged, this, &CoinControlDialog::filterChanged);
-    connect(model, &WalletModel::balanceChanged, this, &CoinControlDialog::walletChanged);
+    connect(model, &WalletModel::walletStateChanged, this, &CoinControlDialog::walletChanged);
     connect(model, &WalletModel::unload, this, &QDialog::reject);
 
     ui->treeWidget->setColumnWidth(COLUMN_CHECKBOX, 84);
@@ -580,7 +580,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     l5->setText(((nBytes > 0) ? ASYMP_UTF8 : "") + QString::number(nBytes));        // Bytes
     l8->setText(BitcoinUnits::formatWithUnit(nDisplayUnit, nChange));        // Change
     if (fee_rate) fee_rate->setText(nBytes > 0 ? tr("%1 sat/vB").arg(QString::number(static_cast<double>(nPayFee) / nBytes, 'f', 1)) : tr("—"));
-    if (rbf) rbf->setText(m_coin_control.m_signal_bip125_rbf ? tr("Signals Replace-By-Fee") : tr("Does not signal Replace-By-Fee"));
+    if (rbf) rbf->setText(m_coin_control.m_signal_bip125_rbf.value_or(model->wallet().getDefaultRbf()) ? tr("Signals Replace-By-Fee") : tr("Does not signal Replace-By-Fee"));
     if (dust) dust->setText(nQuantity > 0 && nChange == 0 && nPayAmount > 0 && !CoinControlDialog::fSubtractFeeFromAmount
                                 ? tr("No change output (change may have been added to the fee)") : tr("No dust change detected"));
     if (nPayFee > 0)
@@ -730,7 +730,7 @@ void CoinControlDialog::updateView()
             QStringList states;
             if (out.is_locked) states << tr("Locked");
             if (!out.is_safe) states << tr("Unsafe");
-            if (!out.is_spendable && out.is_solvable) states << tr("Watch-only");
+            if (out.is_watch_only) states << tr("Watch-only");
             if (!out.is_spendable && !out.is_solvable) states << tr("Not spendable");
             if (out.is_reused) states << tr("Reused address");
             if (out.is_immature) states << tr("Immature");
@@ -791,6 +791,12 @@ void CoinControlDialog::updateView()
     // sort view
     sortView(sortColumn, sortOrder);
     ui->treeWidget->setEnabled(true);
+    // Fit quantitative facts and status to the active font. Wide tables scroll;
+    // individual values must not be elided merely because the font was enlarged.
+    for (const int column : {COLUMN_AMOUNT, COLUMN_EFFECTIVE_VALUE, COLUMN_INPUT_BYTES,
+                             COLUMN_DATE, COLUMN_CONFIRMATIONS, COLUMN_STATUS}) {
+        ui->treeWidget->resizeColumnToContents(column);
+    }
     updateAvailableLabel();
     filterChanged(ui->lineEditFilter->text());
 }

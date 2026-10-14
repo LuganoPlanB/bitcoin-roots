@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -11,11 +11,35 @@
 #include <cstdio>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#ifndef WIN32
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
+
 BOOST_FIXTURE_TEST_SUITE(fs_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(directory_write_probe)
+{
+    const fs::path dir{m_args.GetDataDirBase() / "write_probe"};
+    fs::create_directory(dir);
+    BOOST_CHECK(IsDirWritable(dir));
+    BOOST_CHECK(fs::is_empty(dir));
+    const fs::path file{dir / "file"};
+    { std::ofstream stream{file.std_path()}; }
+    BOOST_CHECK_THROW(IsDirWritable(file), std::runtime_error);
+#ifndef WIN32
+    fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec);
+    if (geteuid() != 0) BOOST_CHECK(!IsDirWritable(dir));
+    fs::permissions(dir, fs::perms::owner_all);
+#endif
+    fs::remove_all(dir);
+}
 
 BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)
 {
@@ -54,37 +78,37 @@ BOOST_AUTO_TEST_CASE(fsbridge_fstream)
     fs::path tmpfile1 = tmpfolder / fs::u8path("fs_tests_₿_🏃");
     fs::path tmpfile2 = tmpfolder / fs::path(u8"fs_tests_₿_🏃");
     {
-        std::ofstream file{tmpfile1};
+        std::ofstream file{tmpfile1.std_path()};
         file << "bitcoin";
     }
     {
-        std::ifstream file{tmpfile2};
+        std::ifstream file{tmpfile2.std_path()};
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcoin");
     }
     {
-        std::ifstream file{tmpfile1, std::ios_base::in | std::ios_base::ate};
+        std::ifstream file{tmpfile1.std_path(), std::ios_base::in | std::ios_base::ate};
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "");
     }
     {
-        std::ofstream file{tmpfile2, std::ios_base::out | std::ios_base::app};
+        std::ofstream file{tmpfile2.std_path(), std::ios_base::out | std::ios_base::app};
         file << "tests";
     }
     {
-        std::ifstream file{tmpfile1};
+        std::ifstream file{tmpfile1.std_path()};
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcointests");
     }
     {
-        std::ofstream file{tmpfile2, std::ios_base::out | std::ios_base::trunc};
+        std::ofstream file{tmpfile2.std_path(), std::ios_base::out | std::ios_base::trunc};
         file << "bitcoin";
     }
     {
-        std::ifstream file{tmpfile1};
+        std::ifstream file{tmpfile1.std_path()};
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcoin");
@@ -119,12 +143,12 @@ BOOST_AUTO_TEST_CASE(rename)
     const std::string path2_contents{"2222"};
 
     {
-        std::ofstream file{path1};
+        std::ofstream file{path1.std_path()};
         file << path1_contents;
     }
 
     {
-        std::ofstream file{path2};
+        std::ofstream file{path2.std_path()};
         file << path2_contents;
     }
 
@@ -134,7 +158,7 @@ BOOST_AUTO_TEST_CASE(rename)
     BOOST_CHECK(!fs::exists(path1));
 
     {
-        std::ifstream file{path2};
+        std::ifstream file{path2.std_path()};
         std::string contents;
         file >> contents;
         BOOST_CHECK_EQUAL(contents, path1_contents);
@@ -142,29 +166,21 @@ BOOST_AUTO_TEST_CASE(rename)
     fs::remove(path2);
 }
 
-#ifndef __MINGW64__ // no symlinks on mingw
-BOOST_AUTO_TEST_CASE(create_directories)
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(file_descriptor_limit_bounds)
 {
-    // Test fs::create_directories workaround.
-    const fs::path tmpfolder{m_args.GetDataDirBase()};
-
-    const fs::path dir{tmpfolder / "a"};
-    fs::create_directory(dir);
-    BOOST_CHECK(fs::exists(dir));
-    BOOST_CHECK(fs::is_directory(dir));
-    BOOST_CHECK(!fs::create_directories(dir));
-
-    const fs::path symlink{tmpfolder / "b"};
-    fs::create_directory_symlink(dir, symlink);
-    BOOST_CHECK(fs::exists(symlink));
-    BOOST_CHECK(fs::is_symlink(symlink));
-    BOOST_CHECK(fs::is_directory(symlink));
-    BOOST_CHECK(!fs::create_directories(symlink));
-
-    fs::remove(symlink);
-    fs::remove(dir);
+    struct rlimit limit{};
+    BOOST_REQUIRE_EQUAL(getrlimit(RLIMIT_NOFILE, &limit), 0);
+    const int expected{limit.rlim_cur == RLIM_INFINITY || std::cmp_greater_equal(limit.rlim_cur, std::numeric_limits<int>::max())
+        ? std::numeric_limits<int>::max() : static_cast<int>(limit.rlim_cur)};
+    // A zero request must retain the current soft limit, saturating the int result.
+    BOOST_CHECK_EQUAL(RaiseFileDescriptorLimit(0), expected);
+    struct rlimit after{};
+    BOOST_REQUIRE_EQUAL(getrlimit(RLIMIT_NOFILE, &after), 0);
+    BOOST_CHECK_EQUAL(after.rlim_cur, limit.rlim_cur);
+    BOOST_CHECK_EQUAL(after.rlim_max, limit.rlim_max);
 }
-#endif // __MINGW64__
+#endif
 
 BOOST_AUTO_TEST_CASE(allocate_file_range_preserves_data)
 {
@@ -177,11 +193,16 @@ BOOST_AUTO_TEST_CASE(allocate_file_range_preserves_data)
     BOOST_REQUIRE_EQUAL(std::fwrite(contents.data(), 1, contents.size(), file.get()), contents.size());
     BOOST_REQUIRE_EQUAL(std::fflush(file.get()), 0);
 
-    AllocateFileRange(file.get(), 0, static_cast<unsigned int>(contents.size() + 256));
+    AllocateFileRange(file.get(), 65536, static_cast<unsigned int>(contents.size() - 65536 + 256));
     BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_SET), 0);
     std::vector<unsigned char> actual(contents.size());
     BOOST_REQUIRE_EQUAL(std::fread(actual.data(), 1, actual.size(), file.get()), actual.size());
     BOOST_CHECK(actual == contents);
+
+    // Allocation entirely inside a live file must never shorten it.
+    AllocateFileRange(file.get(), 65536, 128);
+    BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_END), 0);
+    BOOST_CHECK_EQUAL(std::ftell(file.get()), contents.size() + 256);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

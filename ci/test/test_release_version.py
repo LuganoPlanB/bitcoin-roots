@@ -47,7 +47,7 @@ class ReleaseVersionTest(unittest.TestCase):
             return result, header.read_text(encoding="utf-8") if header.exists() else ""
 
     def test_release_tag_sets_compiled_version_without_git_metadata(self):
-        for tag in ("v30.3-roots.2", "v30.3-roots.4"):
+        for tag in ("v31.1-roots.2", "v31.1-roots.4"):
             with self.subTest(tag=tag):
                 result, header = self.configure_release_version(tag)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -55,7 +55,7 @@ class ReleaseVersionTest(unittest.TestCase):
                 self.assertNotIn("Manually-specified variables were not used", result.stderr)
 
     def test_release_tag_rejects_wrong_base_and_invalid_roots_version(self):
-        for tag in ("v30.0-roots.4", "v30x3-roots.4", "v30.3-roots.0", "v30.3-knots.4", ""):
+        for tag in ("v30.0-roots.4", "v31x1-roots.4", "v31.1-roots.0", "v31.1-knots.4", ""):
             with self.subTest(tag=tag):
                 result, _ = self.configure_release_version(tag)
                 self.assertNotEqual(result.returncode, 0)
@@ -64,18 +64,18 @@ class ReleaseVersionTest(unittest.TestCase):
     def test_untagged_build_keeps_default_roots_version(self):
         result, header = self.configure_release_version()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "30.3-roots.1"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.1"', header)
 
     def test_version_and_release_tag_name_agree(self):
         build_config = BUILD_CONFIG.read_text(encoding="utf-8")
-        self.assertIn("set(CLIENT_VERSION_MAJOR 30)", build_config)
-        self.assertIn("set(CLIENT_VERSION_MINOR 3)", build_config)
+        self.assertIn("set(CLIENT_VERSION_MAJOR 31)", build_config)
+        self.assertIn("set(CLIENT_VERSION_MINOR 1)", build_config)
         self.assertIn('string(APPEND CLIENT_VERSION_STRING "-roots.1")', build_config)
         result = subprocess.run(
-            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v30.3-roots.1"],
+            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v31.1-roots.1"],
             capture_output=True, text=True, check=True,
         )
-        self.assertEqual(result.stdout.strip(), "bitcoin-roots-30.3-roots.1")
+        self.assertEqual(result.stdout.strip(), "bitcoin-roots-31.1-roots.1")
 
     def test_macos_deployment_verifies_the_branded_archive(self):
         script = (ROOT / "ci/test/03_test_script.sh").read_text(encoding="utf-8")
@@ -84,7 +84,7 @@ class ReleaseVersionTest(unittest.TestCase):
         client_name = re.search(r'set\(CLIENT_NAME "([^"]+)"\)', BUILD_CONFIG.read_text()).group(1)
         with tempfile.TemporaryDirectory(prefix="roots-macos-deployment-") as directory:
             build = Path(directory)
-            with zipfile.ZipFile(build / f"{client_name.replace(' ', '-')}.zip", "w") as archive:
+            with zipfile.ZipFile(build / "bitcoin-macos-app.zip", "w") as archive:
                 archive.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", "fixture")
             tools = build / "tools"
             tools.mkdir()
@@ -156,7 +156,6 @@ class ReleaseVersionTest(unittest.TestCase):
             {
                 "actions/checkout@v6",
                 "actions/upload-artifact@v4",
-                "./.github/workflows/reusable-compatibility.yml",
                 "actions/download-artifact@v5",
                 "./.github/actions/configure-docker",
                 "./.github/actions/configure-environment",

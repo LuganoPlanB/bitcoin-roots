@@ -117,6 +117,20 @@ if(NOT HAVE_CLOSE_RANGE_GENERIC)
   )
 endif()
 
+# Native BSD/Solaris close-from fallback (Linux uses raw /proc enumeration).
+check_cxx_source_compiles("
+  #include <unistd.h>
+  int main() { closefrom(4); }
+  " HAVE_CLOSEFROM
+)
+if(HAVE_CLOSEFROM)
+  check_cxx_source_compiles("
+    #include <unistd.h>
+    int main() { return closefrom(4); }
+    " HAVE_CLOSEFROM_RETURN_INT
+  )
+endif()
+
 # Check for different ways of gathering OS randomness:
 # - Linux getrandom()
 check_cxx_source_compiles("
@@ -179,15 +193,8 @@ if(NOT MSVC)
 
   # Check for SSE4.1 intrinsics.
   set(SSE41_CXXFLAGS -msse4.1)
-  check_cxx_source_compiles_with_flags([[
+  check_cxx_source_compiles_with_flags("
     #include <immintrin.h>
-
-    #if defined(__clang__)
-    #pragma clang attribute push(__attribute__((__target__("sse4.1"))), apply_to = function)
-    __attribute__((__target__("arch=skylake-avx512")))
-    #elif defined(__GNUC__)
-    #pragma GCC target ("sse4.1")
-    #endif
 
     int main()
     {
@@ -196,48 +203,28 @@ if(NOT MSVC)
       __m128i r = _mm_blend_epi16(a, b, 0xFF);
       return _mm_extract_epi32(r, 3);
     }
-
-    #if defined(__clang__)
-    #pragma clang attribute pop
-    #endif
-    ]] HAVE_SSE41
+    " HAVE_SSE41
     CXXFLAGS ${SSE41_CXXFLAGS}
   )
 
   # Check for AVX2 intrinsics.
   set(AVX2_CXXFLAGS -mavx -mavx2)
-  check_cxx_source_compiles_with_flags([[
+  check_cxx_source_compiles_with_flags("
     #include <immintrin.h>
-
-    #if defined(__clang__)
-    #pragma clang attribute push(__attribute__((__target__("avx,avx2"))), apply_to = function)
-    #elif defined(__GNUC__)
-    #pragma GCC target ("avx,avx2")
-    #endif
 
     int main()
     {
       __m256i l = _mm256_set1_epi32(0);
       return _mm256_extract_epi32(l, 7);
     }
-
-    #if defined(__clang__)
-    #pragma clang attribute pop
-    #endif
-    ]] HAVE_AVX2
+    " HAVE_AVX2
     CXXFLAGS ${AVX2_CXXFLAGS}
   )
 
   # Check for x86 SHA-NI intrinsics.
   set(X86_SHANI_CXXFLAGS -msse4 -msha)
-  check_cxx_source_compiles_with_flags([[
+  check_cxx_source_compiles_with_flags("
     #include <immintrin.h>
-
-    #if defined(__clang__)
-    #pragma clang attribute push(__attribute__((__target__("sse4,sse4.1,sha"))), apply_to = function)
-    #elif defined(__GNUC__)
-    #pragma GCC target ("sse4,sse4.1,sha")
-    #endif
 
     int main()
     {
@@ -246,24 +233,14 @@ if(NOT MSVC)
       __m128i k = _mm_set1_epi32(2);
       return _mm_extract_epi32(_mm_sha256rnds2_epu32(i, j, k), 0);
     }
-
-    #if defined(__clang__)
-    #pragma clang attribute pop
-    #endif
-    ]] HAVE_X86_SHANI
+    " HAVE_X86_SHANI
     CXXFLAGS ${X86_SHANI_CXXFLAGS}
   )
 
   # Check for ARMv8 SHA-NI intrinsics.
   set(ARM_SHANI_CXXFLAGS -march=armv8-a+crypto)
-  check_cxx_source_compiles_with_flags([[
+  check_cxx_source_compiles_with_flags("
     #include <arm_neon.h>
-
-    #if defined(__clang__)
-    #pragma clang attribute push(__attribute__((__target__("armv8-a+crypto"))), apply_to = function)
-    #elif defined(__GNUC__)
-    #pragma GCC target ("armv8-a+crypto")
-    #endif
 
     int main()
     {
@@ -273,37 +250,7 @@ if(NOT MSVC)
       vsha256su0q_u32(a, b);
       vsha256su1q_u32(a, b, c);
     }
-
-    #if defined(__clang__)
-    #pragma clang attribute pop
-    #endif
-    ]] HAVE_ARM_SHANI
+    " HAVE_ARM_SHANI
     CXXFLAGS ${ARM_SHANI_CXXFLAGS}
   )
-  set(ENABLE_ARM_SHANI ${HAVE_ARM_SHANI})
-
-  # Check for POWER8 vector intrinsics.
-  function(check_power8_vector VAR)
-    check_cxx_source_compiles_with_flags([[
-      #include <altivec.h>
-      #include <stdint.h>
-
-      int main()
-      {
-        unsigned char src[16];
-        __builtin_crypto_vshasigmaw((__vector uint32_t)vec_vsx_ld(0, src), 1, 0xf);
-        return 0;
-      }
-      ]] ${VAR}
-      CXXFLAGS ${POWER8_CXXFLAGS}
-    )
-  endfunction()
-  set(POWER8_CXXFLAGS -mpower8-vector)
-  check_power8_vector(HAVE_POWER8_VECTOR)
-  set(ENABLE_POWER8 ${HAVE_POWER8_VECTOR})
-  if(NOT HAVE_POWER8_VECTOR)
-    set(POWER8_CXXFLAGS -mcpu=power8)
-    check_power8_vector(HAVE_MCPU_POWER8_FOR_VECTOR)
-    set(ENABLE_POWER8 ${HAVE_MCPU_POWER8_FOR_VECTOR})
-  endif()
 endif()

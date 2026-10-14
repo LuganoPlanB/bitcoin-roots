@@ -281,11 +281,12 @@ may combine work for CI, but they remain disposable. Once the canonical tip is
 accepted, maintainers create an explicit promotion into `main` using the
 procedure in `contrib/roots/README.md`.
 
-Before assigning a permanent version, maintainers dispatch the release workflow
-from `main` with the future tag name and the full canonical commit. After the
-five platform packages and portable patch have been inspected, the annotated
-Roots tag is created at exactly that canonical commit. Pushing the tag builds a
-draft GitHub release for independent verification and publication.
+After source review and required checks, maintainers create the annotated Roots
+tag at the exact canonical commit. Pushing it builds five platform packages,
+exports the portable patch, signs the manifest, and creates a private draft for
+independent verification before separately authorized publication. A manual
+rehearsal is optional, read-only, and limited to an absent future tag; it does
+not replace the permanent-tag build or consumer verification.
 
 Pull-request requirements
 -------------------------

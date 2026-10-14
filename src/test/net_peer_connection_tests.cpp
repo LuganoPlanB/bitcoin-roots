@@ -130,15 +130,6 @@ BOOST_FIXTURE_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection, 
     BOOST_CHECK(!connman->AddNode({/*m_added_node=*/"127.1", /*m_use_v2transport=*/true}));
 #endif
 
-    BOOST_TEST_MESSAGE("\nCall AddNode() with a CJDNS service equal to an existing addnode entry; it should not be added");
-    BOOST_CHECK(!connman->AddNode({/*m_added_node=*/"[fc00:3344:5566:7788:9900:aabb:ccdd:eeff]:1234", /*m_use_v2transport=*/false}));
-
-    BOOST_TEST_MESSAGE("\nCall AddNode() with a CJDNS addr equal to an existing inbound one but with a different port specified; it should not be added");
-    BOOST_CHECK(!connman->AddNode({/*m_added_node=*/"[fc00:3344:5566:7788:9900:aabb:ccdd:eeff]:8333", /*m_use_v2transport=*/false}));
-
-    BOOST_TEST_MESSAGE("\nCall AddNode() with a CJDNS addr equal to an existing inbound one but resolving to a different port; it should not be added");
-    BOOST_CHECK(!connman->AddNode({/*m_added_node=*/"fc00:3344:5566:7788:9900:aabb:ccdd:eeff", /*m_use_v2transport=*/false}));
-
     BOOST_TEST_MESSAGE("\nExpect GetAddedNodeInfo to return expected number of peers with `include_connected` true/false");
     BOOST_CHECK_EQUAL(connman->GetAddedNodeInfo(/*include_connected=*/true).size(), nodes.size());
     BOOST_CHECK(connman->GetAddedNodeInfo(/*include_connected=*/false).empty());
@@ -161,15 +152,8 @@ BOOST_FIXTURE_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection, 
     }
 
     BOOST_TEST_MESSAGE("\nCheck that all connected peers are correctly detected as connected");
-    for (auto node : connman->TestNodes()) {
-        BOOST_CHECK(connman->AlreadyConnectedPublic(node->addr));
-    }
-
-    BOOST_TEST_MESSAGE("\nCheck that peers with the same addresses as connected peers but different ports are detected as connected.");
-    for (auto node : connman->TestNodes()) {
-        uint16_t changed_port = node->addr.GetPort() + 1;
-        CService address_with_changed_port{node->addr, changed_port};
-        BOOST_CHECK(connman->AlreadyConnectedPublic(CAddress{address_with_changed_port, NODE_NONE}));
+    for (const auto& node : connman->TestNodes()) {
+        BOOST_CHECK(connman->AlreadyConnectedToAddressPublic(node->addr));
     }
 
     // Clean up

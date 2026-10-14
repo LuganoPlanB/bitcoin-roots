@@ -107,6 +107,53 @@ class PrepareReleaseTest(unittest.TestCase):
                     subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
                                     "--copying", ROOT / "COPYING"], check=True)
 
+    def test_autocrlf_checkout_preserves_canonical_copying_through_packaging(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            work = Path(temporary_dir)
+            checkout = work / "checkout"
+            checkout.mkdir()
+            subprocess.run(["git", "init", "--quiet", checkout], check=True)
+            environment = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+            def git(*args):
+                return subprocess.run(["git", "-c", "core.autocrlf=true", *args], cwd=checkout,
+                                      env=environment, capture_output=True, check=True)
+
+            canonical = subprocess.run(["git", "show", "HEAD:COPYING"], cwd=ROOT,
+                                       capture_output=True, check=True).stdout
+            (checkout / "COPYING").write_bytes(canonical)
+            (checkout / ".gitattributes").write_bytes((ROOT / ".gitattributes").read_bytes())
+            tool = checkout / "ci/release/archive.py"
+            tool.parent.mkdir(parents=True)
+            shutil.copyfile(ARCHIVE_TOOL, tool)
+            git("add", "COPYING", ".gitattributes", "ci/release/archive.py")
+            git("-c", "user.name=Release fixture", "-c", "user.email=fixture@example.invalid",
+                "commit", "--quiet", "-m", "Release checkout fixture")
+            (checkout / "COPYING").unlink()
+            git("checkout", "HEAD", "--", "COPYING")
+            self.assertEqual((checkout / "COPYING").read_bytes(), canonical)
+
+            root = work / "bitcoin-roots-31.1-roots.1"
+            root.mkdir()
+            subprocess.run(["python3", tool, "stage-copying", root], check=True)
+            self.assertEqual((root / "COPYING").read_bytes(), canonical)
+            archive = work / "bitcoin-roots-windows-x86_64.zip"
+            with zipfile.ZipFile(archive, mode="w") as package:
+                package.write(root / "COPYING", f"{root.name}/COPYING")
+                package.writestr(f"{root.name}/bin/bitcoind.exe", b"binary fixture")
+            canonical_file = work / "canonical-COPYING"
+            canonical_file.write_bytes(canonical)
+            subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
+                            "--copying", canonical_file], check=True)
+
+            # Keep byte-exact integrity: a CRLF copy must still be rejected.
+            with zipfile.ZipFile(archive, mode="w") as package:
+                package.writestr(f"{root.name}/COPYING", canonical.replace(b"\n", b"\r\n"))
+                package.writestr(f"{root.name}/bin/bitcoind.exe", b"binary fixture")
+            result = subprocess.run(["python3", ARCHIVE_TOOL, "validate", archive, root.name,
+                                     "--copying", canonical_file], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("COPYING differs from canonical notice", result.stderr)
+
     def test_actual_unix_workflow_stages_copying_without_dependency_index_and_prepares(self):
         lines = (ROOT / ".github/workflows/release.yml").read_text().splitlines()
         def packaging_block(name):
