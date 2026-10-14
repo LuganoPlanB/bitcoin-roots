@@ -1,6 +1,12 @@
 Contributing to Bitcoin Core
 ============================
 
+For Bitcoin Roots maintenance, follow the
+[Roots maintainer workflow](contrib/roots/README.md#folding-at-a-new-core-base):
+append fixes within an exact Core base, and use **Folding** to incorporate them
+into thematic commits when porting to a new Core base. Preserve published
+history and attribution; promotion to `main` is a separate operation.
+
 The Bitcoin Core project operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for

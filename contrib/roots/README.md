@@ -90,6 +90,44 @@ git diff --check "$previous_tip"..HEAD
 Do not use an exported series as a second source of truth. It is a review or
 transfer artifact; the Git commits remain canonical.
 
+## Folding at a new Core base
+
+**Folding** is our name for reorganizing the carried Roots patch series when
+porting to a new Bitcoin Core base. Incorporate accumulated fixes into their
+relevant semantic commits, carry forward still-needed behavior and tests, and
+drop changes only when upstream adoption or an explicit reviewed decision
+justifies it. Folding describes the maintenance operation, not a particular
+Git command. It is distinct from promotion to `main`.
+
+This policy applies to every new major release cycle and to any other port
+that changes the exact Core base. Within one base, keep release history
+append-only: each `v<core-version>-roots.<revision>` extends the previous
+published revision on `roots/<core-version>`, including every earlier commit.
+Fixes, release preparation and subsequent improvements remain visible.
+There is no fixed commit quota or separate class of temporary fixes to discard.
+Do not Fold, rebase or replace the published series merely to shorten the next
+maintenance release's patch. Published tags, commits and release assets remain
+immutable.
+
+A new Core base starts a new series from its exact authenticated tag, even if
+only Core's minor version changes. A major-version grouping in the patch
+navigator is a browsing aid, not proof of a shared base or commit ancestry.
+During that port:
+
+1. Review the complete previous Roots line, including its follow-up fixes.
+2. Fold retained fixes into the appropriate thematic commits on the new,
+   unpublished line. Preserve original author/contributor credit and record
+   source commits and material adaptations in commit messages and port review.
+3. Review `git range-diff` against the old series and explain retained, folded,
+   dropped and adapted changes. Run the applicable build and behavior tests on
+   the new Core base; a smaller commit count is not acceptance evidence.
+4. Verify portable patch replay and product-tree parity against the new tip.
+   Keep old release URLs, assets and history available unchanged.
+
+Promotion to `main` separately records an accepted canonical tip in product
+history, with exact tree equality. It neither Folds the series nor changes the
+base used for release patch exports.
+
 ## Porting a Core release
 
 Fetch and inspect the intended Core tag or commit first. Configure `core` to
@@ -109,7 +147,8 @@ git switch --create roots/31.1 "$core_commit"
 git cherry-pick -x <semantic-roots-commit>
 ```
 
-Repeat the cherry-pick for each semantic commit after deciding whether that
+Apply the [Folding policy](#folding-at-a-new-core-base) when assembling this new
+series. Repeat the cherry-pick for each semantic commit after deciding whether that
 change is still needed. `-x` records the source commit when the new commit is a
 true cherry-pick. When a conflict requires a material rewrite, explain the old
 commit and the deviation in the new commit message rather than retaining a
@@ -133,6 +172,10 @@ Apply a security or correctness fix first to the oldest supported Roots line
 that needs it. After review and testing, cherry-pick it with `-x` into each newer
 affected line. Document deviations required by newer Core code. Do not rewrite
 published release commits or tags.
+
+Verify that the previous published release remains an ancestor of the proposed
+maintenance tip (`git merge-base --is-ancestor <previous-release> <candidate>`).
+Keep all existing commits; append the reviewed fixes and release preparation.
 
 A maintenance release therefore advances its own canonical branch, for example
 from `v29.4-roots.1` to `v29.4-roots.2`; it does not require merging a newer

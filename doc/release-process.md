@@ -1,6 +1,14 @@
 Release Process
 ====================
 
+For Bitcoin Roots releases, follow the [Roots maintainer workflow](../contrib/roots/README.md)
+and its [Folding policy](../contrib/roots/README.md#folding-at-a-new-core-base).
+Revisions sharing an exact Core base are append-only; Folding belongs to a port
+to a new Core base. Promotion to `main` is a separate integration step.
+The checklist below is retained Bitcoin Core release-engineering reference;
+Roots tag, canonical-branch, patch export and publication rules are defined in
+the Roots workflow.
+
 ## Branch updates
 
 ### Before every release candidate
