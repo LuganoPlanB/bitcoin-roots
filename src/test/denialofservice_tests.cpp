@@ -337,11 +337,9 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     connman->AddTestNode(*nodes[0]);
     CNodeStateStats stats;
     BOOST_REQUIRE(peerLogic->GetNodeStateStats(nodes[0]->GetId(), stats));
-    BOOST_CHECK_EQUAL(stats.m_misbehavior_score, 0);
     BOOST_CHECK_EQUAL(stats.m_last_block_announcement.count(), 0);
     peerLogic->UnitTestMisbehaving(nodes[0]->GetId()); // Should be discouraged
     BOOST_REQUIRE(peerLogic->GetNodeStateStats(nodes[0]->GetId(), stats));
-    BOOST_CHECK_EQUAL(stats.m_misbehavior_score, 100);
     BOOST_CHECK(peerLogic->SendMessages(*nodes[0]));
 
     BOOST_CHECK(banman->IsDiscouraged(addr[0]));

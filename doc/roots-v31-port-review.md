@@ -1453,3 +1453,35 @@ seven-pass/two-failure record remains, the two repaired targets are **not rerun
 under instrumentation**, and the hosted failure's underlying cause remains
 unidentified. L16 review/commit and a later independent terminal review remain
 separate gates; this evidence does not authorize publication or promotion.
+
+## v31.1-roots.2 P2P review dispositions
+
+The [P2P review by @danielabrozzoni](https://gist.github.com/danielabrozzoni/142356f60b0e977fd74cc9decf6e3271)
+concerned the older v30.3-roots.1 release. Rechecking against v31.1-roots.1
+identified three remaining corrections now included in the roots.2 candidate:
+remove the deprecated `getpeerinfo.misbehavior_score`, require explicit `addr`
+permission instead of granting it through bare whitelist/whitebind defaults,
+and restrict outgoing address-based whitelist permissions to manual connections.
+Internal discouragement/disconnection, permission implications, additive grants,
+Tor-bind suppression and explicit socket permissions remain intact.
+
+Explicit `addr` and `all` retain GETADDR cache and address-processing token-bucket
+bypass, while message-size/validity limits, inbound-only GETADDR and one response
+per connection still apply. The follow-up audit also made `forceinbound` visible
+in RPC permissions and checked the loss of implicit loopback Bloom privilege on
+automatic outbound peers; these adjacent findings are not attributed to the
+original review. Inbound/manual loopback retain the implicit grant unless it is
+explicitly disabled, and automatic connections do not inherit trusted ranges.
+
+The nullable-header fetching concern was already resolved in the v31 port:
+`PeerManager::FetchBlock` takes `const CBlockIndex&`, and `getblockfrompeer`
+rejects unknown headers. roots.2 preserves that interface and the duplicate
+request safeguard. Regression coverage checks that rejecting a same-peer
+duplicate leaves the first request in flight and that another peer can replace
+it, alongside inherited fetch and prune-mode cases.
+
+The current curated [release-note template](../contrib/release/release-notes.md)
+contains migration instructions and review credit. The candidate identifies
+itself as `v31.1-roots.2`; published releases, tags and the earlier verification
+records above remain historical evidence. This candidate work does not establish
+publication, fresh hosted/platform results or new sanitizer/fuzz coverage.

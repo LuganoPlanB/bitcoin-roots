@@ -515,7 +515,9 @@ CNode* CConnman::ConnectNode(CAddress addrConnect,
         }
 
         NetPermissionFlags permission_flags = NetPermissionFlags::None;
-        AddWhitelistPermissionFlags(permission_flags, target_addr, vWhitelistedRangeOutgoing);
+        if (conn_type == ConnectionType::MANUAL) {
+            AddWhitelistPermissionFlags(permission_flags, target_addr, vWhitelistedRangeOutgoing);
+        }
 
         // Add node
         NodeId id = GetNewNodeId();
@@ -588,7 +590,6 @@ void CConnman::AddWhitelistPermissionFlags(NetPermissionFlags& flags, std::optio
         if (whitelist_relay) NetPermissions::AddFlag(flags, NetPermissionFlags::Relay);
         NetPermissions::AddFlag(flags, NetPermissionFlags::Mempool);
         NetPermissions::AddFlag(flags, NetPermissionFlags::NoBan);
-        NetPermissions::AddFlag(flags, NetPermissionFlags::Addr);
     }
 }
 

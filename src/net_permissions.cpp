@@ -18,7 +18,7 @@ const std::vector<std::string> NET_PERMISSIONS_DOC{
     "relay (relay even in -blocksonly mode, and unlimited transaction announcements)",
     "mempool (allow requesting BIP35 mempool contents)",
     "download (allow getheaders during IBD, no disconnect after maxuploadtarget limit)",
-    "addr (responses to GETADDR avoid hitting the cache and contain random records with the most up-to-date info)",
+    "addr (bypass address-processing rate limits; responses to GETADDR avoid hitting the cache and contain random records with the most up-to-date info)",
     "forceinbound (when connections are full, attempt to evict a random unprotected inbound peer to open a slot; implies noban)"
 };
 
@@ -104,6 +104,7 @@ std::vector<std::string> NetPermissions::ToStrings(NetPermissionFlags flags)
     if (NetPermissions::HasFlag(flags, NetPermissionFlags::Mempool)) strings.emplace_back("mempool");
     if (NetPermissions::HasFlag(flags, NetPermissionFlags::Download)) strings.emplace_back("download");
     if (NetPermissions::HasFlag(flags, NetPermissionFlags::Addr)) strings.emplace_back("addr");
+    if (NetPermissions::HasFlag(flags, NetPermissionFlags::ForceInbound)) strings.emplace_back("forceinbound");
     return strings;
 }
 

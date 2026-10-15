@@ -10,7 +10,7 @@ Test that permissions are correctly calculated and applied
 from test_framework.messages import (
     SEQUENCE_FINAL,
 )
-from test_framework.p2p import P2PDataStore
+from test_framework.p2p import P2PDataStore, P2PInterface
 from test_framework.test_node import ErrorMatch
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -35,7 +35,7 @@ class P2PPermissionsTests(BitcoinTestFramework):
             # default permissions (no specific permissions)
             ["-whitelist=127.0.0.1"],
             # Make sure the default values in the command line documentation match the ones here
-            ["addr", "relay", "noban", "mempool", "download"])
+            ["relay", "noban", "mempool", "download"])
 
         self.checkpermission(
             # no permission (even with forcerelay)
@@ -45,14 +45,38 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.checkpermission(
             # relay permission removed (no specific permissions)
             ["-whitelist=127.0.0.1", "-whitelistrelay=0"],
-            ["addr", "noban", "mempool", "download"])
+            ["noban", "mempool", "download"])
 
         self.checkpermission(
             # forcerelay and relay permission added
             # Legacy parameter interaction which set whitelistrelay to true
             # if whitelistforcerelay is true
             ["-whitelist=127.0.0.1", "-whitelistforcerelay"],
-            ["addr", "forcerelay", "relay", "noban", "mempool", "download"])
+            ["forcerelay", "relay", "noban", "mempool", "download"])
+
+        self.checkpermission(["-whitelist=addr@127.0.0.1"], ["addr"])
+        self.checkpermission(["-whitelist=forceinbound@127.0.0.1"], ["noban", "download", "forceinbound"])
+
+        # Socket and range permissions are additive, including when one side
+        # uses defaults. An empty explicit permission set cannot remove Addr.
+        ip_port = f"127.0.0.1:{p2p_port(1)}"
+        for socket_permissions, args, expected in [
+            ("", [], ["relay", "noban", "mempool", "download"]),
+            ("", ["-whitelistrelay=0"], ["noban", "mempool", "download"]),
+            ("", ["-whitelistforcerelay=1"], ["forcerelay", "relay", "noban", "mempool", "download"]),
+            ("", ["-whitelist=addr@127.0.0.1"], ["addr", "relay", "noban", "mempool", "download"]),
+            ("addr@", ["-whitelist=127.0.0.1"], ["addr", "relay", "noban", "mempool", "download"]),
+            ("addr@", ["-whitelist=@127.0.0.1"], ["addr"]),
+            ("@", ["-whitelist=addr@127.0.0.1"], ["addr"]),
+            ("forceinbound@", [], ["noban", "download", "forceinbound"]),
+            ("all@", [], ["blockfilters", "bloomfilter", "noban", "forcerelay", "relay", "mempool", "download", "addr", "forceinbound"]),
+        ]:
+            whitebind = f"whitebind={socket_permissions}{ip_port}"
+            self.nodes[1].replace_in_config([("bind=127.0.0.1\n", whitebind + "\n")])
+            try:
+                self.checkpermission(args, expected)
+            finally:
+                self.nodes[1].replace_in_config([(whitebind + "\n", "bind=127.0.0.1\n")])
 
         # Let's make sure permissions are merged correctly
         # For this, we need to use whitebind instead of bind
@@ -95,6 +119,7 @@ class P2PPermissionsTests(BitcoinTestFramework):
                 "relay",
                 "download",
                 "addr",
+                "forceinbound",
             ])
 
         for flag, permissions in [(["-whitelist=noban,out@127.0.0.1"], ["bloomfilter", "noban", "download"]), (["-whitelist=noban@127.0.0.1"], ["bloomfilter"])]:
@@ -102,6 +127,8 @@ class P2PPermissionsTests(BitcoinTestFramework):
             self.connect_nodes(0, 1)
             peerinfo = self.nodes[0].getpeerinfo()[0]
             assert_equal(peerinfo['permissions'], permissions)
+
+        self.check_outgoing_permissions()
 
         self.stop_node(1)
         self.nodes[1].assert_start_raises_init_error(["-whitelist=in,out@127.0.0.1"], "Only direction was set, no permissions", match=ErrorMatch.PARTIAL_REGEX)
@@ -162,10 +189,92 @@ class P2PPermissionsTests(BitcoinTestFramework):
             reject_reason='Not relaying non-mempool transaction {} (wtxid={}) from forcerelay peer=0'.format(txid, tx.wtxid_hex)
         )
 
+    def check_outgoing_permissions(self):
+        node = self.nodes[0]
+        trusted = ["noban", "relay", "download", "addr"]
+        for permission, expected in [
+            ("noban,addr,relay,out@127.0.0.1", trusted),
+            ("noban,addr,relay,in,out@127.0.0.1", trusted),
+            ("noban,addr,relay,in@127.0.0.1", []),
+            ("noban,addr,relay,out@192.0.2.0/24", []),
+        ]:
+            args = ["-peerbloomfilters=0", f"-whitelist={permission}"]
+            self.log.info(f"Test outgoing permission range {permission}")
+            self.restart_node(0, args)
+            self.connect_nodes(0, 1)  # addnode onetry creates a MANUAL connection
+            info = node.getpeerinfo()[0]
+            assert_equal(info["connection_type"], "manual")
+            assert_equal(info["permissions"], expected)
+            node.disconnectnode(nodeid=info["id"])
+            self.wait_until(lambda: not node.getpeerinfo())
+            for connection_type in ["outbound-full-relay", "block-relay-only", "addr-fetch"]:
+                node.add_outbound_p2p_connection(P2PInterface(), p2p_idx=0, connection_type=connection_type)
+                info = node.getpeerinfo()[0]
+                assert_equal(info["connection_type"], connection_type)
+                assert_equal(info["permissions"], [])
+                node.disconnect_p2ps()
+
+        target = f"127.0.0.1:{p2p_port(1)}"
+        for option in ["-addnode", "-connect"]:
+            self.log.info(f"Test manual permission inheritance through {option}")
+            self.restart_node(0, ["-peerbloomfilters=0", "-whitelist=noban,addr,relay,out@127.0.0.1", f"{option}={target}"])
+            self.wait_until(lambda: len(node.getpeerinfo()) == 1 and node.getpeerinfo()[0]["version"] > 0)
+            info = node.getpeerinfo()[0]
+            assert_equal(info["connection_type"], "manual")
+            assert_equal(info["permissions"], trusted)
+            if option == "-addnode":
+                assert_equal(node.getaddednodeinfo()[0]["connected"], True)
+                node.addnode(target, "remove")
+            self.restart_node(0, ["-peerbloomfilters=0"])
+
+        args = ["-v2transport=1", "-peerbloomfilters=0", "-whitelist=noban,addr,relay,out@127.0.0.1"]
+        self.log.info("Successful v2 connections preserve the permission boundary")
+        self.restart_node(1, ["-v2transport=1"])
+        self.restart_node(0, args)
+        self.connect_nodes(0, 1)
+        info = node.getpeerinfo()[0]
+        assert_equal(info["transport_protocol_type"], "v2")
+        assert_equal(info["connection_type"], "manual")
+        assert_equal(info["permissions"], trusted)
+        node.disconnectnode(nodeid=info["id"])
+        self.wait_until(lambda: not node.getpeerinfo())
+        for index, connection_type in enumerate(["outbound-full-relay", "block-relay-only", "addr-fetch"]):
+            node.add_outbound_p2p_connection(P2PInterface(), p2p_idx=index + 4, connection_type=connection_type)
+            info = node.getpeerinfo()[0]
+            assert_equal(info["transport_protocol_type"], "v2")
+            assert_equal(info["connection_type"], connection_type)
+            assert_equal(info["permissions"], [])
+            node.disconnect_p2ps()
+
+        self.log.info("V2 retry preserves manual versus automatic permission boundaries")
+        self.restart_node(1, ["-v2transport=0"])
+        self.restart_node(0, args)
+        with node.assert_debug_log(["retrying with v1"]):
+            node.addnode(target, "onetry", True)
+            self.wait_until(lambda: len(node.getpeerinfo()) == 1 and node.getpeerinfo()[0]["transport_protocol_type"] == "v1" and node.getpeerinfo()[0]["version"] > 0)
+        info = node.getpeerinfo()[0]
+        assert_equal(info["connection_type"], "manual")
+        assert_equal(info["permissions"], trusted)
+        node.disconnectnode(nodeid=info["id"])
+        self.wait_until(lambda: not node.getpeerinfo())
+        for index, connection_type in enumerate(["outbound-full-relay", "block-relay-only", "addr-fetch"]):
+            with node.assert_debug_log(["retrying with v1"]):
+                # Each fallback uses a fresh listener: its factory must retain
+                # the same protocol instance across the two connections.
+                node.add_outbound_p2p_connection(P2PInterface(), p2p_idx=index + 1, connection_type=connection_type, supports_v2_p2p=False, advertise_v2_p2p=True)
+            info = node.getpeerinfo()[0]
+            assert_equal(info["transport_protocol_type"], "v1")
+            assert_equal(info["connection_type"], connection_type)
+            assert_equal(info["permissions"], [])
+            node.disconnect_p2ps()
+
     def checkpermission(self, args, expectedPermissions):
         self.restart_node(1, ['-peerbloomfilters=0'] + args)
         self.connect_nodes(0, 1)
         peerinfo = self.nodes[1].getpeerinfo()[0]
+        # These connections have a free slot, including when ForceInbound is
+        # granted. The state reports eviction, not permission possession.
+        assert_equal(peerinfo['forced_inbound'], False)
         assert_equal(len(expectedPermissions), len(peerinfo['permissions']))
         for p in expectedPermissions:
             if p not in peerinfo['permissions']:

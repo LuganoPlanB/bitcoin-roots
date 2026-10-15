@@ -58,6 +58,8 @@ class CreateCIDraftTest(unittest.TestCase):
                                    'DRAFT_TEST_REMOTE': str(f.repository), 'DRAFT_TEST_RECORD': str(f.record), **environment})
 
     def test_actual_signed_ci_draft_creates_exact_eight_assets_with_provenance(self):
+        template = (ROOT / 'contrib/release/release-notes.md').read_text()
+        self.fixture.notes.write_text(template)
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         record = json.loads(self.fixture.record.read_text())
@@ -67,6 +69,11 @@ class CreateCIDraftTest(unittest.TestCase):
         self.assertIn(self.fixture.commit, record['notes'])
         self.assertIn('/actions/runs/123', record['notes'])
         self.assertIn('Packages include the project COPYING file.', record['notes'])
+        self.assertIn(template, record['notes'])
+        self.assertIn('@danielabrozzoni', record['notes'])
+        self.assertIn('https://gist.github.com/danielabrozzoni/142356f60b0e977fd74cc9decf6e3271', record['notes'])
+        self.assertIn('devjoinedthechat', record['notes'])
+        self.assertIn('Jaromil', record['notes'])
         self.assertNotIn('notices were collected', record['notes'])
         self.assertIn('--draft', record['args'])
         self.assertNotIn('--clobber', record['args'])
