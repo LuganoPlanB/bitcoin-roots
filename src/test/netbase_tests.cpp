@@ -475,13 +475,19 @@ BOOST_AUTO_TEST_CASE(netpermissions_test)
     BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::ForceInbound));
     BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::NoBan));
     BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::Download));
+    const std::vector<std::string> forceinbound_strings{"noban", "download", "forceinbound"};
+    const auto rendered_forceinbound{NetPermissions::ToStrings(whitelistPermissions.m_flags)};
+    BOOST_CHECK_EQUAL_COLLECTIONS(rendered_forceinbound.begin(), rendered_forceinbound.end(), forceinbound_strings.begin(), forceinbound_strings.end());
+    const std::vector<std::string> noban_strings{"noban", "download"};
+    const auto rendered_noban{NetPermissions::ToStrings(NetPermissionFlags::NoBan)};
+    BOOST_CHECK_EQUAL_COLLECTIONS(rendered_noban.begin(), rendered_noban.end(), noban_strings.begin(), noban_strings.end());
     for (const auto alias : {"blockfilters", "compactfilters", "cfilters"}) {
         BOOST_CHECK(NetWhitelistPermissions::TryParse(std::string{alias} + "@127.0.0.1", whitelistPermissions, connection_direction, error));
         BOOST_CHECK(NetPermissions::HasFlag(whitelistPermissions.m_flags, NetPermissionFlags::BlockFilters_Explicit));
     }
 
     const auto strings = NetPermissions::ToStrings(NetPermissionFlags::All);
-    BOOST_CHECK_EQUAL(strings.size(), 8U);
+    BOOST_CHECK_EQUAL(strings.size(), 9U);
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "blockfilters") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "bloomfilter") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "forcerelay") != strings.end());
@@ -490,6 +496,7 @@ BOOST_AUTO_TEST_CASE(netpermissions_test)
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "mempool") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "download") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "addr") != strings.end());
+    BOOST_CHECK(std::find(strings.begin(), strings.end(), "forceinbound") != strings.end());
 }
 
 BOOST_AUTO_TEST_CASE(netbase_dont_resolve_strings_with_embedded_nul_characters)

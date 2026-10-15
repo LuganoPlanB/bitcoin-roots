@@ -19,6 +19,7 @@
 #include <test/util/setup_common.h>
 #include <tinyformat.h>
 #include <util/chaintype.h>
+#include <util/translation.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -32,6 +33,18 @@
 struct LogIPsTestingSetup : public TestingSetup {
     LogIPsTestingSetup()
         : TestingSetup{ChainType::MAIN, {.extra_args = {"-logips"}}} {}
+};
+
+struct MockSocketTestingSetup : LogIPsTestingSetup {
+    const decltype(CreateSock) m_original_create_sock{CreateSock};
+    const bool m_socks5_interrupted{g_socks5_interrupt.interrupted()};
+    MockSocketTestingSetup() { g_socks5_interrupt.reset(); }
+    ~MockSocketTestingSetup()
+    {
+        CreateSock = m_original_create_sock;
+        if (m_socks5_interrupted) g_socks5_interrupt();
+        else g_socks5_interrupt.reset();
+    }
 };
 
 BOOST_FIXTURE_TEST_SUITE(net_peer_connection_tests, LogIPsTestingSetup)
@@ -161,6 +174,95 @@ BOOST_FIXTURE_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection, 
         peerman->FinalizeNode(*node);
     }
     connman->ClearTestNodes();
+}
+
+BOOST_FIXTURE_TEST_CASE(outgoing_whitelist_permissions, MockSocketTestingSetup)
+{
+    ConnmanTestMsg connman{0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman, Params()};
+    auto peerman = PeerManager::make(connman, *m_node.addrman, nullptr, *m_node.chainman, *m_node.mempool, *m_node.warnings, {});
+    const Proxy proxy{LookupNumeric("127.0.0.1:9050"), /*tor_stream_isolation=*/false};
+    for (const auto subnet : {"all,out@127.0.0.1", "all,out@192.0.2.0/24"}) {
+        CConnman::Options options{};
+        options.m_msgproc = peerman.get();
+        NetWhitelistPermissions permissions;
+        ConnectionDirection direction;
+        bilingual_str error;
+        BOOST_REQUIRE(NetWhitelistPermissions::TryParse(subnet, permissions, direction, error));
+        options.vWhitelistedRangeOutgoing.push_back(permissions);
+        connman.Init(options);
+        for (const auto type : ALL_CONNECTION_TYPES) {
+            if (type == ConnectionType::INBOUND) continue;
+            for (const bool v2 : {false, true}) {
+                // All sockets are mocked. Private broadcast retains its proxy
+                // requirement, with a successful SOCKS5 handshake fixture.
+                const bool private_broadcast{type == ConnectionType::PRIVATE_BROADCAST};
+                CreateSock = [private_broadcast](int, int, int) -> std::unique_ptr<Sock> {
+                    if (private_broadcast) {
+                        return std::make_unique<StaticContentsSock>(std::string{"\x05\x00\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00", 12});
+                    }
+                    return std::make_unique<ZeroSock>();
+                };
+                std::unique_ptr<CNode> node{connman.ConnectNodePublic("127.0.0.1:18444", type, v2,
+                    private_broadcast ? std::optional<Proxy>{proxy} : std::nullopt)};
+                BOOST_REQUIRE(node);
+                BOOST_CHECK(node->m_conn_type == type);
+                const auto expected{type == ConnectionType::MANUAL && permissions.m_subnet.Match(node->addr) ? NetPermissionFlags::All : NetPermissionFlags::None};
+                BOOST_CHECK(node->m_permission_flags == expected);
+
+                // Private broadcast must keep ignoring PING rather than
+                // emitting PONG. A full-relay positive control proves the
+                // message fixture is valid. Use v1 to avoid a mock v2 handshake.
+                if (!v2 && (private_broadcast || type == ConnectionType::OUTBOUND_FULL_RELAY)) {
+                    node->SetCommonVersion(PROTOCOL_VERSION);
+                    node->nVersion = PROTOCOL_VERSION;
+                    peerman->InitializeNode(*node, ServiceFlags(NODE_NETWORK | NODE_WITNESS));
+                    {
+                        LOCK(NetEventsInterface::g_msgproc_mutex);
+                        peerman->SendMessages(*node);
+                    }
+                    node->fSuccessfullyConnected = true;
+                    connman.FlushSendBuffer(*node);
+                    node->fPauseSend = false;
+                    BOOST_REQUIRE(connman.ReceiveMsgFrom(*node, NetMsg::Make(NetMsgType::PING, uint64_t{42})));
+                    {
+                        LOCK(NetEventsInterface::g_msgproc_mutex);
+                        connman.ProcessMessagesOnce(*node);
+                    }
+                    CNodeStats stats;
+                    node->CopyStats(stats);
+                    BOOST_CHECK_EQUAL(stats.mapSendBytesPerMsgType[NetMsgType::PONG] == 0, private_broadcast);
+                    peerman->FinalizeNode(*node);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(onion_socket_permissions)
+{
+    ConnmanTestMsg connman{0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman, Params()};
+    auto peerman = PeerManager::make(connman, *m_node.addrman, nullptr, *m_node.chainman, *m_node.mempool, *m_node.warnings, {});
+    const CAddress bind{LookupNumeric("127.0.0.1:18444"), NODE_NONE};
+    const CAddress peer{LookupNumeric("127.0.0.1:12345"), NODE_NETWORK};
+    CConnman::Options options{};
+    options.m_msgproc = peerman.get();
+    options.m_max_automatic_connections = 125;
+    options.onion_binds.push_back(bind);
+    NetWhitelistPermissions permissions;
+    ConnectionDirection direction;
+    bilingual_str error;
+    BOOST_REQUIRE(NetWhitelistPermissions::TryParse("all@127.0.0.1", permissions, direction, error));
+    options.vWhitelistedRangeIncoming.push_back(permissions);
+    connman.Init(options);
+    const auto socket_flags{NetPermissionFlags::Addr | NetPermissionFlags::BloomFilter};
+    connman.CreateNodeFromAcceptedSocketPublic(std::make_unique<ZeroSock>(), socket_flags, bind, peer);
+    const auto nodes{connman.TestNodes()};
+    BOOST_REQUIRE_EQUAL(nodes.size(), 1U);
+    BOOST_CHECK(nodes[0]->m_inbound_onion);
+    BOOST_CHECK(nodes[0]->m_conn_type == ConnectionType::INBOUND);
+    BOOST_CHECK(nodes[0]->m_permission_flags == socket_flags);
+    peerman->FinalizeNode(*nodes[0]);
+    connman.ClearTestNodes();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

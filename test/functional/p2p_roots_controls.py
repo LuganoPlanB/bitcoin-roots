@@ -5,7 +5,7 @@
 """Roots permission, transport and Tor-bind resource boundaries."""
 from queue import Empty
 
-from test_framework.messages import NODE_BLOOM, NODE_COMPACT_FILTERS, msg_getcfilters
+from test_framework.messages import NODE_BLOOM, NODE_COMPACT_FILTERS, msg_filterload, msg_getcfilters
 from test_framework.p2p import P2PInterface
 from test_framework.socks5 import Socks5Command, Socks5Configuration, Socks5Server
 from test_framework.test_framework import BitcoinTestFramework
@@ -34,6 +34,8 @@ class RootsPeerControlsTest(BitcoinTestFramework):
         assert int(node.getnetworkinfo()['localservices'], 16) & NODE_BLOOM == 0
         assert peer.last_message['version'].nServices & NODE_BLOOM
         node.disconnect_p2ps()
+
+        self.check_loopback_bloom_permissions()
         self.restart_node(0, ['-peerbloomfilters=0'])
         peer = node.add_p2p_connection(P2PInterface())
         assert_equal(node.getpeerinfo()[0]['permissions'], [])
@@ -61,12 +63,36 @@ class RootsPeerControlsTest(BitcoinTestFramework):
         assert_equal(node.getpeerinfo()[0]['permissions'], [])
         node.disconnect_p2ps()
 
+        # The first normal bind remains a Tor target. The separate whitebind
+        # retains socket grants and merges its clearnet address permissions.
+        self.restart_node(0, ['-listenonion=1', '-whitelist=all@127.0.0.1', f'-whitebind=addr,bloomfilter@127.0.0.1:{port}'])
+        node.add_p2p_connection(P2PInterface())
+        assert_equal(node.getpeerinfo()[0]['permissions'], [])
+        node.disconnect_p2ps()
+        peer = node.add_p2p_connection(P2PInterface(), dstport=port)
+        assert_equal(node.getpeerinfo()[0]['permissions'], ['blockfilters', 'bloomfilter', 'noban', 'forcerelay', 'relay', 'mempool', 'download', 'addr', 'forceinbound'])
+        assert peer.last_message['version'].nServices & NODE_BLOOM
+        node.disconnect_p2ps()
+
+        self.log.info("Forceinbound permission is distinct from noban and actual eviction")
+        for permission, expected in [
+            ('noban', ['noban', 'download']),
+            ('forceinbound', ['noban', 'download', 'forceinbound']),
+            ('all', ['blockfilters', 'bloomfilter', 'noban', 'forcerelay', 'relay', 'mempool', 'download', 'addr', 'forceinbound']),
+        ]:
+            self.restart_node(0, ['-peerbloomfilters=0', '-listenonion=0', f'-whitelist={permission}@127.0.0.1'])
+            node.add_p2p_connection(P2PInterface())
+            info = node.getpeerinfo()[0]
+            assert_equal(info['permissions'], expected)
+            assert_equal(info['forced_inbound'], False)
+            node.disconnect_p2ps()
+
         self.log.info("Forceinbound frees a protected slot but cannot evict a noban connection")
-        self.restart_node(0, ['-listenonion=0', '-maxconnections=12', f'-whitebind=forceinbound@127.0.0.1:{port}'])
+        self.restart_node(0, ['-peerbloomfilters=0', '-listenonion=0', '-maxconnections=12', f'-whitebind=forceinbound@127.0.0.1:{port}'])
         ordinary = node.add_p2p_connection(P2PInterface())
         node.add_p2p_connection(P2PInterface(), dstport=port)
         ordinary.wait_for_disconnect()
-        assert 'noban' in node.getpeerinfo()[0]['permissions']
+        assert_equal(node.getpeerinfo()[0]['permissions'], ['noban', 'download', 'forceinbound'])
         assert_equal(node.getpeerinfo()[0]['forced_inbound'], True)
         blocked = node.add_p2p_connection(P2PInterface(), dstport=port, wait_for_verack=False, expect_success=False)
         blocked.wait_for_disconnect()
@@ -128,6 +154,37 @@ class RootsPeerControlsTest(BitcoinTestFramework):
                 assert isinstance(item, (BrokenPipeError, ConnectionResetError)), item
         finally:
             proxy.stop()
+
+    def check_loopback_bloom_permissions(self):
+        node = self.nodes[0]
+        for disabled in [False, True]:
+            self.log.info(f"Loopback Bloom permission: explicitly disabled={disabled}")
+            self.restart_node(0, ['-peerbloomfilters=0'] if disabled else [])
+            expected = [] if disabled else ['bloomfilter']
+            peer = node.add_p2p_connection(P2PInterface())
+            assert_equal(node.getpeerinfo()[0]['connection_type'], 'inbound')
+            assert_equal(node.getpeerinfo()[0]['permissions'], expected)
+            assert_equal(bool(peer.last_message['version'].nServices & NODE_BLOOM), not disabled)
+            node.disconnect_p2ps()
+            self.connect_nodes(0, 1)
+            info = node.getpeerinfo()[0]
+            assert_equal(info['connection_type'], 'manual')
+            assert_equal(info['permissions'], expected)
+            assert_equal(bool(int(self.nodes[1].getpeerinfo()[0]['services'], 16) & NODE_BLOOM), not disabled)
+            node.disconnectnode(nodeid=info['id'])
+            self.wait_until(lambda: not node.getpeerinfo())
+            self.wait_until(lambda: not self.nodes[1].getpeerinfo())
+            for connection_type in ['outbound-full-relay', 'block-relay-only', 'addr-fetch']:
+                peer = node.add_outbound_p2p_connection(P2PInterface(), p2p_idx=0, connection_type=connection_type)
+                info = node.getpeerinfo()[0]
+                assert_equal(info['connection_type'], connection_type)
+                assert_equal(info['permissions'], [])
+                assert peer.last_message['version'].nServices & NODE_BLOOM == 0
+                # The loss is observable in BIP37 enforcement as well as RPC
+                # permission reporting and the per-peer service advertisement.
+                peer.send_without_ping(msg_filterload(data=b'\xff', nHashFuncs=1, nTweak=0, nFlags=1))
+                peer.wait_for_disconnect()
+                node.disconnect_p2ps()
 
 
 

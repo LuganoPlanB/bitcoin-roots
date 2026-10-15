@@ -62,7 +62,7 @@ class BuildIdentityTest(unittest.TestCase):
     def test_default_version(self):
         result, header = self.configure()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.1"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.2"', header)
 
 
 if __name__ == "__main__":

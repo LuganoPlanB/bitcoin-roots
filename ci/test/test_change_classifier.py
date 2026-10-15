@@ -52,6 +52,18 @@ class ChangeClassifierTest(unittest.TestCase):
                 "\"docs\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
                 "\"sanitizers\":false,\"wallet\":false},\"version\":1}\n")
 
+    def test_peer_review_paths_require_compiled_and_functional_coverage(self):
+        for path in ['src/net.cpp', 'src/net_permissions.cpp', 'src/rpc/net.cpp',
+                     'src/rpc/blockchain.cpp', 'test/functional/rpc_getblockfrompeer.py',
+                     'test/functional/p2p_permissions.py', 'test/functional/p2p_addr_relay.py',
+                     'test/functional/p2p_getaddr_caching.py', 'test/functional/p2p_roots_controls.py']:
+            with self.subTest(path=path):
+                result = MODULE.result_for([path], [], False, False, self.policy)
+                self.assertEqual(result['categories'], ['critical'])
+                self.assertTrue(result['complete'])
+                self.assertTrue(result['selected']['sanitizers'])
+                self.assertTrue(result['selected']['compat'])
+
     def test_full_label_selects_reusable_nightly_assurance(self):
         result = MODULE.result_for(["README.md"], ["ci:full"], False, False, self.policy)
         self.assertTrue(result["selected"]["nightly_full"])

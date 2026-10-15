@@ -44,6 +44,38 @@ class RootsRegressionTest(unittest.TestCase):
         self.assertIn('feature_config_args.py', plan['functional'])
         self.assertNotIn('wallet_signer.py', plan['functional'])
 
+    def test_network_changes_cover_peer_permission_and_fetch_boundaries(self):
+        expected = {
+            'p2p_filter.py', 'p2p_invalid_messages.py', 'rpc_net.py',
+            'p2p_permissions.py', 'p2p_addr_relay.py', 'p2p_getaddr_caching.py',
+            'p2p_roots_controls.py', 'rpc_getblockfrompeer.py',
+        }
+        for path in ['src/net.cpp', 'src/net_permissions.cpp', 'src/net_permissions.h',
+                     'src/net_processing.cpp', 'src/protocol.h',
+                     *('test/functional/' + name for name in expected)]:
+            with self.subTest(path=path):
+                plan = MODULE.selection([path], 'fast')
+                self.assertEqual(plan['groups'], ['net'])
+                self.assertEqual(set(plan['functional']), expected)
+                self.assertEqual(plan['budgets']['functional'], 900)
+
+    def test_peer_and_blockchain_rpc_changes_add_network_coverage(self):
+        network = MODULE.selection(['src/net.cpp'], 'fast')
+        existing = MODULE.selection(['src/rpc/mempool.cpp'], 'fast')
+        for path in ['src/rpc/net.cpp', 'src/rpc/blockchain.cpp']:
+            with self.subTest(path=path):
+                plan = MODULE.selection([path], 'fast')
+                self.assertEqual(plan['groups'], ['net', 'policy', 'runtime'])
+                self.assertEqual(set(plan['functional']),
+                                 set(network['functional']) | set(existing['functional']))
+
+    def test_fallback_retains_all_groups_and_documented_counts(self):
+        plan = MODULE.selection(None, 'fast')
+        self.assertEqual(plan['groups'], ['mining', 'net', 'policy', 'runtime', 'wallet'])
+        self.assertEqual(len(plan['functional']), 21)
+        self.assertEqual(len(plan['fuzz']), 9)
+        self.assertEqual(plan['budgets']['functional'], 900)
+
     def test_mixed_changes_take_union_and_all_tests_exist(self):
         wallet = MODULE.selection(['src/wallet/wallet.cpp'], 'fast')
         peers = MODULE.selection(['src/net_processing.cpp'], 'fast')

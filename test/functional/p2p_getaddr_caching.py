@@ -10,6 +10,7 @@ from test_framework.p2p import (
     P2PInterface,
     p2p_lock
 )
+from test_framework.messages import msg_getaddr
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_not_equal,
@@ -117,6 +118,49 @@ class AddrTest(BitcoinTestFramework):
         assert_not_equal(set(last_response_on_local_bind), set(addr_receiver_local.get_received_addrs()))
         assert_not_equal(set(last_response_on_onion_bind1), set(addr_receiver_onion1.get_received_addrs()))
         assert_not_equal(set(last_response_on_onion_bind2), set(addr_receiver_onion2.get_received_addrs()))
+
+        self.nodes[0].disconnect_p2ps()
+        self.permission_cache_tests(cur_mock_time)
+
+    def permission_cache_tests(self, mocktime):
+        whitebind_port = p2p_port(self.num_nodes + 2)
+        for name, args, port, privileged in [
+            ("ordinary", [], p2p_port(0), False),
+            ("default whitelist", ["-whitelist=127.0.0.1"], p2p_port(0), False),
+            ("default whitebind", [f"-whitebind=127.0.0.1:{whitebind_port}"], whitebind_port, False),
+            ("explicit addr", ["-whitelist=addr@127.0.0.1"], p2p_port(0), True),
+            ("all", ["-whitelist=all@127.0.0.1"], p2p_port(0), True),
+            ("socket addr", [f"-whitebind=addr@127.0.0.1:{whitebind_port}"], whitebind_port, True),
+            ("socket all", [f"-whitebind=all@127.0.0.1:{whitebind_port}"], whitebind_port, True),
+        ]:
+            self.log.info(f"Test GETADDR caching permission for {name}")
+            self.restart_node(0, self.extra_args[0] + ["-peerbloomfilters=0"] + args)
+            self.nodes[0].setmocktime(mocktime)
+            previous = None
+            for _ in range(3):
+                peer = self.nodes[0].add_p2p_connection(AddrReceiver(), dstport=port)
+                mocktime += 5 * 60
+                self.nodes[0].setmocktime(mocktime)
+                peer.wait_until(peer.addr_received)
+                response = set(peer.get_received_addrs())
+                assert_equal(len(response), MAX_ADDR_TO_SEND)
+                if previous is not None:
+                    if privileged:
+                        assert_not_equal(previous, response)
+                    else:
+                        assert_equal(previous, response)
+                previous = response
+
+                # Addr changes sampling, while each connection still receives
+                # only one GETADDR response.
+                messages_before = peer.message_count["addr"]
+                with self.nodes[0].assert_debug_log(['Ignoring repeated "getaddr".']):
+                    peer.send_and_ping(msg_getaddr())
+                mocktime += 5 * 60
+                self.nodes[0].setmocktime(mocktime)
+                peer.sync_with_ping()
+                assert_equal(peer.message_count["addr"], messages_before)
+                self.nodes[0].disconnect_p2ps()
 
 
 if __name__ == '__main__':

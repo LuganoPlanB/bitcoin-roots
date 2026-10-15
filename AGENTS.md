@@ -1,6 +1,6 @@
 # Bitcoin Roots contributor and agent guide
 
-The released v31.1-roots.1 product is based directly on authenticated Bitcoin Core
+The v31.1-roots.2 candidate is based directly on authenticated Bitcoin Core
 v31.1 (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). Selected Bitcoin Knots
 `29.3.knots20260507` behavior is historical lineage, not another upstream or a
 consensus specification. Read `README.md`, `doc/roots-features.md`,

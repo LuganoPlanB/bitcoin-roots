@@ -55,7 +55,6 @@ static const unsigned int MAX_HEADERS_RESULTS = 2000;
 
 struct CNodeStateStats {
     std::chrono::seconds m_last_block_announcement{0};
-    int m_misbehavior_score{0}; // Deprecated: 0 or 100 when discouragement is pending.
     int nSyncHeight = -1;
     int nCommonHeight = -1;
     int m_starting_height = -1;
