@@ -1,66 +1,56 @@
 Bitcoin Roots
 =============
 
-Connected to the trunk. Conservative in policy. Neutral in consensus.
-
-This is the local Core v31.1 development candidate. Publishing and release
-tagging are separate from this port. See the [port review](doc/roots-v31-port-review.md)
-for exact inputs, implementation dispositions and verification gaps.
-
-What is Bitcoin Roots?
-----------------------
-
 Bitcoin Roots connects to the Bitcoin peer-to-peer network to download and fully
 validate blocks and transactions. It also includes a wallet and graphical user
 interface, which can be optionally built.
 
-Bitcoin Roots is based on Bitcoin Core with selected policy features from the
-Bitcoin Knots `29.3.knots20260507` code line. The Knots reference describes
-feature lineage only; Bitcoin Core v31.1 is this candidate’s direct base.
+Bitcoin Roots is based on Bitcoin Core with selected policy features from Bitcoin Knots.
+
 
 Bitcoin Roots remains compatible with Bitcoin Core consensus. Its conservative
 transaction relay and mempool policy is local and configurable: a transaction
 rejected by policy can still be consensus-valid, and valid blocks containing it
 remain acceptable. Bitcoin Roots does not enforce RDTS/BIP110 consensus rules.
 
-For the selected Roots behavior implemented in this candidate, the follow-on work
+See the [Roots/Core/Knots feature comparison](https://plan-b.foundation/bitcoin-roots/compare) for details.
+
+For the selected Roots behavior implemented in the latest release, the follow-on work
 that is not yet shipped, and explicit non-features, see the
 [Roots feature catalog](doc/roots-features.md).
 
-Further information is available in the [doc folder](/doc).
+Bitcoin Core v31.1 is the latest direct base. See the [port review](doc/roots-v31-port-review.md)
+for exact inputs, implementation dispositions and verification gaps.
+
+Further information is available on the [Bitcoin Roots homepage](https://plan-b.foundation/bitcoin-roots) and in the [doc folder](/doc).
 
 License
 -------
 
-Bitcoin Roots is released under the terms of the MIT license. See
+Bitcoin Roots is released under the terms of the MIT license, same as Bitcoin Core. See
 [COPYING](COPYING) for more information or https://opensource.org/license/MIT.
 
 Development Process
 -------------------
 
-Bitcoin Roots follows Bitcoin Core development and incorporates suitable changes
-for each release. Features that improve node policy, resource control, privacy,
-or operation without changing Bitcoin consensus may also be maintained here.
+Bitcoin Roots follows Bitcoin Core development and updates a `-roots` patch to apply on every Core release. Features that improve node policy, resource control, privacy,
+or operational security without changing Bitcoin consensus are maintained here.
 
 The project distinguishes local policy from consensus. Transactions rejected by
 local relay or mempool policy may still be valid under Bitcoin consensus, and
 valid blocks containing them must continue to be accepted.
 
-In every release cycle, releases sharing an exact Core base retain their
-history and append fixes. When moving to a new Core base, **Folding** incorporates
-those fixes into the relevant thematic patches, retaining attribution and the
+In every release cycle, releases sharing an exact Core base retain its
+commit history and apply Roots commits on top of them, linearly. Each new major Core release usually requires minor adjustment fixes that are added as following commits and kept visible throug minor Roots releases. When moving to a new Core base, **Folding** incorporates
+those adjustment fixes into the relevant thematic patches, retaining attribution and the
 old releases. Each downloadable patch is the complete series for its stated
 base, not just the changes since the previous Roots release. See the
-[release and Folding policy](contrib/roots/README.md#folding-at-a-new-core-base).
-
-The contribution guide is [CONTRIBUTING.md](CONTRIBUTING.md); developer guidance
-is in [doc/developer-notes.md](doc/developer-notes.md).
+[Bitcoin Roots maintainer workflow](contrib/roots/README.md#folding-at-a-new-core-base).
 
 Testing
 -------
 
-Testing and code review are essential for this security-critical project. Please
-help by testing other contributors' pull requests.
+Testing and code review are essential for this security-critical project. We extend Bitcoin Core testing with more coverage in Roots. Some tests run on each PR, others are too expensive and they run nightly, so PRs must wait at least one full day before being succesfully merged, if ever. See the [Actions log](https://github.com/LuganoPlanB/bitcoin-roots/actions) for an actual overview of the situation.
 
 ### Automated Testing
 
@@ -84,13 +74,10 @@ they are large or high-risk.
 Maintenance
 -----------
 
-Bitcoin Roots is maintained by the Plan ₿ Foundation under the supervision of
-[Denis "Jaromil" Roio](https://jaromil.dyne.org),
-[Giacomo Zucco](https://x.com/giacomozucco), and
+Bitcoin Roots is designed, written and maintained by the Plan ₿ Foundation scientific director 
+[Denis "Jaromil" Roio](https://jaromil.dyne.org), with advice and testing contributed by  
+[Giacomo Zucco](https://x.com/giacomozucco) and
 [S₿AM](https://x.com/sbaaaam21).
 
-Translations
-------------
+We welcome reviews and advice from Bitcoin Core developers and other experts and we are grateful for the contributions we already received, in particular by [@danielabrozzoni](https://github.com/danielabrozzoni) and (@devjoinedthechat)[https://github.com/devjoinedthechat].
 
-Do not manually edit generated translations; see the
-[translation process](doc/translation_process.md).
