@@ -13,6 +13,9 @@ head:
 
 # Wallet privacy tools
 
+For network routing, private broadcasting, wallet settings, and their defaults,
+see [Privacy settings](/privacy).
+
 The published `v29.4-roots.3` release adds two explicit wallet workflows. This
 is release documentation. Verify the version and
 built-in help of any binary before using these tools.

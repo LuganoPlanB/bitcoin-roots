@@ -85,6 +85,7 @@ test("website-owned navigation only targets published pages", async () => {
     "/documentation",
     "/getting-started",
     "/principles",
+    "/privacy",
     "/wallet-privacy",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
@@ -93,6 +94,7 @@ test("website-owned navigation only targets published pages", async () => {
     "content/compare.md",
     "content/getting-started.md",
     "content/principles.md",
+    "content/privacy.md",
     "content/wallet-privacy.md",
   ];
 
@@ -140,7 +142,7 @@ test("primary navigation includes the two editorial routes", async () => {
     ["Get started", "/getting-started"],
     ["Principles", "/principles"],
     ["Compare", "/compare"],
-    ["Wallet privacy", "/wallet-privacy"],
+    ["Privacy", "/privacy"],
     ["Documentation", "/documentation"],
     ["Policy", "/doc/policy/README"],
     ["Contribute", "/CONTRIBUTING"],
