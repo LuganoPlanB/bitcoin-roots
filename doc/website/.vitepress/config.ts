@@ -116,7 +116,7 @@ export default defineConfig({
       { text: "Get started", link: "/getting-started" },
       { text: "Principles", link: "/principles" },
       { text: "Compare", link: "/compare" },
-      { text: "Wallet privacy", link: "/wallet-privacy" },
+      { text: "Privacy", link: "/privacy" },
       { text: "Documentation", link: "/documentation" },
       // Static patch documents bypass VitePress page-data routing.
       { text: "Patches", link: "/patches/", target: "_self" },

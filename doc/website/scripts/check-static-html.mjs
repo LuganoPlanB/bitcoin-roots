@@ -5,6 +5,14 @@ import { fileURLToPath } from "node:url";
 
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pages = {
+  "privacy.html": [
+    "<h1",
+    "Privacy settings",
+    "Defaults at a glance",
+    "Private transaction broadcasting",
+    "Wallet privacy and coin selection",
+    "Versioned references",
+  ],
   "index.html": [
     'class="roots-home"',
     "Your node. Your policy. Bitcoin consensus.",
@@ -46,4 +54,4 @@ for (const [filename, expectedContent] of Object.entries(pages)) {
   }
 }
 
-console.log("Verified server-rendered content in the homepage, Principles, and Compare HTML.");
+console.log("Verified server-rendered content in the homepage, Principles, Compare, and Privacy HTML.");
