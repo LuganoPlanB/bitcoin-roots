@@ -88,8 +88,8 @@ RPCHelpMan exportaddresskey()
 
             // Recheck the exact address and public-key serialization before exposing the scalar.
             const CPubKey derived_pubkey{key.GetPubKey()};
-            const CTxDestination derived_dest{pkhash ? CTxDestination{PKHash{derived_pubkey}} : CTxDestination{WitnessV0KeyHash{derived_pubkey}}};
-            if (derived_pubkey != pubkey || derived_dest != dest || (witness && !key.IsCompressed())) continue;
+            const bool matches_dest{pkhash ? PKHash{derived_pubkey} == *pkhash : WitnessV0KeyHash{derived_pubkey} == *witness};
+            if (derived_pubkey != pubkey || !matches_dest || (witness && !key.IsCompressed())) continue;
 
             UniValue result(UniValue::VOBJ);
             result.pushKV("private_key_hex", HexStr(key));
