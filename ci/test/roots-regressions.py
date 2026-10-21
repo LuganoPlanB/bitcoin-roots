@@ -17,7 +17,7 @@ import sys
 GROUPS = {
     "policy": ("feature_policy_args.py", "mempool_datacarrier.py", "mempool_subdust_fee_penalty.py", "mempool_dynamic_dust.py", "mempool_roots_local_policy.py"),
     "mining": ("mining_roots_template.py", "mempool_truc.py"),
-    "wallet": ("wallet_send.py", "wallet_sweepprivkeys.py", "wallet_signer.py"),
+    "wallet": ("wallet_send.py", "wallet_sweepprivkeys.py", "wallet_signer.py", "wallet_exportaddresskey.py"),
     "net": ("p2p_filter.py", "p2p_invalid_messages.py", "rpc_net.py", "p2p_permissions.py", "p2p_addr_relay.py", "p2p_getaddr_caching.py", "p2p_roots_controls.py", "rpc_getblockfrompeer.py"),
     "runtime": ("feature_config_args.py", "rpc_effective_policy.py", "rpc_uptime.py"),
 }

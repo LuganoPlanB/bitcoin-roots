@@ -25,6 +25,7 @@ class RootsRegressionTest(unittest.TestCase):
         plan = MODULE.selection(['src/wallet/spend.cpp'], 'fast')
         self.assertIn('wallet_sweepprivkeys.py', plan['functional'])
         self.assertIn('wallet_signer.py', plan['functional'])
+        self.assertIn('wallet_exportaddresskey.py', plan['functional'])
         self.assertNotIn('rpc_net.py', plan['functional'])
         self.assertEqual(plan['budgets']['fuzz'], 5)
         self.assertLess(plan['budgets']['functional'], MODULE.selection(None, 'nightly')['budgets']['functional'])
@@ -72,7 +73,7 @@ class RootsRegressionTest(unittest.TestCase):
     def test_fallback_retains_all_groups_and_documented_counts(self):
         plan = MODULE.selection(None, 'fast')
         self.assertEqual(plan['groups'], ['mining', 'net', 'policy', 'runtime', 'wallet'])
-        self.assertEqual(len(plan['functional']), 21)
+        self.assertEqual(len(plan['functional']), 22)
         self.assertEqual(len(plan['fuzz']), 9)
         self.assertEqual(plan['budgets']['functional'], 900)
 
