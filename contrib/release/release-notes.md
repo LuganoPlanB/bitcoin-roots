@@ -1,8 +1,8 @@
-# Bitcoin Roots v31.1-roots.2
+# Bitcoin Roots v31.1-roots.3
 
 This candidate release-note template does not announce publication.
 
-Bitcoin Roots v31.1-roots.2 is based directly on the official Bitcoin Core
+Bitcoin Roots v31.1-roots.3 is based directly on the official Bitcoin Core
 v31.1 release (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). It carries the
 reviewed Roots semantic series onto that base, preserving the Core 31.1
 implementation and fixes. Bitcoin Knots `29.3.knots20260507` describes
@@ -14,18 +14,18 @@ RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
 
-## Unreleased development after v31.1-roots.2
+## Changes from v31.1-roots.2
 
 - Add `exportaddresskey ADDRESS` to export one local descriptor-wallet P2PKH or
   native P2WPKH spending key as fixed-width `private_key_hex` plus `compressed`.
   Normal wallet unlock is required. The result is a spending secret;
   non-hardened child-key disclosure plus the corresponding ancestor xpub can
   compromise that ancestor's private subtree. See the
-  [wallet manual](../../doc/wallet-privacy.md#export-a-spending-key-for-one-address)
+  [wallet manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.3/doc/wallet-privacy.md#export-a-spending-key-for-one-address)
   for the contract and protected transfer guidance. Quietproof's normal proof
   workflow remains native P2WPKH only.
 
-## Changes from v31.1-roots.1
+## Preserved changes in v31.1-roots.2
 
 - `getpeerinfo` no longer returns the deprecated `misbehavior_score` field.
   Consumers must stop expecting it; discouragement and disconnection enforcement
@@ -94,7 +94,7 @@ validation is tied to the canonical `roots/31.1` release tip, rather than a
 promotion commit on `main`.
 
 The portable patch applies directly to official Core v31.1 with
-`git am -3 --keep-cr <bitcoin-roots-31.1-roots.2.patch>`. It deliberately
+`git am -3 --keep-cr <bitcoin-roots-31.1-roots.3.patch>`. It deliberately
 excludes `.github/**`; every other product path must match the release tag.
 The permanent-tag workflow requires a detached signature for the SHA512
 manifest using release key `5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`
@@ -107,12 +107,20 @@ the final release's stated signing status and all eight assets independently.
 
 ## Verification scope
 
-The source port was accepted with reduced verification. Matching prior unit,
-functional, CTest and Qt evidence was retained alongside current ordinary
+The original source port was accepted with reduced verification. Matching prior
+unit, functional, CTest and Qt evidence was retained alongside current ordinary
 maintenance and policy-oracle checks. Earlier instrumented checks included
-failures; repaired targets were not rerun under instrumentation. No further
-fuzz execution, sanitizer campaigns or saved-input reproducer replays were
-performed, and no new hosted product-test pass is claimed.
+failures; repaired targets were not rerun under instrumentation at that stage.
+No further fuzz execution, sanitizer campaigns or saved-input reproducer replays were
+performed for that acceptance, and it claimed no new hosted product-test pass.
+
+For the address-key export change, current local checks passed the full native
+unit suite (777 normal passes and one pass warning about absent external script
+vectors), 25 affected functional cases, all 22 Qt test rows, and 216 maintenance
+tests. Nine bounded fuzz targets passed with the documented CI sanitizer
+runtime settings. External script vectors and full Python lint dependencies
+were unavailable locally; hosted CI remains a separate release gate. These
+checks do not establish exhaustive sanitizer or cross-platform coverage.
 
 The release pipeline runs ordinary release metadata tests and fresh package
 builds. Its platform jobs disable unit, functional and fuzz test execution;
@@ -139,5 +147,6 @@ release builds on.
 
 - [Reviewed semantic port (#49)](https://github.com/LuganoPlanB/bitcoin-roots/pull/49).
 - [Prior release changelog from v29.4-roots.4](https://github.com/LuganoPlanB/bitcoin-roots/compare/v29.4-roots.4...v31.1-roots.1).
-- [Migration changelog from v31.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.1...v31.1-roots.2) (available after a separately authorized release tag).
+- [Migration changelog from v31.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.1...v31.1-roots.2).
+- [Changes from v31.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.2...v31.1-roots.3).
 - [Official Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/releases/tag/v31.1).

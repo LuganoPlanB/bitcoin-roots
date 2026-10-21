@@ -87,7 +87,7 @@ a transaction-history product, or any anonymity guarantee.
 
 ## Export a spending key for one address
 
-The development candidate adds `exportaddresskey ADDRESS` for a known address
+The v31.1-roots.3 candidate adds `exportaddresskey ADDRESS` for a known address
 in the selected descriptor wallet:
 
 ```sh

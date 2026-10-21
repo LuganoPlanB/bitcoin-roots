@@ -44,7 +44,7 @@ class BuildIdentityTest(unittest.TestCase):
             return result, header.read_text(encoding="utf-8") if header.exists() else ""
 
     def test_release_version_without_git(self):
-        for tag in ("v31.1-roots.2", "v31.1-roots.4"):
+        for tag in ("v31.1-roots.3", "v31.1-roots.4"):
             with self.subTest(tag=tag):
                 result, header = self.configure(tag)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -62,7 +62,7 @@ class BuildIdentityTest(unittest.TestCase):
     def test_default_version(self):
         result, header = self.configure()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.2"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.3"', header)
 
 
 if __name__ == "__main__":

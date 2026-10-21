@@ -335,12 +335,12 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 
 ### Wallet authorization, signing and spend controls
 
-The development candidate additionally provides the opt-in `exportaddresskey`
+The v31.1-roots.3 candidate additionally provides the opt-in `exportaddresskey`
 wallet RPC for one locally held P2PKH or native P2WPKH spending key. It requires
 normal wallet authorization and returns only the leaf scalar and compression
 flag. See [the wallet manual](wallet-privacy.md#export-a-spending-key-for-one-address)
 for the exact encoding, supported wallets, secret-handling and ancestor-xpub
-risks, and Quietproof's native-P2WPKH limitation. This development addition is
+risks, and Quietproof's native-P2WPKH limitation. This addition is
 not a claim of availability in an earlier published release.
 
 - **wallet-foundation:** descriptor/SQLite wallets and optional external signing
@@ -458,7 +458,7 @@ not a claim of availability in an earlier published release.
   checks in ci/test (`ci/test`, source reference). Gap: the baseline covers one Linux headless
   wallet profile, not all optional/platform configurations. `ENABLE_TOR_SUBPROCESS`
   has no production consumer and cannot promise an automatic Tor instance.
-- **identity-desktop:** built tools identify Bitcoin Roots `v31.1-roots.2`
+- **identity-desktop:** built tools identify Bitcoin Roots `v31.1-roots.3`
   by default; `CLIENT_VERSION_TAG` accepts only `v31.1-roots.<positive revision>`
   and sets archive-build identity without Git metadata. Numeric protocol version
   and BIP14 `Satoshi` identity remain upstream-compatible. Retain Roots icons,
