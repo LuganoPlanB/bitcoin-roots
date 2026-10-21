@@ -859,6 +859,7 @@ RPCHelpMan removeprunedfunds();
 RPCHelpMan importdescriptors();
 RPCHelpMan listdescriptors();
 RPCHelpMan backupwallet();
+RPCHelpMan exportaddresskey();
 RPCHelpMan restorewallet();
 
 // coins
@@ -909,6 +910,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &abandontransaction},
         {"wallet", &abortrescan},
         {"wallet", &backupwallet},
+        {"wallet", &exportaddresskey},
         {"wallet", &bumpfee},
         {"wallet", &psbtbumpfee},
         {"wallet", &createwallet},

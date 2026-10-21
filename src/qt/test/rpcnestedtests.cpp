@@ -99,6 +99,10 @@ void RPCNestedTests::rpcNestedTests()
     QVERIFY(filtered == "signrawtransactionwithkey(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "sweepprivkeys([sentinel], destination)", false, &filtered);
     QVERIFY(filtered == "sweepprivkeys(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "exportaddresskey sentinel", false, &filtered);
+    QVERIFY(filtered == "exportaddresskey(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "help(exportaddresskey(sentinel))", false, &filtered);
+    QVERIFY(filtered == "help(exportaddresskey(…))");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrase(help())", false, &filtered);
     QVERIFY(filtered == "walletpassphrase(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrasechange(help(walletpassphrasechange(abc)))", false, &filtered);

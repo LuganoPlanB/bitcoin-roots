@@ -36,6 +36,72 @@
 using interfaces::FoundBlock;
 
 namespace wallet {
+RPCHelpMan exportaddresskey()
+{
+    return RPCHelpMan{
+        "exportaddresskey",
+        "Returns the local spending key for a P2PKH or native P2WPKH address known to the selected descriptor wallet.\n"
+        "Requires wallet unlock. The result contains a spending secret, including when displayed in the RPC console.\n"
+        "Disclosure of a non-hardened child key together with the corresponding ancestor xpub can compromise that ancestor's private subtree.\n",
+        {
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet P2PKH or native P2WPKH address"},
+        },
+        RPCResult{RPCResult::Type::OBJ, "", "", {
+            {RPCResult::Type::STR_HEX, "private_key_hex", "32-byte unsigned big-endian private scalar (64 lowercase hex characters, including leading zeros); not WIF"},
+            {RPCResult::Type::BOOL, "compressed", "Whether the address uses a compressed public key (always true for P2WPKH)"},
+        }},
+        RPCExamples{HelpExampleCli("exportaddresskey", "\"" + EXAMPLE_ADDRESS[0] + "\"")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return UniValue::VNULL;
+
+    const CTxDestination dest{DecodeDestination(request.params[0].get_str())};
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+    const auto pkhash = std::get_if<PKHash>(&dest);
+    const auto witness = std::get_if<WitnessV0KeyHash>(&dest);
+    if (!pkhash && !witness) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Only P2PKH and native P2WPKH addresses are supported");
+    }
+
+    LOCK(wallet->cs_wallet);
+    if (!wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ||
+        wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) ||
+        wallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "This wallet does not support local private-key export");
+    }
+    EnsureWalletIsUnlocked(*wallet);
+
+    const CScript script{GetScriptForDestination(dest)};
+    const CKeyID key_id{pkhash ? ToKeyID(*pkhash) : ToKeyID(*witness)};
+    const auto solving_provider = wallet->GetSolvingProvider(script);
+    CPubKey pubkey;
+    if (solving_provider && solving_provider->GetPubKey(key_id, pubkey)) {
+        for (const auto spk_man : wallet->GetScriptPubKeyMans(script)) {
+            const auto desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
+            if (!desc_spk_man) continue;
+            const auto provider = desc_spk_man->GetSigningProvider(pubkey);
+            CKey key;
+            if (!provider || !provider->GetKey(key_id, key) || !key.IsValid()) continue;
+
+            // Recheck the exact address and public-key serialization before exposing the scalar.
+            const CPubKey derived_pubkey{key.GetPubKey()};
+            const CTxDestination derived_dest{pkhash ? CTxDestination{PKHash{derived_pubkey}} : CTxDestination{WitnessV0KeyHash{derived_pubkey}}};
+            if (derived_pubkey != pubkey || derived_dest != dest || (witness && !key.IsCompressed())) continue;
+
+            UniValue result(UniValue::VOBJ);
+            result.pushKV("private_key_hex", HexStr(key));
+            result.pushKV("compressed", key.IsCompressed());
+            return result;
+        }
+    }
+    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Private key for address is not available in this wallet");
+},
+    };
+}
+
 RPCHelpMan importprunedfunds()
 {
     return RPCHelpMan{

@@ -335,6 +335,14 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 
 ### Wallet authorization, signing and spend controls
 
+The development candidate additionally provides the opt-in `exportaddresskey`
+wallet RPC for one locally held P2PKH or native P2WPKH spending key. It requires
+normal wallet authorization and returns only the leaf scalar and compression
+flag. See [the wallet manual](wallet-privacy.md#export-a-spending-key-for-one-address)
+for the exact encoding, supported wallets, secret-handling and ancestor-xpub
+risks, and Quietproof's native-P2WPKH limitation. This development addition is
+not a claim of availability in an earlier published release.
+
 - **wallet-foundation:** descriptor/SQLite wallets and optional external signing
   are inherited Core foundations. Roots rejects unwritable database directories,
   avoids recursively scanning node database directories and symlink/reparse
@@ -543,8 +551,7 @@ Roots does not ship or promise:
 
 - RDTS/BIP110 consensus enforcement;
 - Network Watch, block/transaction feeds, or block/mempool visualizers;
-- Tor "pairing" credentials, proxy credentials, control-port secrets, or
-  private-key sharing surfaces;
+- Tor "pairing" credentials, proxy credentials, or control-port secrets;
 - Tor endpoint sharing or a dedicated endpoint-sharing UI;
 - CoinJoin, payjoin, silent automatic consolidation, a privacy score,
   anonymity guarantee, address graph, chain-analysis dashboard, or payment

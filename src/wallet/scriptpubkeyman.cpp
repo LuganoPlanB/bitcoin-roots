@@ -1244,7 +1244,7 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
     }
     int32_t index = it->second;
 
-    // Always try to get the signing provider with private keys. This function should only be called during signing anyways
+    // Always include private keys, for signing or explicit address-key export after wallet authorization.
     std::unique_ptr<FlatSigningProvider> out = GetSigningProvider(index, true);
     if (!out->HaveKey(pubkey.GetID())) {
         return nullptr;

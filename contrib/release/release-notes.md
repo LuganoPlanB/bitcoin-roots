@@ -14,6 +14,17 @@ RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
 
+## Unreleased development after v31.1-roots.2
+
+- Add `exportaddresskey ADDRESS` to export one local descriptor-wallet P2PKH or
+  native P2WPKH spending key as fixed-width `private_key_hex` plus `compressed`.
+  Normal wallet unlock is required. The result is a spending secret;
+  non-hardened child-key disclosure plus the corresponding ancestor xpub can
+  compromise that ancestor's private subtree. See the
+  [wallet manual](../../doc/wallet-privacy.md#export-a-spending-key-for-one-address)
+  for the contract and protected transfer guidance. Quietproof's normal proof
+  workflow remains native P2WPKH only.
+
 ## Changes from v31.1-roots.1
 
 - `getpeerinfo` no longer returns the deprecated `misbehavior_score` field.

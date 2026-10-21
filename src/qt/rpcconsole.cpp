@@ -74,6 +74,7 @@ namespace {
 const QStringList historyFilter = QStringList()
     << "createwallet"
     << "createwalletdescriptor"
+    << "exportaddresskey"
     << "migratewallet"
     << "signmessagewithprivkey"
     << "signrawtransactionwithkey"

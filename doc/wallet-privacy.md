@@ -83,11 +83,50 @@ anonymous.
   change carefully because it can affect address linkage.
 
 These tools do not add CoinJoin, payjoin, silent automatic consolidation,
-private-key export, a transaction-history product, or any anonymity guarantee.
+a transaction-history product, or any anonymity guarantee.
+
+## Export a spending key for one address
+
+The development candidate adds `exportaddresskey ADDRESS` for a known address
+in the selected descriptor wallet:
+
+```sh
+bitcoin-cli -rpcwallet=WALLET exportaddresskey ADDRESS
+```
+
+The wallet must hold the private key locally, and an encrypted wallet must be
+unlocked through the normal wallet authorization flow. Watch-only,
+private-key-disabled and external-signer wallets are rejected. Addresses must
+belong to the active node network. Only P2PKH (compressed or uncompressed) and
+native P2WPKH (compressed) are supported; P2SH, P2WSH and P2TR are rejected.
+
+The result has exactly two fields:
+
+- `private_key_hex`: the 32-byte unsigned big-endian leaf scalar as exactly 64
+  lowercase hex characters, retaining leading zeros. It has no `0x` prefix,
+  WIF marker or checksum.
+- `compressed`: a boolean describing the public-key serialization for the
+  address; always `true` for native P2WPKH.
+
+The result contains a spending secret. Use protected, authenticated local RPC.
+For a consumer such as Quietproof, transfer the hex plus a newline through
+protected stdin, keeping the secret out of command arguments, environment
+variables and files. The Qt console filters the command's arguments from history
+but displays the explicitly requested result. JSON, HTTP and client buffers may
+retain copies; total memory erasure is not promised.
+
+Only the selected leaf key is returned, without a seed, master key, xprv or
+descriptor. Disclosure of a non-hardened child private key together with the
+corresponding ancestor xpub can still compromise that ancestor's private
+subtree. The RPC does not import keys, generate addresses, advance keypool
+indices or change balances or spend state. Keep an independent secure backup.
+Quietproof's current normal proof workflow supports native P2WPKH only;
+exporting a P2PKH key does not add P2PKH proof support or an anonymity guarantee.
 
 ## Candidate verification
 
 The candidate behavior is exercised by
+`wallet_exportaddresskey.py` (`test/functional/wallet_exportaddresskey.py`),
 `wallet_sweepprivkeys.py` (`test/functional/wallet_sweepprivkeys.py`),
 `wallet_send.py` (`test/functional/wallet_send.py`), wallet unit tests, and
 `src/qt/test/wallettests.cpp` (`src/qt/test/wallettests.cpp`). Before operating
