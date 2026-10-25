@@ -564,6 +564,7 @@ public:
         return {m_extra_tx_memusage, vExtraTxnForCompact};
     }
     void UnitTestProcessValidTx(const CTransactionRef& tx, const std::list<CTransactionRef>& replaced) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_tx_download_mutex)
     {
         LOCK(g_msgproc_mutex);
         LOCK(m_tx_download_mutex);
