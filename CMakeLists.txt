@@ -71,7 +71,7 @@ if(DEFINED CLIENT_VERSION_TAG)
   endif()
   string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
 else()
-  string(APPEND CLIENT_VERSION_STRING "-roots.3")
+  string(APPEND CLIENT_VERSION_STRING "-roots.4")
 endif()
 
 set(COPYRIGHT_HOLDERS "The %s developers")

@@ -1,8 +1,8 @@
-# Bitcoin Roots v31.1-roots.3
+# Bitcoin Roots v31.1-roots.4
 
 This candidate release-note template does not announce publication.
 
-Bitcoin Roots v31.1-roots.3 is based directly on the official Bitcoin Core
+Bitcoin Roots v31.1-roots.4 is based directly on the official Bitcoin Core
 v31.1 release (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). It carries the
 reviewed Roots semantic series onto that base, preserving the Core 31.1
 implementation and fixes. Bitcoin Knots `29.3.knots20260507` describes
@@ -14,7 +14,26 @@ RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
 
-## Changes from v31.1-roots.2
+## Changes from v31.1-roots.3
+
+- Clarify compact-block reconstruction cache accounting in daemon/GUI help,
+  manuals and example configuration. The default 10 decimal MB limits charged
+  transaction dynamic storage, with separate slot/object overhead and shared
+  ownership. Either cache limit can be set to zero to disable this cache.
+  Defaults, policy admission, relay and consensus behavior are unchanged.
+- Add native and P2P regression coverage for exact cache limits, eviction,
+  shared ownership, replacements and valid-block reconstruction after a cache
+  miss. Rejected transactions remain separate from mempool admission.
+- Add an offline Core/Roots benchmark harness and a review of 30 policy/cache
+  modifications. The controlled measurements support retaining existing
+  controls; they do not establish mainnet latency or unique cache RSS savings.
+  See the [review](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.4/doc/mempool-policy-review.md).
+
+Known benchmark-tool limitation: `prepare --resume` does not validate all retained
+exported source files. Use a fresh preparation directory for new experiments.
+The published review's source exports were independently checked and are unaffected.
+
+## Preserved changes in v31.1-roots.3
 
 - Add `exportaddresskey ADDRESS` to export one local descriptor-wallet P2PKH or
   native P2WPKH spending key as fixed-width `private_key_hex` plus `compressed`.
@@ -94,7 +113,7 @@ validation is tied to the canonical `roots/31.1` release tip, rather than a
 promotion commit on `main`.
 
 The portable patch applies directly to official Core v31.1 with
-`git am -3 --keep-cr <bitcoin-roots-31.1-roots.3.patch>`. It deliberately
+`git am -3 --keep-cr <bitcoin-roots-31.1-roots.4.patch>`. It deliberately
 excludes `.github/**`; every other product path must match the release tag.
 The permanent-tag workflow requires a detached signature for the SHA512
 manifest using release key `5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`
@@ -106,6 +125,15 @@ Manifest signing is separate from Git-tag and platform-code signing; verify
 the final release's stated signing status and all eight assets independently.
 
 ## Verification scope
+
+The cache-review branch passed independent whole-branch review and local native,
+eleven selected functional, 216 maintenance and seven benchmark-harness tests.
+Generated documentation matched across two runs. External script assets,
+missing `lief` Python lint and three unchanged include-lint findings remain
+limitations. Integration with the published roots.3 line and the roots.4 release
+identity require current candidate CI; prior branch checks alone do not establish
+that result. Fresh platform packaging and signed-draft verification remain
+separate release gates.
 
 The original source port was accepted with reduced verification. Matching prior
 unit, functional, CTest and Qt evidence was retained alongside current ordinary
@@ -149,4 +177,5 @@ release builds on.
 - [Prior release changelog from v29.4-roots.4](https://github.com/LuganoPlanB/bitcoin-roots/compare/v29.4-roots.4...v31.1-roots.1).
 - [Migration changelog from v31.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.1...v31.1-roots.2).
 - [Changes from v31.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.2...v31.1-roots.3).
+- [Changes from v31.1-roots.3](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.3...v31.1-roots.4).
 - [Official Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/releases/tag/v31.1).
