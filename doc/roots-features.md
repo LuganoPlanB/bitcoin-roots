@@ -261,7 +261,8 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 
 - **peer-controls:** retain Core's P2P protocol and inherited orphan/upload/
   whitelist controls. Roots additionally bounds compact reconstruction extras
-  by count (default 32,768) and memory (10 decimal MB), excluding oversized
+  by count (default 32,768) and charged transaction dynamic storage (10 decimal
+  MB by default, independent of `maxmempool`), excluding oversized
   individual extras; provides `forceinbound` (implies `noban` and `download`) and explicit
   compact-filter permissions; permits subnet disconnect; and can disable
   outbound v1 on clearnet (`v2onlyclearnet`, default false). Default fee filters
@@ -304,10 +305,26 @@ mining. Explicitly supplied staged options warn that they are not enforced.
   [p2p_roots_controls.py](/test/functional/p2p_roots_controls.py),
   [p2p_feefilter.py](/test/functional/p2p_feefilter.py) and
   [rpc_getblockfrompeer.py](/test/functional/rpc_getblockfrompeer.py).
-  Memory uses four decimal places of MB (100-byte increments); negative values
-  disable and malformed values retain the default, matching source behavior.
-  The cap tracks recursive transaction dynamic usage; slot metadata is separately
-  bounded by that cap. Oversized replacements are excluded as well as rejects.
+  `blockreconstructionextratxnsize` uses decimal MB (1 MB = 1,000,000 bytes),
+  with four decimal places (100-byte increments); negative values disable and
+  malformed values retain the default, matching source behavior. Setting either
+  `blockreconstructionextratxn=0` or `blockreconstructionextratxnsize=0` disables
+  this extra cache without changing mempool policy or valid-block acceptance.
+  The charge is the sum of `RecursiveDynamicUsage(*tx)` for occupied slots,
+  using the native allocation estimate for transaction input/output vectors
+  and their script/witness dynamic storage.
+  Slot metadata, transaction objects and shared-pointer control blocks are
+  separate overhead, so the setting is neither total cache memory nor process
+  RSS. The allocated slot count is bounded by the smaller of the count limit
+  and the byte budget divided by the native slot size; this is an additional
+  bound, not a deduction from the charged transaction budget. References share
+  transaction ownership with other holders, including the orphanage. Each
+  occupied slot is charged even if it refers to the same object; eviction drops
+  that slot's ownership and charge, while another owner can keep the allocation
+  alive. Deallocation need not immediately reduce process RSS. See the
+  [cache review](mempool-policy-review.md#cache-lifecycle-characterization) for
+  the measured boundaries and limitations. Oversized replacements are excluded
+  as well as rejects.
   Clearnet uses the source routable IPv4/IPv6 classification: loopback and
   non-routable addresses remain eligible for v1. Tests redirect routable targets
   through a local SOCKS server. Gap: exhaustive combinations and non-Linux

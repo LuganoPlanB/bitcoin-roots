@@ -53,13 +53,18 @@ block hash)
 .HP
 \fB\-blockreconstructionextratxn=\fR<n>
 .IP
-Extra transactions to keep in memory for compact block reconstructions
-(default: 32768)
+Maximum number of extra transactions to retain for compact block
+reconstruction, also limited by \fB\-blockreconstructionextratxnsize\fR;
+0 disables this cache (default: 32768)
 .HP
 \fB\-blockreconstructionextratxnsize=\fR<n>
 .IP
-Upper limit of memory usage (in decimal megabytes) for compact block
-extra transactions (default: 10)
+Limit of charged transaction dynamic storage for compact block extra
+transactions in decimal MB (1 MB = 1000000 bytes), independent of
+\fB\-maxmempool\fR. Excludes slot metadata, transaction objects and
+shared\-pointer control blocks; shared owners can extend
+allocation lifetime after eviction. 0 disables this cache
+(default: 10)
 .HP
 \fB\-blocksdir=\fR<dir>
 .IP

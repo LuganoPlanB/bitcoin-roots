@@ -7,9 +7,10 @@ existing assertions and gaps at that starting point. The characterization
 sections below describe the subsequently added coverage. The controlled
 experiment section records bounded synthetic measurements and remaining questions;
 it makes no production latency or mainnet-performance claim.
-The inventory dispositions remain preliminary pending final issue review.
-Defaults are retained. An operator's filtering goal is distinct from a
-resource-saving hypothesis.
+The final recommendations below retain defaults and optional controls, and
+simplify the cache's operator-facing accounting description. No product
+correctness defect was reproduced. An operator's filtering goal is distinct
+from a resource-saving hypothesis; unmeasured costs remain unresolved.
 
 Native arithmetic references below include `src/test/amount_tests.cpp` for
 fee-rate saturation/scaling; `src/test/transaction_tests.cpp` for standardness
@@ -91,6 +92,8 @@ Paths below are relative to `src/` unless prefixed `test/`. **Measure** means
 retain the operator contract and quantify its cost; **retain** means preserve an
 inherited mechanism or compatibility repair. None means performance has passed.
 Tests are existing coverage to inspect/run, not a claim that every mode is tested.
+The status column records the inventory-stage assessment; the final per-row
+recommendations and remaining cost questions appear at the end of this review.
 
 | ID / current source and provenance | Core equivalent; Roots default and optional modes | Purpose and admission / eviction / relay / retention effects | Cost hypothesis; existing evidence and remaining gap | Preliminary status |
 | --- | --- | --- | --- | --- |
@@ -161,6 +164,9 @@ and unrelated peer controls are outside this issue's cost inventory.
 
 ## Existing evidence limits and documentation conflicts
 
+This subsection records the inventory-stage gaps; the characterization sections
+below supply the subsequently added cache assertions.
+
 The current `p2p_compactblocks_extratxs.py` already covers dust, low fee,
 oversized OP_RETURN and nonstandard-script rejection with mempool absence and
 cache-hit missing indices, as well as count/byte disabling, wraparound, one
@@ -176,8 +182,11 @@ unwired and that script reuse has no dedicated functional coverage are supersede
 by the current node-owned scheduler and `mempool_graph_policy.py`. Earlier
 parsing-only/acceptance-pending text describes earlier stages. Its v30.3 direct
 base sentence is historical; this review uses the exact v31.1 object above.
-Current help's total-memory wording overstates C2/C5 accounting; the multiple
-OP_RETURN wording conflicts with A10. Incremental-fee help says 1000 sat/kvB
+The initial cache help's total-memory wording overstated C2/C5 accounting; its
+corrected description now names charged dynamic storage, separate overhead,
+shared ownership, independent budgets and both zero-valued disable controls.
+Only help/documentation changed; no cache behavior or default changed. The help
+about multiple OP_RETURN outputs still conflicts with A10. Incremental-fee help says 1000 sat/kvB
 while initialized default is 100, equal to the exact Core base. Preserve actual
 defaults and controls until an explicitly reviewed correction.
 
@@ -549,14 +558,19 @@ unsupported. Retain the current defaults and independent operator controls;
 the data exposes a synthetic retention/slot/scan tradeoff without resolving
 the real-world choice.
 
-### Per-modification disposition and remaining measurement boundary
+### Final per-modification dispositions and remaining measurement boundary
 
 The source inventory and existing characterization remain applicable. The
-following dispositions preserve every optional mode; an unanswered cost question
-does not establish benefit, harm or redundancy. CAT21 measurements do not supply
-answers for the other policy classifiers.
+following final recommendations preserve every optional mode; an unanswered cost
+question does not establish benefit, harm or redundancy. Each row's source,
+operator purpose, cost mechanism and existing test references remain in the
+[modification inventory](#modification-inventory). Those purposes describe the
+control an operator receives, rather than a demonstrated resource saving. The
+table below adds the measured disposition and its unresolved cost boundary.
+CAT21 measurements do not supply answers for the other policy classifiers.
+No implementation retirement or default change is proposed by this review.
 
-| Row | Disposition under this experiment | Bounded unanswered question |
+| Row | Final recommendation from available evidence | Bounded unanswered question |
 | --- | --- | --- |
 | A1 | Retain initialized grammar and error contracts. | No startup parsing benchmark: CLI/config/JSON/confrw precedence, malformed combinations and parse CPU remain unmeasured. |
 | A2 | Retain configurable relay floor; ordinary fixtures pay above both defaults. | No isolated 1000/100/0 sat/kvB floor or ordinary-parent versus TRUC sponsorship pair; population changes cannot be called cache cost. |
@@ -586,5 +600,94 @@ answers for the other policy classifiers.
 | C2 | Retain independent charged-byte semantics and overflow/allocation repair. | The small-budget sweep measures pressure, not every exact native threshold; L2 assertions supply boundary contracts, not allocator savings. |
 | C3 | Retain common per-entry exclusion repair. | All benchmark entries are below the 100000-byte exclusion; nearest-threshold and replacement behavior comes from L2 characterization, without a threshold timing comparison. |
 | C4 | Retain inherited reconstruction algorithm. | Hit/miss wire outcomes are observable, but warmed InitData timings do not isolate production lookup cost; unrelated full-cache zero hits, collisions and network-delay distributions remain unmeasured. |
-| C5 | Clarify charged storage and ownership; preserve budget semantics. | Distinct native charges and orphan sharing are observable, but shared-pointer counts do not identify owners or establish unique incremental cache RSS/allocator release. |
+| C5 | Simplify operator wording to charged storage and shared ownership; retain budget semantics. Implemented in help, feature documentation and generated manuals/config. | Distinct native charges and orphan sharing are observable, but shared-pointer counts do not identify owners or establish unique incremental cache RSS/allocator release. |
 | F1 | Retain fee-filter default and alternate profile/control. | No filter 1/0 or low/high incremental-fee profile pair, quantization/message-frequency audit or received-population cost measurement; cache tests do not answer these. |
+
+## Independent resource budgets
+
+The reconstruction extras are only one owner of transaction data. Disabling
+them does not disable the inherited orphanage, transaction-download bookkeeping,
+reject filters or accepted mempool. These structures also exist in the exact
+Core comparator and have separate purposes and accounting:
+
+| Structure and current source | Budget and lifetime | Consequence for this review |
+| --- | --- | --- |
+| Extra reconstruction references: [insertion](../src/net_processing.cpp), [option parsing](../src/node/peerman_args.cpp) | Default count 32,768 and 10,000,000 charged dynamic bytes. Slots have a separate bound of `min(count, byte_budget / sizeof(slot))`; dynamic charges exclude transaction objects/control blocks and slot storage. Ring overwrite and byte pressure drop cache references; either zero control disables stores. | This is independent of `maxmempool`, orphan weight and filter capacity. Shared owners can keep allocations alive after eviction; charged bytes are not unique process memory. |
+| Missing-input orphanage: [interface/defaults](../src/node/txorphanage.h), [accounting/eviction](../src/node/txorphanage.cpp) | Weight is a memory-work proxy, not allocator bytes. Reserved usage is 404,000 weight units per tracked orphanage peer; global allowance is that value times `max(tracked_peer_count, 1)`. The separate global latency score defaults to 3,000, accounting for announcements and inputs. Global pressure triggers eviction from over-budget peers; peer/block resolution also removes announcements. | No fixed 10 MB or `maxmempool` allowance applies here. Global transaction weight is deduplicated; per-peer usage counts each announcer's transaction. An orphan and an extra entry can share the same transaction allocation while having different charges and lifetimes. |
+| Recent-reject and reconsiderable-reject filters: [download manager](../src/node/txdownloadman_impl.h) | Two lazily allocated rolling Bloom filters, each configured for 120,000 elements and false-positive probability 0.000001; both reset on a chain-tip change. They store probabilistic hash membership, including package hashes where appropriate, rather than transaction bodies. | Suppressing repeated download/validation is distinct from retaining reconstruction data. Turning off extras does not eliminate these filters, their false-positive behavior or download-manager state. These parameters are not a measured cache-memory saving. |
+| Accepted mempool: [options](../src/kernel/mempool_options.h), [parsing](../src/node/mempool_args.cpp), [accounting/trim](../src/txmempool.cpp) | `maxmempool` defaults to 300 decimal MB; blocksonly startup supplies 5 MB when not explicitly overridden. Native graph/container estimates include Roots script-claim indexes, and native trimming/expiry removes accepted entries. This is an accounting budget, not process RSS. | Admission, replacement and eviction operate on accepted transactions with Roots policy fees/weights. Extra-cache charges are not added to `getmempoolinfo` usage, and changing the extra budget does not resize this budget. |
+
+The orphanage's tracked-peer count is its own accounting population, not an
+assumption that every connected peer has an orphan. Its latency score and weight
+proxy do not describe the extra vector's recursive dynamic-byte charge. Summing
+these estimates or shared ownership counts would not produce total process RSS.
+The experiment restarts each cell to clear these states; it is not an independent
+orphanage/filter/mempool capacity or adversarial steady-state benchmark.
+
+## Final correction and verification scope
+
+The confirmed correction is operator wording for C2/C5. The candidate help now
+identifies decimal MB, charged dynamic storage, separate slot/object/control-block
+overhead, shared lifetime, independence from `maxmempool`, and both zero-valued
+disable controls. The [feature contract](roots-features.md#peer-controls-and-current-connection-health)
+describes the accounting equation. No parsing, default, cache insertion,
+eligibility, policy acceptance or consensus behavior changed, so no affected
+benchmark pair needs recollection. No code removal or redesign follows from the
+synthetic timing results.
+
+Candidate daemon and Qt help generated all seven manuals and the example config
+twice with the repository generators, isolated disposable regtest wrappers,
+offscreen Qt and a fixed `SOURCE_DATE_EPOCH`. All eight outputs matched across
+runs. Only the two cache descriptions changed in `bitcoind.1`, `bitcoin-qt.1`
+and `bitcoin.conf`; ports, other defaults and profile-dependent options were
+unchanged. No older binary/help input or manual edit was used. The installed
+Linux Qt 6.8.2 profile has wallet/QR/DBus enabled, IPC/ZMQ/USDT disabled;
+the headless candidate build was expanded for Qt help, without installing a
+dependency. The release identity is the existing `v31.1-roots.2` setting;
+no version text was normalized. Qt's C-to-UTF-8 locale advisory did not affect
+repeatability.
+
+The final gate covers full native units, cache/compact reconstruction, orphan
+ownership, initialized policy parsing, replacement/package/TRUC/cluster behavior,
+maintenance and applicable static/documentation checks. These provide regression
+assurance around shared startup/help code; the final change has no policy
+implementation delta. Run from the repository root with fresh disposable
+directories, after all candidate builds have finished:
+
+```sh
+build-issue56/bin/test_bitcoin --report_level=detailed -- \
+  -testdatadir=/tmp/issue56-final-native
+python3 build-issue56/test/functional/test_runner.py \
+  p2p_compactblocks.py p2p_compactblocks_extratxs.py \
+  p2p_orphan_handling.py rpc_orphans.py feature_policy_args.py feature_rbf.py \
+  mempool_rbf_policy.py mempool_package_rbf.py mempool_truc.py \
+  mempool_cluster.py mempool_graph_policy.py \
+  --jobs=2 --tmpdir=/tmp/issue56-final-functional
+python3 -m unittest discover -s ci/test
+python3 contrib/roots/test_cache_bench.py
+python3 test/lint/check-doc.py
+python3 test/lint/lint-tests.py
+python3 test/lint/lint-python.py
+python3 test/lint/lint-includes.py
+git diff --check
+```
+
+The final local run passed 780 native cases plus one case with an external-script
+assets warning; six disabled helper cases were skipped. All 26,769,724 assertions
+passed. All eleven selected functional scripts, 216 maintenance tests and seven
+harness contract tests passed. The data/document audit rechecked all 576 raw
+rows, 96 statistics groups, 183 displayed metric cells and all 30 dispositions
+without changing the original collection receipts. Argument-documentation,
+test-suite naming and whitespace checks passed. Python lint exited after skipping
+because `lief` is absent. Include lint failed on the same three unchanged
+baseline findings: duplicate `QTimer` in `src/qt/test/wallettests.cpp` and the
+Boost multiprecision includes in `src/test/fuzz/tx_pool.cpp` and
+`src/test/roots_policy_oracle_tests.cpp`. These failures are retained, not fixed
+through unrelated edits or counted as passing lint.
+
+This remains local Linux evidence. External script assets, optional/hosted
+platforms, new sanitizer/fuzz campaigns and production/mainnet performance are
+not established. The existing missing-`lief` Python-lint skip and three unchanged
+include-lint findings must remain explicit rather than being reported as passes.
+Independent milestone acceptance and the terminal whole-branch review remain
+separate gates; this document does not assert either has already occurred.
