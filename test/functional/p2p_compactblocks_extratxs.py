@@ -11,9 +11,13 @@ from test_framework.blocktools import (
     add_witness_commitment,
 )
 from test_framework.messages import (
+    BlockTransactions,
     CTxOut,
     HeaderAndShortIDs,
     MSG_BLOCK,
+    MSG_TX,
+    MSG_WTX,
+    msg_blocktxn,
     msg_cmpctblock,
     msg_sendcmpct,
     msg_tx,
@@ -38,6 +42,7 @@ from test_framework.util import (
     softfork_active,
 )
 from decimal import Decimal
+import time
 from test_framework.wallet import MiniWallet
 
 
@@ -47,6 +52,7 @@ class TestP2PConn(P2PInterface):
         super().__init__()
         self.last_sendcmpct = []
         self.block_announced = False
+        self.tx_announcements = set()
         # Store the hashes of blocks we've seen announced.
         # This is for synchronizing the p2p message traffic,
         # so we can eg wait until a particular block is announced.
@@ -69,6 +75,8 @@ class TestP2PConn(P2PInterface):
             if x.type == MSG_BLOCK:
                 self.block_announced = True
                 self.announced_blockhashes.add(x.hash)
+            elif x.type in (MSG_TX, MSG_WTX):
+                self.tx_announcements.add(x.hash)
 
     # Requires caller to hold p2p_lock
     def received_block_announcement(self):
@@ -89,12 +97,13 @@ class TestP2PConn(P2PInterface):
 class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.num_nodes = 1
+        self.num_nodes = 3
+        self.noban_tx_relay = False
         self.extra_args = [[
             "-acceptnonstdtxn=0",
             "-incrementalrelayfee=0.00001",
             "-debug=net",
-        ]]
+        ] for _ in range(self.num_nodes)]
         self.utxos = []
 
     def build_block_on_tip(self, node):
@@ -232,6 +241,90 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
 
     # TEST: policy-rejected transactions
 
+    def test_policy_cache_relay_separation(self):
+        """Identical valid block accepts through cache-hit, disabled and evicted paths."""
+        self.log.info("Testing Roots rejection, unprivileged relay and identical-block fallback...")
+        senders, observers = [], []
+        # All three nodes have the same funded chain. Restarting disconnects the
+        # inter-node links, so one node cannot supply the block to another.
+        for node, count in zip(self.nodes, (2, 0, 1)):
+            self.restart_node(node.index, extra_args=self.extra_args[node.index] + [
+                f"-blockreconstructionextratxn={count}",
+                "-peerbloomfilters=0",
+            ])
+            sender = node.add_p2p_connection(TestP2PConn())
+            sender.send_and_ping(msg_sendcmpct(announce=True, version=2))
+            senders.append(sender)
+            observers.append(node.add_p2p_connection(TestP2PConn()))
+        for node in self.nodes:
+            assert_equal(len(node.getpeerinfo()), 2)
+            for peer in node.getpeerinfo():
+                assert_equal(peer['permissions'], [])
+
+        rejected = self.wallet.create_self_transfer()['tx']
+        rejected.nLockTime = 21  # Roots' default CAT21 marker policy, not low fee.
+        filler = self.create_policy_rejected_tx()['tx']
+        rejected_ids = {rejected.txid_int, rejected.wtxid_int}
+        for node, sender in zip(self.nodes, senders):
+            result = node.testmempoolaccept([rejected.serialize().hex()])[0]
+            assert_equal(result['allowed'], False)
+            assert_equal(result['reject-reason'], 'parasite-cat21')
+            sender.send_and_ping(msg_tx(rejected))
+            assert rejected.txid_hex not in node.getrawmempool()
+            # The same additional reject leaves count=2 cached and count=1 evicted.
+            sender.send_and_ping(msg_tx(filler))
+
+        # Observe three relay epochs with a fresh accepted positive control in
+        # each. Advance the ordinary randomized relay timer, then wait for the
+        # observer's control INV and synchronize message processing. This is a
+        # bounded observation window, not a promise about arbitrary future time.
+        for node in self.nodes:
+            node.setmocktime(int(time.time()))
+        controls = []
+        for _ in range(3):
+            control = self.wallet.create_self_transfer()['tx']
+            controls.append(control)
+            for node, sender in zip(self.nodes, senders):
+                sender.send_and_ping(msg_tx(control))
+                assert control.txid_hex in node.getrawmempool()
+                node.bumpmocktime(60)
+            for sender, observer in zip(senders, observers):
+                observer.wait_until(lambda: bool(
+                    {control.txid_int, control.wtxid_int} & observer.tx_announcements))
+                sender.sync_with_ping()
+                observer.sync_with_ping()
+                with p2p_lock:
+                    assert_equal(rejected_ids & observer.tx_announcements, set())
+            for node in self.nodes:
+                assert rejected.txid_hex not in node.getrawmempool()
+
+        block = self.build_block_on_tip(self.nodes[0])
+        # Include the positive controls too, clearing their mempool ownership
+        # without allowing their relay to provide the rejected transaction.
+        block.vtx.extend([rejected] + controls)
+        add_witness_commitment(block)
+        block.solve()
+        compact = HeaderAndShortIDs()
+        compact.initialize_from_block(block, use_witness=True)
+        for node, sender, expected_missing in zip(self.nodes, senders, ([], [1], [1])):
+            sender.send_and_ping(msg_cmpctblock(compact.to_p2p()))
+            with p2p_lock:
+                request = sender.last_message.get('getblocktxn')
+            missing = request.block_txn_request.to_absolute() if request else []
+            assert_equal(missing, expected_missing)
+            if missing:
+                assert_equal(node.getbestblockhash(), f'{block.hashPrevBlock:064x}')
+                assert_equal(request.block_txn_request.blockhash, block.hash_int)
+                response = msg_blocktxn()
+                response.block_transactions = BlockTransactions(
+                    block.hash_int, [block.vtx[i] for i in missing])
+                sender.send_and_ping(response)
+            self.wait_until(lambda: node.getbestblockhash() == block.hash_hex)
+            assert_equal(node.getrawmempool(), [])
+            node.setmocktime(0)
+        assert_equal([node.getbestblockhash() for node in self.nodes], [block.hash_hex] * 3)
+        self.log.info("Identical block accepted: cached missing=[], disabled/evicted missing=[1], blocktxn completed")
+
     def test_policy_rejection_types(self):
         """Test that each policy rejection type adds transactions to extra pool."""
         self.log.info("Testing policy rejection types for extra pool...")
@@ -271,6 +364,48 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         self.log.info("✓ All rejected transactions are available in extra pool")
 
     # TEST: blockreconstructionextratxn
+
+    def test_duplicate_rejected_attempts(self):
+        """Repeated rejected TX reception must not consume another ring slot."""
+        self.log.info("Testing duplicate rejected attempts and count precedence...")
+        self.restart_node_with_limit(count=3, memory_mb=10)
+        transactions = self.populate_extra_pool(3)
+        self.segwit_node.send_and_ping(msg_tx(transactions[0]['tx']))
+        transactions += self.populate_extra_pool(1)
+        assert_equal(self.send_compact_block(transactions, range(4))["missing_indices"], [0])
+
+    def test_replaced_transaction_retention(self):
+        """A real P2P replacement removes the original but retains reconstruction."""
+        self.log.info("Testing replaced transaction retention...")
+        self.restart_node_with_limit(count=2)
+        utxo = self.wallet.get_utxo()
+        original = self.wallet.create_self_transfer(utxo_to_spend=utxo)
+        replacement = self.wallet.create_self_transfer(utxo_to_spend=utxo, fee_rate=Decimal('0.006'))
+        self.segwit_node.send_and_ping(msg_tx(original['tx']))
+        assert original['txid'] in self.nodes[0].getrawmempool()
+        self.segwit_node.send_and_ping(msg_tx(replacement['tx']))
+        assert_equal(self.nodes[0].getrawmempool(), [replacement['txid']])
+        result = self.send_compact_block([original], [0])
+        assert_equal(result['missing_indices'], [])
+        self.wait_until(lambda: self.nodes[0].getbestblockhash() == result['block'].hash_hex)
+
+    def test_resolved_orphan_retention(self):
+        """Removing the orphan owner must leave its cache reference available."""
+        self.log.info("Testing duplicate orphan attempts and resolution lifetime...")
+        self.restart_node_with_limit(count=2)
+        parent = self.wallet.create_self_transfer()
+        child = self.wallet.create_self_transfer(utxo_to_spend=parent['new_utxo'], fee_rate=0)
+        filler = self.populate_extra_pool(1)
+        self.segwit_node.send_and_ping(msg_tx(child['tx']))
+        assert_equal(self.nodes[0].getorphantxs(), [child['txid']])
+        self.segwit_node.send_and_ping(msg_tx(child['tx']))
+        # With two slots, another child insertion would evict the filler.
+        self.segwit_node.send_and_ping(msg_tx(parent['tx']))
+        self.wait_until(lambda: self.nodes[0].getorphantxs() == [])
+        assert_equal(self.nodes[0].getrawmempool(), [parent['txid']])
+        result = self.send_compact_block([parent, child] + filler, range(3))
+        assert_equal(result['missing_indices'], [])
+        self.wait_until(lambda: self.nodes[0].getbestblockhash() == result['block'].hash_hex)
 
     def test_extratxnpool_disabled(self):
         """Test that setting count to 0 disables the extra transaction pool."""
@@ -500,6 +635,8 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         # Ensure segwit is active
         assert softfork_active(self.nodes[0], "segwit")
 
+        self.test_policy_cache_relay_separation()
+
         # Test policy rejection types first
         self.test_policy_rejection_types()
 
@@ -508,6 +645,9 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         self.test_extratxnpool_capacity_and_wraparound()
         self.test_single_extratxnpool_capacity()
         self.test_extratxn_invalid_parameters()
+        self.test_duplicate_rejected_attempts()
+        self.test_replaced_transaction_retention()
+        self.test_resolved_orphan_retention()
 
         # Extra Txn size tests
         self.test_extratxnsize_zero_limit()

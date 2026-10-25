@@ -553,6 +553,22 @@ public:
         m_best_block_time = time;
     };
     void UnitTestMisbehaving(NodeId peer_id) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex) { Misbehaving(*Assert(GetPeerRef(peer_id)), ""); };
+    void UnitTestAddToCompactExtraTransactions(const CTransactionRef& tx) override
+    {
+        LOCK(g_msgproc_mutex);
+        AddToCompactExtraTransactions(tx);
+    }
+    CompactExtraTransactionsSnapshot UnitTestGetCompactExtraTransactions() override
+    {
+        LOCK(g_msgproc_mutex);
+        return {m_extra_tx_memusage, vExtraTxnForCompact};
+    }
+    void UnitTestProcessValidTx(const CTransactionRef& tx, const std::list<CTransactionRef>& replaced) override
+    {
+        LOCK(g_msgproc_mutex);
+        LOCK(m_tx_download_mutex);
+        ProcessValidTx(/*nodeid=*/0, tx, replaced);
+    }
     void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) override;
     ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const override;
 

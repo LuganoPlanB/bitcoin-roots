@@ -2,8 +2,10 @@
 
 This inventory compares Roots `bfbba3d600fea7112b95ce7bc742ee144b25e6ad`
 with the exact Bitcoin Core v31.1 base
-`9be056a8a72b624dae9623b2f7bded92c2a21c91`. It describes current source and
-existing test assertions; it does not claim new runtime or performance results.
+`9be056a8a72b624dae9623b2f7bded92c2a21c91`. The inventory tables record source,
+existing assertions and gaps at that starting point. The characterization
+sections below describe the subsequently added coverage; no performance result
+is claimed here.
 All dispositions below are preliminary. Defaults are retained while costs and
 reconstruction benefits are measured. An operator's filtering goal is distinct
 from a resource-saving hypothesis.
@@ -262,3 +264,95 @@ plus current tests. At present only the explicitly identified underlying Core
 mechanisms are unchanged; no Roots control is classified as redundant. Every
 unmeasured question in these tables remains unanswered rather than a benefit or
 harm claim.
+
+## Cache lifecycle characterization
+
+The native `compact_extra_transactions_tests` fixture calls the unchanged
+production insertion routine through explicitly named unit-test methods. It
+checks zero count/bytes, no allocatable slots, one slot, an exact native charge
+and one byte below that charge, and an extreme count bounded by slot storage.
+The native options accept individual bytes; the public size option retains its
+100-byte granularity. These are separate boundaries.
+
+Mixed-size tests fill four slots, then insert an entry requiring multiple
+evictions across wraparound. They check the remaining references and actual
+`PartiallyDownloadedBlock` availability after each insertion, including sparse
+slots and the next two insertions. Expected oldest-first results are explicit;
+serialized size is never used as a dynamic-storage oracle. The P2P suite retains
+all its previous count/size cases and adds duplicate rejected attempts, actual
+replacement, and duplicate orphan reception followed by parent resolution.
+The resolved low-fee child leaves the orphanage and remains outside the mempool;
+its reference still supplies compact reconstruction.
+
+The native threshold test constructs the closest attainable charges below and
+at-or-above 100000 bytes for its script shape. It exercises both the common
+insertion gate and the production replaced-transaction insertion loop; these
+structural fixtures do not claim consensus validity or actual mempool replacement.
+The separate P2P replacement test first proves that the original left the mempool,
+then reconstructs and accepts a block containing it. Neither test equates a
+serialized byte count with native allocation.
+
+Raw insertion can hold the same shared reference twice and charges it twice.
+Network duplicate suppression is a separate eligibility rule, covered by the
+P2P rejected/orphan cases. Dropping cache ownership does not destroy an allocation
+while another shared owner remains. The pointer-overload usage includes an
+allocation charge omitted by the cache's dereferenced overload. These assertions
+describe ownership and charged storage, not allocator RSS or immediate release
+to the operating system. No cache default, policy, RPC or production insertion
+behavior is changed by these fixtures.
+
+## Policy rejection, relay and completed reconstruction
+
+`test_policy_cache_relay_separation` in
+`test/functional/p2p_compactblocks_extratxs.py` funds three nodes on the same
+chain, then restarts them without inter-node links. It offers the identical
+transaction with final locktime 21 to each ordinary P2P sender. The otherwise
+ordinary, adequately funded transaction is rejected specifically with Roots'
+`parasite-cat21` reason, remains outside every mempool, and is separate from
+the suite's low-fee, replaced and orphan cases.
+
+Each node has an independent observer. The fixture disables Bloom-filter
+permission for this case and asserts that every sender and observer has an
+empty permission list. Three fresh accepted transactions provide positive
+announcement controls over three relay epochs, each advanced by 60 seconds of
+mock time. Each observer receives each control INV; synchronized checks record
+neither the rejected txid nor its wtxid. This is bounded ordinary-relay evidence,
+not a claim about every possible future timing or privileged peer behavior.
+
+Count limits 2, 0 and 1 receive the same rejected transaction and one additional
+reject. This leaves the target cached, disabled or evicted respectively. The
+fixture sends identical compact-block bytes to all three nodes. The cached
+node requests nothing; the disabled and evicted nodes request absolute index 1.
+Both miss paths supply that requested transaction in `blocktxn`, and all three
+nodes finish with the same accepted block hash and empty mempools. The block
+also confirms the three positive controls, which were available from each
+mempool independently of the rejected transaction's cache entry. The older
+size/count helpers retain their non-mutating request probes so that they can
+recheck the same transaction population after eviction; the dedicated case
+establishes complete consensus-valid hit and miss paths.
+
+For reproduction, after the documented `build-issue56` build, run:
+
+```sh
+python3 test/functional/p2p_compactblocks_extratxs.py \
+  --configfile=build-issue56/test/config.ini \
+  --tmpdir=/tmp/issue56-cache-contract
+build-issue56/bin/test_bitcoin \
+  --run_test=compact_extra_transactions_tests --report_level=detailed
+```
+
+Use a fresh disposable temporary directory per functional run. The complete
+cache script, including all earlier cases, passes on the local Linux build;
+the native focused suite passes three cases and 129 assertions. Native charges
+nearest the exclusion threshold for this fixture are 99984 and 100000 bytes.
+These results establish the assertions above, not RSS, bandwidth or CPU costs.
+Full applicable suite acceptance remains a separate gate. Python lint is
+unexercised because `lief` is unavailable; existing include-lint findings in
+unchanged Qt/oracle/fuzz files remain unrelated limitations.
+
+The inherited `ForceRelay` branch in `PeerManagerImpl::ProcessMessage` may
+reannounce an already resident transaction to support gateway use. It explicitly
+declines a non-mempool transaction; the blocksonly relay-permission exception is
+also separate. Neither permission is granted to this fixture's peers, and no
+privileged-peer result is inferred. Cache retention changes neither admission
+nor block validation.

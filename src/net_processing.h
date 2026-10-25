@@ -19,9 +19,11 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 class AddrMan;
@@ -163,6 +165,15 @@ public:
 
     /* Public for unit testing. */
     virtual void UnitTestMisbehaving(NodeId peer_id) = 0;
+
+    /** Test-only access to the real insertion path and its charged-storage snapshot. */
+    struct CompactExtraTransactionsSnapshot {
+        size_t charged_bytes;
+        std::vector<std::pair<Wtxid, CTransactionRef>> slots;
+    };
+    virtual void UnitTestAddToCompactExtraTransactions(const CTransactionRef& tx) = 0;
+    virtual CompactExtraTransactionsSnapshot UnitTestGetCompactExtraTransactions() = 0;
+    virtual void UnitTestProcessValidTx(const CTransactionRef& tx, const std::list<CTransactionRef>& replaced) = 0;
 
     /**
      * Evict extra outbound peers. If we think our tip may be stale, connect to an extra outbound.
