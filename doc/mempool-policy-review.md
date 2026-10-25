@@ -4,11 +4,12 @@ This inventory compares Roots `bfbba3d600fea7112b95ce7bc742ee144b25e6ad`
 with the exact Bitcoin Core v31.1 base
 `9be056a8a72b624dae9623b2f7bded92c2a21c91`. The inventory tables record source,
 existing assertions and gaps at that starting point. The characterization
-sections below describe the subsequently added coverage; no performance result
-is claimed here.
-All dispositions below are preliminary. Defaults are retained while costs and
-reconstruction benefits are measured. An operator's filtering goal is distinct
-from a resource-saving hypothesis.
+sections below describe the subsequently added coverage. The controlled
+experiment section records bounded synthetic measurements and remaining questions;
+it makes no production latency or mainnet-performance claim.
+The inventory dispositions remain preliminary pending final issue review.
+Defaults are retained. An operator's filtering goal is distinct from a
+resource-saving hypothesis.
 
 Native arithmetic references below include `src/test/amount_tests.cpp` for
 fee-rate saturation/scaling; `src/test/transaction_tests.cpp` for standardness
@@ -356,3 +357,234 @@ declines a non-mempool transaction; the blocksonly relay-permission exception is
 also separate. Neither permission is granted to this fixture's peers, and no
 privileged-peer result is inferred. Cache retention changes neither admission
 nor block validation.
+
+## Controlled cache experiment and bounded dispositions
+
+The Linux-only [offline harness](../contrib/roots/cache-bench.md) compares the
+exact Core base above with Roots product code at
+`fefd98420907870a60c103720a9589bba16b2e5f`. Identical temporary instrumentation
+is applied only to isolated source exports; the normal production tree and all
+defaults remain unchanged. Both builds use the same compiler, RelWithDebInfo
+profile and system allocator, with fixed `-j 2`. Builds finish before node runs.
+
+The predeclared `paired-128` experiment uses seed 560031, 128 independent input
+fixtures per class, one warmup pair and five measured pairs. Each pair includes
+all eight documented variants and twelve cells, in a fixed-seed shuffled variant
+order. Churn and adversarial cells offer four unique alternatives per input.
+Every cell restarts the node, uses an explicit disposable regtest datadir, then
+requires the resulting block to validate after supplying every missing
+transaction. No public traffic or representative mainnet rate is assumed.
+
+The cache controls hold Roots policy fixed: defaults, count 100, disabled,
+count 1, 10,000 charged bytes, and count 8 with 1,000 charged bytes. The separate
+`rejectparasites=0` variant changes that one policy only. Core's policy differs:
+it admits the CAT21 fixtures, so a Core reconstruction hit can be a mempool hit
+where Roots uses the extra cache. Equal wire outcomes do not establish equal
+admission, memory ownership or operator policy. The ordinary, sufficiently
+funded accepted workload provides a matching admitted-population control.
+
+Raw results distinguish offered transactions, initial-state preflight candidates
+and reasons, final resident/orphan counts, attempted cache calls, actual slot
+stores, block transactions, cache/mempool hits and requested missing transactions.
+Preflight is non-mutating and precedes the timed load. In particular, four
+alternatives can each pass preflight against an initially empty mempool while
+only one remains after conflicting offers. Actual validation outcomes for every
+individual conflicting offer are not event-instrumented; no measured aggregate
+rejection/admission rate is inferred from those preflight results.
+
+Metric units and scope are defined in the harness document. Charged dynamic
+bytes, native slot storage, distinct object pointers, external shared references
+and process RSS remain separate quantities. VmRSS is sampled every 5 ms; its
+observed peak is a lower bound, while VmHWM also includes startup. Process CPU
+uses host clock ticks, so a zero delta can mean work below the tick resolution.
+Successful-store CPU has a separate denominator from excluded/disabled calls.
+
+The temporary whole-vector ownership snapshot precedes the InitData timer and
+warms the vector. Its work and default functional debug logging affect overall
+latency; snapshot work itself scales with allocated slots. There is no quiet,
+uninstrumented paired control. Even a large end-to-end timing delta therefore
+cannot establish a production latency difference, and InitData results describe
+the instrumented, warmed inputs only. Five samples per cell support median,
+range and sample standard deviation; p95 remains unavailable rather than pooling
+different workloads into an artificial tail distribution. The zero-offer
+overlap cell has an empty cache, so fully populated unrelated-cache zero-hit
+lookup cost remains a separate unanswered question.
+
+### Collected samples and reconstruction outcomes
+
+Collection ran from `2026-10-25T12:08:17.514079Z` through
+`2026-10-25T12:16:53.927031Z`. All eight warmup variant runs and forty measured
+variant runs completed with exit 0: 96 warmup cells and 480 measured cells,
+576 accepted blocks total. No failed, skipped or partial sample was discarded;
+there were no failed samples. Serialized fixtures match across all variants
+and repetitions for each of the twelve cases. Every row satisfies the audited
+hit/miss denominator, wire-sum, ownership/slot/charge-bound and accepted-tip
+checks, including every disabled-cache miss path.
+
+Reproduce from the repository root after the harness build/smoke instructions:
+
+```sh
+python3 contrib/roots/cache_bench.py run --work /absolute/disposable/bench-builds \
+  --name paired-128 --count 128 --seed 560031 --warmup 1 --repetitions 5
+```
+
+Original evidence is retained under the experiment work directory. These
+identifiers bind the local collection, rather than promising identical timings
+on another machine:
+
+| Artifact relative to the work directory | SHA256 |
+| --- | --- |
+| `builds.json` — GCC 14.2.0, commits, flags, two binary digests, temporary patches and build logs | `3ca0e56eaa20376f20b4d4647bab4c199d2d47b71240711c3946b1278e87da89` |
+| `paired-128/design.json` — original UTC declaration, exact flags, counts, seed and harness digests | `4b78206e150edc0e5c4ebebb90bf5e232a0671f49571081a9902ef21c06d69d9` |
+| `paired-128/runs.json` — all 48 commands, exits, original UTC times, binary identities and raw result/log paths | `6bda1bc5396d854d850eab0c714a27d3790c45ca82faffa2b616c8c21f87face` |
+| `paired-128/summary.json` — every measured metric/case/variant, n, median, range and sample standard deviation | `fb1678912fa098b1a3ac203baa45df6356b2546cd75e0297b7cba9a502412c05` |
+
+The workspace evidence file `l3.2-analysis.json` adds complete row audits,
+denominator/reason sets, original raw-file digests and differences formed within
+each paired repetition before summarization. Its SHA256 is
+`9d3d6612bb54f643077755f8529bee1e14f9bbc473bea3343a10f67575d92fc8`.
+Raw per-variant JSON files and logs retain every sample, including warmup;
+the aggregate does not replace them.
+
+The full-overlap, forward CAT21 probe produces the following exact values in
+all five measured samples (zero dispersion for these structural quantities).
+Fallback bytes include serialized v1 `getblocktxn` and `blocktxn` messages plus
+their 24-byte headers; compact-block bytes are additional and held separately.
+
+| Variant | Mempool residents / hits | Extra hits | Missing / roundtrips | Charged dynamic bytes | Allocated slot bytes | Fallback wire bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Core default | 128 / 128 | 0 | 0 / 0 | 0 | 0 | 0 |
+| Roots default | 0 / 0 | 128 | 0 / 0 | 45,056 | 1,572,864 | 0 |
+| Roots count100 | 0 / 0 | 100 | 28 / 1 | 35,200 | 4,800 | 3,866 |
+| Roots disabled | 0 / 0 | 0 | 128 / 1 | 0 | 0 | 17,266 |
+| Roots count1 | 0 / 0 | 1 | 127 / 1 | 352 | 48 | 17,132 |
+| Roots bytes10k | 0 / 0 | 28 | 100 / 1 | 9,856 | 9,984 | 13,514 |
+| Roots count8-bytes1k | 0 / 0 | 2 | 126 / 1 | 704 | 384 | 16,998 |
+| Roots CAT21 allowed | 128 / 128 | 0 | 0 / 0 | 0 | 0 | 0 |
+
+Thus the default cache avoids one transaction-fallback roundtrip and 17,266
+wire bytes against disabled caching in this fixture; count 100 leaves one
+roundtrip and 3,866 bytes. Default versus count 100 allocates 1,568,064 more
+slot bytes and retains 9,856 more charged bytes at this observation point.
+The slot allocation is separate from the charged-byte budget. Neither quantity
+includes transaction objects/control blocks or proves incremental RSS. The A7
+control instead admits the same 128 transactions to the mempool; its zero extra
+charge is not evidence of zero transaction memory or equal relay behavior.
+
+All seven full-offer forward classes are covered below. Triplets are in the
+order **Roots default / count100 / disabled**. These counts and wire totals
+also agree in all five measured repetitions. Residents are measured before
+the block; for replacements, the block contains the removed originals. Orphan
+blocks additionally contain 128 unoffered parents, so they have 256 transactions.
+
+| Class | Peer TX offers | Residents | Cache hits | Requested missing | Fallback wire bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Accepted | 128 | 128 / 128 / 128 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| CAT21 rejects | 128 | 0 / 0 / 0 | 128 / 100 / 0 | 0 / 28 / 128 | 0 / 3,866 / 17,266 |
+| Replaced originals | 256 | 128 / 128 / 128 | 128 / 100 / 0 | 0 / 28 / 128 | 0 / 3,866 / 17,266 |
+| Orphans | 128 | 0 / 0 / 0 | 128 / 100 / 0 | 128 / 156 / 256 | 17,266 / 21,018 / 34,422 |
+| Mixed sizes | 128 | 0 / 0 / 0 | 128 / 100 / 0 | 0 / 28 / 128 | 0 / 17,110 / 77,810 |
+| Four-offer churn | 512 | 0 / 0 / 0 | 128 / 25 / 0 | 0 / 103 / 128 | 0 / 13,916 / 17,266 |
+| Unique adversarial rejects | 512 | 0 / 0 / 0 | 128 / 25 / 0 | 0 / 103 / 128 | 0 / 21,229 / 26,354 |
+
+Every nonzero missing count above triggers exactly one getblocktxn roundtrip;
+accepted ordinary transactions reconstruct from 128 mempool hits. Orphan
+snapshots contain 128 distinct cached child objects with 45,056 unique dynamic
+bytes and 128 external references under defaults. That demonstrates shared
+retention, without identifying the owners or attributing unique RSS. Network
+deduplication means these fixtures do not create duplicate cache references to
+one object; L2 separately establishes the raw-insertion double-charge contract.
+
+### Absolute instrumented costs and dispersion
+
+The following values describe the full-overlap forward CAT21 cell, with five
+measured samples each. Each entry is **median [min–max]; sample SD**. Store CPU
+is the mean per successful store within a run, then summarized across runs;
+it includes initial vector allocation and overwrites, not a steady-state-only
+insertion cost. Disabled caching has no successful-store denominator.
+
+| Roots configuration | CPU per successful store, microseconds | InitData CPU, microseconds | Accepted-tip wall time, milliseconds |
+| --- | --- | --- | --- |
+| Default | 4.816 [4.166–4.972]; 0.361 | 33.973 [33.764–34.645]; 0.344 | 51.268 [51.053–51.489]; 0.168 |
+| Count100 | 0.593 [0.579–0.802]; 0.097 | 34.214 [33.242–35.186]; 0.762 | 102.524 [102.158–102.660]; 0.196 |
+| Disabled | Undefined: zero stores | 27.882 [27.532–30.628]; 1.265 | 103.271 [102.555–103.312]; 0.387 |
+
+Default's total insertion thread CPU has median 616,503 ns
+[533,266–636,389], SD 46,222 ns; count100 has 75,909 ns
+[74,068–102,599], SD 12,396 ns. Disabled attempts still consume measured timer/
+function work: 69,966 ns [69,410–76,615], SD 3,089 ns. All three receive 128
+offers and reach 128 insertion calls, separating zero stores from zero work.
+The whole-process load CPU medians are 10/0/10 ms, with ranges 0–10/0–10/0–20 ms
+respectively. The host exposes 100 CPU clock ticks per second (10 ms resolution),
+so these process measurements cannot isolate small policy-filter CPU costs.
+
+| Roots configuration | Steady process RSS, MiB | Sampled phase peak RSS, MiB |
+| --- | --- | --- |
+| Default | 55.324 [55.246–55.984]; 0.307 | 55.738 [55.621–56.547]; 0.388 |
+| Count100 | 53.719 [53.645–54.543]; 0.377 | 54.234 [54.090–55.055]; 0.396 |
+| Disabled | 53.625 [53.379–53.852]; 0.177 | 54.133 [53.953–54.367]; 0.156 |
+
+These RSS values include the whole node, allocator, logging and mempool state;
+the observed differences are not unique cache-memory measurements. Full raw
+rows also retain baseline RSS, sampled-peak counts, lifetime VmHWM, distinct
+charges, external references, thread wall times and process CPU deltas for
+every variant/cell. The paired audit retains all corresponding differences.
+
+At half offered overlap, defaults and count100 both reconstruct 64 transactions
+from extras and request 64. Under the warmed instrumentation, default InitData
+CPU is 893.697 microseconds [807.075–940.886], SD 53.469, while count100 is
+25.047 [21.370–36.168], SD 6.207. Count100 minus default formed within each
+pair has median −871.305 microseconds [−915.839 to −785.705], SD 53.940.
+This is a bounded observation of the allocated-vector scan with missing
+transactions, not a production latency estimate or evidence that the same
+workload frequency occurs on mainnet. Forward/reverse and other cells remain
+separate in the summary; no tail percentile is claimed from five samples.
+
+The approximately 51/102 ms accepted-tip wall measurements also include the
+framework's 50 ms P2P wait polling interval and the extra ping synchronization
+after fallback. They do not estimate a production network roundtrip. Measured
+wire and roundtrip savings are exact for these messages; extrapolated latency,
+unique RSS savings, representative rates and a default recommendation remain
+unsupported. Retain the current defaults and independent operator controls;
+the data exposes a synthetic retention/slot/scan tradeoff without resolving
+the real-world choice.
+
+### Per-modification disposition and remaining measurement boundary
+
+The source inventory and existing characterization remain applicable. The
+following dispositions preserve every optional mode; an unanswered cost question
+does not establish benefit, harm or redundancy. CAT21 measurements do not supply
+answers for the other policy classifiers.
+
+| Row | Disposition under this experiment | Bounded unanswered question |
+| --- | --- | --- |
+| A1 | Retain initialized grammar and error contracts. | No startup parsing benchmark: CLI/config/JSON/confrw precedence, malformed combinations and parse CPU remain unmeasured. |
+| A2 | Retain configurable relay floor; ordinary fixtures pay above both defaults. | No isolated 1000/100/0 sat/kvB floor or ordinary-parent versus TRUC sponsorship pair; population changes cannot be called cache cost. |
+| A3 | Retain script bounds and linkage repair. | Mixed output sizes do not isolate `maxscriptsize`; output, prevout, redeem-script and witness boundary timings under alternate limits remain unmeasured. |
+| A4 | Retain strict/legacy sigop controls and arithmetic guards. | No strict 20/0 or legacy 2500/alternate pair, nor strict × legacy × equivalent-size traversal comparison. |
+| A5 | Retain both optional bare-output permissions. | Bare pubkey and multisig 0/1 controls were not exercised independently; classification and excluded-population costs remain unanswered. |
+| A6 | Retain the unknown-witness output control and inherited input rule. | No output-version 1/0 permission pair or separate unknown-version spend measurement. |
+| A7 | Retain CAT21 default and disable control; this is the only independent policy pair. | Synthetic population/reconstruction effects do not establish real-world prevalence, resource savings or operator benefit; filter-only CPU is not isolated. |
+| A8 | Retain opt-in token classifier. | The unique-reject workload is not a token-recognition matrix; `rejecttokens=0/1`, each supported pattern and recognition/false-negative costs remain unmeasured. |
+| A9 | Retain ephemeral and bare-anchor/carrier modes. | No independent anchor/send/dust token, bare-anchor or bare-carrier switch matrix with standardness/package prerequisites held fixed. |
+| A10 | Retain actual aggregate carrier budget/multiple-output contract. | Mixed scripts also carry CAT21 markers; they do not isolate exact-83/one-over, carrier 0/1, alternate budget or multiple-output classification costs. |
+| A11 | Retain full-count and nonstandard-carrier controls. | No independent `datacarrierfullcount=1/0` or `acceptnonstddatacarrier=0/1` pair for each input/witness/output pattern. |
+| A12 | Retain extra-weight accounting and rounding contract. | No carrier-cost 1/0/fractional/above-1 pair at identical accepted population; graph weight, trimming and template-order costs remain unanswered. |
+| A13 | Retain optional subdust penalty and actual-fee separation. | No penalty 1/0 pair with partial/multiple deficits, exemptions, operator delta and replacement/package interactions. |
+| A14 | Retain saturation and atomic graph-budget repairs. | These small fixtures do not approach fee/weight representability boundaries or isolate mutation overhead and conservative rejection costs. |
+| A15 | Retain synchronized lifecycle repair and both opt-in dust estimators. | Dynamic dust remains off; target-block and mempool-kvB modes, scheduler phase, estimator/floor paths and lock contention have no matched timing data. |
+| A16 | Retain deficit-excluding persistence repair. | Persistence is disabled in this experiment; dump/load bytes and CPU, repricing after a dust change and previous-release compatibility remain unmeasured. |
+| A17 | Retain configurable RBF and native economic gates. | Real default-Always replacements exercise retained originals, but Never/OptIn, signaling/v3 alternatives and mode-matched churn costs remain unmeasured. |
+| A18 | Retain Reject/Accept/Enforce TRUC modes. | Ordinary version-2 fixtures do not measure v3 packages, sibling eviction, reorg admission or the RBF × TRUC mode matrix. |
+| A19 | Retain disabled-default maturity/coin-block controls. | No zero/nonzero independent gate pair, per-input scaling, exact-boundary or reorg cost measurement. |
+| A20 | Retain reuse allow/conflict modes and staging/collision repairs. | Reuse remains allow; claim-count/script-length scaling, conflict lookups and index allocation versus allow have no independent control. |
+| A21 | Retain explicit index accounting within the inherited mempool budget. | No small-`maxmempool` trimming run, equal-population allow/conflict accounting pair or unique allocator attribution; cache charge is not mempool usage. |
+| A22 | Retain mining accounting/reward repairs and template preferences. | Template RPC is setup, not a miner benchmark; priority 100000/0, nonempty residual-graph scaling and fixed weight/size/minfee controls remain unmeasured. |
+| A23 | Retain effective-policy reporting interface. | RPC setup/observation time is not isolated JSON/lock/polling cost; no concurrent reporting control was run. |
+| A24 | Retain empty-default reason/test seam. | No independent ignore-set/string-allocation cost measurement; nonempty test sets remain unavailable to production operators. |
+| C1 | Retain defaults while comparing count controls. | Slot/retention/reconstruction tradeoffs are synthetic; a default change needs representative input evidence and an uninstrumented latency control. |
+| C2 | Retain independent charged-byte semantics and overflow/allocation repair. | The small-budget sweep measures pressure, not every exact native threshold; L2 assertions supply boundary contracts, not allocator savings. |
+| C3 | Retain common per-entry exclusion repair. | All benchmark entries are below the 100000-byte exclusion; nearest-threshold and replacement behavior comes from L2 characterization, without a threshold timing comparison. |
+| C4 | Retain inherited reconstruction algorithm. | Hit/miss wire outcomes are observable, but warmed InitData timings do not isolate production lookup cost; unrelated full-cache zero hits, collisions and network-delay distributions remain unmeasured. |
+| C5 | Clarify charged storage and ownership; preserve budget semantics. | Distinct native charges and orphan sharing are observable, but shared-pointer counts do not identify owners or establish unique incremental cache RSS/allocator release. |
+| F1 | Retain fee-filter default and alternate profile/control. | No filter 1/0 or low/high incremental-fee profile pair, quantization/message-frequency audit or received-population cost measurement; cache tests do not answer these. |

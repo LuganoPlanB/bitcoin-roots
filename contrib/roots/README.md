@@ -6,6 +6,10 @@ Publishing, release tags and main promotion require separate authorization.
 Bitcoin Knots is historical provenance for selected Roots policy features, not
 an upstream, a dependency, or a source of consensus rules.
 
+For reproducible local cache experiments, see the
+[offline compact reconstruction benchmark](cache-bench.md). Its source exports,
+temporary instrumentation, datadirs and raw measurements are disposable evidence.
+
 Git history is the canonical representation of Roots changes. Do not maintain
 replay frameworks, patch manifests, generated evidence, frozen candidate state,
 or promotion metadata alongside it. The archived replay branch is historical
