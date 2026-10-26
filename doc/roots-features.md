@@ -261,7 +261,7 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 
 - **peer-controls:** retain Core's P2P protocol and inherited orphan/upload/
   whitelist controls. Roots additionally bounds compact reconstruction extras
-  by count (default 32,768) and charged transaction dynamic storage (10 decimal
+  by count (Core's default of 100) and charged transaction dynamic storage (10 decimal
   MB by default, independent of `maxmempool`), excluding oversized
   individual extras; provides `forceinbound` (implies `noban` and `download`) and explicit
   compact-filter permissions; permits subnet disconnect; and can disable

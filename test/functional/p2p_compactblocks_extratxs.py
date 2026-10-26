@@ -365,6 +365,14 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
 
     # TEST: blockreconstructionextratxn
 
+    def test_extratxnpool_default_capacity(self):
+        """The default count retains Core's 100 most recent transactions."""
+        self.log.info("Testing default extra transaction pool capacity (100 transactions)...")
+        self.restart_node_with_limit()
+        rejected_txs = self.populate_extra_pool(101)
+        result = self.send_compact_block(rejected_txs, range(101))
+        assert_equal(result["missing_indices"], [0])
+
     def test_duplicate_rejected_attempts(self):
         """Repeated rejected TX reception must not consume another ring slot."""
         self.log.info("Testing duplicate rejected attempts and count precedence...")
@@ -641,6 +649,7 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
         self.test_policy_rejection_types()
 
         # Extra Txn capacity tests
+        self.test_extratxnpool_default_capacity()
         self.test_extratxnpool_disabled()
         self.test_extratxnpool_capacity_and_wraparound()
         self.test_single_extratxnpool_capacity()

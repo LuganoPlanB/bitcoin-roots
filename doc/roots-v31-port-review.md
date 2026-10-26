@@ -564,7 +564,7 @@ fuzz smoke coverage. No repeated full sweep or exhaustive fuzz claim is made.
 
 ## L10.1 peer resource and permission controls
 
-Compact reconstruction retains 32,768 extra slots by default with a separate
+Compact reconstruction retains Core's 100 extra slots by default with a separate
 10 decimal MB transaction dynamic-usage budget. Zero/negative disables caching;
 malformed fixed-point memory settings retain the source default. Four decimal
 places of MB represent 100-byte increments. Slot allocation is capped from the
@@ -1220,8 +1220,9 @@ commit, without rewriting the eight earlier accepted themes:
    rows with no skips, including eight writer/reader child processes per major.
 2. **Benchmark profile:** source
    `4570a6a54770fbda04d9cd05197b6f4fd8f88546` (Jaromil) preserves the configured default.
-   The compact-block benchmark now uses the Roots default 32,768 rather than
-   asserting the old value 100. The configured benchmark profile builds and
+   At this review boundary, the compact-block benchmark used the then-default
+   32,768 rather than asserting 100. It follows the configured default, which
+   has since been restored to Core's 100. The configured benchmark profile builds and
    three one-iteration producer smokes pass. These are build/smoke evidence,
    not throughput or full benchmark campaign results.
 3. **Safe empty AutoFile writes:** source
