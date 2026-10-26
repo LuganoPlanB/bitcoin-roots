@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 export LC_ALL=C.UTF-8
 export CONTAINER_NAME=ci_native_fast

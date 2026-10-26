@@ -74,8 +74,8 @@ else()
   string(APPEND CLIENT_VERSION_STRING "-roots.4")
 endif()
 
-set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
+set(COPYRIGHT_HOLDERS "Plan-B Foundation")
+set(COPYRIGHT_HOLDERS_FINAL "Plan-B Foundation")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================

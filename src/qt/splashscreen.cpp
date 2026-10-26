@@ -64,7 +64,7 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
         static_cast<QGuiApplication*>(QCoreApplication::instance())->devicePixelRatio()};
     const QString title_text{CLIENT_NAME};
     const QString version_text{QString("Version %1").arg(QString::fromStdString(FormatFullVersion()))};
-    const QString copyright_text{QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str())};
+    const QString copyright_text{QString::fromUtf8(CopyrightHolders("\xc2\xA9").c_str())};
     const QString& title_add_text{networkStyle->getTitleAddText()};
 
     const QSize splash_size{qRound(480 * device_pixel_ratio), qRound(320 * device_pixel_ratio)};
