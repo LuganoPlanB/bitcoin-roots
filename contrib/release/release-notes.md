@@ -1,8 +1,8 @@
-# Bitcoin Roots v31.1-roots.4
+# Bitcoin Roots v31.1-roots.5
 
 This candidate release-note template does not announce publication.
 
-Bitcoin Roots v31.1-roots.4 is based directly on the official Bitcoin Core
+Bitcoin Roots v31.1-roots.5 is based directly on the official Bitcoin Core
 v31.1 release (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). It carries the
 reviewed Roots semantic series onto that base, preserving the Core 31.1
 implementation and fixes. Bitcoin Knots `29.3.knots20260507` describes
@@ -14,7 +14,19 @@ RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
 
-## Changes from v31.1-roots.3
+## Changes from v31.1-roots.4
+
+- Restore Bitcoin Core's default compact-block extra transaction count of 100,
+  replacing the Roots default of 32,768. The configurable
+  `-blockreconstructionextratxnsize` budget remains available with its existing
+  10 decimal MB default. Either limit can still disable the cache when set to
+  zero. This changes local cache retention, not mempool admission or consensus.
+- Attribute Roots copyright notices to Plan-B Foundation for 2026, including
+  version output, splash-screen text, packaging metadata and generated manuals.
+  Preserve the separate Bitcoin Core attribution and its historical years.
+- Improve license-text line breaks in version and About output.
+
+## Preserved changes in v31.1-roots.4
 
 - Clarify compact-block reconstruction cache accounting in daemon/GUI help,
   manuals and example configuration. The default 10 decimal MB limits charged

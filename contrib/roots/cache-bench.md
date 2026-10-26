@@ -59,13 +59,17 @@ The matrix is declared in `VARIANTS` in `cache_bench.py`:
 | Variant | Cache and policy |
 | --- | --- |
 | Core default | exact-base count 100, Core policy |
-| Roots default | count 32768, 10,000,000 charged dynamic bytes, Roots policy |
+| Roots default | source default count, 10,000,000 charged dynamic bytes, Roots policy |
 | Roots count100 | count 100; unchanged 10,000,000-byte budget and policy |
 | Roots disabled | count 0; unchanged policy |
 | Roots count1 | one slot; unchanged byte budget and policy |
 | Roots bytes10k | default count, 10,000 charged-byte budget |
 | Roots count8-bytes1k | count 8, 1,000 charged-byte budget |
 | Roots CAT21 allowed | default cache, only `rejectparasites=0` changed |
+
+The review snapshot used a Roots default count of 32768. Since v31.1-roots.5,
+the source default is 100, matching Core; the default and count100 variants
+therefore use the same count when preparing a current source snapshot.
 
 All nodes use `acceptnonstdtxn=0`, `persistmempool=0`, `dbcache=64` and one
 unprivileged v1-transport peer. No fee/policy floor is normalized between Core

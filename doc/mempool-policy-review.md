@@ -12,6 +12,10 @@ simplify the cache's operator-facing accounting description. No product
 correctness defect was reproduced. An operator's filtering goal is distinct
 from a resource-saving hypothesis; unmeasured costs remain unresolved.
 
+For v31.1-roots.5, the default extra transaction count was restored to Core's
+100. The historical inventory and measurements below retain their original
+32,768-count Roots baseline; they do not describe the new default.
+
 Native arithmetic references below include `src/test/amount_tests.cpp` for
 fee-rate saturation/scaling; `src/test/transaction_tests.cpp` for standardness
 and reason isolation; `src/test/mempool_tests.cpp` for graph/publication/trim;
