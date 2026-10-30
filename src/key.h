@@ -7,6 +7,7 @@
 #ifndef BITCOIN_KEY_H
 #define BITCOIN_KEY_H
 
+#include <attributes.h>
 #include <musig.h>
 #include <pubkey.h>
 #include <serialize.h>
@@ -30,6 +31,7 @@ constexpr static size_t ECDH_SECRET_SIZE = CSHA256::OUTPUT_SIZE;
 using ECDHSecret = std::array<std::byte, ECDH_SECRET_SIZE>;
 
 class KeyPair;
+struct secp256k1_keypair;
 
 /** An encapsulated private key. */
 class CKey
@@ -291,6 +293,15 @@ public:
 
     friend KeyPair CKey::ComputeKeyPair(const uint256* merkle_root) const;
     [[nodiscard]] bool SignSchnorr(const uint256& hash, std::span<unsigned char> sig, const uint256& aux) const;
+
+    //! Extract the actual keypair scalar into secure CKey storage, or nullopt for an invalid keypair.
+    [[nodiscard]] std::optional<CKey> GetKey() const;
+
+    //! Pointer to this KeyPair's internal data, or nullptr if invalid.
+    const secp256k1_keypair* GetSecpKeypair() const LIFETIMEBOUND
+    {
+        return IsValid() ? reinterpret_cast<const secp256k1_keypair*>(m_keypair->data()) : nullptr;
+    }
 
     //! Check whether this keypair is valid.
     bool IsValid() const { return !!m_keypair; }

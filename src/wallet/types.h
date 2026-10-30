@@ -17,6 +17,8 @@
 #include <policy/fees/block_policy_estimator.h>
 
 namespace wallet {
+enum class AddressKeyError { NO_KEY, NO_TAPROOT_OUTPUT_KEY, MISSING_METADATA, UNSUPPORTED, INCONSISTENT };
+
 /**
  * Address purpose field that has been been stored with wallet sending and
  * receiving addresses since BIP70 payment protocol support was added in

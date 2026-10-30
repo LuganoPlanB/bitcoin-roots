@@ -352,13 +352,17 @@ mining. Explicitly supplied staged options warn that they are not enforced.
 
 ### Wallet authorization, signing and spend controls
 
-The v31.1-roots.3 candidate additionally provides the opt-in `exportaddresskey`
-wallet RPC for one locally held P2PKH or native P2WPKH spending key. It requires
-normal wallet authorization and returns only the leaf scalar and compression
-flag. See [the wallet manual](wallet-privacy.md#export-a-spending-key-for-one-address)
-for the exact encoding, supported wallets, secret-handling and ancestor-xpub
-risks, and Quietproof's native-P2WPKH limitation. This addition is
-not a claim of availability in an earlier published release.
+This candidate extends the opt-in `exportaddresskey` RPC introduced in
+v31.1-roots.3 to recognized P2SH/P2WSH wrappers, multisig/Miniscript and Taproot
+internal/leaf/output and MuSig2 participant keys. Normal local-wallet
+authorization and unlock remain required. The canonical `keys` array includes
+full public-key identities, scalars, compression flags and roles; original
+P2PKH/native P2WPKH top-level fields remain compatibility aliases. Optional
+`taproot_output` mode exports effective Taproot key-path keys when available.
+See [the wallet manual](wallet-privacy.md#export-a-spending-key-for-one-address)
+for metadata/partial-ownership limits, secret handling, the HD master-key and
+ancestor-xpub disclosure risks, and Quietproof's native-P2WPKH limitation. This
+candidate description does not claim availability in an earlier release.
 
 - **wallet-foundation:** descriptor/SQLite wallets and optional external signing
   are inherited Core foundations. Roots rejects unwritable database directories,

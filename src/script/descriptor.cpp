@@ -218,6 +218,33 @@ public:
     /** Derive a private key, if private data is available in arg and put it into out. */
     virtual void GetPrivKey(int pos, const SigningProvider& arg, FlatSigningProvider& out) const = 0;
 
+    virtual bool GetPrivKeyChecked(int pos, const SigningProvider& arg, FlatSigningProvider& out) const
+    {
+        std::set<CPubKey> roots;
+        GetPrivateKeyRoots(roots);
+        const bool available = std::ranges::any_of(roots, [&](const auto& root) { return arg.HaveKey(root.GetID()); });
+        FlatSigningProvider derived;
+        GetPrivKey(pos, arg, derived);
+        if (available && derived.keys.empty()) return false;
+        out.keys.merge(derived.keys);
+        return true;
+    }
+
+    virtual void GetPrivateKeyRoots(std::set<CPubKey>& roots) const
+    {
+        if (const auto root = GetRootPubKey()) roots.insert(*root);
+        if (const auto root = GetRootExtPubKey()) roots.insert(root->pubkey);
+    }
+
+    virtual bool GetMuSig2KeyInfo(int pos, const DescriptorCache& cache, std::vector<DescriptorMuSig2KeyInfo>&) const
+    {
+        if (!CanSelfExpand()) return true;
+        FlatSigningProvider cached, independent;
+        const auto actual = GetPubKey(pos, DUMMY_SIGNING_PROVIDER, cached, &cache);
+        const auto expected = GetPubKey(pos, DUMMY_SIGNING_PROVIDER, independent);
+        return actual && expected && *actual == *expected;
+    }
+
     /** Return the non-extended public key for this PubkeyProvider, if it has one. */
     virtual std::optional<CPubKey> GetRootPubKey() const = 0;
     /** Return the extended public key for this PubkeyProvider, if it has one. */
@@ -246,6 +273,9 @@ public:
 
     /** Whether this PubkeyProvider is a BIP 32 extended key that can be derived from */
     virtual bool IsBIP32() const = 0;
+
+    /** Whether a public key can be expanded without a cache or private keys. */
+    virtual bool CanSelfExpand() const = 0;
 
     /** Get the count of keys known by this PubkeyProvider. Usually one, but may be more for key aggregation schemes */
     virtual size_t GetKeyCount() const { return 1; }
@@ -312,6 +342,15 @@ public:
     {
         m_provider->GetPrivKey(pos, arg, out);
     }
+    bool GetPrivKeyChecked(int pos, const SigningProvider& arg, FlatSigningProvider& out) const override
+    {
+        return m_provider->GetPrivKeyChecked(pos, arg, out);
+    }
+    void GetPrivateKeyRoots(std::set<CPubKey>& roots) const override { m_provider->GetPrivateKeyRoots(roots); }
+    bool GetMuSig2KeyInfo(int pos, const DescriptorCache& cache, std::vector<DescriptorMuSig2KeyInfo>& out) const override
+    {
+        return m_provider->GetMuSig2KeyInfo(pos, cache, out);
+    }
     std::optional<CPubKey> GetRootPubKey() const override
     {
         return m_provider->GetRootPubKey();
@@ -324,6 +363,7 @@ public:
     {
         return std::make_unique<OriginPubkeyProvider>(m_expr_index, m_origin, m_provider->Clone(), m_apostrophe);
     }
+    bool CanSelfExpand() const override { return m_provider->CanSelfExpand(); }
 };
 
 /** An object representing a parsed constant public key in a descriptor. */
@@ -389,6 +429,7 @@ public:
     {
         return std::make_unique<ConstPubkeyProvider>(m_expr_index, m_pubkey, m_xonly);
     }
+    bool CanSelfExpand() const override { return true; }
 };
 
 enum class DeriveType {
@@ -615,6 +656,7 @@ public:
     {
         return std::make_unique<BIP32PubkeyProvider>(m_expr_index, m_root_extkey, m_path, m_derive, m_apostrophe);
     }
+    bool CanSelfExpand() const override { return !IsHardened(); }
 };
 
 /** PubkeyProvider for a musig() expression */
@@ -791,6 +833,51 @@ public:
         for (const auto& participant : m_participants) participant->GetAvailableKeys(pos, cache, provider, out);
     }
 
+    bool GetPrivKeyChecked(int pos, const SigningProvider& arg, FlatSigningProvider& out) const override
+    {
+        for (const auto& participant : m_participants) {
+            if (!participant->GetPrivKeyChecked(pos, arg, out)) return false;
+        }
+        return true;
+    }
+
+    void GetPrivateKeyRoots(std::set<CPubKey>& roots) const override
+    {
+        for (const auto& participant : m_participants) participant->GetPrivateKeyRoots(roots);
+    }
+
+    bool GetMuSig2KeyInfo(int pos, const DescriptorCache& cache, std::vector<DescriptorMuSig2KeyInfo>& out) const override
+    {
+        DescriptorMuSig2KeyInfo info;
+        FlatSigningProvider public_keys;
+        for (const auto& participant : m_participants) {
+            const auto pubkey = participant->GetPubKey(pos, DUMMY_SIGNING_PROVIDER, public_keys, &cache);
+            if (!pubkey || !pubkey->IsFullyValid() || !pubkey->IsCompressed()) return false;
+            if (participant->CanSelfExpand()) {
+                FlatSigningProvider independent;
+                const auto expected = participant->GetPubKey(pos, DUMMY_SIGNING_PROVIDER, independent);
+                if (!expected || *expected != *pubkey) return false;
+            }
+            info.participants.push_back(*pubkey);
+        }
+        std::sort(info.participants.begin(), info.participants.end());
+        const auto aggregate = MuSig2AggregatePubkeys(info.participants);
+        if (!aggregate) return false;
+        info.aggregate = *aggregate;
+        info.derived = *aggregate;
+        info.path = m_path;
+        if (IsRangedDerivation()) info.path.push_back(pos);
+        if (!info.path.empty()) {
+            CExtPubKey derived = CreateMuSig2SyntheticXpub(*aggregate);
+            for (const auto child : info.path) {
+                if (child >> 31 || !derived.Derive(derived, child)) return false;
+            }
+            info.derived = derived.pubkey;
+        }
+        out.push_back(std::move(info));
+        return true;
+    }
+
     // Get RootPubKey and GetRootExtPubKey are used to return the single pubkey underlying the pubkey provider
     // to be presented to the user in gethdkeys. As this is a multisig construction, there is no single underlying
     // pubkey hence nothing should be returned.
@@ -818,6 +905,10 @@ public:
     {
         // musig() can only be a BIP 32 key if all participants are bip32 too
         return std::all_of(m_participants.begin(), m_participants.end(), [](const auto& pubkey) { return pubkey->IsBIP32(); });
+    }
+    bool CanSelfExpand() const override
+    {
+        return std::all_of(m_participants.begin(), m_participants.end(), [](const auto& participant) { return participant->CanSelfExpand(); });
     }
     size_t GetKeyCount() const override
     {
@@ -1041,6 +1132,37 @@ public:
     {
         for (const auto& key : m_pubkey_args) key->GetAvailableKeys(pos, cache, provider, out);
         for (const auto& descriptor : m_subdescriptor_args) descriptor->GetAvailableKeys(pos, cache, provider, out);
+    }
+
+    // NOLINTNEXTLINE(misc-no-recursion)
+    bool ExpandPrivateChecked(int pos, const SigningProvider& provider, FlatSigningProvider& out) const final
+    {
+        for (const auto& p : m_pubkey_args) {
+            if (!p->GetPrivKeyChecked(pos, provider, out)) return false;
+        }
+        for (const auto& arg : m_subdescriptor_args) {
+            if (!arg->ExpandPrivateChecked(pos, provider, out)) return false;
+        }
+        return true;
+    }
+
+    // NOLINTNEXTLINE(misc-no-recursion)
+    void GetPrivateKeyRoots(std::set<CPubKey>& roots) const final
+    {
+        for (const auto& p : m_pubkey_args) p->GetPrivateKeyRoots(roots);
+        for (const auto& arg : m_subdescriptor_args) arg->GetPrivateKeyRoots(roots);
+    }
+
+    // NOLINTNEXTLINE(misc-no-recursion)
+    bool GetMuSig2KeyInfo(int pos, const DescriptorCache& cache, std::vector<DescriptorMuSig2KeyInfo>& out) const final
+    {
+        for (const auto& p : m_pubkey_args) {
+            if (!p->GetMuSig2KeyInfo(pos, cache, out)) return false;
+        }
+        for (const auto& arg : m_subdescriptor_args) {
+            if (!arg->GetMuSig2KeyInfo(pos, cache, out)) return false;
+        }
+        return true;
     }
 
     std::optional<OutputType> GetOutputType() const override { return std::nullopt; }
@@ -2933,6 +3055,11 @@ std::string GetDescriptorChecksum(const std::string& descriptor)
 std::unique_ptr<Descriptor> InferDescriptor(const CScript& script, const SigningProvider& provider)
 {
     return InferScript(script, ParseScriptContext::TOP, provider);
+}
+
+std::unique_ptr<Descriptor> InferTaprootScript(const CScript& script, const SigningProvider& provider)
+{
+    return InferScript(script, ParseScriptContext::P2TR, provider);
 }
 
 uint256 DescriptorID(const Descriptor& desc)

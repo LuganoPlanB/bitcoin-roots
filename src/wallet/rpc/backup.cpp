@@ -21,6 +21,7 @@
 #include <util/fs.h>
 #include <util/time.h>
 #include <util/translation.h>
+#include <wallet/export.h>
 #include <wallet/rpc/util.h>
 #include <wallet/wallet.h>
 
@@ -28,6 +29,7 @@
 #include <fstream>
 #include <tuple>
 #include <string>
+#include <string_view>
 
 #include <univalue.h>
 
@@ -36,69 +38,136 @@
 using interfaces::FoundBlock;
 
 namespace wallet {
+static UniValue AddressKeyRPCError(AddressKeyError error)
+{
+    switch (error) {
+    case AddressKeyError::NO_KEY:
+        return JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No private key for this address is available in the selected wallet");
+    case AddressKeyError::NO_TAPROOT_OUTPUT_KEY:
+        return JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No local Taproot output private key is available for this address; use key_type='wallet' to export available script or participant keys.");
+    case AddressKeyError::MISSING_METADATA:
+        return JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet lacks the spending/script information needed to identify/export keys for this address");
+    case AddressKeyError::UNSUPPORTED:
+        return JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "This address's spending construction is not supported for key export");
+    case AddressKeyError::INCONSISTENT:
+        return JSONRPCError(RPC_INTERNAL_ERROR, "Unable to export because wallet key/script data is inconsistent");
+    }
+    NONFATAL_UNREACHABLE();
+}
+
+static std::string_view AddressKeyRoleName(AddressKeyRole role)
+{
+    switch (role) {
+    case AddressKeyRole::MUSIG2_PARTICIPANT: return "musig2_participant";
+    case AddressKeyRole::SCRIPT: return "script";
+    case AddressKeyRole::TAPROOT_INTERNAL: return "taproot_internal";
+    case AddressKeyRole::TAPROOT_OUTPUT: return "taproot_output";
+    case AddressKeyRole::TAPROOT_SCRIPT: return "taproot_script";
+    }
+    NONFATAL_UNREACHABLE();
+}
+
+static UniValue AddressKeyToJSON(const AddressKeyResult& exported)
+{
+    CHECK_NONFATAL(!exported.keys.empty());
+    UniValue keys{UniValue::VARR};
+    for (const auto& record : exported.keys) {
+        CHECK_NONFATAL(record.key.IsValid());
+        UniValue entry{UniValue::VOBJ};
+        entry.pushKV("pubkey", HexStr(record.key.GetPubKey()));
+        entry.pushKV("private_key_hex", HexStr(record.key));
+        entry.pushKV("compressed", record.key.IsCompressed());
+        UniValue roles{UniValue::VARR};
+        for (const auto role : record.roles) roles.push_back(AddressKeyRoleName(role));
+        entry.pushKV("roles", std::move(roles));
+        keys.push_back(std::move(entry));
+    }
+    UniValue result{UniValue::VOBJ};
+    result.pushKV("keys", std::move(keys));
+    if (exported.legacy_aliases) {
+        CHECK_NONFATAL(exported.keys.size() == 1);
+        result.pushKV("private_key_hex", HexStr(exported.keys.front().key));
+        result.pushKV("compressed", exported.keys.front().key.IsCompressed());
+    }
+    return result;
+}
+
 RPCHelpMan exportaddresskey()
 {
     return RPCHelpMan{
         "exportaddresskey",
-        "Returns the local spending key for a P2PKH or native P2WPKH address known to the selected descriptor wallet.\n"
+        "Returns local private keys for a recognized address known to the selected descriptor wallet.\n"
+        "Supports P2PKH, P2WPKH, P2SH, P2WSH and Taproot tr()/rawtr(), including nested wrappers, multisig and supported Miniscript.\n"
+        "Returns every available key even when other keys, preimages or timelocks are needed to spend.\n"
+        "Uses existing wallet metadata and known indices; missing redeem/witness scripts or Taproot commitments produce a missing spending/script information error.\n"
+        "It does not recover unknown script hashes, search unknown derivation paths or infer keys from arbitrary script data.\n"
+        "The canonical keys array is sorted by full serialized public key, with sorted unique roles.\n"
+        "The top-level private_key_hex and compressed fields are compatibility aliases for original P2PKH/native P2WPKH exports.\n"
+        "Wallet mode returns original stored/derived scalars and full public-key serializations, including Taproot internal, direct output, leaf and MuSig2 participant keys.\n"
+        "The taproot_output mode returns effective key-path keys, applying the exact known TapTweak (including tree-less tr()) to internal keys. Direct output/rawtr() keys are not tweaked again.\n"
+        "Script-only or MuSig2 participant-only ownership can succeed in wallet mode while taproot_output fails. Participant secrets are not aggregate or output secrets, even when all participants are local.\n"
+        "A MuSig2 participant used before post-aggregation derivation, or any explicitly reused key, may control many outputs. Export does not promise an address-exclusive or leaf-only secret.\n"
+        "A direct address for a stored descriptor root can export that root's private key, including an HD master private key.\n"
+        "Exported keys are not a wallet backup; scripts, control blocks, cosigners, preimages or timelocks may still be required.\n"
         "Requires wallet unlock. The result contains a spending secret, including when displayed in the RPC console.\n"
-        "Disclosure of a non-hardened child key together with the corresponding ancestor xpub can compromise that ancestor's private subtree.\n",
+        "Disclosure of a non-hardened child key together with the corresponding ancestor xpub can compromise that ancestor's private subtree.\n"
+        "RPC responses, JSON/client buffers and console output may retain secrets; this RPC does not guarantee erasure of those copies.\n",
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet P2PKH or native P2WPKH address"},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet address"},
+            {"key_type", RPCArg::Type::STR, RPCArg::Default{"wallet"}, "The key type: wallet or taproot_output. Null uses the default. taproot_output requires a Taproot address"},
         },
         RPCResult{RPCResult::Type::OBJ, "", "", {
-            {RPCResult::Type::STR_HEX, "private_key_hex", "32-byte unsigned big-endian private scalar (64 lowercase hex characters, including leading zeros); not WIF"},
-            {RPCResult::Type::BOOL, "compressed", "Whether the address uses a compressed public key (always true for P2WPKH)"},
+            {RPCResult::Type::ARR, "keys", "Local private keys, sorted by full serialized public key", {
+                {RPCResult::Type::OBJ, "", "", {
+                    {RPCResult::Type::STR_HEX, "pubkey", "Full SEC public key corresponding to the returned scalar"},
+                    {RPCResult::Type::STR_HEX, "private_key_hex", "32-byte unsigned big-endian private scalar (64 lowercase hex characters, including leading zeros); not WIF"},
+                    {RPCResult::Type::BOOL, "compressed", "Whether the returned key uses compressed public-key serialization"},
+                    {RPCResult::Type::ARR, "roles", "Sorted unique key roles", {
+                        {RPCResult::Type::STR, "", "script (non-Taproot), taproot_internal (raw internal key), taproot_script (leaf key), taproot_output (direct/effective output key), or musig2_participant (participant, not aggregate key)"},
+                    }},
+                }},
+            }},
+            {RPCResult::Type::STR_HEX, "private_key_hex", /*optional=*/true, "Compatibility alias for original P2PKH/native P2WPKH wallet-mode exports"},
+            {RPCResult::Type::BOOL, "compressed", /*optional=*/true, "Compatibility alias for original P2PKH/native P2WPKH wallet-mode exports"},
         }},
-        RPCExamples{HelpExampleCli("exportaddresskey", "\"" + EXAMPLE_ADDRESS[0] + "\"")},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return UniValue::VNULL;
+        RPCExamples{HelpExampleCli("exportaddresskey", "\"" + EXAMPLE_ADDRESS[0] + "\"") +
+            HelpExampleCli("exportaddresskey", "\"" + EXAMPLE_ADDRESS[0] + "\" \"taproot_output\"")},
+        [](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        {
+            const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+            if (!wallet) return UniValue::VNULL;
 
-    const CTxDestination dest{DecodeDestination(request.params[0].get_str())};
-    if (!IsValidDestination(dest)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
-    }
-    const auto pkhash = std::get_if<PKHash>(&dest);
-    const auto witness = std::get_if<WitnessV0KeyHash>(&dest);
-    if (!pkhash && !witness) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Only P2PKH and native P2WPKH addresses are supported");
-    }
-
-    LOCK(wallet->cs_wallet);
-    if (!wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) ||
-        wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) ||
-        wallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "This wallet does not support local private-key export");
-    }
-    EnsureWalletIsUnlocked(*wallet);
-
-    const CScript script{GetScriptForDestination(dest)};
-    const CKeyID key_id{pkhash ? ToKeyID(*pkhash) : ToKeyID(*witness)};
-    const auto solving_provider = wallet->GetSolvingProvider(script);
-    CPubKey pubkey;
-    if (solving_provider && solving_provider->GetPubKey(key_id, pubkey)) {
-        for (const auto spk_man : wallet->GetScriptPubKeyMans(script)) {
-            const auto desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
-            if (!desc_spk_man) continue;
-            const auto provider = desc_spk_man->GetSigningProvider(pubkey);
-            CKey key;
-            if (!provider || !provider->GetKey(key_id, key) || !key.IsValid()) continue;
-
-            // Recheck the exact address and public-key serialization before exposing the scalar.
-            const CPubKey derived_pubkey{key.GetPubKey()};
-            const bool matches_dest{pkhash ? PKHash{derived_pubkey} == *pkhash : WitnessV0KeyHash{derived_pubkey} == *witness};
-            if (derived_pubkey != pubkey || !matches_dest || (witness && !key.IsCompressed())) continue;
-
-            UniValue result(UniValue::VOBJ);
-            result.pushKV("private_key_hex", HexStr(key));
-            result.pushKV("compressed", key.IsCompressed());
-            return result;
-        }
-    }
-    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Private key for address is not available in this wallet");
-},
+            const CTxDestination dest{DecodeDestination(request.params[0].get_str())};
+            if (!IsValidDestination(dest)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+            }
+            AddressKeyType key_type{AddressKeyType::WALLET};
+            if (!request.params[1].isNull()) {
+                const auto& type = request.params[1].get_str();
+                if (type == "taproot_output") {
+                    key_type = AddressKeyType::TAPROOT_OUTPUT;
+                } else if (type != "wallet") {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "key_type must be 'wallet' or 'taproot_output'");
+                }
+            }
+            if (key_type == AddressKeyType::TAPROOT_OUTPUT && !std::holds_alternative<WitnessV1Taproot>(dest)) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "key_type='taproot_output' requires a Taproot address");
+            }
+            LOCK(wallet->cs_wallet);
+            if (!wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "This wallet does not support local private-key export");
+            }
+            if (wallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Private keys are held by an external signer and cannot be exported locally");
+            }
+            if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "This wallet has private keys disabled");
+            }
+            EnsureWalletIsUnlocked(*wallet);
+            const auto result = ExportAddressKeys(*wallet, dest, key_type);
+            if (!result) throw AddressKeyRPCError(result.error());
+            return AddressKeyToJSON(*result);
+        },
     };
 }
 

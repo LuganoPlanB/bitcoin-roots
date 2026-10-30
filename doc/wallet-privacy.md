@@ -87,26 +87,59 @@ a transaction-history product, or any anonymity guarantee.
 
 ## Export a spending key for one address
 
-The v31.1-roots.3 candidate adds `exportaddresskey ADDRESS` for a known address
-in the selected descriptor wallet:
+This candidate extends `exportaddresskey`, introduced in v31.1-roots.3, to
+recognized addresses and scripts in the selected descriptor wallet:
 
 ```sh
 bitcoin-cli -rpcwallet=WALLET exportaddresskey ADDRESS
+bitcoin-cli -rpcwallet=WALLET exportaddresskey ADDRESS taproot_output
 ```
 
-The wallet must hold the private key locally, and an encrypted wallet must be
+The wallet must hold private keys locally, and an encrypted wallet must be
 unlocked through the normal wallet authorization flow. Watch-only,
 private-key-disabled and external-signer wallets are rejected. Addresses must
-belong to the active node network. Only P2PKH (compressed or uncompressed) and
-native P2WPKH (compressed) are supported; P2SH, P2WSH and P2TR are rejected.
+belong to the active node network. Supported constructions include P2PKH,
+native and wrapped P2WPKH, P2SH, P2WSH, their recognized wrappers,
+multisig/Miniscript, and Taproot `tr()`/`rawtr()` internal, leaf, direct output
+and MuSig2 participant keys. P2PKH can retain compressed or uncompressed keys;
+native P2WPKH requires compressed keys.
 
-The result has exactly two fields:
+Export uses existing wallet metadata and known descriptor indices. It does not
+search unknown derivation paths, recover missing redeem/witness scripts or
+Taproot commitments, or treat arbitrary script data as keys. Missing metadata,
+unsupported constructions and inconsistent key/script data have distinct
+errors. Partial ownership returns the available local keys even if cosigners,
+preimages or timelocks are still required to spend.
 
-- `private_key_hex`: the 32-byte unsigned big-endian leaf scalar as exactly 64
-  lowercase hex characters, retaining leading zeros. It has no `0x` prefix,
-  WIF marker or checksum.
-- `compressed`: a boolean describing the public-key serialization for the
-  address; always `true` for native P2WPKH.
+The optional `key_type` argument selects one of two modes; omitting it or using
+JSON null selects `wallet`:
+
+- `wallet` returns original stored/derived scalars and their full public-key
+  identities. Roles identify script keys, Taproot internal/leaf/direct output
+  keys and MuSig2 participants. A participant secret remains a participant
+  secret even when every participant is local; it is not an aggregate secret.
+- `taproot_output` requires a Taproot address and returns effective key-path
+  keys. It applies the exact known TapTweak, including tree-less `tr()`, to
+  locally held internal keys. Direct output/`rawtr()` keys are not tweaked
+  again. Script-only or participant-only ownership can succeed in `wallet`
+  mode while this mode fails because an output private key is unavailable.
+
+The canonical result is a nonempty `keys` array sorted by full serialized
+public key. Each entry contains:
+
+- `pubkey`: the full SEC public-key serialization corresponding to the scalar;
+- `private_key_hex`: a 32-byte unsigned big-endian scalar as exactly 64 lowercase
+  hex characters, retaining leading zeros, without `0x`, WIF marker or checksum;
+- `compressed`: a boolean describing that public-key serialization; and
+- `roles`: sorted unique strings from `script`, `taproot_internal`,
+  `taproot_script`, `taproot_output` and `musig2_participant`.
+
+Identical full public keys have their roles merged. Keys with different full
+identities remain distinct; export does not negate a stored key to match an
+address. The top-level `private_key_hex` and `compressed` fields remain as
+compatibility aliases for the original P2PKH/native P2WPKH exports in `wallet`
+mode. Those results now also contain `keys`; other constructions and
+`taproot_output` results have only the canonical array.
 
 The result contains a spending secret. Use protected, authenticated local RPC.
 For a consumer such as Quietproof, transfer the hex plus a newline through
@@ -115,11 +148,18 @@ variables and files. The Qt console filters the command's arguments from history
 but displays the explicitly requested result. JSON, HTTP and client buffers may
 retain copies; total memory erasure is not promised.
 
-Only the selected leaf key is returned, without a seed, master key, xprv or
-descriptor. Disclosure of a non-hardened child private key together with the
-corresponding ancestor xpub can still compromise that ancestor's private
-subtree. The RPC does not import keys, generate addresses, advance keypool
-indices or change balances or spend state. Keep an independent secure backup.
+An exported key need not be exclusive to this address or be a leaf key. A
+direct address for a stored descriptor root can reveal that root's private
+scalar, **including an HD master private key**. Reused keys and MuSig2
+participants before post-aggregation derivation can control many outputs.
+Disclosure of a non-hardened child private key together with the corresponding
+ancestor xpub can also compromise that ancestor's private subtree.
+
+Exported scalars are not a wallet backup: scripts, control blocks, cosigners,
+preimages or timelocks may still be needed. The RPC does not import keys,
+generate addresses, advance keypool indices or change balances or spend state.
+Keep an independent secure backup. Broader export support does not expand the
+script forms scanned by `sweepprivkeys`.
 Quietproof's current normal proof workflow supports native P2WPKH only;
 exporting a P2PKH key does not add P2PKH proof support or an anonymity guarantee.
 

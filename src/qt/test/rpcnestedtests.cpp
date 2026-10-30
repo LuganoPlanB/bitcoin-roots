@@ -103,6 +103,18 @@ void RPCNestedTests::rpcNestedTests()
     QVERIFY(filtered == "exportaddresskey(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "help(exportaddresskey(sentinel))", false, &filtered);
     QVERIFY(filtered == "help(exportaddresskey(…))");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "exportaddresskey sentinel wallet", false, &filtered);
+    QVERIFY(filtered == "exportaddresskey(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "help(exportaddresskey(sentinel,taproot_output))", false, &filtered);
+    QVERIFY(filtered == "help(exportaddresskey(…))");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "exportaddresskey sentinel taproot_output", false, &filtered);
+    QVERIFY(filtered == "exportaddresskey(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "help(exportaddresskey(sentinel,wallet))", false, &filtered);
+    QVERIFY(filtered == "help(exportaddresskey(…))");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "exportaddresskey sentinel null", false, &filtered);
+    QVERIFY(filtered == "exportaddresskey(…)");
+    RPCConsole::RPCParseCommandLine(nullptr, result, "help(exportaddresskey(sentinel,null))", false, &filtered);
+    QVERIFY(filtered == "help(exportaddresskey(…))");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrase(help())", false, &filtered);
     QVERIFY(filtered == "walletpassphrase(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrasechange(help(walletpassphrasechange(abc)))", false, &filtered);
