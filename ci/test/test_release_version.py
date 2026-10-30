@@ -47,7 +47,7 @@ class ReleaseVersionTest(unittest.TestCase):
             return result, header.read_text(encoding="utf-8") if header.exists() else ""
 
     def test_release_tag_sets_compiled_version_without_git_metadata(self):
-        for tag in ("v31.1-roots.3", "v31.1-roots.5"):
+        for tag in ("v31.1-roots.3", "v31.1-roots.5", "v31.1-roots.6"):
             with self.subTest(tag=tag):
                 result, header = self.configure_release_version(tag)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -64,18 +64,18 @@ class ReleaseVersionTest(unittest.TestCase):
     def test_untagged_build_keeps_default_roots_version(self):
         result, header = self.configure_release_version()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.5"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.6"', header)
 
     def test_version_and_release_tag_name_agree(self):
         build_config = BUILD_CONFIG.read_text(encoding="utf-8")
         self.assertIn("set(CLIENT_VERSION_MAJOR 31)", build_config)
         self.assertIn("set(CLIENT_VERSION_MINOR 1)", build_config)
-        self.assertIn('string(APPEND CLIENT_VERSION_STRING "-roots.5")', build_config)
+        self.assertIn('string(APPEND CLIENT_VERSION_STRING "-roots.6")', build_config)
         result = subprocess.run(
-            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v31.1-roots.5"],
+            ["python3", ARCHIVE_TOOL, "root-name", "--tag", "v31.1-roots.6"],
             capture_output=True, text=True, check=True,
         )
-        self.assertEqual(result.stdout.strip(), "bitcoin-roots-31.1-roots.5")
+        self.assertEqual(result.stdout.strip(), "bitcoin-roots-31.1-roots.6")
 
     def test_macos_deployment_verifies_the_branded_archive(self):
         script = (ROOT / "ci/test/03_test_script.sh").read_text(encoding="utf-8")

@@ -87,8 +87,8 @@ a transaction-history product, or any anonymity guarantee.
 
 ## Export a spending key for one address
 
-This candidate extends `exportaddresskey`, introduced in v31.1-roots.3, to
-recognized addresses and scripts in the selected descriptor wallet:
+The v31.1-roots.6 candidate extends `exportaddresskey`, introduced in
+v31.1-roots.3, to recognized addresses and scripts in the selected descriptor wallet:
 
 ```sh
 bitcoin-cli -rpcwallet=WALLET exportaddresskey ADDRESS

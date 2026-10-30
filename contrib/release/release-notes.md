@@ -1,8 +1,8 @@
-# Bitcoin Roots v31.1-roots.5
+# Bitcoin Roots v31.1-roots.6
 
 This candidate release-note template does not announce publication.
 
-Bitcoin Roots v31.1-roots.5 is based directly on the official Bitcoin Core
+Bitcoin Roots v31.1-roots.6 is based directly on the official Bitcoin Core
 v31.1 release (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). It carries the
 reviewed Roots semantic series onto that base, preserving the Core 31.1
 implementation and fixes. Bitcoin Knots `29.3.knots20260507` describes
@@ -14,7 +14,43 @@ RDTS/BIP110. Relay, mempool and mining-template restrictions remain local and
 configurable; a consensus-valid block remains acceptable even when its
 transactions are rejected by local policy.
 
-## Changes from v31.1-roots.4
+## Changes from v31.1-roots.5
+
+- Generalize `exportaddresskey ADDRESS [key_type]` for recognized local
+  descriptor-wallet addresses and scripts: P2PKH, native/wrapped P2WPKH,
+  P2SH/P2WSH and nested wrappers, multisig/Miniscript, and Taproot
+  `tr()`/`rawtr()` internal, leaf, output and MuSig2 participant keys.
+- Return a canonical `keys` array with full public-key identities,
+  fixed-width `private_key_hex`, `compressed` and sorted `roles`. Original
+  P2PKH/native P2WPKH exports in default `wallet` mode retain their top-level
+  `private_key_hex` and `compressed` compatibility aliases. Consumers of other
+  constructions must read `keys`; keys retain their stored scalar identity.
+- Add optional `taproot_output` mode for effective Taproot key-path secrets
+  when local keys and exact commitment metadata are available. Omitted/null
+  `key_type` selects `wallet`. MuSig2 participant keys are not aggregate keys;
+  partial local ownership does not promise that the wallet can spend alone.
+
+### Migration and secret scope
+
+Normal selected-wallet authorization and encrypted-wallet unlock remain
+required. Watch-only, private-key-disabled and external-signer wallets remain
+ineligible. Export uses known descriptor indices and metadata; it does not
+search unknown paths, recover missing scripts/commitments or recognize every
+arbitrary script. It does not import keys, advance keypools or change balances.
+Broader export does not expand `sweepprivkeys` scanning or Quietproof's normal
+native-P2WPKH proof workflow.
+
+An exported scalar can control more than the requested address, **including
+an HD master private key** when the address directly uses a stored root.
+Reused keys and pre-derivation MuSig2 participants can control many outputs;
+a non-hardened child secret plus the ancestor xpub can compromise its subtree.
+Use protected authenticated local RPC and protected stdin for transfers.
+Scripts, cosigners, control blocks, preimages or timelocks may still be needed;
+export is not a wallet backup. See the
+[wallet manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.6/doc/wallet-privacy.md#export-a-spending-key-for-one-address)
+for the complete response, mode and disclosure contract.
+
+## Preserved changes in v31.1-roots.5
 
 - Restore Bitcoin Core's default compact-block extra transaction count of 100,
   replacing the Roots default of 32,768. The configurable
@@ -125,7 +161,7 @@ validation is tied to the canonical `roots/31.1` release tip, rather than a
 promotion commit on `main`.
 
 The portable patch applies directly to official Core v31.1 with
-`git am -3 --keep-cr <bitcoin-roots-31.1-roots.4.patch>`. It deliberately
+`git am -3 --keep-cr <bitcoin-roots-31.1-roots.6.patch>`. It deliberately
 excludes `.github/**`; every other product path must match the release tag.
 The permanent-tag workflow requires a detached signature for the SHA512
 manifest using release key `5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`
@@ -138,8 +174,8 @@ the final release's stated signing status and all eight assets independently.
 
 ## Verification scope
 
-The cache-review branch passed independent whole-branch review and local native,
-eleven selected functional, 216 maintenance and seven benchmark-harness tests.
+The historical cache-review branch passed independent whole-branch review and
+local native, eleven selected functional, 216 maintenance and seven benchmark-harness tests.
 Generated documentation matched across two runs. External script assets,
 missing `lief` Python lint and three unchanged include-lint findings remain
 limitations. Integration with the published roots.3 line and the roots.4 release
@@ -154,13 +190,29 @@ failures; repaired targets were not rerun under instrumentation at that stage.
 No further fuzz execution, sanitizer campaigns or saved-input reproducer replays were
 performed for that acceptance, and it claimed no new hosted product-test pass.
 
-For the address-key export change, current local checks passed the full native
-unit suite (777 normal passes and one pass warning about absent external script
+For the original roots.3 address-key export change, local checks passed the
+full native unit suite (777 normal passes and one pass warning about absent external script
 vectors), 25 affected functional cases, all 22 Qt test rows, and 216 maintenance
 tests. Nine bounded fuzz targets passed with the documented CI sanitizer
 runtime settings. External script vectors and full Python lint dependencies
 were unavailable locally; hosted CI remains a separate release gate. These
 checks do not establish exhaustive sanitizer or cross-platform coverage.
+
+For the roots.6 generalization, local headless verification passed 158 CTest
+cases with one external-script-assets skip, 23 selected Roots functional
+variants, separate full export RPC and CLI regressions, and 153 maintenance cases.
+Parity mutation/restoration checks exercised odd-Y WIF reload and shared
+x-only HD-root regressions. These feature checks preceded the release identity
+update; current candidate release qualification remains a separate gate.
+GUI, IPC, Windows/macOS, full sanitizer/fuzz profiles and hosted CI were not
+run for this generalization. Missing optional lint tools and unchanged global
+lint findings remain disclosed in the candidate handoff.
+
+Six headless manuals and the example configuration are regenerated from
+the roots.6 candidate's current binaries. The checked-in Qt manual retains
+its roots.5 provenance until a matching GUI build is available; it must not
+be treated as roots.6 GUI verification. Optional help sections absent from
+the no-IPC/no-ZeroMQ/no-USDT profile do not imply removed support.
 
 The release pipeline runs ordinary release metadata tests and fresh package
 builds. Its platform jobs disable unit, functional and fuzz test execution;
@@ -190,4 +242,6 @@ release builds on.
 - [Migration changelog from v31.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.1...v31.1-roots.2).
 - [Changes from v31.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.2...v31.1-roots.3).
 - [Changes from v31.1-roots.3](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.3...v31.1-roots.4).
+- [Changes from v31.1-roots.4](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.4...v31.1-roots.5).
+- [Changes from v31.1-roots.5](https://github.com/LuganoPlanB/bitcoin-roots/compare/v31.1-roots.5...v31.1-roots.6) (available after publication).
 - [Official Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/releases/tag/v31.1).

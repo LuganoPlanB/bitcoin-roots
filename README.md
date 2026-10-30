@@ -3,9 +3,12 @@ Bitcoin Roots
 
 Connected to the trunk. Conservative in policy. Neutral in consensus.
 
-This is the local Core v31.1 development candidate. Publishing and release
-tagging are separate from this port. See the [port review](doc/roots-v31-port-review.md)
+This is the local v31.1-roots.6 development candidate, based on Core v31.1.
+Publishing and release tagging are separate from this port. See the
+[port review](doc/roots-v31-port-review.md)
 for exact inputs, implementation dispositions and verification gaps.
+The [candidate release notes](contrib/release/release-notes.md) describe migration
+and the expanded address-key export disclosure scope.
 
 What is Bitcoin Roots?
 ----------------------

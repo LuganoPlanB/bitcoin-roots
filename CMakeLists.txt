@@ -71,7 +71,7 @@ if(DEFINED CLIENT_VERSION_TAG)
   endif()
   string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
 else()
-  string(APPEND CLIENT_VERSION_STRING "-roots.5")
+  string(APPEND CLIENT_VERSION_STRING "-roots.6")
 endif()
 
 set(COPYRIGHT_HOLDERS "Plan-B Foundation")
