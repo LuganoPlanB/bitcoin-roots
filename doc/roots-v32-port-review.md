@@ -661,3 +661,76 @@ weight/fee boundaries while retaining BIP141 metrics and valid-block acceptance.
 Mining priority remains L5; integrated runtime configuration and effective-policy
 RPC schema remain L9. Current full-suite and instrumented execution results are
 recorded separately from the historical L4.1 boundary.
+
+### L5.1 template selection
+
+Released S04 (`0fbff64239358c69a266705b189770b0f5570ff3`) supplies the
+Roots priority prefix, residual graph, resource controls and ancestor-accounting
+regressions. Jaromil, Plan-B and upstream attribution is retained. The material
+v32 adaptation keeps validated optional `BlockCreateOptions`, native coinbase
+fields and rejection diagnostics. Reserved weight below 2000, above consensus
+limits or above the maximum block weight remains an error. Serialized size
+retains the released 1000-byte reservation/clamping, priority defaults to 100000
+bytes, block weight to 1200000 and minimum mining fee to 1000 sat/kvB.
+
+Priority ordering uses confirmed coin age, then actual fee per policy vsize,
+then descending txid, and only admits transactions after their parents. A scoped
+native graph builder selects the remaining subset after the prefix. Removed
+ancestors contribute neither fees nor resources to residual chunks; policy fees
+and adjusted weight retain L4's signed budgets and native chunk algorithms.
+Actual BIP141 weight and sigops govern block limits, preserving the v32
+sigop-adjusted-weight regression; actual fees alone determine coinbase reward.
+Local template exclusions never change block validation. The empty-prefix path
+uses the resident graph without copying it; residual storage is O(mempool) with
+native bounded cluster optimization and no live graph mutation.
+
+Focused tests retain one/two-ancestor subtraction, waiting descendants, ties,
+modified-fee/rounding boundaries, actual rewards and valid blocks with excluded
+transactions. Resource cases exercise equality/one-above for serialized size,
+actual weight and sigops, low/high weight and sigop reservations, and native
+invalid-option diagnostics. IPC/schema qualification remains L5.2-owned.
+
+### L5.2 mining interfaces and qualification
+
+GBT and mining clients retain the current v32 interface/schema. GBT calls the
+same mining implementation with resolved node defaults and cooldown disabled;
+its transaction fees/sigops and coinbase reward remain actual amounts. IPC's
+native `BlockCreateOptions` wire fields are `useMempool`, `blockReservedWeight`
+and `coinbaseOutputMaxAdditionalSigops`. Size, priority, fee floor and maximum
+weight inherit server settings; the schema does not offer per-request overrides
+for these fields. Reserved weight is always supplied by IPC clients (8000 when
+omitted), overriding the startup reservation as in upstream v32. Native option
+errors still apply. No wire field, ordinal or compatibility behavior is changed,
+so additional schema generation is unnecessary; the C++ profile uses native
+CMake-generated bindings against the current headers.
+
+`ipc_tests/mining_socketpair` connects generated C++ mining proxies to the
+node's actual mining implementation over a socket pair. It covers server policy
+inheritance and resolved-policy retention across `waitNext`, size/weight equality
+boundaries, mempool omission, reserve/sigop errors, actual fee/reward vectors and
+coinbase reconstruction from v32 witness/required-output/locktime fields. Valid
+submissions through both methods, detailed invalid/non-final/duplicate-invalid
+results, duplicate results and explicit deprecated-method errors cross the wire.
+The native algorithms and block validation remain unchanged. Python's existing
+fee-only and 4-million-weight override fixtures explicitly select those policies
+instead of relying on the former upstream defaults; their oracles are retained.
+
+The installed native Cap'n Proto profile and IPC CLI can run without Python
+bindings. Python `capnp` is unavailable in the installed Python 3.13 interpreter;
+`interface_ipc.py` and `interface_ipc_mining.py` must therefore report explicit
+skips, not passes. The C++ socket test does not establish the Python clients'
+full startup, cooldown, cancellation, concurrent-wait and malformed-payload
+profiles. L11 owns this remaining qualification gap; no dependency installation
+or disabled-IPC profile is used to claim it has passed.
+
+Core v32 also consumes `BlockAssembler` for synthetic mempool fee estimates.
+The full native gate exposed priority-prefix transactions missing from its
+fee-chunk percentiles after Roots defaults became active. This consumer now
+explicitly selects fee-only assembly at consensus block capacity with v32's
+1 sat/kvB synthetic floor. Percentiles and the health activity window use
+network capacity rather than the local mining default. Thus local template
+priority, fee and weight settings do not redefine network fee competition.
+Native percentile/cache/health oracles retain their expected fee fractions;
+their fixtures explicitly use network capacity. The affected functional
+estimator profile also explicitly retains native mining capacity, fee floor
+and fee-only ordering while exercising its existing low-feerate assertions.

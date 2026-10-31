@@ -57,12 +57,16 @@ struct BlockCreateOptions {
      */
     std::optional<uint64_t> block_reserved_weight{};
     /**
-     * Maximum block weight, defaults to -maxblockweight
+     * Maximum block weight, defaults to -blockmaxweight
      *
      * Must not be lower than block_reserved_weight. Setting this equal to
      * block_reserved_weight leaves no room for non-coinbase transactions.
      */
     std::optional<uint64_t> block_max_weight{};
+    /** Local serialized byte cap; size-only startup settings leave weight unrestricted. */
+    std::optional<uint64_t> block_max_size{};
+    /** Serialized coin-age priority area; zero disables priority selection. */
+    std::optional<uint64_t> block_priority_size{};
     /**
      * The maximum additional sigops which the pool will add in coinbase
      * transaction outputs.

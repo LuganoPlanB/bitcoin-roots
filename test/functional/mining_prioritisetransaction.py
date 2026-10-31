@@ -28,6 +28,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             "-maxscriptsize=1000000", "-datacarriersize=1000000",
+            "-blockprioritysize=0", "-blockmaxweight=4000000",
             "-printpriority=1",
         ]] * self.num_nodes
         self.supports_cli = False

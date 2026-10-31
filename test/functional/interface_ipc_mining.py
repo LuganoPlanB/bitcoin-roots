@@ -328,7 +328,7 @@ class IPCMiningTest(BitcoinTestFramework):
         # value that would result in empty blocks to verify this. IPC clients set
         # blockReservedWeight per template request and are unaffected; later in
         # the test the IPC template includes a mempool transaction.
-        self.restart_node(0, extra_args=[f"-blockreservedweight={MAX_BLOCK_WEIGHT}"])
+        self.restart_node(0, extra_args=[f"-blockreservedweight={MAX_BLOCK_WEIGHT}", f"-blockmaxweight={MAX_BLOCK_WEIGHT}"])
         self.miniwallet.rescan_utxos()
 
         async def async_routine():
@@ -387,6 +387,7 @@ class IPCMiningTest(BitcoinTestFramework):
 
         self.restart_node(0, extra_args=[
             f"-blockmintxfee={block_min_tx_fee:.8f}",
+            "-blockprioritysize=0",  # This case isolates fee-only selection.
             "-minrelaytxfee=0",
             "-persistmempool=0",
         ])
@@ -441,6 +442,7 @@ class IPCMiningTest(BitcoinTestFramework):
 
         self.restart_node(0, extra_args=[
             f"-blockmaxweight={small_cap}",
+            "-blockprioritysize=0",  # The fee-bump trigger requires fee-ordered selection.
             "-minrelaytxfee=0",
             "-persistmempool=0",
         ])

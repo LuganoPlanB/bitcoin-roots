@@ -11,8 +11,11 @@
 #include <ipc/test/ipc_test.capnp.proxy.h>
 #include <ipc/test/ipc_test.h>
 #include <mp/proxy-types.h>
+#include <node/miner.h>
+#include <pow.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
+#include <test/util/txmempool.h>
 #include <tinyformat.h>
 #include <util/log.h>
 #include <validation.h>
@@ -34,8 +37,11 @@ static_assert(ipc::capnp::messages::DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOP
 //! Remote init class.
 class TestInit : public interfaces::Init
 {
+    node::NodeContext* m_node;
 public:
+    explicit TestInit(node::NodeContext* node = nullptr) : m_node{node} {}
     std::unique_ptr<interfaces::Echo> makeEcho() override { return interfaces::MakeEcho(); }
+    std::unique_ptr<interfaces::Mining> makeMining() override { return m_node ? interfaces::MakeMining(*m_node, /*wait_loaded=*/false) : nullptr; }
 };
 
 //! Generate a temporary path with temp_directory_path and mkstemp
@@ -199,6 +205,174 @@ void IpcSocketTest(const fs::path& datadir)
 }
 
 BOOST_FIXTURE_TEST_SUITE(ipc_tests, BasicTestingSetup)
+// Exercise generated mining proxies over an actual socket pair without Python
+// bindings. This is a C++ client profile; Python lifecycle/concurrency coverage
+// remains separately qualified by interface_ipc_mining.py.
+BOOST_FIXTURE_TEST_CASE(mining_socketpair, TestChain100Setup)
+{
+    const auto tx{MakeTransactionRef(CreateValidMempoolTransaction(
+        m_coinbase_txns[0], 0, 1, coinbaseKey, CScript() << OP_TRUE,
+        m_coinbase_txns[0]->vout[0].nValue - 1000, /*submit=*/false))};
+    {
+        LOCK2(cs_main, m_node.mempool->cs);
+        TryAddToMempool(*m_node.mempool, TestMemPoolEntryHelper{}.Fee(1000).SigOpsCost(0).SpendsCoinbase(true).FromTx(tx));
+    }
+    TestInit init{&m_node};
+    auto protocol{ipc::capnp::MakeCapnpProtocol("MiningSocketPairTest")};
+    mp::Stream client_stream;
+    std::promise<void> ready;
+    struct JoinedThread {
+        std::thread thread;
+        ~JoinedThread() { thread.join(); }
+    };
+    // Declare the thread before remote objects, so exception unwinding closes
+    // all client capabilities before joining the server.
+    JoinedThread server{std::thread{[&] {
+        protocol->serve(init, [&] {
+            auto pair{mp::SocketPair()};
+            client_stream = protocol->makeStream(pair[0]);
+            ready.set_value();
+            return protocol->makeStream(pair[1]);
+        });
+    }}};
+    ready.get_future().wait();
+    auto remote_init{protocol->connect(std::move(client_stream))};
+    auto mining{remote_init->makeMining()};
+    BOOST_REQUIRE(mining);
+    auto fails_with = [](const std::string& expected) {
+        return [expected](const std::exception& error) { return std::string{error.what()}.find(expected) != std::string::npos; };
+    };
+    BOOST_CHECK_EXCEPTION(remote_init->makeMiningOld2(), std::exception,
+                          fails_with("Old mining interface (@2) not supported. Please update your client!"));
+
+    node::BlockCreateOptions request;
+    // Native wire fields always supply reserved weight, even when a C++ client
+    // leaves its optional field unset. Server-only policy options stay unset.
+    m_node.mining_args.block_reserved_weight = MAX_BLOCK_WEIGHT;
+    m_node.mining_args.block_max_weight = MAX_BLOCK_WEIGHT;
+    m_node.mining_args.block_min_fee_rate = CFeeRate{20'000};
+    m_node.mining_args.block_priority_size = 0;
+    auto fee_only{mining->createNewBlock(request, /*cooldown=*/false)};
+    BOOST_REQUIRE(fee_only);
+    BOOST_CHECK_EQUAL(fee_only->getBlock().vtx.size(), 1U);
+    m_node.mining_args.block_priority_size = DEFAULT_BLOCK_PRIORITY_SIZE;
+    auto priority{mining->createNewBlock(request, /*cooldown=*/false)};
+    BOOST_REQUIRE(priority);
+    BOOST_CHECK_EQUAL(priority->getBlock().vtx.size(), 2U);
+    BOOST_CHECK(priority->getTxFees() == std::vector<CAmount>{1000});
+    BOOST_CHECK(priority->getTxSigops() == std::vector<int64_t>{0});
+    BOOST_CHECK_EQUAL(priority->getCoinbaseTx().block_reward_remaining, 50 * COIN + 1000);
+    // Existing templates retain their resolved policy across waitNext(), even
+    // if a later request uses different server defaults.
+    auto still_fee_only{fee_only->waitNext({.timeout = MillisecondsDouble{0}, .fee_threshold = 0})};
+    BOOST_REQUIRE(still_fee_only);
+    BOOST_CHECK_EQUAL(still_fee_only->getBlock().vtx.size(), 1U);
+    m_node.mining_args.block_priority_size = 0;
+    auto still_priority{priority->waitNext({.timeout = MillisecondsDouble{0}, .fee_threshold = 0})};
+    BOOST_REQUIRE(still_priority);
+    BOOST_CHECK_EQUAL(still_priority->getBlock().vtx.size(), 2U);
+
+    m_node.mining_args.block_min_fee_rate = CFeeRate{0};
+    m_node.mining_args.block_max_size = DEFAULT_BLOCK_RESERVED_SIZE + GetSerializeSize(TX_WITH_WITNESS(*tx));
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 1U);
+    ++*m_node.mining_args.block_max_size;
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 2U);
+    m_node.mining_args.block_max_size.reset();
+    m_node.mining_args.block_max_weight = DEFAULT_BLOCK_RESERVED_WEIGHT + GetTransactionWeight(*tx);
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 1U);
+    ++*m_node.mining_args.block_max_weight;
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 2U);
+    m_node.mining_args.block_max_weight = MAX_BLOCK_WEIGHT;
+    request.use_mempool = false;
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 1U);
+    request.use_mempool = true;
+    request.block_reserved_weight = MAX_BLOCK_WEIGHT;
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 1U);
+    request.block_reserved_weight = 0;
+    BOOST_CHECK_EXCEPTION(mining->createNewBlock(request, false), std::exception,
+                          fails_with("block_reserved_weight (0) is lower than minimum safety value of (2000)"));
+    request.block_reserved_weight = MAX_BLOCK_WEIGHT + 1;
+    BOOST_CHECK_EXCEPTION(mining->createNewBlock(request, false), std::exception,
+                          fails_with("exceeds consensus maximum block weight (4000000)"));
+    request.block_reserved_weight = DEFAULT_BLOCK_RESERVED_WEIGHT;
+    request.coinbase_output_max_additional_sigops = MAX_BLOCK_SIGOPS_COST + 1;
+    BOOST_CHECK_EXCEPTION(mining->createNewBlock(request, false), std::exception,
+                          fails_with("coinbase_output_max_additional_sigops (80001) exceeds consensus maximum block sigops cost (80000)"));
+    request.coinbase_output_max_additional_sigops = MAX_BLOCK_SIGOPS_COST;
+    BOOST_CHECK_EQUAL(mining->createNewBlock(request, false)->getBlock().vtx.size(), 1U);
+    request.coinbase_output_max_additional_sigops = DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOPS;
+
+    // Construct the client coinbase from the current v32 schema, including its
+    // mandatory witness/output/locktime fields, rather than using the dummy.
+    auto make_coinbase = [](const node::CoinbaseTx& fields) {
+        CMutableTransaction coinbase;
+        coinbase.version = fields.version;
+        coinbase.vin.resize(1);
+        coinbase.vin[0].prevout.SetNull();
+        coinbase.vin[0].nSequence = fields.sequence;
+        coinbase.vin[0].scriptSig = fields.script_sig_prefix;
+        coinbase.vin[0].scriptSig << OP_0;
+        if (fields.witness) coinbase.vin[0].scriptWitness.stack.emplace_back(fields.witness->begin(), fields.witness->end());
+        coinbase.vout.emplace_back(fields.block_reward_remaining, CScript() << OP_TRUE);
+        coinbase.vout.insert(coinbase.vout.end(), fields.required_outputs.begin(), fields.required_outputs.end());
+        coinbase.nLockTime = fields.lock_time;
+        return MakeTransactionRef(coinbase);
+    };
+    const auto coinbase{make_coinbase(priority->getCoinbaseTx())};
+    CBlock block{priority->getBlock()};
+    node::AddMerkleRootAndCoinbase(block, coinbase, block.nVersion, block.nTime, block.nNonce);
+    auto solve = [&](CBlock& candidate) {
+        while (!CheckProofOfWork(candidate.GetHash(), candidate.nBits, m_node.chainman->GetConsensus())) ++candidate.nNonce;
+    };
+    CBlock invalid{block};
+    invalid.nVersion = 0;
+    solve(invalid);
+    std::string reason, debug;
+    BOOST_CHECK(!mining->checkBlock(invalid, {}, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "bad-version(0x00000000)");
+    BOOST_CHECK_EQUAL(debug, "rejected nVersion=0x00000000 block");
+    BOOST_CHECK(!mining->submitBlock(invalid, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "bad-version(0x00000000)");
+    BOOST_CHECK_EQUAL(debug, "rejected nVersion=0x00000000 block");
+    invalid = block;
+    CMutableTransaction nonfinal{*tx};
+    nonfinal.nLockTime = 1000;
+    nonfinal.vin[0].nSequence = 0;
+    invalid.vtx[1] = MakeTransactionRef(nonfinal);
+    node::RegenerateCommitments(invalid, *m_node.chainman);
+    solve(invalid);
+    BOOST_CHECK(!mining->submitBlock(invalid, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "bad-txns-nonfinal");
+    BOOST_CHECK_EQUAL(debug, "non-final transaction");
+    BOOST_CHECK(!mining->submitBlock(invalid, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate-invalid");
+    BOOST_CHECK_EQUAL(debug, strprintf("block %s was previously marked invalid", invalid.GetHash().ToString()));
+    solve(block);
+    BOOST_REQUIRE(mining->checkBlock(block, {}, reason, debug));
+    BOOST_CHECK(reason.empty() && debug.empty());
+    BOOST_CHECK_EXCEPTION(priority->submitSolutionOld7(0, 0, 0, {}), std::exception,
+                          fails_with("Old submitSolution (@7) not supported. Please update your client!"));
+    BOOST_REQUIRE(priority->submitSolution(block.nVersion, block.nTime, block.nNonce, coinbase, reason, debug));
+    BOOST_CHECK(reason.empty() && debug.empty());
+    BOOST_CHECK(!mining->submitBlock(block, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate");
+    BOOST_CHECK(debug.empty());
+    BOOST_CHECK(!priority->submitSolution(block.nVersion, block.nTime, block.nNonce, coinbase, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate");
+    BOOST_CHECK(debug.empty());
+    auto next{mining->createNewBlock(request, false)};
+    BOOST_REQUIRE(next);
+    const auto next_coinbase{make_coinbase(next->getCoinbaseTx())};
+    block = next->getBlock();
+    node::AddMerkleRootAndCoinbase(block, next_coinbase, block.nVersion, block.nTime, block.nNonce);
+    solve(block);
+    BOOST_REQUIRE(mining->submitBlock(block, reason, debug));
+    BOOST_CHECK(reason.empty() && debug.empty());
+    BOOST_CHECK(!next->submitSolution(block.nVersion, block.nTime, block.nNonce, next_coinbase, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate");
+    BOOST_CHECK(debug.empty());
+}
+
 BOOST_AUTO_TEST_CASE(ipc_tests)
 {
     IpcPipeTest();

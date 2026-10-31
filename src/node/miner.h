@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -65,6 +66,8 @@ private:
 
     // Information on the current status of the block
     uint64_t nBlockWeight;
+    uint64_t nBlockSize;
+    std::set<const CTxMemPoolEntry*> m_in_block;
     uint64_t nBlockTx;
     uint64_t nBlockSigOpsCost;
     CAmount nFees;
@@ -104,11 +107,12 @@ private:
       *
       * @pre BlockAssembler::m_mempool must not be nullptr
     */
+    void addPriorityTxs() EXCLUSIVE_LOCKS_REQUIRED(::cs_main, m_mempool->cs);
     void addChunks() EXCLUSIVE_LOCKS_REQUIRED(m_mempool->cs);
 
     // helper functions for addChunks()
     /** Test if a new chunk would "fit" in the block */
-    bool TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost) const;
+    bool TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost, uint64_t chunk_size) const;
     /** Perform locktime checks on each transaction in a chunk:
       * This check should always succeed, and is here
       * only as an extra check in case of a bug */

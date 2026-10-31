@@ -771,6 +771,8 @@ private:
     // callbacks).
     void addNewTransaction(CTxMemPool::txiter it) EXCLUSIVE_LOCKS_REQUIRED(cs);
 public:
+    /** Scoped native builder; caller must hold cs for its entire lifetime. */
+    std::unique_ptr<TxGraph::BlockBuilder> MakeBlockBuilder() const EXCLUSIVE_LOCKS_REQUIRED(cs) { return m_txgraph->GetBlockBuilder(); }
     void StartBlockBuilding() const EXCLUSIVE_LOCKS_REQUIRED(cs) { assert(!m_builder); m_builder = m_txgraph->GetBlockBuilder(); }
     FeePerWeight GetBlockBuilderChunk(std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef>& entries) const EXCLUSIVE_LOCKS_REQUIRED(cs)
     {

@@ -3,7 +3,7 @@
 This v32 port implements scoped startup parsing, local standardness, carrier
 extra weight, sub-dust modified fees and replacement/TRUC/reuse controls over
 the native graph. Dynamic dust publishes synchronized admission snapshots;
-mining controls remain pending and explicitly warn when supplied. Read/write
+mining controls enforce serialized size, priority area and native weight limits. Read/write
 text configuration and effective-policy RPC integration also remain pending.
 Native Core CLI, config and JSON selection are retained. See the
 [graph fee contract](subdust.md) for the active accounting boundaries.
@@ -13,9 +13,10 @@ Contract: `policy-parsing`. Adapted from Roots source
 from `9aaf62146fae1a89d65121468633d5c1701699e9`. Jaromil supplied the carried
 implementation and contracts; upstream Bitcoin Core attribution is retained.
 
-The ranges below describe parsing. The mining defaults and mode enforcement
-listed for later features remain preservation requirements until their owning
-implementation lands. Local policy never changes consensus block validity.
+The ranges below describe parsing and active mining defaults. Local policy
+never changes consensus block validity. Native v32 reserved-weight and maximum
+weight validation remains strict: incompatible reserve/maximum settings fail
+rather than silently producing an empty template.
 
 ## Scope, defaults and ranges
 

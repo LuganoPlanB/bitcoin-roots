@@ -46,6 +46,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <numeric>
 #include <span>
 #include <stdexcept>
@@ -121,6 +122,8 @@ BlockAssembler::BlockAssembler(Chainstate& chainstate,
 
 void BlockAssembler::resetBlock()
 {
+    m_in_block.clear();
+    nBlockSize = DEFAULT_BLOCK_RESERVED_SIZE;
     // Reserve space for fixed-size block header, txs count, and coinbase tx.
     nBlockWeight = *Assert(m_options.block_reserved_weight);
     nBlockSigOpsCost = m_options.coinbase_output_max_additional_sigops;
@@ -160,9 +163,8 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     if (m_mempool) {
         LOCK(m_mempool->cs);
-        m_mempool->StartBlockBuilding();
+        addPriorityTxs();
         addChunks();
-        m_mempool->StopBlockBuilding();
     }
 
     const auto time_1{SteadyClock::now()};
@@ -250,8 +252,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     return std::move(pblocktemplate);
 }
 
-bool BlockAssembler::TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost) const
+bool BlockAssembler::TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost, uint64_t chunk_size) const
 {
+    if (nBlockSize + chunk_size >= *m_options.block_max_size) return false;
     // block_max_weight has been flattened before block assembly limit checks.
     Assert(m_options.block_max_weight);
     if (nBlockWeight + chunk_weight >= m_options.block_max_weight) {
@@ -277,6 +280,8 @@ bool BlockAssembler::TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>
 
 void BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
 {
+    Assert(m_in_block.insert(&entry).second);
+    nBlockSize += GetSerializeSize(TX_WITH_WITNESS(entry.GetTx()));
     pblocktemplate->block.vtx.emplace_back(entry.GetSharedTx());
     pblocktemplate->vTxFees.push_back(entry.GetFee());
     pblocktemplate->vTxSigOpsCost.push_back(entry.GetSigOpCost());
@@ -292,64 +297,137 @@ void BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
     }
 }
 
+namespace {
+// Recompute from the active UTXO set, so confirmed former mempool parents age
+// correctly after a tip change without maintaining an ancestor/priority cache.
+double CoinAgePriority(const CTxMemPoolEntry& entry, const CCoinsViewCache& coins, int height)
+{
+    unsigned int modified_size = entry.GetTxSize();
+    double coin_age{0};
+    for (const auto& input : entry.GetTx().vin) {
+        const unsigned int offset = 41U + std::min<unsigned int>(110, input.scriptSig.size());
+        if (modified_size > offset) modified_size -= offset;
+        const Coin& coin = coins.AccessCoin(input.prevout);
+        if (!coin.IsSpent() && coin.nHeight <= height) {
+            coin_age += double(coin.out.nValue) * (height - coin.nHeight);
+        }
+    }
+    return modified_size ? coin_age / modified_size : 0;
+}
+
+struct ResidualEntry : TxGraph::Ref {
+    const CTxMemPoolEntry* entry;
+    explicit ResidualEntry(const CTxMemPoolEntry* tx_entry) : entry{tx_entry} {}
+};
+} // namespace
+
+void BlockAssembler::addPriorityTxs()
+{
+    if (*m_options.block_priority_size == 0) return;
+    using Candidate = std::pair<double, const CTxMemPoolEntry*>;
+    // Roots priority ties use actual individual fee/vsize, then descending txid.
+    const auto compare = [](const Candidate& a, const Candidate& b) {
+        if (a.first != b.first) return a.first < b.first;
+        const FeePerVSize a_fee{a.second->GetFee(), a.second->GetTxSize()};
+        const FeePerVSize b_fee{b.second->GetFee(), b.second->GetTxSize()};
+        if (const auto fee_order = (ByRatio{a_fee} <=> ByRatio{b_fee}); fee_order != 0) return fee_order < 0;
+        return a.second->GetTx().GetHash() < b.second->GetTx().GetHash();
+    };
+    std::vector<Candidate> candidates;
+    std::map<const CTxMemPoolEntry*, double> waiting;
+    candidates.reserve(m_mempool->mapTx.size());
+    for (const auto& entry : m_mempool->mapTx) {
+        candidates.emplace_back(CoinAgePriority(entry, m_chainstate.CoinsTip(), nHeight), &entry);
+    }
+    std::make_heap(candidates.begin(), candidates.end(), compare);
+    while (!candidates.empty()) {
+        const auto [priority, entry] = candidates.front();
+        std::pop_heap(candidates.begin(), candidates.end(), compare);
+        candidates.pop_back();
+        Assert(!m_in_block.contains(entry));
+        const auto parents = m_mempool->GetParents(*entry);
+        if (std::ranges::any_of(parents, [&](const auto& parent) { return !m_in_block.contains(&parent.get()); })) {
+            waiting.emplace(entry, priority);
+            continue;
+        }
+        const uint64_t size = GetSerializeSize(TX_WITH_WITNESS(entry->GetTx()));
+        if (!TestChunkBlockLimits(entry->GetTxWeight(), entry->GetSigOpCost(), size) ||
+            !IsFinalTx(entry->GetTx(), nHeight, m_lock_time_cutoff)) continue;
+        AddToBlock(*entry);
+        // Preserve Roots' threshold behavior: the final selected transaction can
+        // cross the area boundary or be the first at/below the priority threshold.
+        if (nBlockSize >= *m_options.block_priority_size || priority <= MINIMUM_TX_PRIORITY) break;
+        for (const auto& child : m_mempool->GetChildren(*entry)) {
+            auto it = waiting.find(&child.get());
+            if (it == waiting.end()) continue;
+            candidates.emplace_back(it->second, it->first);
+            std::push_heap(candidates.begin(), candidates.end(), compare);
+            waiting.erase(it);
+        }
+    }
+}
+
 void BlockAssembler::addChunks()
 {
-    // Limit the number of attempts to add transactions to the block when it is
-    // close to full; this is just a simple heuristic to finish quickly if the
-    // mempool has a lot of entries.
+    // Native builders forbid graph mutation while alive. Construct the residual
+    // before its builder and destroy the builder before its refs/graph. No live
+    // mempool graph mutation, staging, admission or fee update occurs here.
+    // The residual is a subset of the admitted graph, retaining L4's aggregate
+    // signed fee/weight budgets and cluster bounds. Storage/work is O(mempool)
+    // plus native bounded cluster optimization; the disabled/empty-prefix path
+    // uses the existing graph directly without copying it.
+    std::unique_ptr<TxGraph> residual;
+    std::map<Txid, ResidualEntry> refs;
+    if (!m_in_block.empty()) {
+        residual = MakeTxGraph(m_mempool->m_opts.limits.cluster_count,
+                              m_mempool->m_opts.limits.cluster_size_vbytes * WITNESS_SCALE_FACTOR,
+                              ACCEPTABLE_COST, [](const TxGraph::Ref& a, const TxGraph::Ref& b) {
+            return static_cast<const ResidualEntry&>(a).entry->GetTx().GetHash() <=>
+                   static_cast<const ResidualEntry&>(b).entry->GetTx().GetHash();
+        });
+        for (const auto& entry : m_mempool->mapTx) {
+            if (m_in_block.contains(&entry)) continue;
+            auto [it, inserted] = refs.try_emplace(entry.GetTx().GetHash(), &entry);
+            Assert(inserted);
+            residual->AddTransaction(it->second, {entry.GetModifiedFee(), static_cast<int32_t>(entry.GetAdjustedWeight())});
+        }
+        for (auto& [txid, ref] : refs) {
+            for (const auto& parent : m_mempool->GetParents(*ref.entry)) {
+                auto it = refs.find(parent.get().GetTx().GetHash());
+                if (it != refs.end()) residual->AddDependency(it->second, ref);
+            }
+        }
+    }
+    auto builder = residual ? residual->GetBlockBuilder() : m_mempool->MakeBlockBuilder();
     const int64_t MAX_CONSECUTIVE_FAILURES = 1000;
     constexpr int32_t BLOCK_FULL_ENOUGH_WEIGHT_DELTA = 4000;
-    int64_t nConsecutiveFailed = 0;
-
-    std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> selected_transactions;
-    selected_transactions.reserve(MAX_CLUSTER_COUNT_LIMIT);
-    FeePerWeight chunk_feerate;
-
-    // This fills selected_transactions
-    chunk_feerate = m_mempool->GetBlockBuilderChunk(selected_transactions);
-    FeePerVSize chunk_feerate_vsize = ToFeePerVSize(chunk_feerate);
-
-    while (selected_transactions.size() > 0) {
-        // Check to see if min fee rate is still respected.
-        if (ByRatio{chunk_feerate_vsize} < ByRatio{m_options.block_min_fee_rate->GetFeePerVSize()}) {
-            // Everything else we might consider has a lower feerate
-            return;
+    int64_t consecutive_failed{0};
+    while (auto chunk = builder->GetCurrentChunk()) {
+        const auto& [chunk_refs, chunk_feerate] = *chunk;
+        const FeePerVSize feerate = ToFeePerVSize(chunk_feerate);
+        if (ByRatio{feerate} < ByRatio{m_options.block_min_fee_rate->GetFeePerVSize()}) return;
+        std::vector<CTxMemPoolEntryRef> entries;
+        int64_t sigops{0};
+        int64_t weight{0};
+        uint64_t size{0};
+        for (const auto* ref : chunk_refs) {
+            const auto& entry = residual ? *static_cast<const ResidualEntry*>(ref)->entry :
+                                          static_cast<const CTxMemPoolEntry&>(*ref);
+            entries.emplace_back(entry);
+            sigops += entry.GetSigOpCost();
+            weight += entry.GetTxWeight();
+            size += GetSerializeSize(TX_WITH_WITNESS(entry.GetTx()));
         }
-
-        int64_t chunk_sig_ops = 0;
-        int64_t chunk_weight = 0;
-        for (const auto& tx : selected_transactions) {
-            chunk_sig_ops += tx.get().GetSigOpCost();
-            chunk_weight += tx.get().GetTxWeight();
-        }
-
-        // Check to see if this chunk will fit.
-        if (!TestChunkBlockLimits(chunk_weight, chunk_sig_ops) || !TestChunkTransactions(selected_transactions)) {
-            // This chunk won't fit, so we skip it and will try the next best one.
-            m_mempool->SkipBuilderChunk();
-            ++nConsecutiveFailed;
-
-            // block_max_weight has been flattened before block assembly limit checks.
-            Assert(m_options.block_max_weight);
-            if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight +
-                    BLOCK_FULL_ENOUGH_WEIGHT_DELTA > *m_options.block_max_weight) {
-                // Give up if we're close to full and haven't succeeded in a while
-                return;
-            }
+        if (!TestChunkBlockLimits(weight, sigops, size) || !TestChunkTransactions(entries)) {
+            builder->Skip();
+            if (++consecutive_failed > MAX_CONSECUTIVE_FAILURES &&
+                nBlockWeight + BLOCK_FULL_ENOUGH_WEIGHT_DELTA > *m_options.block_max_weight) return;
         } else {
-            m_mempool->IncludeBuilderChunk();
-
-            // This chunk will fit, so add it to the block.
-            nConsecutiveFailed = 0;
-            for (const auto& tx : selected_transactions) {
-                AddToBlock(tx);
-            }
-            pblocktemplate->m_package_feerates.emplace_back(chunk_feerate_vsize);
+            builder->Include();
+            consecutive_failed = 0;
+            for (const auto& entry : entries) AddToBlock(entry);
+            pblocktemplate->m_package_feerates.emplace_back(feerate);
         }
-
-        selected_transactions.clear();
-        chunk_feerate = m_mempool->GetBlockBuilderChunk(selected_transactions);
-        chunk_feerate_vsize = ToFeePerVSize(chunk_feerate);
     }
 }
 

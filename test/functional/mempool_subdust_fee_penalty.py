@@ -33,7 +33,7 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-acceptnonstdtxn=1", "-subdustfeepenalty=1"]]
+        self.extra_args = [["-acceptnonstdtxn=1", "-subdustfeepenalty=1", "-blockprioritysize=0"]]
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
@@ -179,7 +179,7 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
     def reset_policy(self, *args):
         # Confirm previous fixtures before reloading policy; avoid repricing saved entries.
         self.generate(self.wallet, 1)
-        self.restart_node(0, extra_args=["-acceptnonstdtxn=1", "-subdustfeepenalty=1", *args])
+        self.restart_node(0, extra_args=["-acceptnonstdtxn=1", "-subdustfeepenalty=1", "-blockprioritysize=0", *args])
         self.wallet.rescan_utxos()
 
     def check_boundary(self, values, penalty, **kwargs):

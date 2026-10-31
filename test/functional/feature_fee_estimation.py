@@ -167,13 +167,13 @@ class EstimateFeeTest(BitcoinTestFramework):
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
         self.extra_args = [
-            [],
+            ["-blockmaxweight=4000000"],
             ["-blockmaxweight=72000"],
             ["-blockmaxweight=36000"],
         ]
 
         # Preserve the estimator's native low-feerate sampling range explicitly.
-        self.extra_args = [args + ["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000"] for args in self.extra_args]
+        self.extra_args = [args + ["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000", "-blockprioritysize=0", "-blockmintxfee=0.00000001"] for args in self.extra_args]
 
     def setup_network(self):
         """
