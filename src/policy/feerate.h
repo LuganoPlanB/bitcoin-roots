@@ -68,7 +68,7 @@ public:
     /**
      * Return the fee in satoshis for a vsize of 1000 vbytes
      */
-    CAmount GetFeePerK() const { return CAmount(m_feerate.EvaluateFeeDown(1000)); }
+    CAmount GetFeePerK() const;
     friend std::strong_ordering operator<=>(const CFeeRate& a, const CFeeRate& b) noexcept
     {
         return ByRatio{a.m_feerate} <=> ByRatio{b.m_feerate};
@@ -87,5 +87,8 @@ public:
 
     SERIALIZE_METHODS(CFeeRate, obj) { READWRITE(obj.m_feerate.fee, obj.m_feerate.size); }
 };
+
+/** Scale a nonnegative sat/kvB dust estimate by a thousandths multiplier, saturating at INT64_MAX. */
+CFeeRate ScaleDustFee(const CFeeRate& estimate, int multiplier);
 
 #endif // BITCOIN_POLICY_FEERATE_H

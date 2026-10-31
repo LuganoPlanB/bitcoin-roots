@@ -3,11 +3,13 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test datacarrier functionality"""
+from decimal import Decimal
 from random import randbytes
 
 from test_framework.blocktools import MAX_STANDARD_TX_WEIGHT
 from test_framework.key import compute_xonly_pubkey
 from test_framework.messages import (
+    COIN,
     COutPoint,
     CTransaction,
     CTxIn,
@@ -22,6 +24,7 @@ from test_framework.script import (
     OP_TRUE,
     taproot_construct,
 )
+from test_framework.script_util import script_to_p2sh_script, script_to_p2wsh_script
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import TestNode
 from test_framework.util import (
@@ -93,6 +96,74 @@ class DataCarrierTest(BitcoinTestFramework):
         assert tx.txid_hex in self.nodes[0].getrawmempool()
         self.restart_node(0)
 
+    def test_input_carrier_weight(self):
+        node = self.nodes[0]
+        payload = b"x" * 257
+        script = CScript([payload, OP_DROP, OP_TRUE])
+        output_script = CScript([OP_RETURN, b"y" * 16])
+        tap = taproot_construct(compute_xonly_pubkey((1).to_bytes(32, "big"))[0], [("weight", script)])
+        leaf = tap.leaves["weight"]
+        control = bytes([leaf.version | tap.negflag]) + tap.internal_pubkey + leaf.merklebranch
+        outputs = {"p2sh": script_to_p2sh_script(script), "p2wsh": script_to_p2wsh_script(script), "taproot": tap.scriptPubKey}
+        # Independent serialized-byte oracle: PUSHDATA2 + two length bytes +
+        # payload + DROP; the final TRUE is executable rather than carrier data.
+        input_bytes = 3 + len(payload) + 1
+        output_bytes = 1 + 1 + 16  # RETURN + direct push + payload.
+        for kinds in (("p2sh",), ("p2wsh",), ("taproot",), ("p2sh", "p2wsh", "taproot")):
+            self.log.info("Carrier fee/weight oracle for %s plus OP_RETURN", kinds)
+            self.restart_node(0)
+            self.wallet.rescan_utxos()
+            funding = [self.wallet.send_to(from_node=node, scriptPubKey=outputs[kind], amount=100000) for kind in kinds]
+            self.generate(node, 1, sync_fun=self.no_op)
+            assert_equal(node.getrawmempool(), [])
+
+            def make_tx(fee):
+                tx = CTransaction()
+                tx.vin = [CTxIn(COutPoint(int(fund["txid"], 16), fund["sent_vout"])) for fund in funding]
+                tx.wit.vtxinwit = [CTxInWitness() for _ in kinds]
+                for i, kind in enumerate(kinds):
+                    if kind == "p2sh":
+                        tx.vin[i].scriptSig = CScript([script])
+                    else:
+                        tx.wit.vtxinwit[i].scriptWitness.stack = [script, control] if kind == "taproot" else [script]
+                tx.vout = [CTxOut(100000 * len(kinds) - fee, self.wallet.get_output_script()), CTxOut(0, output_script)]
+                return tx
+
+            probe = make_tx(10000)
+            # Cost1.01 rounds up to five weight units/byte. Legacy input data
+            # already costs4; witness data costs1; output data already costs4.
+            extra = sum(input_bytes * (5 - (4 if kind == "p2sh" else 1)) for kind in kinds) + output_bytes
+            expected_weight = probe.get_weight() + extra
+            expected_vsize = (expected_weight + 3) // 4
+            self.restart_node(0, extra_args=["-datacarriercost=1.01", "-minrelaytxfee=0.00001", "-acceptnonstddatacarrier=1",
+                                             f"-datacarriersize={input_bytes * len(kinds) + output_bytes}"])
+            low, high = make_tx(expected_vsize - 1), make_tx(expected_vsize)
+            assert_equal(low.get_weight(), probe.get_weight())
+            assert_equal(high.get_weight(), probe.get_weight())
+            rejected = node.testmempoolaccept([low.serialize().hex()])[0]
+            assert_equal(rejected["reject-reason"], "min relay fee not met")
+            assert_raises_rpc_error(-26, "min relay fee not met", node.sendrawtransaction, low.serialize().hex())
+            accepted = node.testmempoolaccept([high.serialize().hex()])[0]
+            assert_equal(accepted["allowed"], True)
+            assert_equal(accepted["vsize_adjusted"], expected_vsize)
+            assert_equal(accepted["vsize_bip141"], high.get_vsize())
+            txid = node.sendrawtransaction(high.serialize().hex())
+            entry = node.getmempoolentry(txid)
+            assert_equal(entry["vsize_adjusted"], expected_vsize)
+            assert_equal(entry["vsize_bip141"], high.get_vsize())
+            assert_equal(entry["weight"], high.get_weight())
+            assert_equal(entry["chunkweight"], expected_weight)
+            assert_equal(entry["fees"]["base"], Decimal(expected_vsize) / COIN)
+            assert_equal(entry["fees"]["modified"], Decimal(expected_vsize) / COIN)
+            node.prioritisetransaction(txid, 0, 1)
+            assert_equal(node.getmempoolentry(txid)["fees"]["modified"], Decimal(expected_vsize + 1) / COIN)
+            # Exactly the transaction rejected at the adjusted fee boundary is
+            # consensus valid, and evicts its admitted input-conflicting variant.
+            block = self.generateblock(node, output="raw(42)", transactions=[low.serialize().hex()], sync_fun=self.no_op)
+            assert low.txid_hex in node.getblock(block["hash"])["tx"]
+            assert txid not in node.getrawmempool()
+            self.wallet.rescan_utxos()
+
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
 
@@ -149,13 +220,25 @@ class DataCarrierTest(BitcoinTestFramework):
         self.restart_node(0, extra_args=["-datacarriersize=100000", "-maxscriptsize=100000"])
         self.test_null_data_transaction(node=self.nodes[0], data=randbytes(MAX_STANDARD_TX_WEIGHT // 4 - 200), success=True)
 
-        # Extreme cost accounting/valid-block coverage follows in L8.
+        self.log.info("Testing the maximum carrier-cost setting without overflowing virtual size.")
+        self.restart_node(0, extra_args=["-datacarriercost=1073741823.75"])
+        tx = self.wallet.create_self_transfer(fee_rate=0)["tx"]
+        tx.vout.append(CTxOut(0, CScript([OP_RETURN, b"x" * 80])))
+        tx.vout[0].nValue -= tx.get_vsize()
+        tx_hex = tx.serialize().hex()
+        result = self.nodes[0].testmempoolaccept([tx_hex])[0]
+        assert_equal(result["allowed"], False)
+        assert_equal(result["reject-reason"], "min relay fee not met")
+        # An extreme local fee policy still cannot invalidate a valid block.
+        self.generateblock(self.nodes[0], output="raw(42)", transactions=[tx_hex], sync_fun=self.no_op)
+
         self.stop_node(0)
         for cost in ["-1", "1073741823.76", "1e999", "invalid"]:
             self.nodes[0].assert_start_raises_init_error(
                 [f"-datacarriercost={cost}"], f"Error: Invalid -datacarriercost value: '{cost}' (expected a value from 0 to 1073741823.75 exactly representable in hundredths)")
         self.start_node(0)
         self.test_taproot_carrier()
+        self.test_input_carrier_weight()
 
 if __name__ == '__main__':
     DataCarrierTest(__file__).main()

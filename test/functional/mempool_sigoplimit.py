@@ -53,7 +53,8 @@ MAX_PUBKEYS_PER_MULTISIG = 20
 class BytesPerSigOpTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1']]
+        # Isolate native sigop-adjusted vsize from Roots' carrier-data weight.
+        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1', '-datacarriercost=0']]
 
     def create_p2wsh_spending_tx(self, witness_script, output_script):
         """Create a 1-input-1-output P2WSH spending transaction with only the

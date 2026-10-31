@@ -343,15 +343,15 @@ static RPCMethod testmempoolaccept()
                     {RPCResult::Type::STR, "package-error", /*optional=*/true, "Package validation error, if any (only possible if rawtxs had more than 1 transaction)."},
                     {RPCResult::Type::BOOL, "allowed", /*optional=*/true, "Whether this tx would be accepted to the mempool and pass client-specified maxfeerate. "
                                                        "If not present, the tx was not fully validated due to a failure in another tx in the list."},
-                    {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Maximum of sigop-adjusted size (-bytespersigop) and virtual transaction size as defined in BIP 141 (only present when 'allowed' is true)."},
-                    {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually sigops-adjusted vsize.\n"
+                    {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Policy virtual size including sigop and data-carrier cost adjustments (only present when 'allowed' is true)."},
+                    {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
                                                                 "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
                     {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141.\n"
                                                                        "This is different from actual serialized size for witness transactions as witness data is discounted (only present when 'allowed' is true)."},
                     {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees (only present if 'allowed' is true)",
                     {
                         {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are modified fees from prioritisetransaction or a package feerate was used."},
+                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are operator deltas or admission dust deficits or a package feerate was used."},
                         {RPCResult::Type::ARR, "effective-includes", /*optional=*/false, "transactions whose fees and vsizes are included in effective-feerate.",
                             {RPCResult{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                         }},
@@ -471,13 +471,13 @@ static RPCMethod testmempoolaccept()
 static std::vector<RPCResult> ClusterDescription()
 {
     return {
-        RPCResult{RPCResult::Type::NUM, "clusterweight", "total sigops-adjusted weight (as defined in BIP 141 and modified by '-bytespersigop')"},
+        RPCResult{RPCResult::Type::NUM, "clusterweight", "total policy weight including sigop and data-carrier cost adjustments"},
         RPCResult{RPCResult::Type::NUM, "txcount", "number of transactions"},
         RPCResult{RPCResult::Type::ARR, "chunks", "chunks in this cluster (in mining order)",
             {RPCResult{RPCResult::Type::OBJ, "chunk", "",
                 {
-                    RPCResult{RPCResult::Type::STR_AMOUNT, "chunkfee", "fees of the transactions in this chunk"},
-                    RPCResult{RPCResult::Type::NUM, "chunkweight", "sigops-adjusted weight of all transactions in this chunk"},
+                    RPCResult{RPCResult::Type::STR_AMOUNT, "chunkfee", "modified policy fees of the transactions in this chunk, including operator deltas and admission dust deficits"},
+                    RPCResult{RPCResult::Type::NUM, "chunkweight", "policy weight including sigop and data-carrier cost adjustments of all transactions in this chunk"},
                     RPCResult{RPCResult::Type::ARR, "txs", "transactions in this chunk in mining order",
                         {RPCResult{RPCResult::Type::STR_HEX, "txid", "transaction id"}}},
                 }
@@ -489,11 +489,11 @@ static std::vector<RPCResult> ClusterDescription()
 static std::vector<RPCResult> MempoolEntryDescription()
 {
     std::vector<RPCResult> list = {
-        {RPCResult::Type::NUM, "vsize", "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually sigops-adjusted vsize.\n"
+        {RPCResult::Type::NUM, "vsize", "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
         "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
         {RPCResult::Type::NUM, "vsize_bip141", "Virtual transaction size as defined in BIP 141.\n"
         "This is different from actual serialized size for witness transactions as witness data is discounted."},
-        {RPCResult::Type::NUM, "vsize_adjusted", "Maximum of sigop-adjusted size (-bytespersigop) and virtual transaction size as defined in BIP 141."},
+        {RPCResult::Type::NUM, "vsize_adjusted", "Policy virtual size including sigop and data-carrier cost adjustments."},
         RPCResult{RPCResult::Type::NUM, "weight", "transaction weight as defined in BIP 141."},
         RPCResult{RPCResult::Type::NUM_TIME, "time", "local time transaction entered pool in seconds since 1 Jan 1970 GMT"},
         RPCResult{RPCResult::Type::NUM, "height", "block height when transaction entered pool"},
@@ -501,14 +501,14 @@ static std::vector<RPCResult> MempoolEntryDescription()
         RPCResult{RPCResult::Type::NUM, "descendantsize", "virtual transaction size of in-mempool descendants (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorcount", "number of in-mempool ancestor transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorsize", "virtual transaction size of in-mempool ancestors (including this one)"},
-        RPCResult{RPCResult::Type::NUM, "chunkweight", "sigops-adjusted weight (as defined in BIP 141 and modified by '-bytespersigop') of this transaction's chunk"},
+        RPCResult{RPCResult::Type::NUM, "chunkweight", "Policy weight including sigop and data-carrier cost adjustments of this transaction's chunk"},
         RPCResult{RPCResult::Type::STR_HEX, "wtxid", "hash of serialized transaction, including witness data"},
         RPCResult{RPCResult::Type::OBJ, "fees", "",
             {
                 RPCResult{RPCResult::Type::STR_AMOUNT, "base", "transaction fee, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "modified", "transaction fee with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "ancestor", "transaction fees of in-mempool ancestors (including this one) with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "descendant", "transaction fees of in-mempool descendants (including this one) with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "modified", "transaction fee with operator deltas and admission dust deficit used for policy, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "ancestor", "transaction fees of in-mempool ancestors (including this one) with operator deltas and admission dust deficits used for policy, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "descendant", "transaction fees of in-mempool descendants (including this one) with operator deltas and admission dust deficits used for policy, denominated in " + CURRENCY_UNIT},
                 RPCResult{RPCResult::Type::STR_AMOUNT, "chunk", "transaction fees of chunk, denominated in " + CURRENCY_UNIT},
             }},
         RPCResult{RPCResult::Type::ARR, "depends", "unconfirmed transactions used as inputs for this transaction",
@@ -686,7 +686,7 @@ static RPCMethod getmempoolfeeratediagram()
                     {
                         RPCResult::Type::OBJ, "", "",
                         {
-                            {RPCResult::Type::NUM, "weight", "cumulative sigops-adjusted weight"},
+                            {RPCResult::Type::NUM, "weight", "cumulative policy weight including sigop and data-carrier cost adjustments"},
                             {RPCResult::Type::STR_AMOUNT, "fee", "cumulative fee"}
                         }
                     }
@@ -1126,7 +1126,7 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("limitclustersize", pool.m_opts.limits.cluster_size_vbytes);
     ret.pushKV("optimal", pool.m_txgraph->DoWork(0)); // 0 work is a quick check for known optimality
     if (IsDeprecatedRPCEnabled("fullrbf")) {
-        ret.pushKV("fullrbf", true);
+        ret.pushKV("fullrbf", pool.m_opts.rbf_policy == RBFPolicy::Always);
     }
     return ret;
 }
@@ -1142,7 +1142,7 @@ static RPCMethod getmempoolinfo()
                 std::vector<RPCResult> list = {
                     {RPCResult::Type::BOOL, "loaded", "True if the initial load attempt of the persisted mempool finished"},
                     {RPCResult::Type::NUM, "size", "Current tx count"},
-                    {RPCResult::Type::NUM, "bytes", "Sum of all virtual transaction sizes as defined in BIP 141. Differs from actual serialized size because witness data is discounted"},
+                    {RPCResult::Type::NUM, "bytes", "Sum of policy virtual transaction sizes, including witness discount, sigop and data-carrier cost adjustments"},
                     {RPCResult::Type::NUM, "usage", "Total memory usage for the mempool"},
                     {RPCResult::Type::STR_AMOUNT, "total_fee", "Total fees for the mempool in " + CURRENCY_UNIT + ", ignoring modified fees through prioritisetransaction"},
                     {RPCResult::Type::NUM, "maxmempool", "Maximum memory usage for the mempool"},
@@ -1151,13 +1151,13 @@ static RPCMethod getmempoolinfo()
                     {RPCResult::Type::STR_AMOUNT, "incrementalrelayfee", "minimum fee rate increment for mempool limiting or replacement in " + CURRENCY_UNIT + "/kvB"},
                     {RPCResult::Type::NUM, "unbroadcastcount", "Current number of transactions that haven't passed initial broadcast yet"},
                     {RPCResult::Type::BOOL, "permitbaremultisig", "True if the mempool accepts transactions with bare multisig outputs"},
-                    {RPCResult::Type::NUM, "maxdatacarriersize", "Maximum number of bytes that can be used by OP_RETURN outputs in the mempool"},
+                    {RPCResult::Type::NUM, "maxdatacarriersize", "Maximum data-carrier bytes under the configured carrier policy"},
                     {RPCResult::Type::NUM, "limitclustercount", "Maximum number of transactions that can be in a cluster (configured by -limitclustercount)"},
                     {RPCResult::Type::NUM, "limitclustersize", "Maximum size of a cluster in virtual bytes (configured by -limitclustersize)"},
                     {RPCResult::Type::BOOL, "optimal", "If the mempool is in a known-optimal transaction ordering"},
                 };
                 if (IsDeprecatedRPCEnabled("fullrbf")) {
-                    list.emplace_back(RPCResult::Type::BOOL, "fullrbf", "True if the mempool accepts RBF without replaceability signaling inspection (DEPRECATED)");
+                    list.emplace_back(RPCResult::Type::BOOL, "fullrbf", "True if input-conflict replacements are accepted without signaling inspection (DEPRECATED). Script-reuse conflicts are independent of this flag.");
                 }
                 return list;
             }()
@@ -1409,13 +1409,13 @@ static RPCMethod submitpackage()
                     {RPCResult::Type::OBJ, "wtxid", "transaction wtxid", {
                         {RPCResult::Type::STR_HEX, "txid", "The transaction hash in hex"},
                         {RPCResult::Type::STR_HEX, "other-wtxid", /*optional=*/true, "The wtxid of a different transaction with the same txid but different witness found in the mempool. This means the submitted transaction was ignored."},
-                        {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Maximum of sigop-adjusted size (-bytespersigop) and virtual transaction size as defined in BIP 141."},
-                        {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually sigops-adjusted vsize.\n"
+                        {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Policy virtual size including sigop and data-carrier cost adjustments."},
+                        {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
                                                                     "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
                         {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141."},
                         {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees", {
                             {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with modified fees from prioritisetransaction."},
+                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with operator deltas and admission dust deficits."},
                             {RPCResult::Type::ARR, "effective-includes", /*optional=*/true, "if effective-feerate is provided, the wtxids of the transactions whose fees and vsizes are included in effective-feerate.",
                                 {{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                             }},

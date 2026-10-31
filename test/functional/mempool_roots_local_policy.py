@@ -78,10 +78,10 @@ class LocalPolicyTest(BitcoinTestFramework):
         tx.vout.append(CTxOut(1, tx.vout[0].scriptPubKey))
         tx.vout[0].nValue -= 1
         rejected(tx, "dust-nonanchor")
-        # These local exceptions are independent of L8's deferred deficit penalty.
-        self.restart_node(0, extra_args=["-permitephemeral=send", "-minrelaytxfee=0"])
+        # Isolate the L7 local exception from L8's enabled deficit penalty.
+        self.restart_node(0, extra_args=["-permitephemeral=send", "-minrelaytxfee=0", "-subdustfeepenalty=0"])
         assert_equal(result(tx)["allowed"], True)
-        self.restart_node(0, extra_args=["-permitephemeral=send,-dust", "-minrelaytxfee=0"])
+        self.restart_node(0, extra_args=["-permitephemeral=send,-dust", "-minrelaytxfee=0", "-subdustfeepenalty=0"])
         rejected(tx, "dust-nonzero")
         self.generateblock(node, output="raw(42)", transactions=[tx.serialize().hex()])
         self.restart_node(0)
@@ -239,7 +239,8 @@ class LocalPolicyTest(BitcoinTestFramework):
         tx = wallet.create_self_transfer(fee_rate=0)["tx"]
         tx.vout.append(CTxOut(1, wallet.get_output_script()))
         tx.vout[0].nValue -= 1
-        pair("default non-anchor dust permission", tx, "dust-nonanchor", ("-minrelaytxfee=0",), ("-permitephemeral=1", "-minrelaytxfee=0"))
+        # Isolate the dust permission from the independently tested fee deficit.
+        pair("default non-anchor dust permission", tx, "dust-nonanchor", ("-minrelaytxfee=0",), ("-permitephemeral=1", "-minrelaytxfee=0", "-subdustfeepenalty=0"))
         tx = wallet.create_self_transfer(fee_rate=0)["tx"]
         tx.vout += [CTxOut(1, wallet.get_output_script())] * 2
         tx.vout[0].nValue -= 2
@@ -251,7 +252,7 @@ class LocalPolicyTest(BitcoinTestFramework):
         tx = CTransaction()
         tx.vin = [CTxIn(COutPoint(int(funding.txid_hex, 16), index)) for index in (1, 2)]
         tx.vout = [CTxOut(0, PAY_TO_ANCHOR)]
-        pair("bare anchor permission", tx, "bare-anchor", ("-permitbareanchor=0", "-minrelaytxfee=0"), ("-minrelaytxfee=0",))
+        pair("bare anchor permission", tx, "bare-anchor", ("-permitbareanchor=0", "-minrelaytxfee=0"), ("-minrelaytxfee=0", "-subdustfeepenalty=0"))
 
         tx = wallet.create_self_transfer()["tx"]
         olga = CScript([OP_FALSE, bytes.fromhex("003e7374616d703a000000000000000000000000000000000000000000000000")])

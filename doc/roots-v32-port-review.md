@@ -577,3 +577,87 @@ reconcile every row, range-diff, intermediate buildability, final credits and
 whole-candidate compatibility; L12/L13 then pin final canonical/integration
 identities. No release, tag, publication, main promotion or product behavior
 change occurred during this inventory.
+
+### L4.1 native graph, replacement and fee accounting
+
+Carrier cost, immutable admission dust deficits, configured replacement/TRUC
+and full-script reuse claims now feed native v32 graph admission. The carried
+behavior comes from S03 (`846c9de12a5e71259dc1ed829413d68f449ebfd5`), with
+released S11 independent signed/decimal oracle handling retained. Jaromil,
+devjoinedthechat and upstream Core/Knots attribution is preserved. Native
+`ByRatio` comparisons, cluster/diagram algorithms, block-removal return values
+and deprecated RPC gates are retained; no ancestor compatibility index is added.
+
+Entries and staged additions carry the same final modified fee and adjusted
+weight into replacement diagrams, fee changes, ancestor/descendant summaries,
+trimming and removal/reorg dependency restoration. Actual fees, BIP141 metrics
+and block rewards remain independent. The global absolute-fee/weight budgets
+retain the released conservative main-plus-staged bound, including pending
+removals. Direct reservation tests cover abort, failed fee changes, committed
+replacement and return to zero, including intentionally rejected replacements
+whose final state alone would fit. See `doc/feature-contracts/subdust.md`.
+
+Independent multiprecision regression reproduced a source discrepancy at signed
+extremes: repeated relative updates of an already saturated modified fee differed
+from re-admission using the aggregate stored operator delta. Resident updates now
+recompute the documented admission formula, with atomic budget failure. The
+wallet chain-limit query also checks its synthetic fee/weight reservation before
+staging; an infeasible `INT64_MIN` delta is rejected. Neither correction widens
+native storage or changes actual transaction fees or block consensus.
+
+Native RPC size/chunk/fee descriptions include carrier cost and dust deficits.
+`vsize_bip141` and transaction `weight` retain actual metrics;
+`vsize_adjusted` and graph fields report policy accounting. The deprecated
+`fullrbf` field remains opt-in and reports the applied input-conflict Always mode, while
+deprecated `bip125-replaceable` retains signaling meaning. Runtime configuration
+and the full effective-policy schema remain L9-owned.
+
+L4.1 focused verification executed all 52 selected amount, mempool, RBF,
+package, txgraph, cluster-linearization, policy-parser and oracle cases, plus
+the complete 29-script affected graph/package profile on rebuilt binaries.
+Pure sigop sizing explicitly disables carrier cost as in the released source;
+two dust/anchor allowing profiles disable the separately tested deficit.
+Exact local rejection, submission, template exclusion and same-transaction valid
+block assertions remain. New subdust cases check independent fee/weight arithmetic,
+package ancestry, replacement, atomic RPC failure and actual block rewards.
+
+The released code gates prevout conflicts by Never/OptIn but inserts independent
+script-reuse conflicts later, subject to replacement economics. The older
+catalog statement that Never disables all replacement was broader than this
+runtime path. This port preserves the observed implementation and makes its
+scope explicit in current help/docs. `mempool_graph_policy.py` characterizes
+both Never and OptIn with independent inputs and non-signaling v2 originals:
+one satoshi below the exact incremental relay requirement rejects while equality
+replaces, with exact mempool and actual/modified fee outcomes. The original
+default reuse, direct-prevout and TRUC mode assertions remain.
+
+Dynamic-dust publication, recomputation, locking and persisted operator-delta
+serialization are covered by the following L4.2 implementation. At the L4.1
+boundary, newly carried arithmetic fuzz sources were registration, not an
+instrumented pass.
+The subdust script retains the optional `--test-mining-priority` assertions as
+an explicit L5 gate.
+
+### L4.2 dynamic dust and lifecycle
+
+The complete released S03/S11 contracts now use native v32 estimator and
+scheduler ownership. One task is initialized after successful chainstate loading
+and estimator construction, before mempool reload; retries cannot capture an
+abandoned pool. Native scheduler stop/join precedes owner destruction. Block
+targets preserve the raw LONG-horizon 80% estimate, and mempool targets preserve
+actual fees at native policy-size positions. Safe thousandth scaling and the
+configured floor/missing-estimate fallback retain independent arithmetic
+oracles. Full snapshots, admission and node/wallet dust interfaces synchronize
+on the mempool lock; resident deficits are immutable.
+
+Persistence now writes the stored operator delta rather than the modified-fee
+delta, preventing a dust deficit from being serialized as an operator change
+and subtracted twice on restart. Reorg admission captures one fresh deficit;
+native confirmation clearing of operator deltas remains intact. Startup setting
+changes, default/off, enabled/blocksonly, scheduler, missing/warmed estimates,
+reindex retry, restart and reorg are observable lifecycle fixtures. Independent
+P2SH, P2WSH, Taproot and mixed-input carrier fixtures calculate exact adjusted
+weight/fee boundaries while retaining BIP141 metrics and valid-block acceptance.
+Mining priority remains L5; integrated runtime configuration and effective-policy
+RPC schema remain L9. Current full-suite and instrumented execution results are
+recorded separately from the historical L4.1 boundary.

@@ -1,12 +1,12 @@
 # Roots policy input compatibility
 
-This v32 port implements scoped startup parsing and local standardness. Graph
-accounting, carrier extra weight, sub-dust modified fees, replacement/TRUC/reuse,
-dynamic-dust publication and mining controls belong to later port milestones.
-Their arguments are validated and explicitly warn when supplied; parsing them
-does not establish enforcement. Read/write text configuration and effective-policy
-RPC integration also remain pending. Native Core CLI, config and JSON selection
-are retained.
+This v32 port implements scoped startup parsing, local standardness, carrier
+extra weight, sub-dust modified fees and replacement/TRUC/reuse controls over
+the native graph. Dynamic dust publishes synchronized admission snapshots;
+mining controls remain pending and explicitly warn when supplied. Read/write
+text configuration and effective-policy RPC integration also remain pending.
+Native Core CLI, config and JSON selection are retained. See the
+[graph fee contract](subdust.md) for the active accounting boundaries.
 
 Contract: `policy-parsing`. Adapted from Roots source
 `e5445b7c96193c7ec141705aac5ba96651e0ee30` with independent oracle corrections
@@ -94,11 +94,21 @@ zeros. Empty values, extra separators, suffixes and unknown modes are errors.
 double-negative `-nodustdynamic=0` yields `1` and remains an invalid mode.
 Validate the raw negated Boolean value before conversion.
 
+Dynamic dust initializes after successful chainstate loading and estimator
+construction, then updates every 15 minutes. The block-target mode uses the
+native block-policy long-horizon estimate at an 80% success threshold; the
+mempool mode uses actual fees at the selected decimal-kvB policy-size position.
+The configured `dustrelayfee` is both floor and missing-estimate fallback.
+Scaling uses thousandths, rounding down with signed saturation. The synchronized
+rate reaches standardness, new admission deficits and node/wallet interfaces;
+resident deficits remain immutable. See [the lifecycle contract](subdust.md).
+
 Keep these mode/list forms and their existing precedence semantics:
 
 - `mempoolreplacement`: Boolean alias, or `fee`, `optin`, `-optin` tokens
-  separated by `,` or `+`. `0` disables replacement; empty/`1` enables fee-based
-  replacement. Repeated recognized tokens retain their current meaning;
+  separated by `,` or `+`. `0` disables input-conflict replacement; empty/`1`
+  enables fee-based input-conflict replacement. Repeated recognized tokens
+  retain their current meaning;
   the last `optin`/`-optin` token wins. Preserve the existing interaction with
   inherited `mempoolfullrbf`, including its contradiction warning.
 - `mempooltruc`: Boolean alias, or `reject`, `accept`, `enforce`, `optin`,
@@ -110,6 +120,14 @@ Keep these mode/list forms and their existing precedence semantics:
   all three exceptions, `0`/`reject` disables them. Preserve existing implied
   flags and last assignment to each flag, including signed recognized tokens.
 - `spkreuse`: `allow`/`1`/empty allows reuse, `conflict`/`0` rejects conflicts.
+
+Replacement selection above governs conflicting prevouts. With
+`spkreuse=conflict`, script-only conflicts using independent inputs still face
+native replacement economics even under Never (`mempoolreplacement=0`) or
+OptIn with a non-signaling original. A transaction that also conflicts on a
+prevout must pass the input-conflict mode gate. This preserves the released
+runtime behavior; older catalog prose saying Never disables all replacement
+was broader than its implementation. The current help makes the scope explicit.
 
 Lists must contain recognized nonempty tokens only; unknown tokens and leading,
 trailing, or doubled separators are errors. Whitespace is not token syntax.

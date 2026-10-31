@@ -39,8 +39,9 @@ class PackageRelayTest(BitcoinTestFramework):
         self.noban_tx_relay = True
 
     def create_basic_1p1c(self, wallet):
-        low_fee_parent = wallet.create_self_transfer(fee_rate=0, confirmed_only=True)
-        high_fee_child = wallet.create_self_transfer(utxo_to_spend=low_fee_parent["new_utxo"], fee_rate=999*Decimal(DEFAULT_MIN_RELAY_TX_FEE)/ COIN)
+        # Roots permits below-relay-floor sponsorship for enforced TRUC packages.
+        low_fee_parent = wallet.create_self_transfer(version=3, fee_rate=0, confirmed_only=True)
+        high_fee_child = wallet.create_self_transfer(version=3, utxo_to_spend=low_fee_parent["new_utxo"], fee_rate=999*Decimal(DEFAULT_MIN_RELAY_TX_FEE)/ COIN)
         package_hex_basic = [low_fee_parent["hex"], high_fee_child["hex"]]
         return package_hex_basic, low_fee_parent["tx"], high_fee_child["tx"]
 
@@ -49,6 +50,7 @@ class PackageRelayTest(BitcoinTestFramework):
         utxo_for_2outs = wallet.get_utxo(confirmed_only=True)
 
         low_fee_parent_2outs = wallet.create_self_transfer_multi(
+            version=3,
             utxos_to_spend=[utxo_for_2outs],
             num_outputs=2,
             fee_per_output=0,
@@ -56,6 +58,7 @@ class PackageRelayTest(BitcoinTestFramework):
 
         # Now create the child
         high_fee_child_2outs = wallet.create_self_transfer_multi(
+            version=3,
             utxos_to_spend=low_fee_parent_2outs["new_utxos"][::-1],
             fee_per_output=10_000,
         )

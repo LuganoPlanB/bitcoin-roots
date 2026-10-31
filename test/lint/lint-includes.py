@@ -38,6 +38,8 @@ EXPECTED_BOOST_INCLUDES = [
 # Independent policy arithmetic oracles deliberately use multiprecision. Keep
 # this exception tied to the test file, without permitting production callers.
 TEST_ONLY_BOOST_INCLUDES = {
+    ("src/test/fuzz/tx_pool.cpp", "boost/multiprecision/cpp_int.hpp"),
+    ("src/test/mempool_tests.cpp", "boost/multiprecision/cpp_int.hpp"),
     ("src/test/roots_policy_oracle_tests.cpp", "boost/multiprecision/cpp_int.hpp"),
 }
 

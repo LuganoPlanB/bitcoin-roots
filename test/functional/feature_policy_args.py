@@ -35,7 +35,7 @@ class PolicyArgsTest(BitcoinTestFramework):
             self.start_node(0, extra_args=cli or [])
             assert_equal(node.getblockchaininfo()["chain"], "regtest")
             # Staged controls must visibly warn; verify the complete diagnostic.
-            staged = ["datacarriercost", "subdustfeepenalty", "mempoolreplacement", "mempoolfullrbf", "mempooltruc", "spkreuse", "dustdynamic", "blockmaxsize", "blockprioritysize"]
+            staged = ["blockmaxsize", "blockprioritysize"]
             supplied = set()
             for arg in cli or []:
                 name = arg.split("=", 1)[0].lstrip("-")
@@ -47,7 +47,7 @@ class PolicyArgsTest(BitcoinTestFramework):
             if settings_path.exists():
                 supplied.update(json.loads(settings_path.read_text(encoding="utf-8")))
             expected = "\n".join(
-                f"Warning: -{name} is parsed but not enforced in this staged candidate; graph policy and mining implementations are pending."
+                f"Warning: -{name} is parsed but not enforced in this staged candidate; mining implementations are pending."
                 for name in staged if name in supplied
             )
             self.stop_node(0, expected_stderr=expected)
@@ -148,9 +148,8 @@ class PolicyArgsTest(BitcoinTestFramework):
         check_start(["-bytespersigop=20junk", "-datacarriersize=83junk", "-datacarrier=1junk", "-permitbaremultisig=2", "-mempoolfullrbf=1junk"])
         check_start(config="bytespersigop=20junk\ndatacarriersize=83junk\ndatacarrier=1junk\npermitbaremultisig=2\nmempoolfullrbf=1junk\n")
 
-        # Only malformed dynamic modes are startup-tested. Valid non-off grammar
-        # is unit-tested without constructing a mempool: production scheduler
-        # wiring is an existing separate runtime gap, not a successful startup.
+        # Full non-off lifecycle coverage lives in mempool_dynamic_dust.py;
+        # this case isolates malformed grammar and its contextual diagnostic.
         config_path.write_text(base_config, encoding="utf-8")
         node.assert_start_raises_init_error(extra_args=["-dustdynamic=target:2junk"], expected_msg="Invalid mode for dustdynamic: failed to parse target block count", match=ErrorMatch.PARTIAL_REGEX)
         rejected_startups += 1

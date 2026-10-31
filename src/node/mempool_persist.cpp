@@ -196,7 +196,10 @@ bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path, FopenFn mock
         for (const auto& i : vinfo) {
             file << TX_WITH_WITNESS(*(i.tx));
             file << int64_t{count_seconds(i.m_time)};
-            file << int64_t{i.nFeeDelta};
+            // Admission deficits are immutable policy state, not operator deltas.
+            // Reload computes one new deficit at its live dust rate.
+            const auto delta = mapDeltas.find(i.tx->GetHash());
+            file << int64_t{delta == mapDeltas.end() ? 0 : delta->second};
             mapDeltas.erase(i.tx->GetHash());
         }
 
