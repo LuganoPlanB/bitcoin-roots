@@ -257,9 +257,13 @@ add_subdirectory(locale)
 
 add_executable(bitcoin-qt WIN32
   main.cpp
-  res/bitcoin-qt-res.rc
   ../init/bitcoin-qt.cpp
 )
+
+if(WIN32)
+  configure_file(res/bitcoin-qt-res.rc res/bitcoin-qt-res.rc USE_SOURCE_PERMISSIONS @ONLY)
+  target_sources(bitcoin-qt PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/res/bitcoin-qt-res.rc)
+endif()
 
 add_windows_application_manifest(bitcoin-qt)
 

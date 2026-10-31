@@ -16,15 +16,19 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 # are set, so output locations of subproject tests and libraries are
 # not overridden.
 include(../cmake/crc32c.cmake)
-include(../cmake/leveldb.cmake)
+if(NOT WITH_SYSTEM_LEVELDB)
+  include(../cmake/leveldb.cmake)
+endif()
 include(../cmake/minisketch.cmake)
 add_subdirectory(univalue)
 if (ENABLE_IPC AND NOT WITH_EXTERNAL_LIBMULTIPROCESS)
   include(../cmake/libmultiprocess.cmake)
   add_libmultiprocess(ipc/libmultiprocess)
 endif()
-include(../cmake/secp256k1.cmake)
-add_secp256k1(secp256k1)
+if(NOT WITH_SYSTEM_LIBSECP256K1)
+  include(../cmake/secp256k1.cmake)
+  add_secp256k1(secp256k1)
+endif()
 
 # Set top-level target output locations.
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)

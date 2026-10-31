@@ -36,6 +36,36 @@ endfunction()
 
 create_test_config()
 
+if(BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME roots_leveldb_finder
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_leveldb.py
+      --cmake ${CMAKE_COMMAND}
+      --compiler ${CMAKE_CXX_COMPILER}
+      --generator "${CMAKE_GENERATOR}"
+      --modules ${PROJECT_SOURCE_DIR}/cmake/module
+  )
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    add_test(NAME roots_secp256k1_finder
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_secp256k1.py
+        --cmake ${CMAKE_COMMAND}
+        --compiler ${CMAKE_CXX_COMPILER}
+        --generator "${CMAKE_GENERATOR}"
+        --modules ${PROJECT_SOURCE_DIR}/cmake/module
+    )
+  else()
+    message(STATUS "roots_secp256k1_finder not registered: pkg-config is unavailable")
+  endif()
+  add_test(NAME roots_miniupnpc_finder
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_miniupnpc.py
+      --cmake ${CMAKE_COMMAND}
+      --compiler ${CMAKE_CXX_COMPILER}
+      --generator "${CMAKE_GENERATOR}"
+      --modules ${PROJECT_SOURCE_DIR}/cmake/module
+  )
+endif()
+
 
 function(create_test_directory_links)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/functional)
