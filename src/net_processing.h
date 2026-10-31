@@ -19,9 +19,11 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 class AddrMan;
@@ -42,8 +44,11 @@ inline constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
 /** Default number of non-mempool transactions to keep around for block reconstruction. Includes
     orphan, replaced, and rejected transactions. */
 inline constexpr uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{100};
+inline constexpr size_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE{10000000};
+inline constexpr size_t BLOCK_RECONSTRUCTION_EXTRA_TXN_PER_TXN_SIZE_LIMIT{100000};
 /** Default maximum per-second rate for sending transaction inventory to peers. */
 inline constexpr unsigned int DEFAULT_TX_SEND_RATE{14};
+inline constexpr bool DEFAULT_FEEFILTER{true};
 inline constexpr bool DEFAULT_PEERBLOOMFILTERS = false;
 inline constexpr bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
@@ -55,6 +60,7 @@ inline constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 inline constexpr uint64_t CMPCTBLOCKS_VERSION{2};
 
 struct CNodeStateStats {
+    std::chrono::seconds m_last_block_announcement{0};
     int nSyncHeight = -1;
     int nCommonHeight = -1;
     NodeClock::duration m_ping_wait;
@@ -97,6 +103,8 @@ public:
         //! Number of non-mempool transactions to keep around for block reconstruction. Includes
         //! orphan, replaced, and rejected transactions.
         uint32_t max_extra_txs{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN};
+        size_t max_extra_txs_size{DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN_SIZE};
+        bool send_feefilter{DEFAULT_FEEFILTER};
         //! Whether all P2P messages are captured to disk
         bool capture_messages{false};
         //! Whether or not the internal RNG behaves deterministically (this is
@@ -174,6 +182,15 @@ public:
 
     /* Public for unit testing. */
     virtual void UnitTestMisbehaving(NodeId peer_id) = 0;
+
+    /** Test/benchmark access to the production cache insertion and charged-storage snapshot. */
+    struct CompactExtraTransactionsSnapshot {
+        size_t charged_bytes;
+        std::vector<std::pair<Wtxid, CTransactionRef>> slots;
+    };
+    virtual void UnitTestAddToCompactExtraTransactions(const CTransactionRef& tx) = 0;
+    virtual CompactExtraTransactionsSnapshot UnitTestGetCompactExtraTransactions() = 0;
+    virtual void UnitTestProcessValidTx(const CTransactionRef& tx, const std::list<CTransactionRef>& replaced) = 0;
 
     /**
      * Evict extra outbound peers. If we think our tip may be stale, connect to an extra outbound.

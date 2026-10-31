@@ -62,6 +62,9 @@ class FeeFilterTest(BitcoinTestFramework):
         self.test_feefilter_forcerelay()
         self.test_feefilter()
         self.test_feefilter_blocksonly()
+        self.log.info("Explicit -feefilter=0 suppresses local announcements")
+        self.restart_node(0, self.extra_args[0] + ['-feefilter=0'])
+        self.nodes[0].add_p2p_connection(FeefilterConn()).assert_feefilter_received(False)
 
     def test_feefilter_forcerelay(self):
         self.log.info('Check that peers without forcerelay permission (default) get a feefilter message')

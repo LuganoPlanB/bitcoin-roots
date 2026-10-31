@@ -101,6 +101,16 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
     BOOST_CHECK(pnode2->m_inbound_onion == false);
     BOOST_CHECK_EQUAL(pnode2->ConnectedThroughNetwork(), Network::NET_IPV4);
 
+    // Health measurements belong to one connection, even for the same address.
+    pnode1->m_cpu_time = 123456;
+    CNodeStats first_stats;
+    pnode1->CopyStats(first_stats);
+    BOOST_CHECK_EQUAL(first_stats.m_cpu_time.count(), 123456);
+    CNodeStats replacement_stats;
+    pnode2->CopyStats(replacement_stats);
+    BOOST_CHECK_EQUAL(replacement_stats.m_cpu_time.count(), 0);
+    BOOST_CHECK(!replacement_stats.m_forced_inbound);
+
     std::unique_ptr<CNode> pnode3 = std::make_unique<CNode>(id++,
                                                             /*sock=*/nullptr,
                                                             addr,

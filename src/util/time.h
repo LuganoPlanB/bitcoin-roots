@@ -10,6 +10,7 @@
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -158,5 +159,26 @@ struct timeval MillisToTimeval(int64_t nTimeout);
  * Convert milliseconds to a struct timeval for e.g. select.
  */
 struct timeval MillisToTimeval(std::chrono::milliseconds ms);
+
+/** Current thread CPU time (user + system), or zero when unavailable. */
+std::chrono::nanoseconds ThreadCpuTime();
+
+/** Report CPU time spent in a scope when the platform supplies a valid clock. */
+class CpuTimer
+{
+public:
+    using FinishedCB = std::function<void(std::chrono::nanoseconds)>;
+    explicit CpuTimer(const FinishedCB& finished_cb)
+        : m_start{ThreadCpuTime()}, m_finished_cb{finished_cb} {}
+    ~CpuTimer()
+    {
+        const auto end{ThreadCpuTime()};
+        if (m_start > 0ns && end >= m_start) m_finished_cb(end - m_start);
+    }
+
+private:
+    const std::chrono::nanoseconds m_start;
+    FinishedCB m_finished_cb;
+};
 
 #endif // BITCOIN_UTIL_TIME_H

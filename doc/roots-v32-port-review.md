@@ -734,3 +734,115 @@ Native percentile/cache/health oracles retain their expected fee fractions;
 their fixtures explicitly use network capacity. The affected functional
 estimator profile also explicitly retains native mining capacity, fee floor
 and fee-only ordering while exercising its existing low-feerate assertions.
+
+### L6.1 peer permissions, transport and current-connection state
+
+The final released peer behavior is adapted from S05
+(`2cd5097c909d1ab2f8bf27eb0df97b24b6c0807e`), the roots.2 permission repair
+(`e5137d7fc9bc3c31848aeac021adbd3a9fbb764b`) and obsolete-score removal
+(`f41d71d7d23f8f17d6be125435627da437459269`). This is a material v32
+adaptation preserving Jaromil, Plan-B, devjoinedthechat and upstream lineage;
+it is not a byte-equivalent replay of those commits.
+
+Bare whitelist/whitebind grants retain native bounded address handling;
+`addr`/`all` explicitly bypass address-processing and GETADDR caching, while
+message-size limits, inbound-only GETADDR and one response per connection
+remain. Socket and range grants add together. Outgoing address grants and
+default loopback Bloom apply only to manual connections; automatic full-relay,
+block-relay, address-fetch, feeler and private-broadcast connections receive
+neither. Explicit Bloom disable removes the loopback grant. Tor inbound binds,
+including the first ordinary bind used by the automatic onion service, suppress
+address grants while retaining explicit socket grants.
+The wildcard-target regression reproduced unintended `all` grants because
+accepted sockets report a concrete local address rather than the wildcard
+listener. Matching the target family/port for local proxy connections now
+preserves suppression; other ports and non-local peers retain normal grants.
+
+`forceinbound` implies `noban` and `download`; ordinary `noban` does not imply
+force. Its fallback cannot evict no-ban or outbound/manual peers. The native
+v32 relay-only eviction filter and protected-peer argument remain intact for
+relay scheduling. `forced_inbound` records an actual displaced slot independently
+of the permission. Native v32 additionally enforces a transaction-relay cap
+after VERSION and Bloom transitions; that later event does not change the
+socket-admission flag. The force-slot fixture explicitly allows all inbound
+slots to relay transactions, while the native connection-limit/eviction tests
+retain their separate default-cap oracles. Clearnet v2-only suppresses explicit v1 and v1 retry; default
+transport behavior, private-broadcast proxy retention on retry, no-direct-connect
+protection, and SOCKS credential redaction retain their current v32 paths.
+Native saturating local-address scores already satisfy the released overflow
+repair and are unchanged.
+
+Peer RPC exposes last block announcement, actual forced-inbound state and
+optional CPU load per mille of this connection's duration. CPU measurement
+failure/backwards readings and non-positive connection durations do not publish
+a load. New connections receive fresh scalars; internal discouragement remains
+native, and `misbehavior_score` remains absent. Duplicate manual fetch from the
+same peer preserves in-flight tracking; requesting a replacement peer transfers
+the request. Current v32 header/pruning safeguards remain. Fee filters retain
+their enabled default, explicit disable and released 100/1000 sat/kvB
+quantization seeds according to incremental relay fee. Cache accounting and
+the restored default of 100 transactions are separately owned by L6.2.
+
+L6.1 focused Linux verification passed the complete Roots controls script and
+30 related functional instances, including both transports for peer RPC,
+disconnect/ban and timeouts, native relay limits/rate scheduling, private
+broadcast/proxy fallback, Bloom/address permissions and duplicate/replacement
+block fetches. All 53 selected native networking/permission/eviction/DoS/peer
+manager/private-broadcast cases passed. Initial fixtures needed the v32 RPC
+connection helper and directional Bloom-service expectations; their complete
+affected scripts then passed on unchanged binaries. The wildcard regression's
+failed pre-fix capture and passing complete controls/unit cases establish that
+repair. This focused evidence does not replace the L6 full native/CTest and
+compact-cache gates, or later Qt/platform and external qualification.
+
+### L6.2 compact reconstruction cache and current resource behavior
+
+The latest released cache behavior combines S05 with roots.4 characterization
+`bd5422a481aae345cf287bce1c8ab3dc296c20b7`, its lock-precondition correction
+`2fe385d7f51a2a7e40a778fc3a5c6e580499fbb0`, and roots.5 default restoration
+`79ebaa31225897f47403a95e510654f9531cdc45`. The default remains **100**,
+matching the exact Core v32.1 header/help and observed 101-offer eviction.
+Explicit disabled, one-slot and 400-slot wraparound profiles also agree with
+that Core binary; the disabled profile offers five transactions. The old 32768
+default is historical. Current byte/threshold,
+ownership, parser and benchmark contracts are in
+[`compact-reconstruction-cache.md`](compact-reconstruction-cache.md).
+
+The common ring insertion path charges native dynamic storage for each occupied
+reference, independently bounds count and metadata, evicts before adding, and
+applies the per-entry cutoff to replacements as well as rejects. Released unit
+tests retain exact charge and one-byte-below boundaries, sparse wraparound,
+multiple eviction, duplicate references, shared-owner lifetime and real
+reconstruction availability. The helper's lock exclusions include v32's
+inventory mutex before entering the native replacement producer.
+
+The full P2P cache test retains real replacement/orphan producers and paired
+policy-rejected but consensus-valid blocks through hit, disabled and evicted
+paths. Core v32 ignores unsolicited compact blocks from peers not selected for
+high-bandwidth announcements. The adapted fixture submits the known header and
+explicitly requests each block before supplying its compact representation;
+native request/transport rules remain unchanged. This also makes competing
+candidate-block probes exercise reconstruction rather than an ignored message.
+
+Current Linux gates passed 861 ordinary native cases plus one external-assets
+warning (27127425 assertions), CTest 381 passes plus one assets skip, and all
+39 owned networking/transport/privacy/compact functional instances. Separate
+exact-Core count parity and all four producer/cache benchmark smokes passed.
+The benchmark profile retains wallet/tests/IPC; unavailable ZeroMQ remains the
+existing explicit qualification gap. Qt/platform/Python IPC and external-assets
+qualification retain their later owners; none is inferred from these results.
+
+Four native benchmarks call current insertion/replacement methods, and three
+native reconstruction consumer cases also execute. Warm insertion timings
+exclude fixture construction and snapshots; the cold producer includes manager
+construction, download/broadcast bookkeeping, locks and destruction. JSON/CSV
+results use separate per-offer and per-operation denominators. Native dynamic
+charge is reported separately from the explicitly modeled count-times-slot-size
+payload. For the local default structural fixture, 100 occupied slots charged
+41600 dynamic bytes, with 4800 modeled slot-payload bytes; this is not RSS or
+unique retained allocation. Historical exported/instrumented v31 experiment
+timings are not reused, and no improvement or throughput threshold is claimed.
+The final source-inventory pass also retains complete IBD-relay and pruned-node
+service profiles. Their fixture oracles distinguish released incremental-fee
+quantization from the minimum relay fee, and loopback-only Bloom services from
+global service advertisement.

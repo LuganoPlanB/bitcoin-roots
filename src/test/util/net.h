@@ -116,6 +116,12 @@ struct ConnmanTestMsg : public CConnman {
 
     CNode* ConnectNodePublic(PeerManager& peerman, const char* pszDest, ConnectionType conn_type)
         EXCLUSIVE_LOCKS_REQUIRED(!m_unused_i2p_sessions_mutex);
+
+    CNode* ConnectNodePublic(const char* destination, ConnectionType type, bool v2, const std::optional<Proxy>& proxy = std::nullopt)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_unused_i2p_sessions_mutex)
+    {
+        return ConnectNode(CAddress{}, destination, /*fCountFailure=*/false, type, v2, proxy);
+    }
 };
 
 inline constexpr ServiceFlags ALL_SERVICE_FLAGS[]{
@@ -137,6 +143,9 @@ inline constexpr NetPermissionFlags ALL_NET_PERMISSION_FLAGS[]{
     NetPermissionFlags::Mempool,
     NetPermissionFlags::Addr,
     NetPermissionFlags::Download,
+    NetPermissionFlags::ForceInbound,
+    NetPermissionFlags::BlockFilters,
+    NetPermissionFlags::BlockFilters_Explicit,
     NetPermissionFlags::Implicit,
     NetPermissionFlags::All,
 };

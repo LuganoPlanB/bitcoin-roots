@@ -6,6 +6,7 @@
 
 #include <common/args.h>
 #include <net_processing.h>
+#include <util/strencodings.h>
 
 #include <algorithm>
 #include <limits>
@@ -21,6 +22,13 @@ void ApplyArgsManOptions(const ArgsManager& argsman, PeerManager::Options& optio
     }
 
     if (auto value{argsman.GetBoolArg("-capturemessages")}) options.capture_messages = *value;
+    if (auto value{argsman.GetArg("-blockreconstructionextratxnsize")}) {
+        int64_t units;
+        if (ParseFixedPoint(*value, /*decimals=*/4, &units)) {
+            options.max_extra_txs_size = 100 * static_cast<size_t>(std::clamp<int64_t>(units, 0, std::numeric_limits<size_t>::max() / 100));
+        }
+    }
+    if (auto value{argsman.GetBoolArg("-feefilter")}) options.send_feefilter = *value;
 
     if (auto value{argsman.GetBoolArg("-blocksonly")}) options.ignore_incoming_txs = *value;
 

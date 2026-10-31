@@ -14,6 +14,7 @@ import time
 
 from test_framework.messages import (
     CAddress,
+    NODE_BLOOM,
     from_hex,
     msg_headers,
     CBlockHeader,
@@ -109,6 +110,10 @@ class AddrSelfAnnouncementTest(BitcoinTestFramework):
 
         expected = CAddress()
         expected.nServices = int(netinfo["localservices"], 16)
+        # Only the inbound loopback connection receives the local Bloom grant;
+        # automatic outbound peers retain the globally advertised services.
+        if not outbound:
+            expected.nServices |= NODE_BLOOM
         expected.ip = IP_TO_ANNOUNCE
         expected.port = port
         expected.time = self.nodes[0].mocktime

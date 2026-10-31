@@ -38,8 +38,11 @@ struct NodeEvictionCandidate {
  * fixed numbers of desirable peers per various criteria, followed by (mostly)
  * ratios of desirable or disadvantaged peers. If any eviction candidates
  * remain, the selection logic chooses a peer to evict.
+ * @param[in] force Allow a random eligible inbound fallback when scoring
+ *                  protections remove every candidate. No-ban and outbound
+ *                  connections remain protected. Default: false.
  */
-[[nodiscard]] std::optional<NodeId> SelectNodeToEvict(std::vector<NodeEvictionCandidate>&& vEvictionCandidates);
+[[nodiscard]] std::optional<NodeId> SelectNodeToEvict(std::vector<NodeEvictionCandidate>&& vEvictionCandidates, bool force = false);
 
 /** Protect desirable or disadvantaged inbound peers from eviction by ratio.
  *
