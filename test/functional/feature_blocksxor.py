@@ -21,6 +21,7 @@ class BlocksXORTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[
+            '-maxscriptsize=1000000', '-datacarriersize=1000000',  # Block-file padding.
             '-blocksxor=1',
             '-fastprune=1',             # use smaller block files
         ]]

@@ -53,6 +53,7 @@ MAX_PUBKEYS_PER_MULTISIG = 20
 class BytesPerSigOpTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.extra_args = [['-datacarriersize=100000', '-maxscriptsize=100000', '-acceptnonstddatacarrier=1', '-permitbaredatacarrier=1']]
 
     def create_p2wsh_spending_tx(self, witness_script, output_script):
         """Create a 1-input-1-output P2WSH spending transaction with only the
@@ -165,7 +166,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         self.log.info("Test a overly-large sigops-vbyte hits package limits")
         # Make a 2-transaction package which fails vbyte checks even though
         # separately they would work.
-        self.restart_node(0, extra_args=["-bytespersigop=5000","-permitbaremultisig=1"])
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-bytespersigop=5000", "-permitbaremultisig=1"])
 
         def create_bare_multisig_tx(utxo_to_spend=None):
             _, pubkey = generate_keypair()
@@ -228,7 +229,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         nonstd_tx = CTransaction()
         nonstd_tx.vin = [CTxIn(op, CScript([b"", packed_redeem_script])) for op in outpoints]
         nonstd_tx.vout = [CTxOut(0, CScript([OP_RETURN, b""]))]
-        assert_raises_rpc_error(-26, "bad-txns-nonstandard-inputs, non-witness sigops exceed bip54 limit",
+        assert_raises_rpc_error(-26, "bad-txns-input-sigops-toomany-overall",
                                         self.nodes[0].sendrawtransaction, nonstd_tx.serialize().hex())
 
         # Spending one less accounts for 2490 legacy sigops and is standard.
@@ -248,7 +249,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
             else:
                 bytespersigop_parameter = f"-bytespersigop={bytes_per_sigop}"
                 self.log.info(f"Test sigops limit setting {bytespersigop_parameter}...")
-                self.restart_node(0, extra_args=[bytespersigop_parameter])
+                self.restart_node(0, extra_args=self.extra_args[0] + [bytespersigop_parameter])
 
             for num_sigops in (69, 101, 142, 183, 222):
                 self.test_sigops_limit(bytes_per_sigop, num_sigops)
@@ -257,6 +258,14 @@ class BytesPerSigOpTest(BitcoinTestFramework):
 
         self.test_sigops_package()
         self.test_legacy_sigops_stdness()
+        self.log.info("Extreme policy weight rejects safely while a valid block remains acceptable")
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-bytespersigop=2147483647"])
+        script = CScript([OP_FALSE, OP_IF] + [OP_CHECKSIG] * 5 + [OP_ENDIF, OP_TRUE])
+        tx = self.create_p2wsh_spending_tx(script, self.wallet.get_output_script())
+        self.generate(self.wallet, 1)
+        result = self.nodes[0].testmempoolaccept([tx.serialize().hex()])[0]
+        assert_equal(result["reject-reason"], "too-large-cluster")
+        self.generateblock(self.nodes[0], self.wallet.get_address(), [tx.serialize().hex()])
 
 
 if __name__ == '__main__':

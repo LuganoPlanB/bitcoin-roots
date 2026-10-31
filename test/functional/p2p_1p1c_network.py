@@ -34,6 +34,7 @@ class PackageRelayTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 4
+        self.extra_args = [['-permitbarepubkey=1']] * self.num_nodes  # Non-witness package fixtures.
         # hugely speeds up the test, as it involves multiple hops of tx relay.
         self.noban_tx_relay = True
 

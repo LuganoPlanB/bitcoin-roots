@@ -464,6 +464,94 @@ and retained/rebased as links during L13, not dereferenced into product copies.
 
 ## Source-accounting verification
 
+### L3 local policy adaptation
+
+The local policy implementation is adapted from S02
+`e5445b7c96193c7ec141705aac5ba96651e0ee30`, with S11
+`9aaf62146fae1a89d65121468633d5c1701699e9` independent signed-limit/byte
+oracle corrections. S03 `846c9de12a5e71259dc1ed829413d68f449ebfd5` supplies
+only the common-library placement of the script-size setting, the carrier
+extra-weight primitive and the pre-staging arithmetic bound at this stage.
+Jaromil's implementation/contract lineage and upstream Bitcoin Core attribution
+are retained; new carried test files retain the Plan-B Foundation copyright.
+
+Core v32's accurately counted legacy-sigop algorithm remains authoritative and
+is parameterized by the configured local bound. Its native
+`ValidateInputsStandardness` result API and diagnostic regressions remain
+available. Admission additionally uses the Roots configurable standardness
+checks and source rejection reasons. The essential `validation.cpp` changes are
+limited to local admission: standardness, carrier accounting, relay coin age,
+strict sigop density and an arithmetic guard before narrowing adjusted weight
+into the native graph. Block validation, consensus script flags, serialization,
+coinbase maturity and the upstream consensus regression assertions are unchanged.
+No production `src/consensus/` or `src/script/` changes are needed.
+
+The scoped [policy parsing contract](feature-contracts/policy-parsing.md)
+preserves whole-token grammar, effective selection, raw-negation checks,
+ranges, quarter-vbyte rounding and contextual diagnostics. Native Core parsing
+of inherited controls remains outside that scope. Data-carrier limits default
+to 83 aggregate bytes with full counting, and multiple OP_RETURN outputs retain
+their actual local rejection. Explicit fixture allowances isolate upstream
+consensus/resource assertions from these local restrictions.
+
+Carrier extra-weight arithmetic has an isolated primitive and independent
+multiprecision oracle; it has no admission/graph consumer yet. Sub-dust modified
+fees, graph reservations, replacement/TRUC/reuse modes and dynamic-dust lifecycle
+remain L4; template limits/priority selection remain L5; read/write text config
+and effective-policy RPC integration remain L9. Supplied staged controls warn
+that enforcement is pending. Parser acceptance and dormant helpers do not
+establish these later behaviors. Current L3 execution evidence follows its
+focused and complete policy gates; historical source results below remain
+historical.
+
+#### L3 local restriction and valid-block coverage
+
+`mempool_roots_local_policy.py::test_paired_boundaries` checks exact admission
+and submission rejection reasons, absence from the mempool/template, an explicit
+allowing profile, then acceptance of the same transaction in a block under the
+rejecting profile. The cases use consensus-valid scripts and rescan MiniWallet
+after direct block construction. Zero-valued integer bounds remain bounds;
+they are not advertised as disabled settings.
+
+| Local restriction | Paired coverage and profiles |
+| --- | --- |
+| CAT21 marker / bare pubkey / unknown witness outputs | `mempool_roots_local_policy.py::run_test`: default marker/pubkey rejection, explicit allowing switches, unknown-witness default allowance and configured rejection; same-tx valid blocks. |
+| Bare multisig | `test_paired_boundaries`, `bare multisig default/override`: `bare-multisig`, default versus `permitbaremultisig=1`. |
+| Carrier-only transactions | `carrier-only default/override`: `bare-datacarrier`, default versus `permitbaredatacarrier=1`; fixture stays above native 65-byte minimum. |
+| Carrier enablement / aggregate byte limit | `carrier disabled` and `carrier83/82-byte boundary`: `datacarrier`, disabled/82 versus default 83. `mempool_datacarrier.py` also retains default 83/84 and zero/explicit-large limits. |
+| Full input/witness carrier counting / nonstandard carriers | `mempool_datacarrier.py::test_taproot_carrier`: independent switches, exact full-count budget boundary and valid block; `OPNet witness carrier` additionally checks default `txn-datacarrier-nonstandard`, explicit allowance and default-profile block acceptance. |
+| Multiple OP_RETURN outputs | `run_test`: exact `multi-op-return` and same-tx valid block; `mempool_accept.py` retains native acceptance assertions under explicit nonstandard allowance. |
+| Rune / OLGA token filters | `run_test` and `OLGA token filter`: `tokens-runes` / `tokens-olga`, default token-filter off versus enabled. OLGA isolates the independent nonstandard-carrier/full-count gates. |
+| Output / spent-output script bounds | `output script bound` / `spent script bound`: `scriptpubkey-size` / `bad-txns-input-script-size`, configured 33/23 versus default 1650. |
+| ScriptSig bound / fixed 1650 ceiling | `scriptSig/redeem serialized bound` and `fixed scriptSig ceiling`: exact `scriptsig-size`; higher configured bound or explicit nonstandard allowance, plus valid blocks. The separate redeem-size check is dominated by the earlier enclosing scriptSig bound under ordinary admission. |
+| Total witness size | `default total witness bound`: `bad-witness-witness-size`, default 1650 versus 2000 using valid Taproot NOPs. |
+| Witness argument versus tapscript push size | P2WSH/Taproot `witness argument80/81` cases reject only 81-byte arguments with the intended stack-item reasons and accept valid blocks; `mempool_datacarrier.py` accepts an executed 520-byte script push with explicit carrier allowances. `feature_taproot.py` retains its independent consensus push-limit assertions, including invalid oversized pushes. |
+| P2WSH stack count / script size / Taproot annex | Dedicated paired cases retain `bad-witness-stackitem-count`, `bad-witness-script-size` and `bad-witness-taproot-annex`; explicit nonstandard allowance permits admission. Large legacy scripts use bounded data pushes rather than exceeding the consensus 201-opcode ceiling. |
+| Legacy sigops / strict density / extreme adjusted weight | Configured legacy-limit and density cases retain `bad-txns-input-sigops-toomany-overall` / `bad-txns-too-many-sigops`; default and strict-density 0 allowance are separate. `mempool_sigoplimit.py` retains 2500/2505, package and extreme `too-large-cluster` cases with valid-block counterparts. |
+| Dust / ephemeral send, nonzero dust and anchor permissions | `run_test` plus `anchor permission`, `default non-anchor dust permission`, `multiple dust cap`, `bare anchor permission`: intended `dust-nonanchor`, `dust-nonzero`, `anchor`, `dust` and `bare-anchor` reasons; explicit send/dust/anchor permissions or zero dust rate/minimum fee isolate each gate. |
+| Relay fee / coin-block age / maturity | `default relay fee floor`, `coin-block gate independent of maturity`, `maturity gate independent of coin blocks`: `min relay fee not met`, `bad-txns-input-immature-coinblocks`, `bad-txns-input-immature-depth`; default/zero/extreme profiles and same-tx valid blocks. `run_test` also retains exact age boundaries and tip reorg/reconsider behavior. |
+
+Malformed redeem scripts, absent witness/control data and other consensus-invalid
+fixtures keep their native rejection assertions; they cannot supply a valid-block
+acceptance counterpart. The full changed-fixture selection includes all affected
+P2P, package, mining and wallet fixtures. Graph fee accounting, dynamic dust and
+replacement modes remain L4; independent template selection remains L5. This map
+does not imply enforcement of staged controls.
+
+L3 verification on 2026-10-31 used the current Linux headless wallet/tests/IPC
+profile. The full native run passed 841 ordinary cases plus one external-assets
+warning; CTest passed 380 with one assets skip and no failures. All 38 registered
+instances from the 37 changed functional files have current passing evidence:
+36 passed the complete run, and the fee-estimation/Taproot-wallet fixtures passed
+after explicit local allowances isolated their native padding/fee assumptions.
+Their assertions were retained. The extended local-policy test exercised 25
+additional rejection/allowance/valid-block pairs. Documentation/include/whitespace
+and changed-file syntax checks passed. Missing external assets and Python
+`lief`/`capnp`/`zmq`, current Qt/platform profiles and instrumented fuzz remain
+explicit gaps for the applicable later owners; registration and historical
+baselines do not establish those passes. These are execution observations,
+not a parent milestone acceptance or release qualification.
+
 The source baseline maintenance command
 `python3 -m unittest discover -s ci/test` ran from the clean roots.6 baseline
 at `e93a8cca047c12ce9cab97181dd30705ed0e7e83`: **153 passed, zero failed,

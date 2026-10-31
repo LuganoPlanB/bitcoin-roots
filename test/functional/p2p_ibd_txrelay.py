@@ -29,8 +29,10 @@ from test_framework.p2p import (
 )
 from test_framework.test_framework import BitcoinTestFramework
 
-MAX_FEE_FILTER = Decimal(9936506) / COIN
-NORMAL_FEE_FILTER = Decimal(10) / COIN
+# Native fee-filter buckets start at half the Roots default relay fee (1000 sat/kvB).
+# Use that first nonzero bucket for the explicit non-IBD fixture fee.
+MAX_FEE_FILTER = Decimal(9170997) / COIN
+NORMAL_FEE_FILTER = Decimal(500) / COIN
 
 
 class P2PIBDTxRelayTest(BitcoinTestFramework):

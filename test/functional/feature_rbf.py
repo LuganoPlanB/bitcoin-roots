@@ -29,6 +29,8 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.uses_wallet = None
         self.extra_args = [["-deprecatedrpc=fullrbf", "-deprecatedrpc=bip125"], []]
+        for args in self.extra_args:
+            args += ["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000"]
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
@@ -501,7 +503,9 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         for incremental_setting in (0, 5, 10, 50, 100, 234, 1000, 5000, 21000):
             incremental_setting_decimal = incremental_setting / Decimal(COIN)
             self.log.info(f"-> Test -incrementalrelayfee={incremental_setting:.8f}sat/kvB...")
-            self.restart_node(0, extra_args=[f"-incrementalrelayfee={incremental_setting_decimal:.8f}", "-persistmempool=0"])
+            # Leave minrelay unset here to exercise automatic incremental-fee raising.
+            resource_args = [arg for arg in self.extra_args[0] if not arg.startswith("-minrelaytxfee=")]
+            self.restart_node(0, extra_args=resource_args + [f"-incrementalrelayfee={incremental_setting_decimal:.8f}", "-persistmempool=0"])
 
             # When incremental relay feerate is higher than min relay feerate, min relay feerate is automatically increased.
             min_relay_feerate = node.getmempoolinfo()["minrelaytxfee"]

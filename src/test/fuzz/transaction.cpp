@@ -89,6 +89,8 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
     const CCoinsViewCache coins_view_cache{&CoinsViewEmpty::Get()};
     (void)ValidateInputsStandardness(tx, coins_view_cache);
     (void)IsWitnessStandard(tx, coins_view_cache);
+    // Local carrier parsing; consensus script evaluation remains unchanged.
+    (void)DatacarrierBytes(tx, coins_view_cache);
 
     if (tx.ComputeTotalSize() < 250'000) { // Avoid high memory usage (with msan) due to json encoding
         {

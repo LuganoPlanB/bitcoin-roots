@@ -6,6 +6,16 @@
 #ifndef BITCOIN_POLICY_SETTINGS_H
 #define BITCOIN_POLICY_SETTINGS_H
 
+/** Default for -maxscriptsize. */
+static constexpr unsigned int DEFAULT_SCRIPT_SIZE_POLICY_LIMIT{1650};
+/** Default for -bytespersigop. */
+static constexpr unsigned int DEFAULT_BYTES_PER_SIGOP{20};
+/** Default for -bytespersigopstrict. */
+static constexpr unsigned int DEFAULT_BYTES_PER_SIGOP_STRICT{20};
+
+extern unsigned int g_script_size_policy_limit;
 extern unsigned int nBytesPerSigOp;
+extern unsigned int nBytesPerSigOpStrict;
+
 
 #endif // BITCOIN_POLICY_SETTINGS_H

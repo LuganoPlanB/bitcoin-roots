@@ -56,7 +56,9 @@ class WalletTaprootTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [['-keypool=100'], ['-keypool=100']]
+        # Exercise large script-path satisfactions independently of the local witness budget.
+        # Keep the native0.1sat/vB floor for intentionally underestimated script-path fees.
+        self.extra_args = [['-keypool=100', '-maxscriptsize=100000', '-minrelaytxfee=0.000001'], ['-keypool=100', '-maxscriptsize=100000', '-minrelaytxfee=0.000001']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

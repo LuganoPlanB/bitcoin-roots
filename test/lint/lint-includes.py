@@ -35,6 +35,12 @@ EXPECTED_BOOST_INCLUDES = [
                            "boost/tuple/tuple.hpp",
                           ]
 
+# Independent policy arithmetic oracles deliberately use multiprecision. Keep
+# this exception tied to the test file, without permitting production callers.
+TEST_ONLY_BOOST_INCLUDES = {
+    ("src/test/roots_policy_oracle_tests.cpp", "boost/multiprecision/cpp_int.hpp"),
+}
+
 
 def get_toplevel():
     return check_output(["git", "rev-parse", "--show-toplevel"], text=True).rstrip("\n")
@@ -89,7 +95,10 @@ def find_extra_boosts():
             raise e
 
     for boost in included_boosts:
-        filtered_included_boost_set.add(re.findall(r'(?<=\<).+?(?=\>)', boost)[0])
+        inclusion = re.findall(r'(?<=\<).+?(?=\>)', boost)[0]
+        if (boost.split(":", 1)[0], inclusion) in TEST_ONLY_BOOST_INCLUDES:
+            continue
+        filtered_included_boost_set.add(inclusion)
 
     for expected_boost in EXPECTED_BOOST_INCLUDES:
         for boost in filtered_included_boost_set:
