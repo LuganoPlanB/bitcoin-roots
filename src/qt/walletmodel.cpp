@@ -2,6 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <support/cleanse.h>
+#include <util/rbf.h>
+#include <util/threadnames.h>
 #include <qt/walletmodel.h>
 
 #include <qt/addresstablemodel.h>
@@ -40,6 +43,18 @@ using wallet::CCoinControl;
 using wallet::CRecipient;
 using wallet::DEFAULT_DISABLE_WALLET;
 
+namespace {
+// Queued calls may be discarded at shutdown. Cleanse even when the worker
+// never executes, including short strings held inside the string object.
+struct SweepKey {
+    SecureString value;
+    ~SweepKey()
+    {
+        if (!value.empty()) memory_cleanse(value.data(), value.size());
+    }
+};
+} // namespace
+
 WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel& client_model, const PlatformStyle *platformStyle, QObject *parent) :
     QObject(parent),
     m_wallet(std::move(wallet)),
@@ -52,12 +67,68 @@ WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel
     transactionTableModel = new TransactionTableModel(platformStyle, this);
     recentRequestsTableModel = new RecentRequestsTableModel(this);
 
+    m_sweep_context.moveToThread(&m_sweep_thread);
+    m_sweep_thread.start();
+    QTimer::singleShot(0, &m_sweep_context, [] { util::ThreadRename("qt-sweep"); });
+
     subscribeToCoreSignals();
 }
 
 WalletModel::~WalletModel()
 {
+    invalidateSweepRequests();
+    m_sweep_thread.quit();
+    m_sweep_thread.wait();
     unsubscribeFromCoreSignals();
+}
+
+bool WalletModel::invalidateSweepRequests()
+{
+    if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return false;
+    ++m_sweep_request_generation;
+    m_sweep_authorization.reset();
+    Q_EMIT sweepRequestInvalidated(m_sweep_request_generation);
+    return true;
+}
+
+uint64_t WalletModel::requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
+                                   std::optional<Txid> expected_txid)
+{
+    auto key{std::make_shared<SweepKey>()};
+    key->value = private_key;
+    if (!private_key.empty()) memory_cleanse(private_key.data(), private_key.size());
+    SecureString{}.swap(private_key);
+    if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return 0;
+    const uint64_t generation{++m_sweep_request_generation};
+    auto authorization{std::make_shared<interfaces::SweepAuthorization>()};
+    m_sweep_authorization = authorization;
+    QMetaObject::invokeMethod(&m_sweep_context, [this, generation, authorization, key = std::move(key), destination = std::move(destination), broadcast, expected_txid]() mutable {
+        auto result{[&]() -> util::Result<interfaces::WalletSweepResult> {
+            try {
+                return m_wallet->sweepPrivateKey(key->value, destination, broadcast, expected_txid, authorization);
+            } catch (const std::exception&) {
+                // RPC interruption can throw during shutdown. Keep errors non-secret
+                // and finish disposal instead of unwinding through Qt's event loop.
+                return util::Error{Untranslated("Sweep interrupted or unavailable")};
+            }
+        }()};
+        key.reset();
+
+        const bool success{result.has_value()};
+        const QString error{success ? QString{} : QString::fromStdString(util::ErrorString(result).original)};
+        const qint64 amount{success ? result->amount : 0};
+        const qint64 fee{success ? result->fee : 0};
+        const quint64 inputs{success ? result->inputs : 0};
+        const qint64 vsize{success ? result->vsize : 0};
+        const bool rbf{success && result->tx && SignalsOptInRBF(*result->tx)};
+        const QString txid{success && result->tx ? QString::fromStdString(result->tx->GetHash().ToString()) : QString{}};
+        QMetaObject::invokeMethod(this, [this, generation, broadcast, success, error, amount, fee, inputs, vsize, rbf, txid] {
+            if (generation != m_sweep_request_generation) return;
+            m_sweep_authorization.reset();
+            Q_EMIT sweepFinished(generation, broadcast, success, error, amount, fee, inputs, vsize, rbf, txid);
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
+    return generation;
 }
 
 void WalletModel::startPollBalance()
@@ -106,6 +177,13 @@ void WalletModel::pollBalanceChanged()
     }
 
     if (fForceCheckBalanceChanged || block_hash != m_cached_last_update_tip) {
+        if (!m_cached_last_update_tip.IsNull() && block_hash != m_cached_last_update_tip) {
+            // A sweep preview commits to the currently observed chain state.
+            // Do not leave a key or a broadcastable preview around after a tip
+            // change; the dialog must collect fresh input and preview again.
+            invalidateSweepRequests();
+            Q_EMIT walletStateChanged();
+        }
         fForceCheckBalanceChanged = false;
 
         // Balance and number of transactions might have changed
@@ -134,6 +212,10 @@ void WalletModel::updateTransaction()
 {
     // Balance and number of transactions might have changed
     fForceCheckBalanceChanged = true;
+    Q_EMIT walletStateChanged();
+    // A competing spend or wallet update can invalidate a sweep before the
+    // next periodic balance refresh observes it.
+    invalidateSweepRequests();
 }
 
 void WalletModel::updateAddressBook(const QString &address, const QString &label,
@@ -352,7 +434,10 @@ bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureStri
 static void NotifyUnload(WalletModel* walletModel)
 {
     qDebug() << "NotifyUnload";
-    bool invoked = QMetaObject::invokeMethod(walletModel, "unload");
+    bool invoked = QMetaObject::invokeMethod(walletModel, [walletModel] {
+        walletModel->invalidateSweepRequests();
+        Q_EMIT walletModel->unload();
+    });
     assert(invoked);
 }
 
@@ -416,6 +501,7 @@ void WalletModel::subscribeToCoreSignals()
 
 void WalletModel::unsubscribeFromCoreSignals()
 {
+    invalidateSweepRequests();
     // Disconnect signals from wallet
     m_handler_unload->disconnect();
     m_handler_status_changed->disconnect();
@@ -465,6 +551,7 @@ WalletModel::UnlockContext::~UnlockContext()
 bool WalletModel::bumpFee(Txid hash, Txid& new_hash)
 {
     CCoinControl coin_control;
+    coin_control.m_signal_bip125_rbf = true;
     std::vector<bilingual_str> errors;
     CAmount old_fee;
     CAmount new_fee;

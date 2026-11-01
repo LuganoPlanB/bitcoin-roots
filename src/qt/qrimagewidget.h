@@ -17,6 +17,7 @@ inline constexpr int QR_IMAGE_TEXT_MARGIN = 10;
 inline constexpr int QR_IMAGE_MARGIN = 2 * QR_IMAGE_TEXT_MARGIN;
 
 QT_BEGIN_NAMESPACE
+class QFont;
 class QMenu;
 QT_END_NAMESPACE
 
@@ -30,6 +31,7 @@ class QRImageWidget : public QLabel
 public:
     explicit QRImageWidget(QWidget *parent = nullptr);
     bool setQR(const QString& data, const QString& text = "");
+    bool setQR(const QString& data, const QString& text, const QFont& font);
     QImage exportImage();
 
 public Q_SLOTS:

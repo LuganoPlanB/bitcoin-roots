@@ -39,6 +39,7 @@ class WalletFrame;
 class WalletModel;
 class HelpMessageDialog;
 class ModalOverlay;
+class WinTaskbarProgress;
 enum class SynchronizationState;
 
 namespace interfaces {
@@ -142,6 +143,7 @@ private:
     QAction* usedReceivingAddressesAction = nullptr;
     QAction* signMessageAction = nullptr;
     QAction* verifyMessageAction = nullptr;
+    QAction* sweepPrivateKeyAction = nullptr;
     QAction* m_load_psbt_action = nullptr;
     QAction* m_load_psbt_clipboard_action = nullptr;
     QAction* aboutAction = nullptr;
@@ -178,6 +180,9 @@ private:
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
     ModalOverlay* modalOverlay = nullptr;
+#ifdef BITCOIN_QT_WIN_TASKBAR
+    WinTaskbarProgress* m_taskbar_progress{nullptr};
+#endif
 
     QMenu* m_network_context_menu = new QMenu(this);
 

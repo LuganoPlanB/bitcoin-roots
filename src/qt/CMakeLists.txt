@@ -195,6 +195,8 @@ if(ENABLE_WALLET)
       sendcoinsentry.h
       signverifymessagedialog.cpp
       signverifymessagedialog.h
+      sweepdialog.cpp
+      sweepdialog.h
       transactiondesc.cpp
       transactiondesc.h
       transactiondescdialog.cpp
@@ -229,6 +231,16 @@ endif()
 
 if(WITH_DBUS)
   target_link_libraries(bitcoinqt PRIVATE Qt6::DBus)
+endif()
+
+option(WITH_TASKBAR_PROGRESS "Show synchronization progress in the Windows taskbar" ${WIN32})
+if(WITH_TASKBAR_PROGRESS)
+  if(NOT WIN32)
+    message(FATAL_ERROR "WITH_TASKBAR_PROGRESS requires a Windows GUI build")
+  endif()
+  target_sources(bitcoinqt PRIVATE wintaskbarprogress.cpp wintaskbarprogress.h)
+  target_compile_definitions(bitcoinqt PUBLIC BITCOIN_QT_WIN_TASKBAR)
+  target_link_libraries(bitcoinqt PRIVATE ole32)
 endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")

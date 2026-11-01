@@ -7,6 +7,7 @@
 #include <interfaces/init.h>
 #include <interfaces/node.h>
 #include <qt/bitcoin.h>
+#include <qt/bitcoinunits.h>
 #include <qt/guiconstants.h>
 #include <qt/test/apptests.h>
 #include <qt/test/optiontests.h>
@@ -24,6 +25,7 @@
 #include <QDebug>
 #include <QObject>
 #include <QSettings>
+#include <QString>
 #include <QTest>
 
 #include <functional>
@@ -76,11 +78,22 @@ int main(int argc, char* argv[])
     QCoreApplication::setOrganizationName(QAPP_ORG_NAME);
     QCoreApplication::setApplicationName(QAPP_APP_NAME_DEFAULT "-test");
 
+    // Button automation needs Qt widgets, including when the platform theme
+    // offers native message dialogs despite the minimal window backend.
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+
     int num_test_failures{0};
 
     {
         BitcoinApplication app;
         app.createNode(*init);
+
+        if (argc == 5 && QString::fromLocal8Bit(argv[1]) == "--test-display-unit-settings") {
+            bool valid{false};
+            const auto unit = static_cast<BitcoinUnit>(QString::fromLocal8Bit(argv[4]).toInt(&valid));
+            if (!valid || !BitcoinUnits::availableUnits().contains(unit)) return 2;
+            return RunDisplayUnitSettingsTest(app.node(), QString::fromLocal8Bit(argv[2]), QString::fromLocal8Bit(argv[3]), unit);
+        }
 
         AppTests app_tests(app);
         num_test_failures += QTest::qExec(&app_tests);

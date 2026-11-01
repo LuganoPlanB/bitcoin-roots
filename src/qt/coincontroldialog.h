@@ -70,9 +70,12 @@ private:
     QAction *unlockAction;
 
     const PlatformStyle *platformStyle;
+    CAmount m_available_amount{0};
+    unsigned int m_available_count{0};
 
     void sortView(int, Qt::SortOrder);
     void updateView();
+    void updateAvailableLabel();
 
     enum
     {
@@ -82,6 +85,9 @@ private:
         COLUMN_ADDRESS,
         COLUMN_DATE,
         COLUMN_CONFIRMATIONS,
+        COLUMN_STATUS,
+        COLUMN_EFFECTIVE_VALUE,
+        COLUMN_INPUT_BYTES,
     };
 
     enum
@@ -113,6 +119,8 @@ private Q_SLOTS:
     void buttonBoxClicked(QAbstractButton*);
     void buttonSelectAllClicked();
     void updateLabelLocked();
+    void filterChanged(const QString& filter);
+    void walletChanged();
 };
 
 #endif // BITCOIN_QT_COINCONTROLDIALOG_H

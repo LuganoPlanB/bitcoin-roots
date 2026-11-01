@@ -22,6 +22,7 @@
 #include <node/interface_ui.h>
 #include <node/types.h>
 #include <txmempool.h>
+#include <util/rbf.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
@@ -160,6 +161,8 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         }
 
         connect(_model, &WalletModel::balanceChanged, this, &SendCoinsDialog::setBalance);
+        connect(_model, &WalletModel::walletStateChanged, this, &SendCoinsDialog::walletChanged);
+        connect(_model, &WalletModel::unload, this, &SendCoinsDialog::reject);
         connect(_model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &SendCoinsDialog::refreshBalance);
         refreshBalance();
 
@@ -180,6 +183,9 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         connect(ui->groupFee, &QButtonGroup::idClicked, this, &SendCoinsDialog::coinControlUpdateLabels);
 
         connect(ui->customFee, &BitcoinAmountField::valueChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
+        ui->optInRBF->setChecked(model->wallet().getDefaultRbf());
+        connect(ui->optInRBF, &QCheckBox::toggled, this, &SendCoinsDialog::updateSmartFeeLabel);
+        connect(ui->optInRBF, &QCheckBox::toggled, this, &SendCoinsDialog::coinControlUpdateLabels);
         CAmount requiredFee = model->wallet().getRequiredFee(1000);
         ui->customFee->SetMinValue(requiredFee);
         if (ui->customFee->value() < requiredFee) {
@@ -353,9 +359,16 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
         question_string.append("</span><br />");
     }
 
-    // append RBF message
+    appendCoinControlSummary(question_string);
+
+    // Report the prepared transaction, including unsigned PSBT sends.
     question_string.append("<span style='font-size:10pt; font-weight:normal;'>");
-    question_string.append(tr("You can increase the fee later."));
+    if (SignalsOptInRBF(*m_current_transaction->getWtx())) {
+        question_string.append(tr("This transaction signals Replace-By-Fee (BIP-125). Replacement acceptance depends on network policy."));
+    } else {
+        question_string.append(tr("Not signalling Replace-By-Fee, BIP-125."));
+    }
+    question_string.append("</span>");
 
     // add total amount in all subdivision units
     question_string.append("<hr />");
@@ -460,6 +473,45 @@ bool SendCoinsDialog::signWithExternalSigner(PartiallySignedTransaction& psbtx, 
     return true;
 }
 
+void SendCoinsDialog::appendCoinControlSummary(QString& text) const
+{
+    if (!m_current_transaction || !m_current_transaction->getWtx()) return;
+
+    const CTransaction& tx{*m_current_transaction->getWtx()};
+    std::vector<COutPoint> outpoints;
+    outpoints.reserve(tx.vin.size());
+    for (const CTxIn& input : tx.vin) outpoints.push_back(input.prevout);
+
+    CAmount input_amount{0};
+    for (const auto& coin : model->wallet().getCoins(outpoints)) input_amount += coin.txout.nValue;
+    const CAmount fee{m_current_transaction->getTransactionFee()};
+    const CAmount change{input_amount - m_current_transaction->getTotalTransactionAmount() - fee};
+    const BitcoinUnit unit{model->getOptionsModel()->getDisplayUnit()};
+
+    text.append("<hr /><b>" + tr("Effective coin control") + "</b><br />");
+    text.append(tr("Inputs: %1 (%2)")
+                    .arg(tx.vin.size())
+                    .arg(BitcoinUnits::formatHtmlWithUnit(unit, input_amount)) + "<br />");
+    text.append(tr("Estimated virtual size: %1 vB").arg(m_current_transaction->getTransactionSize()) + "<br />");
+    const unsigned int vsize{m_current_transaction->getTransactionSize()};
+    text.append(tr("Fee rate: %1 sat/vB")
+                    .arg(QString::number(vsize > 0 ? static_cast<double>(fee) / vsize : 0, 'f', 1)) + "<br />");
+    text.append(tr("Change: %1").arg(BitcoinUnits::formatHtmlWithUnit(unit, std::max<CAmount>(change, 0))) + "<br />");
+}
+
+void SendCoinsDialog::invalidateSendPreview()
+{
+    if (m_sending) return;
+    m_current_transaction.reset();
+    m_coin_control->UnSelectAll();
+    coinControlUpdateLabels();
+}
+
+void SendCoinsDialog::walletChanged()
+{
+    invalidateSendPreview();
+}
+
 void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
 {
     if(!model || !model->getOptionsModel())
@@ -479,6 +531,11 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
 
     if(retval != QMessageBox::Yes && retval != QMessageBox::Save)
     {
+        fNewRecipientAllowed = true;
+        return;
+    }
+    if (!m_current_transaction) {
+        Q_EMIT message(tr("Send Coins"), tr("Wallet state changed. Review the current inputs and create a new preview."), CClientUIInterface::MSG_WARNING);
         fNewRecipientAllowed = true;
         return;
     }
@@ -528,9 +585,18 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         // Broadcast the transaction, unless an external signer was used and it
         // failed, or more signatures are needed.
         if (broadcast) {
-            // now send the prepared transaction
-            model->sendCoins(*m_current_transaction);
-            Q_EMIT coinsSent(m_current_transaction->getWtx()->GetHash());
+            // Keep the prepared choice valid through the synchronous commit.
+            // Wallet balance notifications from the successful commit must not
+            // invalidate its own transaction before it is announced.
+            m_sending = true;
+            try {
+                model->sendCoins(*m_current_transaction);
+                Q_EMIT coinsSent(m_current_transaction->getWtx()->GetHash());
+            } catch (const std::runtime_error& e) {
+                Q_EMIT message(tr("Send Coins"), QString::fromStdString(e.what()), CClientUIInterface::MSG_ERROR);
+                send_failure = true;
+            }
+            m_sending = false;
         }
     }
     if (!send_failure) {
@@ -820,6 +886,7 @@ void SendCoinsDialog::updateCoinControlState()
     // Avoid using global defaults when sending money from the GUI
     // Either custom fee will be used or if not selected, the confirmation target from dropdown box
     m_coin_control->m_confirm_target = getConfTargetForIndex(ui->confTargetSelector->currentIndex());
+    m_coin_control->m_signal_bip125_rbf = ui->optInRBF->isChecked();
 }
 
 void SendCoinsDialog::updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state) {

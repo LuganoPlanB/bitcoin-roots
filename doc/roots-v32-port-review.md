@@ -1004,3 +1004,120 @@ Qt console/history integration remains L8, the retained sweep runtime-config
 branch must run under L9, and optional/platform/sanitizer qualification remains
 with its declared later owners. These results do not qualify those gaps or
 establish a release or deployment.
+
+## L8.1 Qt6 wallet controls and asynchronous lifetimes
+
+The Qt wallet changes adapt the released roots.6 source at
+`e93a8cca047c12ce9cab97181dd30705ed0e7e83`, especially Jaromil's
+`ab07fc5490af30ce7c6da1c137c8280d1f4815f0` wallet theme and the console
+filter additions in `fad94e12f7b830e820c9f722a8545bffc809f2d5` and
+`add7e6aa8ffbdc39be3070b126662174834d1410`. Bitcoin Core and Plan-B
+Foundation source attribution is retained. This is an adaptation to native v32
+Qt6 and wallet interfaces, rather than a replay of Qt5 build internals.
+
+Core v32 removed the send dialog's RBF checkbox. The port restores an explicit
+per-send choice initialized from the accepted wallet `walletrbf` preference,
+and preserves explicit RBF signaling for fee bumps. Send confirmation uses the
+prepared transaction's actual sequences and reports effective inputs, size,
+fee rate and change. Loaded PSBT0 and PSBT2 proposals reconstruct the unsigned
+transaction for signaling feedback; native sends retain v32's default PSBT2.
+Coin control uses wallet-provided effective value, input size and status facts,
+keeps filtering independent of selection, and invalidates selections on wallet
+notifications even when balances do not change. No privacy score is added.
+
+The transient sweep dialog has masked input, guarded cache disposal, a
+non-broadcast preview and default-Cancel confirmation. It submits the exact
+preview transaction ID through the accepted wallet interface. Notifications
+also invalidate a preview during the confirmation's nested event loop. Worker
+cancellation, queued-key cleanup and joining on model destruction preserve the
+authorization boundary; a surviving dialog uses a guarded model pointer.
+After submission starts, cancellation cannot reverse broadcast. Qt and host
+buffers prevent any claim of complete memory erasure. RPC console/history
+filtering covers both `sweepprivkeys` and `exportaddresskey`, including nested
+export calls and wallet/null/Taproot output modes.
+
+Focused Linux qualification uses the Qt6 RelWithDebInfo wallet/IPC profile and
+the minimal platform plugin. The complete Qt test executable covers both RBF
+states, PSBT0/2 display, stale send/sweep confirmations, same-balance input
+invalidation, Cancel as the sweep default, real preview/exact-txid submission,
+secret error cleanup and model/worker destruction. Four focused native wallet
+cases pass with 143 assertions; five functional instances pass for send and
+both RPC/CLI sweep/export transports. The first GUI fixture failed because it
+had no fee estimates and the native default disables fallback fees. It now
+opts into a fallback only for the disposable sweep test; production wallet
+defaults are unchanged. Compiler/API adaptation and filter-selection failures
+are retained with the failed test attempts.
+
+These are behavior checks, not rendered qualification. The viewport/font
+matrix, fresh-process settings and peer refresh checks belong to L8.2.
+Windows/macOS rendering and optional platform profiles remain untested here;
+the sweep runtime-configuration branch remains an L9 gate. Complete parent
+native/CTest and owned functional reconciliation follow both Qt children.
+
+## L8.2 persistence, peer views and desktop rendering
+
+The peer model and unavailable-state repair adapt Jaromil's released
+`2cd5097c909d1ab2f8bf27eb0df97b24b6c0807e`; Roots resources, splash,
+font-aware QR export and Windows taskbar progress adapt
+`2f8bedaf1c56b3647746773492cb0d6c81a33e86`. Existing upstream and Plan-B
+attribution is retained. Native Qt6 resource registration and enum streaming
+remain in use; Qt5 compatibility branches and generated translations are not
+imported.
+
+Persistent peer indexes now resolve current rows after refresh replaces model
+storage. Empty refreshes do not emit invalid indexes. Selected-peer state is
+cleared before attempting to fill it, including session IDs when switching to
+v1. The live test uses two loopback regtest peers, changes sorting while keeping
+selection, forces the native unavailable-state try-lock path, then disconnects
+the selected peer. Table columns expand to fit the current font and facts
+without shrinking a wider saved column. Long identifiers and wide tables keep
+native scrolling; the resizable details pane is exercised at three quarters
+of the viewport width.
+
+Starting Block uses the per-connection VERSION height retained by L6, matching
+the released GUI: nonnegative advertised heights (including zero) are shown,
+and negative or temporarily unavailable state is Unknown. The Qt regression
+sends real VERSION messages from disposable loopback sockets with sentinel
+845123, zero and negative heights through PeerManager and the node interface.
+It checks selection, persistent indexes, sorting, current-row refresh, native
+try-lock unavailability, recovery, explicit reset and disconnect. The rendered
+matrix also captures the sentinel height. This restores the GUI fact without
+restoring the removed startingheight or misbehavior_score RPC fields.
+
+The aggregate coin label describes **safe local-key outputs**, excluding locked,
+immature, unsafe, watch-only and external-signer outputs from that total.
+Watch-only inputs remain selectable for PSBT preparation. This does not promise
+that a partially owned construction can finish signing, or rate its privacy.
+QR tests cover the quiet zone, PNG/clipboard parity, the actual receive Save
+action and refresh when the configured money font changes. Taskbar source and
+its Windows-only CMake option use the Qt6 native-event API; this Linux build
+does not execute that Windows path.
+
+The display-unit regression uses separate writer and reader processes for all
+four units, reading language before constructing the production OptionsModel.
+It verifies both the stored enum type and the restored model value. Qt6 already
+registers the enum's stream operators; the released Qt5-specific registration
+repair is unnecessary on this baseline.
+
+Rendered qualification uses actual Qt 6.8.2 xcb widgets on owned Xvfb screens
+at 1280x800 and 1920x1080, with application fonts of 9 and 13.5 points (100%
+and 150%). Device pixel ratio is 1 and logical DPI is 96; Xvfb's reported
+physical DPI is recorded separately and is not hardware HiDPI qualification.
+The four-cell matrix covers coin control and its scrolled facts, sweep preview,
+confirmation and cancellation, send/RBF and PSBT confirmations, and populated
+peer table/details/unavailable state. Tests use disposable explicit regtest
+wallets and peers; no entered spending key, wallet database or cookie belongs
+in the screenshot evidence. Each matrix execution runs the full Qt suite,
+including all eight fresh-process settings operations. Initial import/build,
+watch-only-count and Xvfb-wrapper/readiness failures are retained. Missing
+`xauth` is handled by an owned local Xvfb server with TCP disabled, without an
+installation or host configuration change.
+
+The L6/L8 interface correction restores the per-connection VERSION starting
+height, and the GUI now displays nonnegative advertised values, including zero.
+Real node-state regression and renewed rendered evidence cover sentinel 845123,
+selection/refresh, and Unknown for negative or unavailable state.
+The global product name/version integration remains owned by L10; Roots icon,
+splash and desktop resource preservation does not qualify that pending label.
+Windows/macOS rendering remains untested. Parent native/CTest and full owned
+functional gates follow the final-child checkpoint.

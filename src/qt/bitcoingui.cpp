@@ -5,6 +5,9 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <qt/bitcoingui.h>
+#ifdef BITCOIN_QT_WIN_TASKBAR
+#include <qt/wintaskbarprogress.h>
+#endif
 
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
@@ -230,6 +233,10 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
     m_app_nap_inhibitor = new CAppNapInhibitor;
 #endif
 
+#ifdef BITCOIN_QT_WIN_TASKBAR
+    m_taskbar_progress = new WinTaskbarProgress(this);
+    QApplication::instance()->installNativeEventFilter(m_taskbar_progress);
+#endif
     GUIUtil::handleCloseWindowShortcut(this);
 }
 
@@ -247,6 +254,9 @@ BitcoinGUI::~BitcoinGUI()
     MacDockIconHandler::cleanup();
 #endif
 
+#ifdef BITCOIN_QT_WIN_TASKBAR
+    QApplication::instance()->removeNativeEventFilter(m_taskbar_progress);
+#endif
     delete rpcConsole;
 }
 
@@ -323,6 +333,8 @@ void BitcoinGUI::createActions()
     signMessageAction->setStatusTip(tr("Sign messages with your Bitcoin addresses to prove you own them"));
     verifyMessageAction = new QAction(tr("&Verify message…"), this);
     verifyMessageAction->setStatusTip(tr("Verify messages to ensure they were signed with specified Bitcoin addresses"));
+    sweepPrivateKeyAction = new QAction(tr("Sweep private &key…"), this);
+    sweepPrivateKeyAction->setStatusTip(tr("Sweep funds from a transient private key to this wallet"));
     m_load_psbt_action = new QAction(tr("&Load PSBT from file…"), this);
     m_load_psbt_action->setStatusTip(tr("Load Partially Signed Bitcoin Transaction"));
     m_load_psbt_clipboard_action = new QAction(tr("Load PSBT from &clipboard…"), this);
@@ -402,6 +414,8 @@ void BitcoinGUI::createActions()
         connect(m_load_psbt_clipboard_action, &QAction::triggered, [this]{ gotoLoadPSBT(true); });
         connect(verifyMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
         connect(verifyMessageAction, &QAction::triggered, [this]{ gotoVerifyMessageTab(); });
+        connect(sweepPrivateKeyAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+        connect(sweepPrivateKeyAction, &QAction::triggered, walletFrame, &WalletFrame::sweepPrivateKey);
         connect(usedSendingAddressesAction, &QAction::triggered, walletFrame, &WalletFrame::usedSendingAddresses);
         connect(usedReceivingAddressesAction, &QAction::triggered, walletFrame, &WalletFrame::usedReceivingAddresses);
         connect(openAction, &QAction::triggered, this, &BitcoinGUI::openClicked);
@@ -572,6 +586,7 @@ void BitcoinGUI::createMenuBar()
         file->addAction(openAction);
         file->addAction(signMessageAction);
         file->addAction(verifyMessageAction);
+        file->addAction(sweepPrivateKeyAction);
         file->addAction(m_load_psbt_action);
         file->addAction(m_load_psbt_clipboard_action);
         file->addSeparator();
@@ -883,6 +898,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     changePassphraseAction->setEnabled(enabled);
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
+    sweepPrivateKeyAction->setEnabled(enabled);
     usedSendingAddressesAction->setEnabled(enabled);
     usedReceivingAddressesAction->setEnabled(enabled);
     openAction->setEnabled(enabled);
@@ -1230,6 +1246,9 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
 
         progressBarLabel->setVisible(false);
         progressBar->setVisible(false);
+#ifdef BITCOIN_QT_WIN_TASKBAR
+        m_taskbar_progress->setVisible(false);
+#endif
     }
     else
     {
@@ -1240,6 +1259,11 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
         progressBar->setMaximum(1000000000);
         progressBar->setValue(nVerificationProgress * 1000000000.0 + 0.5);
         progressBar->setVisible(true);
+#ifdef BITCOIN_QT_WIN_TASKBAR
+        m_taskbar_progress->setWindow(this);
+        m_taskbar_progress->setValue(qRound(nVerificationProgress * 100.0));
+        m_taskbar_progress->setVisible(true);
+#endif
 
         tooltip = tr("Catching up…") + QString("<br>") + tooltip;
         if(count != prevBlocks)

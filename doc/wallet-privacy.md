@@ -2,8 +2,9 @@
 
 This unpublished Core v32.1 port preserves released Roots wallet contracts.
 See [the port review](roots-v32-port-review.md) for source lineage and current
-qualification. Qt sweep and expanded coin-control presentation remain pending
-their dedicated port; no GUI qualification is implied here.
+qualification. The Qt6 sweep, per-send RBF and expanded coin-control controls
+are carried in this candidate. Rendered and platform qualification is recorded
+separately from backend and GUI test coverage.
 
 ## Sweep an external private key
 
@@ -37,10 +38,53 @@ external key, not routine wallet import or consolidation.
   fee is no longer sufficient. Recreate and review a preview after such a
   failure; do not assume a previous preview is still valid.
 - Supplied keys are used transiently for scanning and signing. They are not
-  imported as wallet keys, descriptors, labels, or settings. The daemon log
-  contract is tested; RPC console/history protection remains pending the L8
-  Qt integration. This is not key backup or recovery: retain an independent,
+  imported as wallet keys, descriptors, labels, or settings. The Qt RPC console
+  filters sweep arguments from history. This is not key backup or recovery: retain an independent,
   secure backup until the sweep confirms.
+
+The Qt **Sweep Private Key** dialog masks the key and disables copy, cut,
+dragging and context-menu actions. Preview scans and signs on a worker without
+broadcasting. Review the selected wallet, destination, amount, fee, signaling
+and transaction ID. **Broadcast sweep** opens a confirmation whose default is
+Cancel. Submission must match the exact preview transaction ID; wallet/tip
+notifications and edits invalidate the preview, including while confirmation
+is open. A changed fee or input requires another preview.
+
+Cancellation can stop a pending scan or preview. After the final submission
+boundary it cannot undo broadcast, and the dialog waits for the result. Closing
+or invalidating a request clears its transient key cache; worker cleanup also
+covers discarded queued requests. Temporary encoded input is cleansed and the
+input control is overwritten then cleared. Qt and the host may retain other
+copies, so these measures do not promise complete memory erasure. Revealing a
+key can expose it on screen.
+
+## Inspect and select wallet inputs
+
+The Qt coin-control dialog shows wallet-reported amount/effective value,
+confirmations, lock, watch-only, reuse and grouping facts, and input-size
+estimates. Effective value uses the current wallet fee choice. Filtering changes
+visibility without changing selected inputs. The **Safe local-key outputs**
+total includes safe, unlocked, mature outputs with local keys; watch-only and
+external-signer outputs are excluded from that total even when selectable for
+PSBT preparation. Local keys do not guarantee complete signing for every
+partially owned construction.
+
+Locked outputs remain visible but
+cannot be selected; ordinary availability rules still exclude unsafe or immature
+coins. Watch-only coins can be selected for PSBT preparation without promising
+that this wallet can finish signing.
+
+Wallet notifications clear selected inputs even when the balance stays the same.
+Review current inputs after a competing spend or reorganization. Grouping and
+reuse describe wallet facts, not a privacy score or anonymity guarantee.
+
+Send starts its RBF checkbox from the wallet's `walletrbf` preference and honors
+an explicit choice for that send. Confirmation reports the prepared transaction's
+actual signaling, inputs, fee rate and change. Loaded PSBT0 and PSBT2 proposals
+also report signaling from their reconstructed transaction; native v32 sends
+create PSBT2 by default. Signaling does not guarantee replacement acceptance.
+Review custom change carefully because it can affect address linkage. These
+controls do not add CoinJoin, payjoin or automatic consolidation.
 
 ## Export a spending key for one address
 
@@ -117,7 +161,7 @@ mode. Those results now also contain `keys`; other constructions and
 The result contains a spending secret. Use protected, authenticated local RPC.
 For a consumer such as Quietproof, transfer the hex plus a newline through
 protected stdin, keeping the secret out of command arguments, environment
-variables and files. Qt console history filtering belongs to the pending Qt port; an explicitly
+variables and files. The Qt console filters export arguments from history; an explicitly
 requested console result contains the secret. JSON, HTTP and client buffers may
 retain copies; total memory erasure is not promised.
 

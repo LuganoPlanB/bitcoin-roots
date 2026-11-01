@@ -10,6 +10,10 @@
 #include <univalue.h>
 
 #include <QObject>
+#include <QString>
+
+/** Run one isolated writer or reader for the fresh-process display-unit test. */
+int RunDisplayUnitSettingsTest(interfaces::Node& node, const QString& settings_dir, const QString& action, BitcoinUnit unit);
 
 class OptionTests : public QObject
 {
@@ -23,6 +27,7 @@ private Q_SLOTS:
     void integerGetArgBug();
     void parametersInteraction();
     void extractFilter();
+    void displayUnitPersistence();
 
 private:
     interfaces::Node& m_node;

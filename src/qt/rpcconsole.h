@@ -107,6 +107,10 @@ private Q_SLOTS:
     void clearSelectedNode();
     /** show detailed information on ui about selected node */
     void updateDetailWidget();
+    /** Clear connection state details before each refresh. */
+    void resetPeerStateStats();
+    /** Expand columns for current font/content without shrinking saved widths. */
+    void updatePeerColumnWidths();
 
 public Q_SLOTS:
     void clear(bool keep_prompt = false);

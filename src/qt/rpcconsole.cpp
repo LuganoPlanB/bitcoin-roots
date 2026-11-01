@@ -33,6 +33,7 @@
 #include <QAbstractItemModel>
 #include <QDateTime>
 #include <QFont>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLatin1String>
@@ -75,9 +76,11 @@ namespace {
 const QStringList historyFilter = QStringList()
     << "createwallet"
     << "createwalletdescriptor"
+    << "exportaddresskey"
     << "migratewallet"
     << "signmessagewithprivkey"
     << "signrawtransactionwithkey"
+    << "sweepprivkeys"
     << "walletpassphrase"
     << "walletpassphrasechange"
     << "encryptwallet";
@@ -662,6 +665,8 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         ui->peerWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
         ui->peerWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
         ui->peerWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+        ui->peerSessionId->setWordWrap(true);
+        ui->peerServices->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
         if (!ui->peerWidget->horizontalHeader()->restoreState(m_peer_widget_header_state)) {
             ui->peerWidget->setColumnWidth(PeerTableModel::Address, ADDRESS_COLUMN_WIDTH);
@@ -689,6 +694,8 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         // peer table signal handling - update peer details when selecting new node
         connect(ui->peerWidget->selectionModel(), &QItemSelectionModel::selectionChanged, this, &RPCConsole::updateDetailWidget);
         connect(model->getPeerTableModel(), &QAbstractItemModel::dataChanged, [this] { updateDetailWidget(); });
+        connect(model->getPeerTableModel(), &QAbstractItemModel::dataChanged, this, &RPCConsole::updatePeerColumnWidths);
+        updatePeerColumnWidths();
 
         // set up ban table
         ui->banlistWidget->setModel(model->getBanTableModel());
@@ -1191,6 +1198,7 @@ void RPCConsole::updateDetailWidget()
         ui->peerSessionId->setVisible(true);
         ui->peerSessionId->setText(QString::fromStdString(stats->nodeStats.m_session_id));
     } else {
+        ui->peerSessionId->clear();
         ui->peerSessionIdLabel->setVisible(false);
         ui->peerSessionId->setVisible(false);
     }
@@ -1205,6 +1213,8 @@ void RPCConsole::updateDetailWidget()
         ui->peerPermissions->setText(permissions.join(" & "));
     }
     ui->peerMappedAS->setText(stats->nodeStats.m_mapped_as != 0 ? QString::number(stats->nodeStats.m_mapped_as) : ts.na);
+
+    resetPeerStateStats();
 
     // This check fails for example if the lock was busy and
     // nodeStateStats couldn't be fetched.
@@ -1223,6 +1233,7 @@ void RPCConsole::updateDetailWidget()
         } else {
             ui->peerCommonHeight->setText(ts.unknown);
         }
+        ui->peerHeight->setText(stats->nodeStateStats.m_starting_height >= 0 ? QString::number(stats->nodeStateStats.m_starting_height) : ts.unknown);
         ui->peerPingWait->setText(GUIUtil::formatPingTime(stats->nodeStateStats.m_ping_wait));
         ui->peerAddrRelayEnabled->setText(stats->nodeStateStats.m_addr_relay_enabled ? ts.yes : ts.no);
         ui->peerAddrProcessed->setText(QString::number(stats->nodeStateStats.m_addr_processed));
@@ -1232,6 +1243,40 @@ void RPCConsole::updateDetailWidget()
 
     ui->hidePeersDetailButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/remove")));
     ui->peersTabRightPanel->show();
+}
+
+void RPCConsole::updatePeerColumnWidths()
+{
+    const auto* model{ui->peerWidget->model()};
+    if (!model) return;
+    const QFontMetrics metrics{ui->peerWidget->font()};
+    // Leave room for padding and the header's sort indicator. Only expand:
+    // a user's wider persisted column must survive refresh and font changes.
+    const int padding{2 * metrics.horizontalAdvance(QLatin1Char(' ')) + 20};
+    for (int column = 0; column < model->columnCount(); ++column) {
+        int width{metrics.horizontalAdvance(model->headerData(column, Qt::Horizontal).toString()) + padding};
+        for (int row = 0; row < model->rowCount(); ++row) {
+            width = std::max(width, metrics.horizontalAdvance(model->index(row, column).data().toString()) + padding);
+        }
+        if (ui->peerWidget->columnWidth(column) < width) ui->peerWidget->setColumnWidth(column, width);
+    }
+}
+
+void RPCConsole::resetPeerStateStats()
+{
+    // State stats can be unavailable when the non-blocking cs_main acquisition
+    // loses a refresh race. Clear them first so a newly selected peer never
+    // shows state from an earlier selection.
+    ui->timeoffset->setText(ts.na);
+    ui->peerServices->setText(ts.na);
+    ui->peerSyncHeight->setText(ts.unknown);
+    ui->peerCommonHeight->setText(ts.unknown);
+    ui->peerHeight->setText(ts.unknown);
+    ui->peerPingWait->setText(ts.na);
+    ui->peerAddrRelayEnabled->setText(ts.na);
+    ui->peerAddrProcessed->setText(ts.na);
+    ui->peerAddrRateLimited->setText(ts.na);
+    ui->peerRelayTxes->setText(ts.na);
 }
 
 void RPCConsole::resizeEvent(QResizeEvent *event)

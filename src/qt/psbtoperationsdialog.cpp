@@ -16,6 +16,7 @@
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <util/fs.h>
+#include <util/rbf.h>
 #include <util/strencodings.h>
 
 #include <fstream>
@@ -178,6 +179,14 @@ void PSBTOperationsDialog::updateTransactionDisplay() {
 QString PSBTOperationsDialog::renderTransaction(const PartiallySignedTransaction &psbtx)
 {
     QString tx_description;
+    // PSBT0 and PSBT2 encode sequences differently; use the reconstructed
+    // transaction for the same signaling facts as the send confirmation.
+    if (const auto tx{psbtx.GetUnsignedTx()}) {
+        tx_description.append(SignalsOptInRBF(CTransaction{*tx})
+            ? tr("This transaction signals Replace-By-Fee (BIP-125). Replacement acceptance depends on network policy.")
+            : tr("Not signalling Replace-By-Fee, BIP-125."));
+        tx_description.append("<br>");
+    }
     QLatin1String bullet_point(" * ");
     CAmount totalAmount = 0;
     for (const PSBTOutput& out : psbtx.outputs) {
