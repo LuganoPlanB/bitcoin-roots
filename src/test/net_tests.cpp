@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1642,6 +1643,95 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         auto ret = tester.Interact();
         BOOST_CHECK(!ret);
     }
+}
+
+BOOST_AUTO_TEST_CASE(peer_starting_height_statistics)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    auto& connman{static_cast<ConnmanTestMsg&>(*m_node.connman)};
+    auto& peerman{*m_node.peerman};
+    const CAddress addr{Lookup("1.2.3.4", 8333, /*fAllowLookup=*/false).value(), NODE_NONE};
+    NodeId id{0};
+    const auto make_peer = [&]() EXCLUSIVE_LOCKS_REQUIRED(NetEventsInterface::g_msgproc_mutex) {
+        auto peer = std::make_unique<CNode>(id++, /*sock=*/nullptr, addr,
+                                          /*nKeyedNetGroupIn=*/0, /*nLocalHostNonceIn=*/0,
+                                          CService{}, "", ConnectionType::OUTBOUND_FULL_RELAY,
+                                          /*inbound_onion=*/false, /*network_key=*/0);
+        peerman.InitializeNode(*peer, NODE_NETWORK);
+        peerman.SendMessages(*peer);
+        connman.FlushSendBuffer(*peer);
+        return peer;
+    };
+    const auto check_height = [&](const CNode& peer, int expected) {
+        CNodeStateStats stats;
+        BOOST_REQUIRE(peerman.GetNodeStateStats(peer.GetId(), stats));
+        BOOST_CHECK_EQUAL(stats.m_starting_height, expected);
+    };
+    const auto receive = [&](CNode& peer, CSerializedNetMsg msg) EXCLUSIVE_LOCKS_REQUIRED(NetEventsInterface::g_msgproc_mutex) {
+        BOOST_REQUIRE(connman.ReceiveMsgFrom(peer, std::move(msg)));
+        peer.fPauseSend = false;
+        BOOST_CHECK(!connman.ProcessMessagesOnce(peer));
+        peerman.SendMessages(peer);
+        connman.FlushSendBuffer(peer);
+    };
+    const auto version = [](std::optional<int32_t> height, int32_t protocol = PROTOCOL_VERSION) {
+        auto msg = NetMsg::Make(NetMsgType::VERSION, protocol,
+                               uint64_t{NODE_NETWORK | NODE_WITNESS}, int64_t{},
+                               uint64_t{}, CNetAddr::V1(CService{}),
+                               uint64_t{}, CNetAddr::V1(CService{}), uint64_t{1}, std::string{});
+        if (height) {
+            VectorWriter{msg.data, msg.data.size()} << *height << true;
+        }
+        return msg;
+    };
+
+    BOOST_CHECK_EQUAL(CNodeStateStats{}.m_starting_height, -1);
+    auto first{make_peer()};
+    auto second{make_peer()};
+    check_height(*first, -1);
+    check_height(*second, -1);
+
+    // Available after VERSION, before VERACK; another VERSION cannot replace this fact.
+    receive(*first, version(845000));
+    BOOST_CHECK(!first->fSuccessfullyConnected);
+    check_height(*first, 845000);
+    receive(*first, version(900000));
+    check_height(*first, 845000);
+    receive(*first, NetMsg::Make(NetMsgType::VERACK));
+    BOOST_CHECK(first->fSuccessfullyConnected);
+    check_height(*first, 845000);
+
+    // These are advertised facts, not validated chain heights, even for negative values.
+    receive(*second, version(std::numeric_limits<int32_t>::min()));
+    check_height(*second, std::numeric_limits<int32_t>::min());
+    check_height(*first, 845000);
+
+    peerman.FinalizeNode(*first);
+    CNodeStateStats stats;
+    BOOST_CHECK(!peerman.GetNodeStateStats(first->GetId(), stats));
+    // Reconnect to the same address: no previous connection's height may leak into it.
+    auto replacement{make_peer()};
+    check_height(*replacement, -1);
+    receive(*replacement, version(std::numeric_limits<int32_t>::max()));
+    check_height(*replacement, std::numeric_limits<int32_t>::max());
+    check_height(*second, std::numeric_limits<int32_t>::min());
+    peerman.FinalizeNode(*second);
+    peerman.FinalizeNode(*replacement);
+
+    for (const auto height : {std::optional<int32_t>{}, std::optional<int32_t>{-1}, std::optional<int32_t>{0}}) {
+        auto peer{make_peer()};
+        receive(*peer, version(height));
+        BOOST_CHECK_EQUAL(peer->nVersion, PROTOCOL_VERSION);
+        check_height(*peer, height.value_or(-1));
+        peerman.FinalizeNode(*peer);
+    }
+
+    // A rejected VERSION must not publish the supplied height.
+    auto rejected{make_peer()};
+    receive(*rejected, version(123456, MIN_PEER_PROTO_VERSION - 1));
+    BOOST_CHECK(rejected->fDisconnect);
+    check_height(*rejected, -1);
+    peerman.FinalizeNode(*rejected);
 }
 
 BOOST_AUTO_TEST_CASE(private_broadcast_version_does_not_update_addrman_services)

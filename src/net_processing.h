@@ -60,6 +60,8 @@ inline constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 inline constexpr uint64_t CMPCTBLOCKS_VERSION{2};
 
 struct CNodeStateStats {
+    /** Height advertised in this connection's VERSION message, or -1 if unknown. */
+    int m_starting_height{-1};
     std::chrono::seconds m_last_block_announcement{0};
     int nSyncHeight = -1;
     int nCommonHeight = -1;
