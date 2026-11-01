@@ -30,12 +30,15 @@ namespace common {
 using SettingsValue = UniValue;
 
 //! Stored settings. This struct combines settings from the command line, a
-//! read-only configuration file, and a read-write runtime settings file.
+//! read-only configuration file, read-write text configuration, and a JSON
+//! runtime settings file.
 struct Settings {
     //! Map of setting name to forced setting value.
     std::map<std::string, SettingsValue> forced_settings;
     //! Map of setting name to list of command line values.
     std::map<std::string, std::vector<SettingsValue>> command_line_options;
+    //! Map of setting name to list of read/write text config values.
+    std::map<std::string, std::vector<SettingsValue>> rw_config;
     //! Map of setting name to read-write file setting value.
     std::map<std::string, SettingsValue> rw_settings;
     //! Map of config section name and setting name to list of config file values.

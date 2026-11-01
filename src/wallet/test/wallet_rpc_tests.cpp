@@ -53,6 +53,7 @@ BOOST_AUTO_TEST_CASE(dangerous_rpc_startup_permission)
     args.LockSettings([](common::Settings& settings) {
         settings.forced_settings["allow-dangerous-rpc"] = true;
         settings.rw_settings["allow-dangerous-rpc"] = true;
+        settings.rw_config["allow-dangerous-rpc"].emplace_back(std::string{"1"});
         settings.ro_config[""]["allow-dangerous-rpc"].emplace_back(std::string{"1"});
         settings.ro_config["regtest"]["allow-dangerous-rpc"].emplace_back(std::string{"1"});
     });

@@ -8,11 +8,18 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <cstdio>
+#include <cstdint>
 #include <fstream>
 #include <ios>
+#include <limits>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #ifndef WIN32
+#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
@@ -158,6 +165,67 @@ BOOST_AUTO_TEST_CASE(rename)
         BOOST_CHECK_EQUAL(contents, path1_contents);
     }
     fs::remove(path2);
+}
+
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(file_descriptor_limit_bounds)
+{
+    struct rlimit limit{};
+    BOOST_REQUIRE_EQUAL(getrlimit(RLIMIT_NOFILE, &limit), 0);
+    const int expected{limit.rlim_cur == RLIM_INFINITY || std::cmp_greater_equal(limit.rlim_cur, std::numeric_limits<int>::max())
+        ? std::numeric_limits<int>::max() : static_cast<int>(limit.rlim_cur)};
+    // A zero request must retain the current soft limit, saturating the int result.
+    BOOST_CHECK_EQUAL(RaiseFileDescriptorLimit(0), expected);
+    struct rlimit after{};
+    BOOST_REQUIRE_EQUAL(getrlimit(RLIMIT_NOFILE, &after), 0);
+    BOOST_CHECK_EQUAL(after.rlim_cur, limit.rlim_cur);
+    BOOST_CHECK_EQUAL(after.rlim_max, limit.rlim_max);
+}
+#endif
+
+BOOST_AUTO_TEST_CASE(allocate_file_range_preserves_data)
+{
+    const auto path{m_args.GetDataDirBase() / "allocate-range.dat"};
+    const auto close_file{[](FILE* file) { std::fclose(file); }};
+    std::unique_ptr<FILE, decltype(close_file)> file{fsbridge::fopen(path, "w+b"), close_file};
+    BOOST_REQUIRE(file);
+    std::vector<unsigned char> contents(3 * 65536);
+    for (size_t i{0}; i < contents.size(); ++i) contents[i] = static_cast<unsigned char>(i / 65536 + 1);
+    BOOST_REQUIRE_EQUAL(std::fwrite(contents.data(), 1, contents.size(), file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(std::fflush(file.get()), 0);
+
+    AllocateFileRange(file.get(), 65536, static_cast<unsigned int>(contents.size() - 65536 + 256));
+    BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_SET), 0);
+    std::vector<unsigned char> actual(contents.size());
+    BOOST_REQUIRE_EQUAL(std::fread(actual.data(), 1, actual.size(), file.get()), actual.size());
+    BOOST_CHECK(actual == contents);
+
+    // Allocation entirely inside a live file must never shorten it.
+    AllocateFileRange(file.get(), 65536, 128);
+    BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_END), 0);
+    BOOST_CHECK_EQUAL(std::ftell(file.get()), contents.size() + 256);
+}
+
+BOOST_AUTO_TEST_CASE(allocate_file_range_rejects_unrepresentable_end)
+{
+    const auto path{m_args.GetDataDirBase() / "allocate-bounds.dat"};
+    const auto close_file{[](FILE* file) { std::fclose(file); }};
+    std::unique_ptr<FILE, decltype(close_file)> file{fsbridge::fopen(path, "w+b"), close_file};
+    BOOST_REQUIRE(file);
+    const std::string contents{"preserve live data"};
+    BOOST_REQUIRE_EQUAL(std::fwrite(contents.data(), 1, contents.size(), file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(std::fflush(file.get()), 0);
+    for (const auto offset : {uint64_t{0}, uint64_t{1} << 32, uint64_t{std::numeric_limits<int64_t>::max()}, std::numeric_limits<uint64_t>::max()}) {
+        AllocateFileRange(file.get(), offset, 0);
+    }
+    AllocateFileRange(file.get(), std::numeric_limits<int64_t>::max(), 1);
+    AllocateFileRange(file.get(), std::numeric_limits<uint64_t>::max(), 1);
+    BOOST_REQUIRE_EQUAL(FileSeek64(file.get(), 0, SEEK_END), 0);
+    BOOST_CHECK_EQUAL(FileTell64(file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(FileSeek64(file.get(), 0, SEEK_SET), 0);
+    std::string actual(contents.size(), '\0');
+    BOOST_REQUIRE_EQUAL(std::fread(actual.data(), 1, actual.size(), file.get()), actual.size());
+    BOOST_CHECK_EQUAL(actual, contents);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

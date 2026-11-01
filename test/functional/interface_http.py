@@ -648,12 +648,24 @@ class HTTPBasicsTest (BitcoinTestFramework):
     def check_connection_limit(self):
         self.log.info("Check connection limits")
 
+        rw_path = self.node.chain_path / "http-limits.conf"
+        rw_path.write_text("rpcmaxconnections=4\nrpcmaxconnections=7\n", encoding="utf-8")
+        self.stop_node(0)
+        for value in ("0", "-1"):
+            self.node.assert_start_raises_init_error(
+                extra_args=[f"-rpcmaxconnections={value}"],
+                expected_msg="Error: -rpcmaxconnections must be greater than zero. Use -server=0 to disable HTTP.",
+            )
+        self.start_node(0)
+
         # Disable timeout so the initial batch of clients stays connected
         # until the end of the test.
         for comment,                  extra_args,                                      limit in [
             ("default (16)",          ["-rpcservertimeout=0", "-rest"],                16),
             ("-rpcmaxconnections=64", ["-rpcservertimeout=0", "-rest",
-                                       "-rpcmaxconnections=64", "-maxconnections=16"], 64)
+                                       "-rpcmaxconnections=64", "-maxconnections=16"], 64),
+            ("read/write first value", ["-rpcservertimeout=0", "-rest", "-confrw=http-limits.conf"], 4),
+            ("CLI over read/write", ["-rpcservertimeout=0", "-rest", "-confrw=http-limits.conf", "-rpcmaxconnections=2"], 2),
         ]:
             self.log.info(f"Using connection limit: {comment}")
             self.restart_node(0, extra_args=extra_args)
@@ -685,6 +697,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
                 conn = BitcoinHTTPConnection(self.node)
                 conn.set_timeout(5)
                 assert_raises(TimeoutError, lambda: conn.post('/', '{"method": "never_accepted"}', connection_header='keep-alive').read())
+                conn.close_sock()
 
             # All original clients are still connected
             assert_equal(len(connections), MAX_HTTP_CONNECTIONS)
@@ -698,27 +711,33 @@ class HTTPBasicsTest (BitcoinTestFramework):
                 return conn.get('/rest/blockhashbyheight/0.json').read()
 
             conn = BitcoinHTTPConnection(self.node)
-            conn.set_timeout(None)
+            conn.set_timeout(5)
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             waiting_request = executor.submit(
                 wait_for_send,
                 conn
             )
 
-            # We are waiting
-            assert not waiting_request.done()
+            try:
+                # We are waiting
+                assert not waiting_request.done()
 
-            # Close one of the original connections
-            popped_client = connections.pop()
-            popped_client.close_sock()
+                # Close one of the original connections
+                popped_client = connections.pop()
+                popped_client.close_sock()
 
-            # The waiting connection gets processed
-            delayed_response = waiting_request.result(timeout=5)
-            assert "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206" in delayed_response.decode()
+                # The waiting connection gets processed
+                delayed_response = waiting_request.result(timeout=5)
+                assert "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206" in delayed_response.decode()
+            finally:
+                # Release every held connection and settle the bounded worker
+                # even if the admission or response assertion fails.
+                conn.close_sock()
+                for client in connections:
+                    client.close_sock()
+                executor.shutdown(wait=True, cancel_futures=True)
 
-            # Close all remaining connections for clean up
-            for client in connections:
-                client.close_sock()
+        rw_path.unlink()
 
 
     def check_pipelined_data_is_throttled(self):
@@ -844,7 +863,10 @@ class HTTPBasicsTest (BitcoinTestFramework):
 
     def check_slow_read_throttle(self):
         self.log.info("Check that request processing is throttled if the client is not draining the socket")
-        self.restart_node(0, extra_args=["-rest=1"])
+        # This HTTP backpressure fixture needs Core's large carrier/block
+        # dimensions explicitly; ordinary Roots policy and mining limits stay
+        # unchanged outside this disposable node.
+        self.restart_node(0, extra_args=["-rest=1", "-maxscriptsize=100000", "-datacarriersize=100000", "-blockmaxweight=4000000"])
         # Generate a big block
         self.wallet = MiniWallet(self.node)
         mine_large_block(self, self.wallet, self.node)

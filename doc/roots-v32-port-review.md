@@ -1121,3 +1121,118 @@ The global product name/version integration remains owned by L10; Roots icon,
 splash and desktop resource preservation does not qualify that pending label.
 Windows/macOS rendering remains untested. Parent native/CTest and full owned
 functional gates follow the final-child checkpoint.
+
+## L9.1 configuration and effective policy
+
+This adapts Jaromil's released S07 (`44c15f2cde7d36f2733814d6ab68ce148f1a7079`)
+at the pinned roots.6 endpoint. Forced settings, CLI, read/write text config,
+JSON settings, network config, default config and built-in defaults retain
+their order. Native scalar and list negation rules remain in use. The default
+text file is network-datadir `bitcoin_rw.conf`; explicit relative/absolute paths
+and `-noconfrw` are covered. Its released flat key interpretation is retained.
+The selected ArgsManager resolves its network before SelectParams without
+changing global chain parameters. Core v32's nonrecursive args mutex requires
+lock-aware persistence helpers rather than nested public-method locking.
+
+Complete input and value validation precede publication. The carried reader
+distinguishes valid EOF from failed reads, including a final invalid line's
+rewind/comment copy. Read/write text updates close the staged output and replace
+the file before publishing settings; failed reads, writes, closes and reset
+removals preserve the selected input. Known sensitive values are redacted in
+CLI, text and JSON settings diagnostics, including section-prefixed JSON keys.
+The JSON logging path previously bypassed sensitive-option flags and now uses
+the same registered flags. Numeric JSON Boolean access retains released
+conversion behavior.
+
+The additive `getmempoolinfo.policy` object reports initialized authoritative
+options and the synchronized live dust rate under the existing mempool lock.
+Its units, gates, resolved modes and help are retained in native v32 RPCMethod
+and OpenRPC schemas. The native deprecated `fullrbf` alias remains hidden unless
+requested; removed peer RPC fields are not restored. Native libevent-free HTTP
+and monotonic uptime implementations are unchanged. Connection limits are
+exercised at defaults, CLI overrides, read/write first-value selection and CLI
+overrides of that file; zero and negative limits retain their startup errors.
+Dormant statistics remain unavailable.
+
+Focused Linux qualification passes all 83 selected native cases (223804
+assertions) and all 26 owned configuration, policy, HTTP/RPC and sweep functional
+instances, with no selected skips. Both sweep runtime-config transports and
+both effective-policy/OpenRPC transports execute. Native regressions include
+initial/partial/post-rewind read faults, empty/no-newline inputs, failed reset
+removal, and child-isolated partial-write/close failures using file-size limits.
+Initial failures are retained: test setup confused an empty path with typed
+negation; a connection-limit fixture expected a clamp instead of the native
+startup error; and the large-block HTTP fixture used Core-sized carriers under
+Roots defaults. That fixture now explicitly selects larger script/carrier and
+block limits only on its disposable node, preserving the full backpressure
+assertions and production defaults. These are the focused L9.1 child results;
+resource and sanitizer checks appear below, followed by parent qualification.
+
+## L9.2 resources and dormant support
+
+The released S07 runtime repairs and S09 (`8e7ffad5d932e07c0c80f3756f7c3a442786877e`)
+empty-write correction are carried forward. Advisory allocation preserves live
+bytes across extension and interior ranges. The fallback reads existing chunks,
+fills only their missing tails, and performs the required seeks between reads
+and writes. Windows extends only after a successful size query and seek; the
+destructive Apple truncation path uses the preserving common fallback instead.
+Core v32's wider offsets also require checked addition and representability
+checks before any allocation or seek. Empty AutoFile writes return only after
+validating the handle, including for closed/null files and obfuscated streams.
+
+Native v32 FD saturation, checked consteval GiB literals, RAM detection and cache
+calculation are retained unchanged. Subprocess closure above a lowered descriptor
+soft limit remains as accepted in L7. Cache tests cover signed inputs and native
+architecture bounds without allocating those amounts. Native RAM warnings reserve
+2 GiB before taking 75 percent of the remainder; the released v31 calculation is
+not restored. Statistics source and tests use native btcsignals and RPCMethod,
+but options, RPC registration and production sampling remain unwired. Both RPC
+transports reject getmempoolstats, and dormant options fail startup parsing.
+
+Focused Linux checks pass all 102 selected native cases (22607 assertions) and
+three functional instances, with no selected skips. Five GiB compile contracts
+include expected compile-time overflow/narrowing rejections. Signed and unsigned
+FD syscall models pass 24 cases under ASan/UBSan and integer instrumentation.
+Bounded standard ASan/UBSan probes pass 16 allocation scenarios across the actual
+utility library and an exact-source forced fallback, two AutoFile profiles, and
+the dormant model. These are not a full native sanitizer suite. The broader
+integer-instrumented utility run stops before main in libstdc++ string-map logging
+initialization; its diagnostic is retained without a suppression or product-pass
+claim. Initial chrono test API errors and a missing probe link dependency are
+also retained with their repairs. Windows/macOS, other POSIX ABIs and 32-bit
+execution remain unqualified and owned by L11. These are the focused L9.2 child
+results; full parent qualification follows the separate child checkpoint.
+
+## L9 parent qualification
+
+Both existing out-of-source profiles build all configured targets with `-j 2`:
+the policy profile includes the daemon, IPC, wallet, CLI, tools and benchmarks;
+the Qt6 profile includes its GUI and tests, with its existing optional features
+unchanged. All builds finish before testing, and executable/configuration hashes
+are frozen and checked across the gates. Full native runs each exercise 916 cases
+successfully: 27040946 assertions in policy and 27029782 in Qt6. Each registers
+917 cases; the external script-assets case returns with a warning because its
+data is unavailable and is not counted as exercised. Full configured CTest passes
+382 of 383 tests in policy and 383 of 384 in Qt6; each skips only script-assets.
+The Qt target runs all six suites with 22 reported passes, no failures/skips,
+and eight fresh-process display-unit settings operations.
+
+All 33 owned functional instances pass with no skips. This includes the complete
+26-instance configuration/settings/read-write/effective-policy/HTTP/RPC/sweep
+selection, retaining both sweep runtime-config transports and both effective-policy
+and OpenRPC transports. Seven additional instances cover initialization, shutdown,
+abort handling, file locks, directory symlinks, isolated help and startup notice.
+Bounded sanitizer and native-preservation evidence from L9.2 is reused only after
+matching its current source, generated probes, library, binary and configuration
+identities. No broader sanitizer or platform qualification is inferred.
+
+Owned tracked and untracked source passes include/guard, locale-use, Python syntax
+and whitespace checks. Optional whole-tree locale lint reports existing uses in
+four accepted test files, all unchanged from the starting commit and outside L9;
+that diagnostic remains for L11's full candidate reconciliation. Ruff/mypy
+qualification is unavailable with the installed lint dependencies. Successful
+explicit native fixture databases are removed only after their runs exit zero,
+retaining complete diagnostic text and evidence; failed runtimes are preserved.
+The missing external assets, Windows/macOS/other POSIX/32-bit execution and complete
+candidate sweep remain L11-owned. Parent review and signed commit acceptance are
+separate from these current local gates.

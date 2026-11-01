@@ -138,7 +138,7 @@ class PolicyArgsTest(BitcoinTestFramework):
         node.assert_start_raises_init_error(extra_args=["-dustdynamic=target:2junk"], expected_msg="Invalid mode for dustdynamic: failed to parse target block count", match=ErrorMatch.PARTIAL_REGEX)
         rejected_startups += 1
 
-        self.log.info("JSON settings use the same effective grammar; read/write text config integration remains pending")
+        self.log.info("JSON settings use the same effective grammar")
         settings_path = node.chain_path / "settings.json"
         for value in [True, False]:
             settings_path.write_text(json.dumps({"subdustfeepenalty": value}), encoding="utf-8")
@@ -154,6 +154,19 @@ class PolicyArgsTest(BitcoinTestFramework):
         check_start(["-subdustfeepenalty=1"])
         settings_path.write_text("{}", encoding="utf-8")
         config_path.write_text(base_config, encoding="utf-8")
+        self.log.info("Read/write config preserves first-value selection and strict effective parsing")
+        rw_path = node.chain_path / "bitcoin_rw.conf"
+        rw_path.write_text("subdustfeepenalty=1\nsubdustfeepenalty=junk\n", encoding="utf-8")
+        check_start(config="subdustfeepenalty=junk\n")
+        rw_path.write_text("subdustfeepenalty=junk\n", encoding="utf-8")
+        check_start(["-subdustfeepenalty=1"])
+        node.assert_start_raises_init_error(extra_args=[], expected_msg="Invalid -subdustfeepenalty value: 'junk'", match=ErrorMatch.PARTIAL_REGEX)
+        rejected_startups += 1
+        rw_path.write_text("nosubdustfeepenalty=junk\n", encoding="utf-8")
+        node.assert_start_raises_init_error(extra_args=["-subdustfeepenalty=1"], expected_msg="Invalid -nosubdustfeepenalty value: 'junk'", match=ErrorMatch.PARTIAL_REGEX)
+        rejected_startups += 1
+        rw_path.unlink()
+
         self.log.info("Policy diagnostics do not expose unrelated configuration secrets")
         config_path.write_text(base_config + "rpcpassword=roots-policy-redaction-sentinel\n", encoding="utf-8")
         node.assert_start_raises_init_error(

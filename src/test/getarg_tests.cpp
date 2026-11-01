@@ -10,12 +10,22 @@
 #include <univalue.h>
 #include <util/strencodings.h>
 
+#include <fstream>
 #include <limits>
+#include <sstream>
+#include <streambuf>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
+
+#ifndef WIN32
+#include <csignal>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 using util::SplitString;
 
@@ -47,6 +57,43 @@ void SetupArgs(ArgsManager& local_args, const std::vector<std::pair<std::string,
         local_args.AddArg(arg.first, "", arg.second, OptionsCategory::OPTIONS);
     }
 }
+
+namespace {
+// Report a real I/O failure after a chosen number of bytes, optionally only
+// after the formatter rewinds to copy an invalid file into comments.
+class FailingConfigBuffer : public std::streambuf {
+    std::string m_text;
+    size_t m_position{0};
+    size_t m_fail_at;
+    bool m_fail_after_rewind;
+    bool m_rewound{false};
+
+    int_type underflow() override
+    {
+        if (m_position == m_fail_at && (!m_fail_after_rewind || m_rewound)) {
+            throw std::ios_base::failure("Injected config read failure");
+        }
+        if (m_position == m_text.size()) return traits_type::eof();
+        return traits_type::to_int_type(m_text[m_position]);
+    }
+    int_type uflow() override
+    {
+        const auto value{underflow()};
+        if (!traits_type::eq_int_type(value, traits_type::eof())) ++m_position;
+        return value;
+    }
+    pos_type seekoff(off_type offset, std::ios_base::seekdir direction, std::ios_base::openmode) override
+    {
+        if (direction != std::ios_base::beg || offset != 0) return pos_type{off_type{-1}};
+        m_position = 0;
+        m_rewound = true;
+        return pos_type{0};
+    }
+public:
+    FailingConfigBuffer(std::string text, size_t fail_at, bool fail_after_rewind = false)
+        : m_text(std::move(text)), m_fail_at(fail_at), m_fail_after_rewind(fail_after_rewind) {}
+};
+} // namespace
 
 // Test behavior of GetArg functions when string, integer, and boolean types
 // are specified in the settings.json file. GetArg functions are convenience
@@ -105,22 +152,22 @@ BOOST_AUTO_TEST_CASE(setting_args)
     BOOST_CHECK_EQUAL(args.GetSetting("foo").write(), "99");
     BOOST_CHECK_EQUAL(args.GetArg("foo", "default"), "99");
     BOOST_CHECK_EQUAL(args.GetIntArg("foo", 100), 99);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", true), std::runtime_error);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", false), std::runtime_error);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", true), true);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", false), true);
 
     set_foo(3.25);
     BOOST_CHECK_EQUAL(args.GetSetting("foo").write(), "3.25");
     BOOST_CHECK_EQUAL(args.GetArg("foo", "default"), "3.25");
     BOOST_CHECK_THROW(args.GetIntArg("foo", 100), std::runtime_error);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", true), std::runtime_error);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", false), std::runtime_error);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", true), true);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", false), true);
 
     set_foo(0);
     BOOST_CHECK_EQUAL(args.GetSetting("foo").write(), "0");
     BOOST_CHECK_EQUAL(args.GetArg("foo", "default"), "0");
     BOOST_CHECK_EQUAL(args.GetIntArg("foo", 100), 0);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", true), std::runtime_error);
-    BOOST_CHECK_THROW(args.GetBoolArg("foo", false), std::runtime_error);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", true), false);
+    BOOST_CHECK_EQUAL(args.GetBoolArg("foo", false), false);
 
     set_foo(true);
     BOOST_CHECK_EQUAL(args.GetSetting("foo").write(), "true");
@@ -458,6 +505,11 @@ BOOST_AUTO_TEST_CASE(logargs)
             str += s;
         });
 
+    local_args.LockSettings([](common::Settings& settings) {
+        settings.rw_config["dontlog"] = {"private-rw42"};
+        settings.rw_settings["dontlog"] = "private-json42";
+        settings.rw_settings["regtest.dontlog"] = "private-json-section42";
+    });
     // Log the arguments
     local_args.LogArgs();
 
@@ -468,6 +520,269 @@ BOOST_AUTO_TEST_CASE(logargs)
     BOOST_CHECK(str.find("Command-line arg: okaylog=\"public\"") != std::string::npos);
     BOOST_CHECK(str.find("dontlog=****") != std::string::npos);
     BOOST_CHECK(str.find("private42") == std::string::npos);
+    BOOST_CHECK(str.find("private-rw42") == std::string::npos);
+    BOOST_CHECK(str.find("private-json42") == std::string::npos);
+    BOOST_CHECK(str.find("private-json-section42") == std::string::npos);
 }
+
+BOOST_AUTO_TEST_CASE(rw_config_stream)
+{
+    std::istringstream input{"# operator settings\nprune=5\n[regtest]\nprune=1\n"};
+    std::ostringstream output;
+    ModifyRWConfigStream(input, output, {{"listen", "0"}, {"prune", "550"}});
+    BOOST_CHECK_EQUAL(output.str(), "# operator settings\nprune=550\nlisten=0\n[regtest]\nprune=1\n");
+
+    std::istringstream empty;
+    std::ostringstream rejected;
+    BOOST_CHECK_THROW(ModifyRWConfigStream(empty, rejected, {{"listen", "0\nprune=0"}}), std::invalid_argument);
+}
+
+BOOST_AUTO_TEST_CASE(config_read_failures)
+{
+    class ReadArgs : public ArgsManager {
+    public:
+        using ArgsManager::ReadConfigStream;
+    };
+    const std::string text{"foo=original\nbar=tail"};
+    for (const size_t fail_at : {size_t{0}, size_t{4}, text.size() - 1}) {
+        FailingConfigBuffer buffer{text, fail_at};
+        std::istream input{&buffer};
+        std::ostringstream output;
+        BOOST_CHECK_THROW(ModifyRWConfigStream(input, output, {{"foo", "new"}}), std::ios_base::failure);
+        BOOST_CHECK(input.bad());
+
+        FailingConfigBuffer parser_buffer{text, fail_at};
+        std::istream parser_input{&parser_buffer};
+        ReadArgs args;
+        SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}, {"-bar", ArgsManager::ALLOW_ANY}});
+        std::map<std::string, std::vector<common::SettingsValue>> target{{"foo", {"kept"}}};
+        std::string error;
+        BOOST_CHECK(!args.ReadConfigStream(parser_input, "fault.conf", error, false, &target));
+        BOOST_CHECK_EQUAL(error, "Failed to read config file \"fault.conf\".");
+        BOOST_CHECK_EQUAL(target.size(), 1U);
+        BOOST_CHECK_EQUAL(target.at("foo").front().get_str(), "kept");
+        BOOST_CHECK(!args.IsArgSet("-foo"));
+    }
+    FailingConfigBuffer copy_buffer{"invalid\nfoo=old", 12, /*fail_after_rewind=*/true};
+    std::istream copy_input{&copy_buffer};
+    std::ostringstream copy_output;
+    BOOST_CHECK_THROW(ModifyRWConfigStream(copy_input, copy_output, {{"foo", "new"}}), std::ios_base::failure);
+    BOOST_CHECK(copy_input.bad());
+
+    std::istringstream failed_input{"foo=old"};
+    failed_input.setstate(std::ios::failbit);
+    std::ostringstream failed_output;
+    BOOST_CHECK_THROW(ModifyRWConfigStream(failed_input, failed_output, {{"foo", "new"}}), std::ios_base::failure);
+
+    for (const std::string original : {"", "foo=old", "foo=old\n"}) {
+        std::istringstream input{original};
+        std::ostringstream output;
+        ModifyRWConfigStream(input, output, {{"foo", "new"}});
+        BOOST_CHECK_EQUAL(output.str(), original.empty() || original.ends_with('\n') ? "foo=new\n" : "foo=new");
+    }
+    std::istringstream invalid_final{"invalid"};
+    std::ostringstream repaired;
+    ModifyRWConfigStream(invalid_final, repaired, {{"foo", "new"}});
+    BOOST_CHECK_EQUAL(repaired.str(), "foo=new\n[INVALID]\n# Error parsing line 1: invalid\n#invalid");
+}
+
+BOOST_AUTO_TEST_CASE(rw_config_precedence)
+{
+    ArgsManager args;
+    SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}});
+    args.SelectConfigNetwork("regtest");
+    args.LockSettings([](common::Settings& settings) {
+        settings.ro_config[""]["foo"] = {"default"};
+        settings.ro_config["regtest"]["foo"] = {"network"};
+        settings.rw_settings["foo"] = "json";
+        settings.rw_config["foo"] = {"rw-first", "rw-second"};
+    });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "rw-first");
+    BOOST_CHECK((args.GetArgs("-foo") == std::vector<std::string>{"rw-first", "rw-second", "json", "network", "default"}));
+    ResetArgs(args, "-foo=cli-first -foo=cli-last");
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "cli-last");
+    args.ForceSetArg("-foo", "forced");
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "forced");
+    args.LockSettings([](common::Settings& settings) {
+        settings.forced_settings.clear();
+        settings.command_line_options.clear();
+        settings.rw_config["foo"] = {false, "after-negation"};
+    });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "after-negation");
+    BOOST_CHECK((args.GetArgs("-foo") == std::vector<std::string>{"after-negation", "network", "default"}));
+    args.LockSettings([](common::Settings& settings) { settings.rw_config["foo"] = {false}; });
+    BOOST_CHECK(args.GetArgs("-foo").empty());
+    BOOST_CHECK(args.IsArgNegated("-foo"));
+    args.LockSettings([](common::Settings& settings) { settings.rw_config.clear(); });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "json");
+    args.LockSettings([](common::Settings& settings) { settings.rw_settings.clear(); });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "network");
+    args.LockSettings([](common::Settings& settings) { settings.ro_config["regtest"].clear(); });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "default");
+    args.LockSettings([](common::Settings& settings) { settings.ro_config.clear(); });
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "unset");
+}
+
+BOOST_AUTO_TEST_CASE(rw_config_file_failures)
+{
+    class RWArgs : public ArgsManager {
+    public:
+        RWArgs(const fs::path& path, const fs::path& datadir)
+        {
+            ForceSetArg("-datadir", fs::PathToString(datadir));
+            LockSettings([](common::Settings& settings) { settings.forced_settings["conf"] = false; });
+            ForceSetArg("-confrw", fs::PathToString(path));
+            std::string error;
+            // Even an unreadable input initializes the selected file path.
+            if (!ReadConfigFiles(error)) BOOST_REQUIRE(error.starts_with("Failed to read config file"));
+        }
+    };
+    const auto path{m_args.GetDataDirBase() / "rw_config_test.conf"};
+    RWArgs args{path, m_args.GetDataDirBase()};
+    SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}});
+    args.ModifyRWConfigFile("foo", "original");
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "original");
+    fs::path json_path;
+    BOOST_REQUIRE(args.GetSettingsPath(&json_path));
+    std::map<std::string, common::SettingsValue> json_settings;
+    std::vector<std::string> json_errors;
+    BOOST_REQUIRE(common::ReadSettings(json_path, json_settings, json_errors));
+    BOOST_CHECK_EQUAL(json_settings.at("foo").get_str(), "original");
+    BOOST_CHECK_THROW(args.ModifyRWConfigFile("foo", "bad\nvalue", false), std::invalid_argument);
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "original");
+    std::ifstream input{path.std_path()};
+    std::string line;
+    std::getline(input, line);
+    BOOST_CHECK_EQUAL(line, "foo=original");
+    input.close();
+    args.EraseRWConfigFile();
+    BOOST_CHECK(!fs::exists(path));
+    auto reset_path{path};
+    reset_path += ".reset";
+    BOOST_CHECK(fs::exists(reset_path));
+
+    const auto directory{m_args.GetDataDirBase() / "rw_config_unreadable"};
+    fs::create_directory(directory);
+    RWArgs unreadable{directory, m_args.GetDataDirBase()};
+    SetupArgs(unreadable, {{"-foo", ArgsManager::ALLOW_ANY}});
+    std::string read_error;
+    BOOST_CHECK(!unreadable.ReadConfigFiles(read_error));
+    BOOST_CHECK(read_error.starts_with("Failed to read config file"));
+    unreadable.LockSettings([](common::Settings& settings) { settings.rw_config["foo"] = {"kept"}; });
+    BOOST_CHECK_THROW(unreadable.ModifyRWConfigFile("foo", "new", false), std::ios_base::failure);
+    BOOST_CHECK(fs::is_directory(directory));
+    BOOST_CHECK_EQUAL(unreadable.GetArg("-foo", "unset"), "kept");
+    auto temporary_path{directory};
+    temporary_path += ".new";
+    BOOST_CHECK(!fs::exists(temporary_path));
+
+    // A failed backup rename followed by failed removal must diagnose failure,
+    // preserving the selected file/directory and the active setting.
+    std::ofstream{(directory / "keep").std_path()} << "old";
+    const auto blocked_reset{directory + ".reset"};
+    fs::create_directory(blocked_reset);
+    std::ofstream{(blocked_reset / "keep").std_path()} << "backup";
+    BOOST_CHECK_THROW(unreadable.EraseRWConfigFile(), fs::filesystem_error);
+    BOOST_CHECK(fs::exists(directory / "keep"));
+    BOOST_CHECK_EQUAL(unreadable.GetArg("-foo", "unset"), "kept");
+
+    RWArgs missing{path / "missing" / "config", m_args.GetDataDirBase()};
+    BOOST_CHECK_THROW(missing.ModifyRWConfigFile("foo", "new", false), std::ios_base::failure);
+    BOOST_CHECK(!fs::exists(missing.GetRWConfigFilePath()));
+}
+
+BOOST_AUTO_TEST_CASE(config_invalid_values_are_not_published)
+{
+    class ReadArgs : public ArgsManager {
+    public:
+        using ArgsManager::ReadConfigStream;
+    } args;
+    SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}, {"-bar", ArgsManager::DISALLOW_NEGATION}});
+    for (bool rw : {false, true}) {
+        std::istringstream input{"foo=new\n[regtest]\nnobar=1\n"};
+        std::map<std::string, std::vector<common::SettingsValue>> target{{"foo", {"kept"}}};
+        std::string error;
+        BOOST_CHECK(!args.ReadConfigStream(input, "invalid.conf", error, false, rw ? &target : nullptr));
+        BOOST_CHECK_EQUAL(error, "Negating of -bar is meaningless and therefore forbidden");
+        BOOST_CHECK(!args.IsArgSet("-foo"));
+        BOOST_CHECK_EQUAL(target.size(), 1U);
+        BOOST_CHECK_EQUAL(target.at("foo").front().get_str(), "kept");
+        BOOST_CHECK(args.GetUnrecognizedSections().empty());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(rw_config_network_path_and_reread)
+{
+    ArgsManager args;
+    SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}, {"-confrw", ArgsManager::ALLOW_ANY}});
+    args.LockSettings([](common::Settings& settings) { settings.forced_settings["conf"] = false; });
+    args.ForceSetArg("-datadir", fs::PathToString(m_args.GetDataDirBase()));
+    args.ForceSetArg("-regtest", "1");
+    std::string error;
+    BOOST_REQUIRE(args.ReadConfigFiles(error));
+    const auto path{m_args.GetDataDirBase() / "regtest" / BITCOIN_RW_CONF_FILENAME};
+    BOOST_CHECK(args.GetRWConfigFilePath() == path);
+    fs::create_directories(path.parent_path());
+    {
+        std::ofstream output{path.std_path()};
+        output << "foo=first\n[other]\nfoo=last";
+    }
+    BOOST_REQUIRE(args.ReadConfigFiles(error));
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "first");
+    fs::remove(path);
+    BOOST_REQUIRE(args.ReadConfigFiles(error));
+    BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "unset");
+    args.LockSettings([](common::Settings& settings) { settings.forced_settings["confrw"] = false; });
+    BOOST_REQUIRE(args.ReadConfigFiles(error));
+    BOOST_CHECK(args.GetRWConfigFilePath().empty());
+    BOOST_CHECK_THROW(args.ModifyRWConfigFile("foo", "new", false), std::logic_error);
+}
+
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(rw_config_partial_write_and_close_failures)
+{
+    const auto path{m_args.GetDataDirBase() / "rw_config_output_failure.conf"};
+    ArgsManager args;
+    SetupArgs(args, {{"-foo", ArgsManager::ALLOW_ANY}});
+    args.ForceSetArg("-datadir", fs::PathToString(m_args.GetDataDirBase()));
+    args.LockSettings([](common::Settings& settings) { settings.forced_settings["conf"] = false; });
+    args.ForceSetArg("-confrw", fs::PathToString(path));
+    std::string error;
+    BOOST_REQUIRE(args.ReadConfigFiles(error));
+    args.ModifyRWConfigFile("foo", "original", false);
+
+    // Isolate file-size limits and SIGXFSZ disposition in the child. A small
+    // buffered output fails during close; a large output also exercises a
+    // partial write before close. Neither may publish settings or replace input.
+    for (const size_t value_size : {size_t{3}, size_t{16384}}) {
+        const auto pid{fork()};
+        BOOST_REQUIRE(pid >= 0);
+        if (pid == 0) {
+            struct rlimit limit;
+            if (getrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(10);
+            limit.rlim_cur = 1;
+            if (setrlimit(RLIMIT_FSIZE, &limit) != 0 || std::signal(SIGXFSZ, SIG_IGN) == SIG_ERR) _exit(11);
+            try {
+                args.ModifyRWConfigFile("foo", std::string(value_size, 'x'), false);
+            } catch (const std::ios_base::failure&) {
+                _exit(args.GetArg("-foo", "unset") == "original" ? 0 : 12);
+            } catch (...) {
+                _exit(13);
+            }
+            _exit(14);
+        }
+        int status{0};
+        BOOST_REQUIRE_EQUAL(waitpid(pid, &status, 0), pid);
+        BOOST_REQUIRE(WIFEXITED(status));
+        BOOST_CHECK_EQUAL(WEXITSTATUS(status), 0);
+        std::ifstream input{path.std_path()};
+        std::string line;
+        std::getline(input, line);
+        BOOST_CHECK_EQUAL(line, "foo=original");
+        BOOST_CHECK_EQUAL(args.GetArg("-foo", "unset"), "original");
+        BOOST_CHECK(!fs::exists(path + ".new"));
+    }
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()

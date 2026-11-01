@@ -1905,6 +1905,11 @@ BOOST_AUTO_TEST_CASE(ceil_div_test)
 
 BOOST_AUTO_TEST_CASE(gib_string_literal_test)
 {
+    // Native v32 literals return checked uint64 bytes, including on 32-bit
+    // targets. Test the largest whole GiB without narrowing through size_t.
+    static_assert(17179869183_GiB == (std::numeric_limits<uint64_t>::max() >> 30) << 30);
+    static_assert(!BraceInitializesTo<int32_t, 2_GiB>);
+    static_assert(BraceInitializesTo<uint32_t, 3_GiB>);
     // Basic equivalences and simple arithmetic operations
     BOOST_CHECK_EQUAL(0_GiB, 0);
     BOOST_CHECK_EQUAL(1_GiB, 1 << 30);

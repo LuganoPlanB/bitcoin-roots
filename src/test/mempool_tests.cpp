@@ -4,6 +4,7 @@
 
 #include <common/system.h>
 #include <policy/policy.h>
+#include <rpc/mempool.h>
 #include <test/util/time.h>
 #include <test/util/roots_policy_oracles.h>
 #include <test/util/txmempool.h>
@@ -14,6 +15,7 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/test/unit_test.hpp>
+#include <univalue.h>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -105,6 +107,15 @@ BOOST_AUTO_TEST_CASE(DynamicDustPublication)
             const auto fee = snapshot.dust_relay_feerate.GetFeePerK();
             if ((fee != 3000 && fee != 90000) || snapshot.max_datacarrier_bytes != 271 ||
                 snapshot.permitbareanchor || snapshot.acceptunknownwitness) valid = false;
+            if (i < 1000) {
+                // Returned values own their data after the mempool lock ends.
+                const auto report{MempoolInfoToJSON(pool)};
+                const auto reported_fee{report["policy"]["dust_relay_fee"].getValStr()};
+                if (reported_fee != "0.00003000" && reported_fee != "0.00090000") valid = false;
+                if (report["policy"]["max_datacarrier_bytes"].getInt<int>() != 271 ||
+                    report["policy"]["permit_bare_anchor"].get_bool() ||
+                    report["policy"]["accept_unknown_witness"].get_bool()) valid = false;
+            }
         }
     }};
     // Observe both sides of a real publication before the stress loop. Every

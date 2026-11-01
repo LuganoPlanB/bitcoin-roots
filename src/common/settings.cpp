@@ -23,6 +23,7 @@ namespace {
 enum class Source {
    FORCED,
    COMMAND_LINE,
+   CONFIG_FILE_RW,
    RW_SETTINGS,
    CONFIG_FILE_NETWORK_SECTION,
    CONFIG_FILE_DEFAULT_SECTION
@@ -32,7 +33,7 @@ enum class Source {
 const std::string SETTINGS_WARN_MSG_KEY{"_warning_"};
 
 //! Merge settings from multiple sources in precedence order:
-//! Forced config > command line > read-write settings file > config file network-specific section > config file default section
+//! Forced config > command line > read-write text config > JSON settings > config network section > config default section
 //!
 //! This function is provided with a callback function fn that contains
 //! specific logic for how to merge the sources.
@@ -46,6 +47,10 @@ static void MergeSettings(const Settings& settings, const std::string& section, 
     // Merge in the command-line options
     if (auto* values = FindKey(settings.command_line_options, name)) {
         fn(SettingsSpan(*values), Source::COMMAND_LINE);
+    }
+    // Merge in the read-write text config.
+    if (auto* values = FindKey(settings.rw_config, name)) {
+        fn(SettingsSpan(*values), Source::CONFIG_FILE_RW);
     }
     // Merge in the read-write settings
     if (const SettingsValue* value = FindKey(settings.rw_settings, name)) {
@@ -172,7 +177,7 @@ SettingsValue GetSetting(const Settings& settings,
         // the config file the precedence is reversed for all settings except
         // chain type settings.
         const bool reverse_precedence =
-            (source == Source::CONFIG_FILE_NETWORK_SECTION || source == Source::CONFIG_FILE_DEFAULT_SECTION) &&
+            (source == Source::CONFIG_FILE_RW || source == Source::CONFIG_FILE_NETWORK_SECTION || source == Source::CONFIG_FILE_DEFAULT_SECTION) &&
             !get_chain_type;
 
         // Weird behavior preserved for backwards compatibility: Negated
@@ -224,7 +229,7 @@ std::vector<SettingsValue> GetSettingsList(const Settings& settings,
         // settings will be brought back from the dead (but earlier command
         // line settings will still be ignored).
         const bool add_zombie_config_values =
-            (source == Source::CONFIG_FILE_NETWORK_SECTION || source == Source::CONFIG_FILE_DEFAULT_SECTION) &&
+            (source == Source::CONFIG_FILE_RW || source == Source::CONFIG_FILE_NETWORK_SECTION || source == Source::CONFIG_FILE_DEFAULT_SECTION) &&
             !prev_negated_empty;
 
         // Ignore settings in default config section if requested.

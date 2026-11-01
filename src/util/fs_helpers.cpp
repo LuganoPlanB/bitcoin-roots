@@ -13,9 +13,12 @@
 #include <util/check.h>
 #include <util/fs.h>
 #include <util/log.h>
+#include <util/overflow.h>
 #include <util/syserror.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -195,51 +198,54 @@ int RaiseFileDescriptorLimit(int min_fd)
 
 /**
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
- * it is advisory, and the range specified in the arguments will never contain live data
+ * It is advisory and must preserve existing bytes in the requested range.
  */
 void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length)
 {
+    // v32 offsets are wider than the released helper's unsigned-int offsets.
+    // An unrepresentable end must not wrap into a different live file range.
+    const auto end{CheckedAdd(offset, uint64_t{length})};
+    if (length == 0 || !end || !std::in_range<int64_t>(*end)) return;
 #if defined(WIN32)
     // Windows-specific version
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     LARGE_INTEGER nFileSize;
-    int64_t nEndPos = (int64_t)offset + length;
-    nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
-    nFileSize.u.HighPart = nEndPos >> 32;
-    SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN);
-    SetEndOfFile(hFile);
-#elif defined(__APPLE__)
-    // OSX specific version
-    // NOTE: Contrary to other OS versions, the OSX version assumes that
-    // NOTE: offset is the size of the file.
-    fstore_t fst;
-    fst.fst_flags = F_ALLOCATECONTIG;
-    fst.fst_posmode = F_PEOFPOSMODE;
-    fst.fst_offset = 0;
-    fst.fst_length = length; // mac os fst_length takes the # of free bytes to allocate, not desired file size
-    fst.fst_bytesalloc = 0;
-    if (fcntl(fileno(file), F_PREALLOCATE, &fst) == -1) {
-        fst.fst_flags = F_ALLOCATEALL;
-        fcntl(fileno(file), F_PREALLOCATE, &fst);
+    if (GetFileSizeEx(hFile, &nFileSize) && std::cmp_less(nFileSize.QuadPart, *end)) {
+        nFileSize.QuadPart = static_cast<int64_t>(*end);
+        if (SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN)) {
+            SetEndOfFile(hFile);
+        }
     }
-    ftruncate(fileno(file), static_cast<off_t>(offset) + length);
 #else
 #if defined(HAVE_POSIX_FALLOCATE)
     // Version using posix_fallocate
-    off_t nEndPos = (off_t)offset + length;
-    if (0 == posix_fallocate(fileno(file), 0, nEndPos)) return;
+    if (std::in_range<off_t>(*end) && 0 == posix_fallocate(fileno(file), static_cast<off_t>(offset), length)) return;
 #endif
     // Fallback version
     // TODO: just write one byte per block
-    static const char buf[65536] = {};
-    if (FileSeek64(file, offset, SEEK_SET)) {
+    // Non-Windows FileSeek64 uses std::fseek, whose offset has type long.
+    if (!std::in_range<long>(*end)) return;
+    uint8_t buf[65536];
+    if (FileSeek64(file, static_cast<int64_t>(offset), SEEK_SET)) {
         return;
     }
+    clearerr(file);
     while (length > 0) {
         unsigned int now = 65536;
         if (length < now)
             now = length;
-        fwrite(buf, 1, now, file); // allowed to fail; this function is advisory anyway
+        const size_t rlen{fread(buf, 1, now, file)};
+        if (rlen < now) {
+            if (ferror(file)) {
+                clearerr(file);
+                return;
+            }
+            memset(&buf[rlen], 0, now - rlen);
+        }
+        // Rewind every chunk, then sequence each write before the next read.
+        if (FileSeek64(file, -static_cast<int64_t>(rlen), SEEK_CUR)) return;
+        if (fwrite(buf, 1, now, file) != now) return; // Advisory allocation may fail.
+        if (FileSeek64(file, 0, SEEK_CUR)) return;
         length -= now;
     }
 #endif

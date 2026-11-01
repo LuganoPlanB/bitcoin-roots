@@ -4,6 +4,7 @@
 
 #include <common/args.h> // IWYU pragma: associated
 
+#include <chainparamsbase.h>
 #include <common/settings.h>
 #include <sync.h>
 #include <tinyformat.h>
@@ -71,6 +72,10 @@ static bool GetConfigOptions(std::istream& stream, const std::string& filepath, 
         }
         ++linenr;
     }
+    if (stream.bad() || !stream.eof()) {
+        error = strprintf("Failed to read config file \"%s\".", filepath);
+        return false;
+    }
     return true;
 }
 
@@ -88,11 +93,13 @@ bool IsConfSupported(KeyInfo& key, std::string& error) {
     return true;
 }
 
-bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& filepath, std::string& error, bool ignore_invalid_keys)
+bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& filepath, std::string& error, bool ignore_invalid_keys, std::map<std::string, std::vector<common::SettingsValue>>* settings_target)
 {
     LOCK(cs_args);
     std::vector<std::pair<std::string, std::string>> options;
-    if (!GetConfigOptions(stream, filepath, error, options, m_config_sections)) {
+    std::list<SectionInfo> sections;
+    decltype(m_settings.ro_config) parsed;
+    if (!GetConfigOptions(stream, filepath, error, options, sections)) {
         return false;
     }
     for (const std::pair<std::string, std::string>& option : options) {
@@ -104,7 +111,7 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
             if (!value) {
                 return false;
             }
-            m_settings.ro_config[key.section][key.name].push_back(*value);
+            parsed[settings_target ? "" : key.section][key.name].push_back(*value);
         } else {
             if (ignore_invalid_keys) {
                 LogWarning("Ignoring unknown configuration value %s", option.first);
@@ -114,6 +121,15 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
             }
         }
     }
+    // Publish only after the complete input and every recognized value validate.
+    for (auto& [section, values] : parsed) {
+        auto& target = settings_target ? *settings_target : m_settings.ro_config[section];
+        for (auto& [name, entries] : values) {
+            auto& dest = target[name];
+            dest.insert(dest.end(), entries.begin(), entries.end());
+        }
+    }
+    m_config_sections.splice(m_config_sections.end(), sections);
     return true;
 }
 
@@ -134,6 +150,8 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
     {
         LOCK(cs_args);
         m_settings.ro_config.clear();
+        m_settings.rw_config.clear();
+        m_rwconf_had_prune_option = false;
         m_config_sections.clear();
         const auto conf_val = GetPathArg_("-conf", BITCOIN_CONF_FILENAME);
         m_config_path = (conf_val.is_absolute() || conf_val.empty()) ? conf_val : fsbridge::AbsPathJoin(GetDataDir(/*net_specific=*/false), conf_val);
@@ -230,6 +248,42 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
     if (!CheckDataDirOption(*this)) {
         error = strprintf("specified data directory \"%s\" does not exist.", GetArg("-datadir", ""));
         return false;
+    }
+    // Config is read before SelectParams. Resolve this ArgsManager's network
+    // without changing global chain parameters or consulting another instance.
+    fs::path rwconf_path;
+    try {
+        const auto chain{CreateBaseChainParams(GetChainType())};
+        rwconf_path = GetPathArg("-confrw", BITCOIN_RW_CONF_FILENAME);
+        if (!rwconf_path.is_absolute() && !rwconf_path.empty()) {
+            rwconf_path = fsbridge::AbsPathJoin(GetDataDirBase() / fs::PathFromString(chain->DataDir()), rwconf_path);
+        }
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+    {
+        LOCK(cs_args);
+        m_rwconf_path = rwconf_path;
+    }
+    if (rwconf_path.empty()) return true;
+    if (fs::is_directory(rwconf_path)) {
+        error = strprintf("Failed to read config file \"%s\".", fs::PathToString(rwconf_path));
+        return false;
+    }
+    std::ifstream rwconf_stream{rwconf_path.std_path()};
+    if (fs::exists(rwconf_path) && !rwconf_stream.is_open()) {
+        error = strprintf("Config file \"%s\" could not be opened.", fs::PathToString(rwconf_path));
+        return false;
+    }
+    std::map<std::string, std::vector<common::SettingsValue>> rw_config;
+    if (rwconf_stream.good() && !ReadConfigStream(rwconf_stream, fs::PathToString(rwconf_path), error, ignore_invalid_keys, &rw_config)) {
+        return false;
+    }
+    {
+        LOCK(cs_args);
+        m_rwconf_had_prune_option = rw_config.contains("prune");
+        m_settings.rw_config = std::move(rw_config);
     }
     return true;
 }
