@@ -162,7 +162,12 @@ logs/history redaction and HD ancestor-xpub disclosure warnings; Quietproof's
 native-P2WPKH limitation remains documented. Required evidence includes the
 entire `wallet_exportaddresskey.py`, `scriptpubkeyman_tests.cpp`,
 `wallet_rpc_tests.cpp`, `key_tests.cpp`, `rpc_tests.cpp` and Qt RPC secret-history
-tests. Current Core `addhdkey`, `derivehdkey`, `exportwatchonlywallet` and new
+tests. A prerelease hardening change disables `exportaddresskey`, `listdescriptors`,
+`gethdkeys` and `derivehdkey` entirely by default, including public modes. Only an
+explicit `--allow-dangerous-rpc` startup command-line flag enables them; config
+files and runtime settings cannot. This is an intentional change to the former
+invocation-only export opt-in, without changing wallet unlock requirements.
+Current Core `addhdkey`, `derivehdkey`, `exportwatchonlywallet` and new
 key-provider/schema APIs are overlap to audit, not authorization to export more.
 
 ### Dependency and non-feature boundaries
@@ -846,3 +851,156 @@ The final source-inventory pass also retains complete IBD-relay and pruned-node
 service profiles. Their fixture oracles distinguish released incremental-fee
 quantization from the minimum relay fee, and loopback-only Bloom services from
 global service advertisement.
+
+### L7.1 wallet foundations and transient sweep
+
+The backend adapts released S06
+(`ab07fc5490af30ce7c6da1c137c8280d1f4815f0`), with final roots.6
+process/filesystem refinements and Plan-B attribution from S17 and S35. This
+is a material v32 adaptation of Jaromil's wallet work, retaining upstream and
+devjoinedthechat lineage rather than claiming a byte-equivalent replay.
+Descriptor/SQLite boundaries remain native. Core v32 already supplies the
+directory-write probe and SQLite rejection, including the native in-memory
+database distinction; those implementations are retained. Wallet discovery
+excludes node database trees and avoids recursive symlink/reparse traversal.
+Both multiwallet transports reproduced a lexical-path exclusion failure when
+v32 canonicalized the wallet directory but the data directory retained a
+symlink alias. Exclusions now compare canonical filesystem paths; the original
+relative wallet names and directory-error handling remain intact.
+Unix signer children close actual inherited descriptors, including those above
+a lowered soft limit, while retaining standard streams and the close-on-exec
+error pipe. Native Windows process handling is retained; handle isolation and
+non-Linux fallback execution remain separate platform qualifications.
+
+Transient WIF sweep uses shared native UTXO scanning through the chain
+interface and requires a complete locally available signing path in the
+selected descriptor wallet. Cached public expansion and encrypted-key
+availability are sufficient for this eligibility check; it retrieves no wallet
+secret and does not unlock the wallet. Incomplete multisig/Taproot/MuSig paths
+remain ineligible. Supplied secrets stay in the transient signing provider,
+and the interface decodes secure strings with secure Base58 working storage.
+The default returns a signed preview. Atomic cancellation and submission are
+mutually exclusive, and the GUI-facing interface checks the reviewed txid
+before submission. GUI presentation and secret-history integration belong to L8.
+
+The fee snapshot uses v32's native `MinimumFeeRateResult` and synchronized
+fallback authorization. Review found that the released sweep consumed a zero
+fee when estimation was unavailable and fallback disabled. This port rejects
+that case before submission, matching native wallet sends. It retains one fee
+snapshot during convergence, native signing options and native transaction
+version defaults. Backend RBF tests inspect actual prepared sequences and
+serialize/decode PSBT versions 0 and 2 for both wallet preferences and explicit
+per-send choices. Normal wallet key APIs remain native; generalized address
+export is separately owned by L7.2.
+
+The complete sweep fixture retains CLI fee-precedence checks and the later
+released read/write-configuration branch behind `--test-runtime-config`.
+L9 must run that branch after its configuration implementation; its absence
+at this backend boundary is a named integration dependency, not a passing
+configuration result. Current focused execution and full-parent qualification
+are recorded separately from these source dispositions.
+
+Focused Linux verification passed all 131 selected native cases across every
+wallet suite and the affected key/descriptor/script/RPC/process/filesystem
+suites (764450 assertions). The complete 78-instance wallet/tool/PSBT/UTXO-scan
+functional selection passed 75 and explicitly skipped three unavailable
+previous-release profiles. Both sweep RPC/CLI modes and both multiwallet modes
+passed. The initial three functional failures are retained: the two directory
+alias failures above, and a native MuSig script-path fixture funded at v32's
+1 sat/vB synthetic estimate while Roots required its adjusted policy size.
+That nonce/participant fixture now specifies 2 sat/vB, retaining Roots policy
+and every signing/nonce assertion. All selected native and functional cases
+were renewed after these corrections. Existing Qt6 wallet-model, send and
+coin-control consumer objects also compile with the new backend interfaces;
+this is not a Qt presentation or runtime qualification. Full L7 reconciliation
+and the export-specific gates follow L7.2.
+
+### L7.2 generalized address-key export
+
+The backend carries Jaromil's opt-in primitive S22
+(`fad94e12f7b830e820c9f722a8545bffc809f2d5`), the roots.3 destination-type
+correction S26 (`59185c317ef80ef289b46c38ba82081b61a1d101`), and the complete
+roots.6 generalized contract S37 (`add7e6aa8ffbdc39be3070b126662174834d1410`).
+The selected comparison endpoint remains released roots.6
+`e93a8cca047c12ce9cab97181dd30705ed0e7e83`. This is a thematic adaptation to
+Core v32 descriptor loading, `RPCMethod`, range accessors and separate MuSig2
+functions, retaining the upstream, Jaromil and Plan-B credits. It does not use
+the separate user-owned export branch as an import source.
+
+Opt-in means explicitly invoking `exportaddresskey`; the released RPC has no
+separate startup enable option. It requires a local descriptor wallet with
+private keys and the normal wallet unlock authorization. The wallet lock
+covers authorization, extraction and serialization. Public metadata alone
+does not grant export authority. Canonical `keys` records preserve complete
+public identities, secret scalars, compression and script/Taproot/MuSig2 roles;
+the historical single-key aliases remain available where applicable. Optional
+`taproot_output` returns an effective output secret only when locally available.
+Multisig and MuSig2 results describe local participants, without promising a
+complete spending path. Address and wrapper checks retain the final typed
+destination comparison and reject inconsistent metadata. Nonce snapshots,
+descriptor caches and wallet contents are unchanged by export.
+
+Native v32 `addhdkey`, `derivehdkey`, `exportwatchonlywallet`,
+`ExportDescriptors` and `ExportWatchOnlyWallet` implementations are retained
+unchanged. Existing HD master secrets already held locally can be explicitly
+exported, including the documented ancestor-disclosure risk. Export does not
+search unknown derivation paths or add authority to private-key-free or
+external-signer wallets. The privacy manual states those limits and the
+explicit-invocation and unlock requirements. Qt console history integration remains
+L8's presentation responsibility; daemon log redaction is checked here.
+
+The carried complete export fixture uses independent BIP32, BIP327 and BIP341
+oracles and both RPC/CLI transports. Additional checks exercise native HD key
+derivation, locked authorization and public-only export/restore boundaries.
+OpenRPC tests assert the canonical record schema, optional legacy aliases and
+argument default in both transports. Source equality checks complement these
+behavioral tests; they do not substitute for them. Focused child evidence and
+later full-parent qualification remain distinct.
+
+Focused Linux verification passed all 159 selected native cases (767537
+assertions), including all 25 added provider/export cases. Both complete
+export transports and all 25 selected current wallet/RPC/schema profiles
+passed, with no selected skips. The native v32 key API, public-only wallet,
+descriptor, encryption, signer, MuSig2, Taproot, Miniscript, PSBT, raw RPC,
+help, OpenRPC and sweep profiles are included. Initial failures are retained:
+the carried nonce test required v32's public-nonce argument to its session
+identity, and the new functional fixture required refreshing CMake's
+configuration-time symlink glob before either transport could start. The
+repaired native build and complete export transports passed with current
+source/configuration/binary identities. Raw runtime wallets and private-key
+fixture values are excluded from evidence; full sanitized logs and the
+complete reconstructible dirty-diff digest are retained. Full L7 native/CTest
+and complete wallet/tool reconciliation await the parent continuation.
+
+### L7 parent qualification
+
+The preceding child results describe their individual checkpoints. Parent
+qualification rebuilt all six policy consumers after the include cleanup and
+froze those binaries before execution. The complete default native run passed
+901 cases normally and reported one assets warning, with 26961793 assertions.
+The assets case returned before processing fixtures because
+`DIR_UNIT_TEST_DATA` is unset; it is not a qualified assets pass. Complete
+CTest discovered 382 tests with none disabled: 381 passed and the same assets
+prerequisite produced one skip. All 28 released export additions have passing
+witnesses in the current full native report.
+
+One combined functional selection covered 88 unique wallet, tool, PSBT,
+UTXO-scan, signer and affected key/RPC/schema instances: 85 passed and three
+previous-release profiles skipped. Both complete export transports, both sweep
+transports and OpenRPC RPC/CLI passed. A fresh prerequisite check found the
+effective previous-release directory absent; no option disabled that capability
+to obtain a pass. Ancient migration requires Core 14.3, migration requires
+28.2, and backward compatibility needs its declared previous-release matrix.
+Those profiles and external assets remain explicit L11 qualification gaps.
+
+Complete sanitized native, CTest and functional captures retain commands,
+UTC observations, exits, individual results and source/configuration/binary
+identities. Historical failures and child checkpoints remain preserved. The
+only source-tree change after the final product runs is this review paragraph;
+no executable, fixture or configuration input changed. Native v32 HD/public-only
+wallet APIs remain unchanged, and export remains an explicit invocation under
+normal local-wallet authorization. No separate export-enable switch exists.
+Qt console/history integration remains L8, the retained sweep runtime-config
+branch must run under L9, and optional/platform/sanitizer qualification remains
+with its declared later owners. These results do not qualify those gaps or
+establish a release or deployment.

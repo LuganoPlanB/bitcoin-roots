@@ -335,6 +335,12 @@ public:
     std::optional<bool> GetBoolArg(const std::string& strArg) const EXCLUSIVE_LOCKS_REQUIRED(!cs_args);
 
     /**
+     * Read only the explicit command-line value, ignoring config and forced settings.
+     * Accept a bare flag, 0 or 1; return fDefault when absent and nullopt when invalid.
+     */
+    std::optional<bool> GetCommandLineBoolArg(const std::string& strArg, bool fDefault) const EXCLUSIVE_LOCKS_REQUIRED(!cs_args);
+
+    /**
      * Set an argument if it doesn't already have a value
      *
      * @param strArg Argument to set (e.g. "-foo")

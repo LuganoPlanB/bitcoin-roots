@@ -52,6 +52,7 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
             ["-nowallet", "-addresstype=bech32", "-whitelist=noban@127.0.0.1"], # v0.20.1
         ]
         self.wallet_names = [self.default_wallet_name]
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

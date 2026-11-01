@@ -95,6 +95,36 @@ check_cxx_source_compiles("
   " HAVE_SOCKADDR_UN
 )
 
+# Check safe signer descriptor closure without scanning a numeric soft limit.
+check_cxx_source_compiles("
+  #include <limits.h>
+  #include <unistd.h>
+  int main() { return close_range(3, UINT_MAX, 0); }
+  " HAVE_CLOSE_RANGE_GENERIC
+)
+if(NOT HAVE_CLOSE_RANGE_GENERIC)
+  check_cxx_source_compiles("
+    #define _GNU_SOURCE
+    #include <linux/close_range.h>
+    #include <limits.h>
+    #include <unistd.h>
+    int main() { return close_range(3, UINT_MAX, 0); }
+    " HAVE_CLOSE_RANGE_LINUX
+  )
+endif()
+check_cxx_source_compiles("
+  #include <unistd.h>
+  int main() { closefrom(4); }
+  " HAVE_CLOSEFROM
+)
+if(HAVE_CLOSEFROM)
+  check_cxx_source_compiles("
+    #include <unistd.h>
+    int main() { return closefrom(4); }
+    " HAVE_CLOSEFROM_RETURN_INT
+  )
+endif()
+
 # Check for different ways of gathering OS randomness:
 # - Linux getrandom()
 check_cxx_source_compiles("

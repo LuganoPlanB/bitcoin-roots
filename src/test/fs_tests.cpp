@@ -12,7 +12,28 @@
 #include <ios>
 #include <string>
 
+#ifndef WIN32
+#include <unistd.h>
+#endif
+
 BOOST_FIXTURE_TEST_SUITE(fs_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(directory_write_probe)
+{
+    const fs::path dir{m_args.GetDataDirBase() / "write_probe"};
+    fs::create_directory(dir);
+    BOOST_CHECK(IsDirWritable(dir));
+    BOOST_CHECK(fs::is_empty(dir));
+    const fs::path file{dir / "file"};
+    { std::ofstream stream{file.std_path()}; }
+    BOOST_CHECK_THROW(IsDirWritable(file), std::runtime_error);
+#ifndef WIN32
+    fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec);
+    if (geteuid() != 0) BOOST_CHECK(!IsDirWritable(dir));
+    fs::permissions(dir, fs::perms::owner_all);
+#endif
+    fs::remove_all(dir);
+}
 
 BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)
 {

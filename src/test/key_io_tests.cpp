@@ -20,6 +20,24 @@
 
 BOOST_FIXTURE_TEST_SUITE(key_io_tests, BasicTestingSetup)
 
+BOOST_AUTO_TEST_CASE(secure_wif_decode_matches_script_key_forms)
+{
+    for (const bool compressed : {false, true}) {
+        CKey key;
+        key.MakeNewKey(compressed);
+        const std::string encoded{EncodeSecret(key)};
+        const SecureString secure{encoded.begin(), encoded.end()};
+        const CKey decoded{DecodeSecret(secure)};
+        BOOST_CHECK(decoded == key);
+        BOOST_CHECK_EQUAL(decoded.IsCompressed(), compressed);
+        SecureString embedded_nul{secure};
+        embedded_nul.push_back('\0');
+        BOOST_CHECK(!DecodeSecret(embedded_nul).IsValid());
+        BOOST_CHECK(!DecodeSecret(SecureString{"invalid-WIF"}).IsValid());
+    }
+}
+
+
 // Goal: check that parsed keys match test payload
 BOOST_AUTO_TEST_CASE(key_io_valid_parse)
 {

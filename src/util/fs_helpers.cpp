@@ -323,6 +323,19 @@ std::optional<fs::perms> InterpretPermString(const std::string& s)
     }
 }
 
+bool IsSymlink(const fs::path& path)
+{
+#ifdef WIN32
+    const DWORD attrs{GetFileAttributesW(path.wstring().c_str())};
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        throw fs::filesystem_error("Unable to get file attributes", fs::PathToString(path), std::make_error_code(std::errc::invalid_argument));
+    }
+    return (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    return fs::is_symlink(path);
+#endif
+}
+
 bool IsDirWritable(const fs::path& dir_path)
 {
     // Attempt to create a tmp file in the directory

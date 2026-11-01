@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <common/run_command.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
@@ -18,6 +19,13 @@
 #include <boost/test/unit_test.hpp>
 
 #include <string>
+
+#ifndef WIN32
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace {
 // When set in the environment, test_bitcoin acts as a mock subprocess for the
@@ -49,6 +57,14 @@ const bool g_maybe_run_mock_dispatcher_before_main{[]() {
         std::cout << s << std::endl;
         std::_Exit(EXIT_SUCCESS);
     }
+#ifndef WIN32
+    if (n == "check_inherited_fd") {
+        int fd;
+        std::cin >> fd;
+        std::cout << "{\"inherited\":" << (fcntl(fd, F_GETFD) == -1 ? "false" : "true") << "}" << std::endl;
+        std::_Exit(EXIT_SUCCESS);
+    }
+#endif
     std::cerr << "Unknown mock process: " << n << std::endl;
     std::_Exit(EXIT_FAILURE);
 }()};
@@ -121,5 +137,63 @@ BOOST_AUTO_TEST_CASE(run_command)
         BOOST_CHECK_EQUAL(success.get_bool(), true);
     }
 }
+
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(signer_fallback_closes_descriptors_above_lowered_limit)
+{
+    const int fd = open("/dev/null", O_RDONLY);
+    BOOST_REQUIRE(fd >= 0);
+    const int inherited = fcntl(fd, F_DUPFD, 123);
+    close(fd);
+    BOOST_REQUIRE(inherited >= 123);
+    int pipe_fds[2];
+    BOOST_REQUIRE_EQUAL(pipe(pipe_fds), 0);
+    const pid_t child = fork();
+    BOOST_REQUIRE(child >= 0);
+    if (child == 0) {
+        close(pipe_fds[0]);
+        struct rlimit limit;
+        if (getrlimit(RLIMIT_NOFILE, &limit) != 0) _exit(1);
+        limit.rlim_cur = 32;
+        if (setrlimit(RLIMIT_NOFILE, &limit) != 0) _exit(2);
+        int error_fd{pipe_fds[1]};
+        const bool closed = subprocess::detail::subprocess_close_all_fds(error_fd, /*force_fallback=*/true);
+        const unsigned char facts = (closed ? 1 : 0) |
+            (fcntl(inherited, F_GETFD) == -1 && errno == EBADF ? 2 : 0) |
+            (error_fd == 3 && fcntl(error_fd, F_GETFD) >= 0 ? 4 : 0) |
+            (fcntl(0, F_GETFD) >= 0 && fcntl(1, F_GETFD) >= 0 && fcntl(2, F_GETFD) >= 0 ? 8 : 0) |
+            ((fcntl(error_fd, F_GETFD) & FD_CLOEXEC) != 0 ? 16 : 0);
+        const bool sent = write(error_fd, &facts, sizeof(facts)) == sizeof(facts);
+        _exit(sent ? 0 : 3);
+    }
+    close(inherited);
+    close(pipe_fds[1]);
+    unsigned char facts{0};
+    BOOST_CHECK_EQUAL(read(pipe_fds[0], &facts, sizeof(facts)), sizeof(facts));
+    close(pipe_fds[0]);
+    int status{0};
+    BOOST_REQUIRE_EQUAL(waitpid(child, &status, 0), child);
+    BOOST_CHECK(WIFEXITED(status));
+    BOOST_CHECK_EQUAL(WEXITSTATUS(status), 0);
+#if defined(__linux__) || defined(__APPLE__) || HAVE_CLOSEFROM
+    BOOST_CHECK_EQUAL(facts, 31);
+#else
+    BOOST_CHECK_EQUAL(facts & 1, 0); // Unsupported platforms fail closed.
+#endif
+}
+
+BOOST_AUTO_TEST_CASE(signer_closes_inherited_descriptors)
+{
+    const int fd = open("/dev/null", O_RDONLY);
+    BOOST_REQUIRE(fd >= 0);
+    // A high descriptor avoids collision with the child's startup files.
+    const int inherited = fcntl(fd, F_DUPFD, 123);
+    close(fd);
+    BOOST_REQUIRE(inherited >= 123);
+    const auto result = RunCommandParseJSON(mock_executable("check_inherited_fd"), std::to_string(inherited));
+    close(inherited);
+    BOOST_CHECK(!result.find_value("inherited").get_bool());
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()

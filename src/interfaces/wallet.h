@@ -10,12 +10,14 @@
 #include <common/types.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
+#include <policy/feerate.h>
 #include <primitives/transaction.h>
 #include <support/allocators/secure.h>
 #include <util/fs.h>
 #include <util/result.h>
 #include <util/ui_change_type.h>
 
+#include <atomic>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -56,6 +58,40 @@ struct WalletTx;
 struct WalletTxOut;
 struct WalletTxStatus;
 struct WalletMigrationResult;
+
+//! Cancellation and submission are mutually exclusive. An accepted cancel
+//! guarantees that broadcast cannot begin afterwards.
+class SweepAuthorization
+{
+public:
+    bool Cancel()
+    {
+        State expected{State::ACTIVE};
+        if (m_state.compare_exchange_strong(expected, State::CANCELLED)) return true;
+        return expected == State::CANCELLED;
+    }
+    bool IsCancelled() const { return m_state.load() == State::CANCELLED; }
+    bool BeginBroadcast()
+    {
+        State expected{State::ACTIVE};
+        return m_state.compare_exchange_strong(expected, State::BROADCAST_STARTED);
+    }
+    bool BroadcastStarted() const { return m_state.load() == State::BROADCAST_STARTED; }
+
+private:
+    enum class State : uint8_t { ACTIVE, CANCELLED, BROADCAST_STARTED };
+    std::atomic<State> m_state{State::ACTIVE};
+};
+
+//! Supplied transient keys are never retained by this result or the wallet.
+struct WalletSweepResult {
+    CTransactionRef tx;
+    CAmount amount{0};
+    CAmount fee{0};
+    size_t inputs{0};
+    int64_t vsize{0};
+    bool broadcast{false};
+};
 
 //! Interface for accessing a wallet.
 class Wallet
@@ -102,6 +138,13 @@ public:
 
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CTxDestination& dest) = 0;
+
+    //! Sweep one transient private key to a destination controlled by this wallet.
+    virtual util::Result<WalletSweepResult> sweepPrivateKey(const SecureString& private_key,
+                                                             const CTxDestination& destination,
+                                                             bool broadcast,
+                                                             const std::optional<Txid>& expected_txid,
+                                                             const std::shared_ptr<SweepAuthorization>& authorization) = 0;
 
     //! Add or update address.
     virtual bool setAddressBook(const CTxDestination& dest, const std::string& name, const std::optional<wallet::AddressPurpose>& purpose) = 0;
@@ -232,7 +275,8 @@ public:
     virtual CoinsList listCoins() = 0;
 
     //! Return wallet transaction output information.
-    virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) = 0;
+    virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs,
+                                               const std::optional<CFeeRate>& feerate = std::nullopt) = 0;
 
     //! Get required fee.
     virtual CAmount getRequiredFee(unsigned int tx_bytes) = 0;
@@ -245,6 +289,9 @@ public:
 
     //! Get tx confirm target.
     virtual unsigned int getConfirmTarget() = 0;
+
+    //! Return whether new transactions signal replace-by-fee by default.
+    virtual bool getDefaultRbf() = 0;
 
     // Return whether HD enabled.
     virtual bool hdEnabled() = 0;
@@ -415,10 +462,29 @@ struct WalletTxStatus
 //! Wallet transaction output.
 struct WalletTxOut
 {
+    //! Outpoint identifying this output in the wallet.
+    COutPoint outpoint;
     CTxOut txout;
+    //! Wallet's smart transaction time for this output.
     int64_t time;
     int depth_in_main_chain = -1;
     bool is_spent = false;
+    //! Wallet-owned facts used to present coin-control choices.
+    int input_bytes = -1;
+    std::optional<CAmount> effective_value;
+    CAmount ancestor_bump_fees{0};
+    //! Native wallet ownership/selection status; does not guarantee complete signing.
+    bool is_spendable = false;
+    bool is_watch_only = false;
+    bool is_solvable = false;
+    bool is_safe = false;
+    bool is_locked = false;
+    bool is_reused = false;
+    bool is_immature = false;
+    bool is_change = false;
+    CTxDestination address;
+    CTxDestination grouping_address;
+    std::string label;
 };
 
 //! Migrated wallet info

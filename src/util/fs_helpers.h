@@ -143,6 +143,9 @@ std::optional<fs::perms> InterpretPermString(const std::string& s);
  */
 bool IsDirWritable(const fs::path& dir_path);
 
+//! Whether path is a symbolic link or a Windows reparse point.
+bool IsSymlink(const fs::path& path);
+
 #ifdef WIN32
 fs::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #endif

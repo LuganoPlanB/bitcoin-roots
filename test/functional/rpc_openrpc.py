@@ -91,6 +91,28 @@ class OpenRPCDocTest(BitcoinTestFramework):
             assert_equal(scanning["oneOf"][0]["type"], "object")
             assert_equal(scanning["oneOf"][1], {"const": False})
 
+            export = find_method(openrpc, "exportaddresskey")
+            assert_equal([param["name"] for param in export["params"]], ["address", "key_type"])
+            assert_equal(find_param(export, "address")["required"], True)
+            mode = find_param(export, "key_type")
+            assert_equal(mode["required"], False)
+            assert_equal(mode["schema"]["type"], "string")
+            assert_equal(mode["schema"]["default"], "wallet")
+            result = export["result"]["schema"]
+            assert_equal(result["type"], "object")
+            assert_equal(result["required"], ["keys"])
+            assert_equal(result["properties"]["private_key_hex"]["type"], "string")
+            assert_equal(result["properties"]["compressed"]["type"], "boolean")
+            keys = result["properties"]["keys"]
+            assert_equal(keys["type"], "array")
+            record = keys["items"]
+            assert_equal(set(record["required"]), {"pubkey", "private_key_hex", "compressed", "roles"})
+            assert_equal(record["properties"]["pubkey"]["type"], "string")
+            assert_equal(record["properties"]["private_key_hex"]["type"], "string")
+            assert_equal(record["properties"]["compressed"]["type"], "boolean")
+            assert_equal(record["properties"]["roles"]["type"], "array")
+            assert_equal(record["properties"]["roles"]["items"]["type"], "string")
+
         self.log.info("Checking argument fallback annotations")
         getblock = find_method(openrpc, "getblock")
         verbosity = find_param(getblock, "verbosity")

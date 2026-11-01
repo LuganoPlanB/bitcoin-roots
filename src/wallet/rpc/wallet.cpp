@@ -654,7 +654,8 @@ RPCMethod gethdkeys()
 {
     return RPCMethod{
         "gethdkeys",
-        "List all BIP 32 HD keys in the wallet and which descriptors use them.\n",
+        "List all BIP 32 HD keys in the wallet and which descriptors use them.\n"
+        "Disabled entirely by default, including public-only mode; requires --allow-dangerous-rpc on the command line at startup.\n",
         {
             {"options", RPCArg::Type::OBJ_NAMED_PARAMS, RPCArg::Optional::OMITTED, "", {
                 {"active_only", RPCArg::Type::BOOL, RPCArg::Default{false}, "Show the keys for only active descriptors"},
@@ -683,6 +684,7 @@ RPCMethod gethdkeys()
         },
         [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
+            EnsureDangerousRPCAllowed(request);
             const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
             if (!wallet) return UniValue::VNULL;
 
@@ -960,6 +962,7 @@ RPCMethod derivehdkey()
         "derivehdkey",
         "Derive extended public or private key from HD key in the wallet at a given path.\n"
         "Derivation uses wallet private key material.\n"
+        "Disabled entirely by default, including public-only mode; requires --allow-dangerous-rpc on the command line at startup.\n"
         + HELP_REQUIRING_PASSPHRASE,
         {
             {"path", RPCArg::Type::STR, RPCArg::Optional::NO, "BIP 32 derivation path with at least one hardened step."},
@@ -982,6 +985,7 @@ RPCMethod derivehdkey()
         },
         [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
+            EnsureDangerousRPCAllowed(request);
             const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
             if (!wallet) return UniValue::VNULL;
 
@@ -1091,6 +1095,7 @@ RPCMethod removeprunedfunds();
 RPCMethod importdescriptors();
 RPCMethod listdescriptors();
 RPCMethod backupwallet();
+RPCMethod exportaddresskey();
 RPCMethod restorewallet();
 
 // coins
@@ -1119,6 +1124,7 @@ RPCMethod sendall();
 RPCMethod walletprocesspsbt();
 RPCMethod walletcreatefundedpsbt();
 RPCMethod signrawtransactionwithwallet();
+RPCMethod sweepprivkeys();
 
 // signmessage
 RPCMethod signmessage();
@@ -1141,6 +1147,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &abortrescan},
         {"wallet", &addhdkey},
         {"wallet", &backupwallet},
+        {"wallet", &exportaddresskey},
         {"wallet", &bumpfee},
         {"wallet", &psbtbumpfee},
         {"wallet", &createwallet},
@@ -1186,6 +1193,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &setwalletflag},
         {"wallet", &signmessage},
         {"wallet", &signrawtransactionwithwallet},
+        {"wallet", &sweepprivkeys},
         {"wallet", &simulaterawtransaction},
         {"wallet", &sendall},
         {"wallet", &unloadwallet},

@@ -334,6 +334,12 @@ BASE_SCRIPTS = [
     'feature_bind_port_externalip.py',
     'wallet_create_tx.py',
     'wallet_send.py',
+    'wallet_sweepprivkeys.py',
+    'wallet_sweepprivkeys.py --usecli',
+    'wallet_exportaddresskey.py',
+    'wallet_dangerous_rpc.py',
+    'wallet_dangerous_rpc.py --usecli',
+    'wallet_exportaddresskey.py --usecli',
     'wallet_sendall.py',
     'wallet_sendmany.py',
     'wallet_spend_unconfirmed.py',
@@ -413,6 +419,7 @@ BASE_SCRIPTS = [
     'p2p_ibd_txrelay.py',
     'p2p_seednode.py',
     'rpc_openrpc.py',
+    'rpc_openrpc.py --usecli',
     'wallet_ancient_migration.py',
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time

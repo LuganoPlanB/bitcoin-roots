@@ -48,6 +48,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                           ]
         self.setup_clean_chain = True
         self.wallet_names = []
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

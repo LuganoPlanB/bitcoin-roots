@@ -105,6 +105,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self.chain: str = 'regtest'
         self.setup_clean_chain: bool = False
         self.noban_tx_relay: bool = False
+        # Explicit per-test opt-in; historical Core binaries never receive this Roots flag.
+        self.allow_dangerous_rpc: bool = False
         self.nodes: list[TestNode] = []
         self.extra_args = None
         self.extra_init = None
@@ -486,6 +488,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 get_datadir_path(self.options.tmpdir, i),
                 **init)
             self.nodes.append(test_node_i)
+            if self.allow_dangerous_rpc and versions[i] is None:
+                # Keep the opt-in across restarts with custom extra_args.
+                test_node_i.args.append("--allow-dangerous-rpc")
             if not test_node_i.version_is_at_least(170000):
                 # adjust conf for pre 17
                 test_node_i.replace_in_config([('[regtest]', '')])

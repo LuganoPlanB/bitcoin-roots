@@ -98,6 +98,13 @@ WalletContext& EnsureWalletContext(const std::any& context)
     return *wallet_context;
 }
 
+void EnsureDangerousRPCAllowed(const JSONRPCRequest& request)
+{
+    if (!EnsureWalletContext(request.context).allow_dangerous_rpc) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Dangerous RPC methods are disabled; restart with --allow-dangerous-rpc to enable them.");
+    }
+}
+
 std::string LabelFromValue(const UniValue& value)
 {
     static const std::string empty_string;

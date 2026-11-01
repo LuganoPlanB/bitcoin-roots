@@ -22,6 +22,7 @@ class WalletExportedWatchOnly(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 2
         self.extra_args = [[], [f"-keypool={KEYPOOL_SIZE}"]]
+        self.allow_dangerous_rpc = True
 
     def setup_network(self):
         # Setup the nodes but don't connect them to each other

@@ -583,6 +583,21 @@ std::optional<bool> ArgsManager::GetBoolArg(const std::string& strArg) const
     return SettingToBool(value);
 }
 
+std::optional<bool> ArgsManager::GetCommandLineBoolArg(const std::string& strArg, bool fDefault) const
+{
+    LOCK(cs_args);
+    const auto entry = m_settings.command_line_options.find(strArg.substr(1));
+    if (entry == m_settings.command_line_options.end() || entry->second.empty()) return fDefault;
+    const auto& value = entry->second.back();
+    if (value.isBool()) return value.get_bool();
+    if (value.isStr()) {
+        const auto& text = value.get_str();
+        if (text.empty() || text == "1") return true;
+        if (text == "0") return false;
+    }
+    return std::nullopt;
+}
+
 std::optional<bool> SettingToBool(const common::SettingsValue& value)
 {
     if (value.isNull()) return std::nullopt;

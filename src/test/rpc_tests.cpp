@@ -87,6 +87,24 @@ UniValue RPCTestingSetup::CallRPC(std::string args)
 
 BOOST_FIXTURE_TEST_SUITE(rpc_tests, RPCTestingSetup)
 
+BOOST_AUTO_TEST_CASE(sweep_scan_shares_reservation_and_prechecks_cancellation)
+{
+    std::map<COutPoint, Coin> coins;
+    {
+        rpc::scan::Reserver reserver;
+        BOOST_REQUIRE(reserver.reserve());
+        BOOST_CHECK(ScanUTXOSet(m_node, {}, coins) == interfaces::ScanResult::BUSY);
+        rpc::scan::g_progress = 75;
+    }
+    BOOST_CHECK_EQUAL(rpc::scan::g_progress.load(), 0);
+    BOOST_CHECK(!rpc::scan::g_in_progress.load());
+    BOOST_CHECK(ScanUTXOSet(m_node, {}, coins, [] { return true; }) == interfaces::ScanResult::ABORTED);
+    BOOST_CHECK(coins.empty());
+    rpc::scan::Reserver available;
+    BOOST_CHECK(available.reserve());
+}
+
+
 BOOST_AUTO_TEST_CASE(rpc_namedparams)
 {
     const std::vector<std::pair<std::string, bool>> arg_names{{"arg1", false}, {"arg2", false}, {"arg3", false}, {"arg4", false}, {"arg5", false}};
@@ -434,6 +452,18 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     o1 = ar[0].get_obj();
     adr = o1.find_value("address");
     BOOST_CHECK_EQUAL(adr.get_str(), "2001:4d48:ac57:400:cacf:e9ff:fe1d:9c63/128");
+}
+
+BOOST_AUTO_TEST_CASE(rpc_convert_values_exportaddresskey)
+{
+    for (const auto* mode : {"wallet", "taproot_output", "null", "true", "1"}) {
+        const auto positional = RPCConvertValues("exportaddresskey", {"address", mode});
+        BOOST_CHECK_EQUAL(positional[0].get_str(), "address");
+        BOOST_CHECK_EQUAL(positional[1].get_str(), mode);
+        const auto named = RPCConvertNamedValues("exportaddresskey", {"address=address", std::string{"key_type="} + mode});
+        BOOST_CHECK_EQUAL(named["address"].get_str(), "address");
+        BOOST_CHECK_EQUAL(named["key_type"].get_str(), mode);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(rpc_convert_values_generatetoaddress)

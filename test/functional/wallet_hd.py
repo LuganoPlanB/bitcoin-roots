@@ -23,6 +23,7 @@ class WalletHDTest(BitcoinTestFramework):
         self.extra_args = [[], ['-keypool=0']]
         # whitelist peers to speed up tx relay / mempool sync
         self.noban_tx_relay = True
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

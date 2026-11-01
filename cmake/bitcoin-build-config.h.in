@@ -85,6 +85,12 @@
 /* Define this symbol if platform supports unix domain sockets */
 #cmakedefine HAVE_SOCKADDR_UN 1
 
+/* Safe inherited descriptor closure for signer commands. */
+#cmakedefine01 HAVE_CLOSE_RANGE_GENERIC
+#cmakedefine01 HAVE_CLOSE_RANGE_LINUX
+#cmakedefine01 HAVE_CLOSEFROM
+#cmakedefine01 HAVE_CLOSEFROM_RETURN_INT
+
 /* Define this symbol to build code that uses getauxval */
 #cmakedefine HAVE_STRONG_GETAUXVAL 1
 

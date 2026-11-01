@@ -23,6 +23,7 @@ from test_framework.wallet_util import generate_keypair
 class ListDescriptorsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()

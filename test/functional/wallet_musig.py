@@ -26,6 +26,7 @@ class WalletMuSigTest(BitcoinTestFramework):
     wallet_num = 0
     def set_test_params(self):
         self.num_nodes = 1
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -251,7 +252,11 @@ class WalletMuSigTest(BitcoinTestFramework):
                 utxo = wallet.listunspent()[0]
             else:
                 assert_equal(utxo, wallet.listunspent()[0])
-        psbt = wallets[0].walletcreatefundedpsbt(outputs=[{self.def_wallet.getnewaddress(): 5}], inputs=[utxo], change_type="bech32m", changePosition=1, locktime=self.nodes[0].getblockcount())["psbt"]
+        # Isolate nonce/participant signing from the native v32 synthetic
+        # estimate at the minimum relay rate. Roots charges additional policy
+        # size for this script-path witness; keep its policy enabled and fund
+        # a sufficient explicit fee for the signing fixture.
+        psbt = wallets[0].walletcreatefundedpsbt(outputs=[{self.def_wallet.getnewaddress(): 5}], inputs=[utxo], change_type="bech32m", changePosition=1, locktime=self.nodes[0].getblockcount(), fee_rate=2)["psbt"]
 
         dec_psbt = self.nodes[0].decodepsbt(psbt)
         assert_equal(len(dec_psbt["inputs"]), 1)

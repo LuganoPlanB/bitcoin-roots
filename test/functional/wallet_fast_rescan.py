@@ -21,6 +21,7 @@ class WalletFastRescanTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [[f'-keypool={KEYPOOL_SIZE}', '-blockfilterindex=1']]
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
