@@ -1,6 +1,6 @@
 # Roots v32 build portability
 
-This foundation uses the exact Core v32.1 base and native C++20, filesystem,
+This unpublished candidate uses the exact Core v32.1 base and native C++20, filesystem,
 compiler, cryptographic acceleration and Qt6 APIs. It adds only required Roots
 build support. See [dependencies](dependencies.md), the [Unix guide](build-unix.md)
 and the [port review](roots-v32-port-review.md) for prerequisites and ownership.
@@ -11,9 +11,9 @@ Feature preservation remains subject to each owning milestone's verification.
 | `BUILD_GUI` | OFF | Qt >=6.2; QR support requires QRencode and remains enabled by default. No Qt5 selection is provided. |
 | `WITH_SYSTEM_LEVELDB` | OFF | Requires headers and linkable MemEnv in LevelDB or a separate helper; every available Release/Debug configuration is checked. |
 | `WITH_SYSTEM_LIBSECP256K1` | OFF | Requires pkg-config metadata and recovery, extrakeys, schnorrsig, ellswift and MuSig APIs, including `secp256k1_musig_pubkey_get`. |
-| `WITH_MINIUPNPC` | OFF | Dependency discovery only, API >=17; UPnP runtime/depends integration belongs to the peer milestone. Windows vcpkg users must select the `miniupnpc` feature explicitly. |
+| `WITH_MINIUPNPC` | OFF | Dependency discovery only, API >=17; UPnP runtime/depends integration is not supplied. Windows vcpkg users must select the `miniupnpc` feature explicitly. |
 | `ENABLE_WALLET` / `BUILD_TESTS` | ON | Descriptor wallets use SQLite; no Berkeley DB build option is restored. |
-| `ENABLE_EXTERNAL_SIGNER` | ON | Native signer support; later wallet extensions have separate acceptance. |
+| `ENABLE_EXTERNAL_SIGNER` | ON | Native signer support; sweep/export require local private keys. See [wallet authorization](wallet-privacy.md). |
 | `ENABLE_IPC` | ON except Windows | Needs Cap'n Proto and native libmultiprocess prerequisites; explicit OFF is a reduced profile. |
 | `WITH_QRENCODE` / `WITH_DBUS` | Conditional | Native v32 GUI/platform conditions. |
 | `BUILD_BENCH` | OFF | ON builds `bench_bitcoin`; use `-list` to verify selection before a bounded `-sanity-check` smoke. |
@@ -70,3 +70,21 @@ gap, not test execution. Record explicit reductions (IPC/USDT/ZeroMQ etc.) and
 missing prerequisites with their owners. Do not install packages to clear a gate
 without separate authorization. Use disposable explicit regtest datadirs even for
 help; never relink executables while dependent tests run.
+
+LLVM-dependent hosted CI profiles verify a fresh public IPv4 route before Docker
+setup. If `apt.llvm.org` cannot resolve, the local `llvm-apt-route` action tries
+its reviewed Fastly target, `dualstack.l2.shared.us-eu.fastly.net`. The HTTPS probe
+keeps the original hostname and certificate validation. A temporary Docker
+`--add-host` mapping covers both image provisioning and runtime APT refreshes;
+repository URLs and APT signature verification remain unchanged. Addresses are
+resolved for each job, never stored as permanent source configuration. No runner
+DNS settings are modified. Revisit the fallback target if LLVM changes providers.
+An unavailable or unverified route fails before compilation, without skipping
+tests or changing the selected compiler. The full nightly gate also checks this
+dependency before scheduling its expensive jobs.
+
+Completed nightly profiles retain their prepared diagnostics on success and
+failure, so full test output and executed/skipped counts remain available after
+the hosted runner is destroyed. Look for the `nightly-diagnostics`,
+`platform-diagnostics` and `sanitizer-diagnostics` artifacts. Workflow cancellation
+does not start an additional diagnostic upload.

@@ -8,12 +8,15 @@ export LC_ALL=C.UTF-8
 
 set -o errexit -o pipefail -o xtrace
 
+# shellcheck source=../test/apt.sh
+source /ci/test/apt.sh
+
 export DEBIAN_FRONTEND=noninteractive
 export CI_RETRY_EXE="/ci_retry"
 
 pushd "/"
 
-${CI_RETRY_EXE} apt-get update
+ci_retry_apt_update
 # Lint dependencies:
 # - cargo (used to run the lint tests)
 # - curl/xz-utils (to install shellcheck)

@@ -3,8 +3,9 @@
 This v32 port implements scoped startup parsing, local standardness, carrier
 extra weight, sub-dust modified fees and replacement/TRUC/reuse controls over
 the native graph. Dynamic dust publishes synchronized admission snapshots;
-mining controls enforce serialized size, priority area and native weight limits. Read/write
-text configuration and effective-policy RPC integration also remain pending.
+mining controls enforce serialized size, priority area and native weight limits.
+Read/write text configuration and initialized effective-policy RPC integration
+are also carried; see the [applied-policy contract](effective-policy.md).
 Native Core CLI, config and JSON selection are retained. See the
 [graph fee contract](subdust.md) for the active accounting boundaries.
 

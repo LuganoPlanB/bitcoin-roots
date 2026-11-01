@@ -1,0 +1,15 @@
+name: 'LLVM APT route'
+description: 'Verify a fresh LLVM APT address, with a scoped fallback for LLVM authority outages'
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify LLVM APT access when required by this profile
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        if [[ -n "${FILE_ENV:-}" ]]; then
+          source "$FILE_ENV"
+          if [[ -n "${APT_LLVM_V:-}" ]]; then
+            python3 ci/llvm-apt-route.py --github-env "$GITHUB_ENV"
+          fi
+        fi

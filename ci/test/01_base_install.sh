@@ -8,6 +8,9 @@ export LC_ALL=C.UTF-8
 
 set -o errexit -o pipefail -o xtrace
 
+# shellcheck source=apt.sh
+source "$(dirname "${BASH_SOURCE[0]}")/apt.sh"
+
 if [ "${DANGER_RUN_CI_ON_HOST}" != "1" ]; then
   echo "This script will make unsafe local and global modifications, so it can only be run inside a container and requires DANGER_RUN_CI_ON_HOST=1"
   exit 1
@@ -27,9 +30,12 @@ if [ -n "$DPKG_ADD_ARCH" ]; then
 fi
 
 if [ -n "${APT_LLVM_V}" ]; then
-  ${CI_RETRY_EXE} apt-get update
+  ci_retry_apt_update
   ${CI_RETRY_EXE} apt-get install curl -y
-  curl "https://apt.llvm.org/llvm-snapshot.gpg.key" | tee "/etc/apt/trusted.gpg.d/apt.llvm.org.asc"
+  read -r -a llvm_key_retry <<< "${CI_RETRY_EXE:?CI_RETRY_EXE must be set}"
+  "${llvm_key_retry[@]}" curl --fail --location --connect-timeout 15 --max-time 60 \
+    --output "/etc/apt/trusted.gpg.d/apt.llvm.org.asc" \
+    "https://apt.llvm.org/llvm-snapshot.gpg.key"
   (
     # shellcheck disable=SC2034
     source /etc/os-release
@@ -45,7 +51,7 @@ elif [ "$CI_OS_NAME" != "macos" ]; then
   if [[ -n "${APPEND_APT_SOURCES_LIST}" ]]; then
     echo "${APPEND_APT_SOURCES_LIST}" >> /etc/apt/sources.list
   fi
-  ${CI_RETRY_EXE} apt-get update
+  ci_retry_apt_update
   # shellcheck disable=SC2086
   ${CI_RETRY_EXE} apt-get install --no-install-recommends --no-upgrade -y $PACKAGES $CI_BASE_PACKAGES
 fi

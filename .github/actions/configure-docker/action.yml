@@ -8,6 +8,9 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Verify LLVM APT route
+      uses: ./.github/actions/llvm-apt-route
+
     - name: Set up Docker Buildx for Warp cache
       if: ${{ inputs.provider == 'warp' }}
       uses: docker/setup-buildx-action@v4

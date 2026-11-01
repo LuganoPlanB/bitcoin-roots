@@ -21,6 +21,15 @@ def run(cmd, **kwargs):
         sys.exit(str(e))
 
 
+def llvm_apt_host_args(address):
+    if not address:
+        return []
+    parsed = ipaddress.IPv4Address(address)
+    if not parsed.is_global:
+        raise ValueError('LLVM APT route must be a public IPv4 address')
+    return [f'--add-host=apt.llvm.org:{parsed}']
+
+
 def main():
     print("Export only allowed settings:")
     settings = run(
@@ -36,6 +45,8 @@ def main():
         "BIND_TEST_ROUTABLE_IPV4",
         "BIND_TEST_ROUTABLE_IPV6",
         "CI_FAILFAST_TEST_LEAVE_DANGLING",
+        "RELEASE_NOTICE_PLATFORM",
+        "RELEASE_TAG",
     ])
 
     ci_idx = sorted(path.name for path in Path(__file__).parent.glob("00_setup_env_*.sh")).index(Path(os.environ["FILE_ENV"]).name)
@@ -87,6 +98,10 @@ def main():
             f"--label={CI_IMAGE_LABEL}",
             f"--tag={os.environ['CONTAINER_NAME']}",
         ]
+        # Both build and runtime need the same job-scoped route: the ASan
+        # profile refreshes APT again to install matching host kernel headers.
+        llvm_host_args = llvm_apt_host_args(os.getenv("ROOTS_APT_LLVM_IPV4", ""))
+        cmd_build += llvm_host_args
         cmd_build += shlex.split(os.getenv("DOCKER_BUILD_CACHE_ARG", ""))
         cmd_build += [os.environ["BASE_READ_ONLY_DIR"]]
 
@@ -104,6 +119,13 @@ def main():
         CI_DEPENDS_SOURCES_MOUNT = f"type=volume,src={os.environ['CONTAINER_NAME']}_depends_sources,dst={os.environ['DEPENDS_DIR']}/sources"
         CI_PREVIOUS_RELEASES_MOUNT = f"type=volume,src={os.environ['CONTAINER_NAME']}_previous_releases,dst={os.environ['PREVIOUS_RELEASES_DIR']}"
         CI_BUILD_MOUNT = []
+        CI_ARTIFACTS_MOUNT = []
+        if os.getenv("ROOTS_ARTIFACTS_DIR"):
+            artifacts = Path(os.environ["ROOTS_ARTIFACTS_DIR"])
+            if not artifacts.is_absolute():
+                sys.exit("ROOTS_ARTIFACTS_DIR must be an absolute host/guest path")
+            artifacts.mkdir(parents=True, exist_ok=True)
+            CI_ARTIFACTS_MOUNT = [f"--mount=type=bind,src={artifacts},dst={artifacts}"]
 
         if os.getenv("DANGER_CI_ON_HOST_FOLDERS"):
             # ensure the directories exist
@@ -148,6 +170,7 @@ def main():
 
         cmd_run = ["docker", "run", "--rm", "--interactive", "--detach", "--tty"]
         cmd_run += [
+            *llvm_host_args,
             "--cap-add=LINUX_IMMUTABLE",
             *shlex.split(os.getenv("CI_CONTAINER_CAP", "")),
             f"--mount=type=bind,src={os.environ['BASE_READ_ONLY_DIR']},dst={os.environ['BASE_READ_ONLY_DIR']},readonly",
@@ -156,6 +179,7 @@ def main():
             f"--mount={CI_DEPENDS_SOURCES_MOUNT}",
             f"--mount={CI_PREVIOUS_RELEASES_MOUNT}",
             *CI_BUILD_MOUNT,
+            *CI_ARTIFACTS_MOUNT,
             f"--env-file={env_file}",
             f"--name={os.environ['CONTAINER_NAME']}",
             f"--network={network_name}",
@@ -197,17 +221,22 @@ def main():
     ])
     ci_exec([f"{os.environ['BASE_ROOT_DIR']}/ci/test/01_base_install.sh"])
     test_script = f"{os.environ['BASE_ROOT_DIR']}/ci/test/03_test_script.sh"
+    test_command = [test_script]
     if os.environ.get("HOST", "").startswith("x86_64-w64-mingw32"):
-        ci_exec([
+        test_command = [
             "env",
             "NIX_BUILD_SHELL=bash",
             "nix-shell",
             f"{os.environ['BASE_ROOT_DIR']}/contrib/devtools/shell-win64-cross.nix",
             "--run",
             f"echo 'Windows cross compiler:' && \"$CXX\" -v && exec bash {shlex.quote(test_script)}",
-        ])
-    else:
-        ci_exec([test_script])
+        ]
+    if os.getenv("ROOTS_ARTIFACTS_DIR"):
+        # Leave five minutes for failure collection/upload before the job limit.
+        timeout = max(60, (int(os.getenv("ROOTS_JOB_TIMEOUT_MINUTES", "360")) - 5) * 60)
+        test_command = ["python3", f"{os.environ['BASE_ROOT_DIR']}/ci/test/roots-regressions.py", "command",
+                        "--timeout", str(timeout), "--artifacts", os.environ['ROOTS_ARTIFACTS_DIR'], "--", *test_command]
+    ci_exec(test_command)
 
     if not os.getenv("DANGER_RUN_CI_ON_HOST"):
         print("Stop and remove CI container by ID")

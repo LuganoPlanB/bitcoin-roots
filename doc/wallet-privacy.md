@@ -69,9 +69,10 @@ external-signer outputs are excluded from that total even when selectable for
 PSBT preparation. Local keys do not guarantee complete signing for every
 partially owned construction.
 
-Locked outputs remain visible but
-cannot be selected; ordinary availability rules still exclude unsafe or immature
-coins. Watch-only coins can be selected for PSBT preparation without promising
+The view starts with the wallet's normal available-output list. Locked
+outputs remain visible but cannot be selected. Unsafe and immature outputs are
+not added merely to show a status; this is not an inventory of unavailable
+outputs. Watch-only coins can be selected for PSBT preparation without promising
 that this wallet can finish signing.
 
 Wallet notifications clear selected inputs even when the balance stays the same.
@@ -177,8 +178,8 @@ preimages or timelocks may still be needed. The RPC does not import keys,
 generate addresses, advance keypool indices or change balances or spend state.
 Keep an independent secure backup. Broader export support does not expand the
 script forms scanned by `sweepprivkeys`.
-Quietproof's current normal proof workflow supports native P2WPKH only;
-exporting a P2PKH key does not add P2PKH proof support or an anonymity guarantee.
+The reviewed Quietproof integration assumes native P2WPKH; broader export does
+not establish additional proof support or an anonymity guarantee.
 
 ## Candidate verification
 

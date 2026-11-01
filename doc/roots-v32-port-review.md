@@ -1236,3 +1236,47 @@ retaining complete diagnostic text and evidence; failed runtimes are preserved.
 The missing external assets, Windows/macOS/other POSIX/32-bit execution and complete
 candidate sweep remain L11-owned. Parent review and signed commit acceptance are
 separate from these current local gates.
+
+## L10.3 candidate identity and generated documentation
+
+The default product identity is Bitcoin Roots `32.1-roots.1`, with Plan-B
+Foundation copyright and separate historical Bitcoin Core attribution. The
+explicit `CLIENT_VERSION_TAG` packaging hook remains tied to the exact Core
+version. Numeric client/protocol identifiers and the `Satoshi` wire identity
+are unchanged. This is an unpublished candidate; the default version label
+does not establish release approval or publication.
+
+The feature catalog, wallet privacy guide, build/maintenance guidance and
+curated candidate notes describe current v32 interfaces and retained Roots
+behavior. The released v31.1-roots.6 notes are preserved byte-for-byte in the
+historical release-notes directory. Current guidance covers native PSBT v2,
+removed fixed-fee interfaces, graph/package invariants, Qt6/HTTP/IPC, cache
+defaults, dormant statistics and the complete key-export disclosure boundary.
+Historical contributor credits remain intact.
+
+All nine candidate tools were freshly built out of source with `-j2` in the
+existing Linux Qt6 profile. Its wallet, IPC and QR support are enabled;
+ZMQ, USDT and MiniUPnPc are disabled. Native manpage and example-configuration
+generators ran twice against these binaries through private regtest/help
+wrappers with isolated settings. All seven generated manuals and the example
+configuration have identical hashes across both runs. No generated manual was
+edited by hand. Public help omits debug-only and unavailable optional-build
+sections; the generation profile does not qualify those omitted features.
+
+The complete local maintenance suite passes 154 methods with no failures or
+skips. Focused CTest passes the three build-identity methods and all six Qt
+suites (22 reported passes, no failures/skips). A fresh isolated regtest node
+checks current network identity, export/sweep/effective-policy help and the
+intentional absence of `getmempoolstats`, then exits cleanly. Documentation
+option lint, ShellCheck/Bash syntax for 18 owned scripts, workflow/Python/JSON
+structure and whitespace checks pass. All disposable Git fixture commits are
+signed and audited with the required key. Initial v32 translation API compile
+errors and a missing documentation link are retained with their repairs.
+
+These are focused L10.3 Linux results, with synthetic archive/signing/draft
+and mocked transport fixtures. They do not establish hosted CI, five-platform
+packages, full candidate acceptance or publication. Missing optional lint
+tools and broader native/functional/platform gates remain explicit. The L10.2
+signed snapshot/replay applies only to its frozen source; later identity/docs
+changes require a renewed final accepted-SHA portable replay. Parent review,
+full applicable qualification and commit authorization remain separate.

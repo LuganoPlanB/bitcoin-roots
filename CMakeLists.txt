@@ -26,7 +26,7 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 # Project / Package metadata
 #=============================
-set(CLIENT_NAME "Bitcoin Core")
+set(CLIENT_NAME "Bitcoin Roots")
 set(CLIENT_VERSION_MAJOR 32)
 set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_BUILD 0)
@@ -53,18 +53,41 @@ set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
 project(BitcoinCore
   VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
   DESCRIPTION "Bitcoin client software"
-  HOMEPAGE_URL "https://bitcoincore.org/"
+  HOMEPAGE_URL "https://github.com/luganoplanb/bitcoin-roots/"
   LANGUAGES NONE
 )
 
-set(CLIENT_VERSION_STRING ${PROJECT_VERSION})
+set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
+if(CLIENT_VERSION_BUILD GREATER 0)
+  string(APPEND CLIENT_VERSION_STRING ".${CLIENT_VERSION_BUILD}")
+endif()
 if(CLIENT_VERSION_RC GREATER 0)
   string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
 endif()
 
-set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/bitcoin/bitcoin/issues")
+# Release archives may omit Git metadata. Keep their explicit Roots tag tied
+# to this exact Core version without changing numeric/protocol identifiers.
+if(DEFINED CLIENT_VERSION_TAG)
+  set(client_version_tag_base "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
+  if(CLIENT_VERSION_BUILD GREATER 0)
+    string(APPEND client_version_tag_base ".${CLIENT_VERSION_BUILD}")
+  endif()
+  if(CLIENT_VERSION_RC GREATER 0)
+    string(APPEND client_version_tag_base "rc${CLIENT_VERSION_RC}")
+  endif()
+  string(REPLACE "." "\\." client_version_tag_base_pattern "${client_version_tag_base}")
+  if(NOT CLIENT_VERSION_TAG MATCHES "^v${client_version_tag_base_pattern}-roots\\.[1-9][0-9]*$")
+    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${client_version_tag_base}.")
+  endif()
+  string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
+else()
+  # Product version for this unpublished candidate; publication is separate.
+  string(APPEND CLIENT_VERSION_STRING "-roots.1")
+endif()
+
+set(COPYRIGHT_HOLDERS "Plan-B Foundation")
+set(COPYRIGHT_HOLDERS_FINAL "Plan-B Foundation")
+set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================
 # Language setup

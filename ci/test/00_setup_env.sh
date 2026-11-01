@@ -67,3 +67,8 @@ export CI_RETRY_EXE=${CI_RETRY_EXE:-"retry"}
 
 # The --platform argument used with `docker build` and `docker run`.
 export CI_IMAGE_PLATFORM=${CI_IMAGE_PLATFORM:-"linux"} # Force linux, but use native arch by default
+
+# Roots assurance selection and host-visible diagnostics survive the container.
+export ROOTS_CI_CADENCE=${ROOTS_CI_CADENCE:-}
+export ROOTS_CHANGED_FILES_JSON=${ROOTS_CHANGED_FILES_JSON:-null}
+export ROOTS_ARTIFACTS_DIR=${ROOTS_ARTIFACTS_DIR:-}

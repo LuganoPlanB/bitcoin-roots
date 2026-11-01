@@ -8,10 +8,26 @@ export LC_ALL=C.UTF-8
 
 set -o errexit -o xtrace -o pipefail
 
+# shellcheck source=apt.sh
+source "$(dirname "${BASH_SOURCE[0]}")/apt.sh"
+
+# Preserve diagnostic text on every failure, including configure/build/native
+# test failures. The collector excludes datadir databases, configs and keys.
+collect_failure() {
+  local status=$?
+  trap - EXIT
+  if [[ "$status" != 0 && -n "${ROOTS_ARTIFACTS_DIR:-}" ]]; then
+    python3 "${BASE_ROOT_DIR}/ci/test/roots-regressions.py" collect \
+      --build-dir "${BASE_BUILD_DIR:-${BASE_SCRATCH_DIR}/build-${HOST:-unknown}}" \
+      --scratch-dir "$BASE_SCRATCH_DIR" --source-dir "$BASE_ROOT_DIR" --artifacts "$ROOTS_ARTIFACTS_DIR" || true
+  fi
+  exit "$status"
+}
 if [ "${DANGER_RUN_CI_ON_HOST}" != "1" ]; then
   echo "This script will make unsafe local and global modifications, so it can only be run inside a container and requires DANGER_RUN_CI_ON_HOST=1"
   exit 1
 fi
+trap collect_failure EXIT
 
 cd "${BASE_ROOT_DIR}"
 
@@ -36,7 +52,7 @@ df -h
 # kernel mismatch between a cached docker image and the underlying host.
 # This can happen occasionally on hosted runners if the runner image is updated.
 if [[ "$CONTAINER_NAME" == "ci_native_asan" ]]; then
-  $CI_RETRY_EXE apt-get update
+  ci_retry_apt_update
   ${CI_RETRY_EXE} bash -c "apt-get install --no-install-recommends --no-upgrade -y $PACKAGES"
 fi
 
@@ -44,10 +60,6 @@ fi
 # Tests that need cross-compilation export the appropriate HOST.
 # Tests that run natively guess the host
 export HOST=${HOST:-$("$BASE_ROOT_DIR/depends/config.guess")}
-
-echo "=== BEGIN env ==="
-env
-echo "=== END env ==="
 
 # The CI framework should be flexible where it is run from. For example, from
 # a git-archive, a git-worktree, or a normal git repo.
@@ -62,7 +74,7 @@ if [[ "${RUN_IWYU}" == true ]]; then
   git commit -m "dummy CI ./src init for IWYU"
 fi
 
-if [ "$RUN_FUZZ_TESTS" = "true" ]; then
+if [ "$RUN_FUZZ_TESTS" = "true" ] && [[ "${ROOTS_CI_CADENCE:-}" != fast ]]; then
   export DIR_FUZZ_IN=${DIR_QA_ASSETS}/fuzz_corpora/
   if [ ! -d "$DIR_FUZZ_IN" ]; then
     ${CI_RETRY_EXE} git clone --depth=1 https://github.com/bitcoin-core/qa-assets "${DIR_QA_ASSETS}"
@@ -110,6 +122,10 @@ ccache --zero-stats
 BASE_BUILD_DIR=${BASE_BUILD_DIR:-$BASE_SCRATCH_DIR/build-$HOST}
 
 BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL '-DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR' -Werror=dev"
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  "${BASE_ROOT_DIR}/ci/release/validate-release-tag.sh" "$RELEASE_TAG"
+  BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCLIENT_VERSION_TAG=$RELEASE_TAG"
+fi
 
 if [[ "${RUN_IWYU}" == true || "${RUN_TIDY}" == true ]]; then
   BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
@@ -202,6 +218,14 @@ fi
 if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
   # parses TEST_RUNNER_EXTRA as an array which allows for multiple arguments such as TEST_RUNNER_EXTRA='--exclude "rpc_bind.py --ipv6"'
   eval "TEST_RUNNER_EXTRA=($TEST_RUNNER_EXTRA)"
+  if [[ "${ROOTS_CI_CADENCE:-}" == fast ]]; then
+    LD_LIBRARY_PATH="${DEPENDS_DIR}/${HOST}/lib" \
+    python3 "${BASE_ROOT_DIR}/ci/test/roots-regressions.py" functional --cadence fast \
+      --build-dir "$BASE_BUILD_DIR" --artifacts "${ROOTS_ARTIFACTS_DIR:-${BASE_SCRATCH_DIR}/roots-failures}" -- \
+      "$MAKEJOBS" --tmpdirprefix "${BASE_SCRATCH_DIR}/test_runner/" \
+      --ansi --combinedlogslen=99999999 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" \
+      "${TEST_RUNNER_EXTRA[@]}" --quiet
+  else
   LD_LIBRARY_PATH="${DEPENDS_DIR}/${HOST}/lib" \
   "${BASE_BUILD_DIR}/test/functional/test_runner.py" \
     "${MAKEJOBS}" \
@@ -212,6 +236,7 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
     "${TEST_RUNNER_EXTRA[@]}" \
     --quiet \
     --failfast
+  fi
 fi
 
 if [ "${RUN_TIDY}" = "true" ]; then
@@ -280,6 +305,7 @@ subprocess.run(["git", "restore", "--", *subtrees], check=True)
 fi
 
 if [ "$RUN_FUZZ_TESTS" = "true" ]; then
+  if [[ "${ROOTS_CI_CADENCE:-}" != fast ]]; then
   # shellcheck disable=SC2086
   LD_LIBRARY_PATH="${DEPENDS_DIR}/${HOST}/lib" \
   "${BASE_BUILD_DIR}/test/fuzz/test_runner.py" \
@@ -288,4 +314,17 @@ if [ "$RUN_FUZZ_TESTS" = "true" ]; then
     -l DEBUG \
     "${DIR_FUZZ_IN}" \
     --empty_min_time=60
+  fi
+  if [[ -n "${ROOTS_CI_CADENCE:-}" ]]; then
+    python3 "${BASE_ROOT_DIR}/ci/test/roots-regressions.py" fuzz \
+      --cadence "$ROOTS_CI_CADENCE" --build-dir "$BASE_BUILD_DIR" \
+      --artifacts "${ROOTS_ARTIFACTS_DIR:-${BASE_SCRATCH_DIR}/roots-failures}"
+  fi
+fi
+
+# Expanded dependency notice collection remains an explicitly optional tool.
+if [[ -n "${RELEASE_NOTICE_PLATFORM:-}" ]]; then
+  cd "${BASE_ROOT_DIR}"
+  python3 ci/release/runner-notices.py "$RELEASE_NOTICE_PLATFORM" \
+    "${BASE_BUILD_DIR}/release-notices" --depends "$DEPENDS_DIR" --host "$HOST"
 fi

@@ -8,10 +8,11 @@ retained. Native v32 graph and cluster algorithms remain authoritative.
 
 The current graph work activates carrier extra weight, immutable admission dust
 deficits, modified fees, configured replacement/TRUC/reuse and dynamic-dust
-publication. Mining priority/serialized
-limits belong to L5, and integrated read/write configuration and effective-policy
-RPC reporting belong to L9. These are preservation obligations, not active
-features established by argument parsing.
+publication. Mining priority/serialized limits, integrated read/write
+configuration and initialized effective-policy RPC reporting are also carried
+by the current candidate. Their owning-theme evidence is in the
+[port review](../roots-v32-port-review.md); argument parsing alone is not
+evidence of enforcement.
 
 ## Deficits, units and independent fees
 
@@ -89,8 +90,8 @@ dust interfaces and prioritisation checks read the same synchronized rate.
 Mempool persistence stores only the operator delta, never the already-subtracted
 dust deficit. Reload and reorg admission compute a fresh deficit once at the
 current rate; confirmed transactions retain native clearing of operator deltas.
-Restart setting changes initialize a fresh rate. The full effective-policy RPC
-object and runtime configuration remain L9-owned.
+Restart setting changes initialize a fresh rate. The full initialized reporting
+schema is documented in the [effective-policy contract](effective-policy.md).
 
 ## Native storage bounds
 
@@ -134,7 +135,8 @@ policy adjustments. The deprecated `fullrbf` field remains available only with
 `-deprecatedrpc=fullrbf` and reports the initialized input-conflict Always mode;
 it does not describe independent script-only replacement. Deprecated
 `bip125-replaceable` retains its native signaling meaning, independently of
-configured acceptance. The full effective-policy object remains L9-owned.
+configured acceptance. The additive effective-policy object reports the applied
+settings and enforcement gates independently of deprecated native fields.
 
 ## Verification boundaries
 
