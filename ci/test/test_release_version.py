@@ -3,8 +3,11 @@
 # Distributed under the MIT software license, see the accompanying file COPYING.
 """Explicit release metadata and v32 platform packaging contracts."""
 import json
+from contextlib import contextmanager
 from pathlib import Path
+import plistlib
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +16,65 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseVersionTest(unittest.TestCase):
+    @contextmanager
+    def platform_configuration(self, year=None, tag=None):
+        config = (ROOT / 'CMakeLists.txt').read_text()
+        metadata = config[config.index('set(CLIENT_NAME '):].split('#=============================', 1)[0]
+        if year is not None:
+            metadata = re.sub(r'set\(COPYRIGHT_YEAR [^)]+\)', f'set(COPYRIGHT_YEAR "{year}")', metadata)
+        with tempfile.TemporaryDirectory(prefix='roots-platform-metadata-') as directory:
+            source = Path(directory)
+            lines = ['cmake_minimum_required(VERSION 3.22)', metadata]
+            for original, generated in [('cmake/bitcoin-build-config.h.in', 'bitcoin-build-config.h'),
+                                        ('share/qt/Info.plist.in', 'Info.plist'), ('share/setup.nsi.in', 'setup.nsi')]:
+                lines.append(f'configure_file("{ROOT / original}" "${{CMAKE_BINARY_DIR}}/{generated}" @ONLY)')
+            (source / 'CMakeLists.txt').write_text('\n'.join(lines) + '\n')
+            command = ['cmake', '-S', str(source), '-B', str(source / 'build')]
+            if tag is not None:
+                command.append(f'-DCLIENT_VERSION_TAG={tag}')
+            result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            yield source / 'build'
+
+    @unittest.skipUnless(shutil.which('c++'), 'C++ preprocessor required for configured resource metadata')
+    def test_configured_platform_notices_keep_foundation_and_core_ranges_separate(self):
+        current_year = int(re.search(r'set\(COPYRIGHT_YEAR "?(\d+)', (ROOT / 'CMakeLists.txt').read_text()).group(1))
+        for year, tag in [(current_year, None), (current_year + 1, 'v32.1-roots.6')]:
+            with self.subTest(year=year, tag=tag), self.platform_configuration(year, tag) as build:
+                expected = f'2026 Plan-B Foundation; 2009-{year} The Bitcoin Core developers'
+                result = subprocess.run(['c++', '-E', '-P', '-x', 'c++', '-DRC_INVOKED',
+                    '-I' + str(build), '-I' + str(ROOT / 'src'), '-'],
+                    input='#include <clientversion.h>\nCOPYRIGHT_STR\n', capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expanded = ''.join(json.loads(value) for value in re.findall(r'"(?:[^"\\]|\\.)*"', result.stdout))
+                self.assertEqual(expanded, expected)
+                plist = plistlib.loads((build / 'Info.plist').read_bytes())
+                self.assertEqual(plist['NSHumanReadableCopyright'],
+                    f'32.1.0, Copyright © 2026 Plan-B Foundation; © 2009-{year} The Bitcoin Core developers')
+                installer = (build / 'setup.nsi').read_text()
+                self.assertIn(f'VIAddVersionKey LegalCopyright "Copyright (C) {expected}"', installer)
+
+    @unittest.skipUnless(shutil.which('c++'), 'C++ compiler required for configured numeric identity')
+    def test_configured_platform_metadata_preserves_native_numeric_and_product_identity(self):
+        with self.platform_configuration() as build:
+            plist = plistlib.loads((build / 'Info.plist').read_bytes())
+            for key in ['CFBundleVersion', 'CFBundleShortVersionString']:
+                self.assertEqual(plist[key], '32.1.0')
+            self.assertEqual(plist['CFBundleIdentifier'], 'org.bitcoinfoundation.Bitcoin-Qt')
+            self.assertEqual(plist['CFBundleURLTypes'][0]['CFBundleURLSchemes'], ['bitcoin'])
+            installer = (build / 'setup.nsi').read_text()
+            self.assertIn('VIProductVersion 32.1.0.0', installer)
+            self.assertIn('VIAddVersionKey ProductVersion "32.1-roots.1"', installer)
+            self.assertIn('Name "Bitcoin Roots"', installer)
+            result = subprocess.run(['c++', '-std=c++20', '-fsyntax-only', '-x', 'c++',
+                '-I' + str(build), '-I' + str(ROOT / 'src'), '-'],
+                input='#include <clientversion.h>\n#include <string_view>\n'
+                      'static_assert(CLIENT_VERSION == 320100);\n'
+                      'static_assert(std::string_view(CLIENT_NAME) == "Bitcoin Roots");\n'
+                      'static_assert(std::string_view(CLIENT_VERSION_STRING) == "32.1-roots.1");\n',
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def configure(self, tag=None):
         config = (ROOT / 'CMakeLists.txt').read_text()
         block = config[config.index('set(CLIENT_VERSION_STRING '):].split('#=============================', 1)[0]

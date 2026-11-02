@@ -10,11 +10,13 @@ this unpublished candidate has a public canonical branch or release tag.
 Bitcoin Knots is historical provenance for selected Roots policy features, not
 an upstream, a dependency, or a source of consensus rules.
 
-The [historical offline cache benchmark](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.6/contrib/roots/cache-bench.md)
-retains the v31 experiment methodology. Its exports, instrumentation, datadirs
-and raw measurements are disposable evidence; it is not qualified for v32.1.
-Current native cache benchmarks and their limits are recorded in the
-[port review](../../doc/roots-v32-port-review.md).
+The [offline cache experiment](cache-bench.md) retains the released methodology
+with explicit v31.1/v32.1 source/configuration adapters. Its exports,
+instrumentation, datadirs and raw measurements are disposable evidence;
+historical v31 measurements do not qualify v32.1. Native cache microbenchmarks
+complement this isolated multi-cell experiment. The [historical/current policy
+review disposition](../../doc/mempool-policy-review.md) and
+[port review](../../doc/roots-v32-port-review.md) record their separate limits.
 
 Git history is the canonical representation of Roots changes. Do not maintain
 replay frameworks, patch manifests, generated evidence, frozen candidate state,

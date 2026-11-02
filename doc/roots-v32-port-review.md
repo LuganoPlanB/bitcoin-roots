@@ -259,9 +259,9 @@ suites; L11 audits this entire table and range-diff again at the final candidate
 | S24 | `2b4c8982dd65e87947a085735bdf4455b63ac136` | docs(release): regenerate manuals for v31.1-roots.3 | L10: Supersede roots.3 generated manuals using fresh v32 candidate help, preserving historical source lineage. |
 | S25 | `b8c98a129f141ac5ba077c33b473120f0cd2ece4` | test(wallet): include address key export in fast regressions | L7/L10: Fold exportaddresskey registration in fast regressions/classification; coverage must include later generalized export. |
 | S26 | `59185c317ef80ef289b46c38ba82081b61a1d101` | fix(wallet): compare exported key destinations by type | L7.2: Fold destination type-aware exported-key comparison; preserve regression rather than string-only address matching. |
-| S27 | `fe7cfe976edabc8c8d374b2bbe2bbaf2bef734c1` | docs: inventory mempool policy and cache review contracts | L3/L4/L6/L10: Retain mempool/cache review contract inventory, reconcile final defaults and actual upstream overlaps. |
+| S27 | `fe7cfe976edabc8c8d374b2bbe2bbaf2bef734c1` | docs: inventory mempool policy and cache review contracts | L3/L4/L6/L10: Historical v31 review retained byte-identically; doc/mempool-policy-review.md separates its measurements/defaults from current applied v32 contracts. See the L10 audit correction below. |
 | S28 | `bd5422a481aae345cf287bce1c8ab3dc296c20b7` | test: characterize compact reconstruction cache contracts | L6.2: Fold compact extra cache unit/functional characterization, test-only accessors and registered fixtures. |
-| S29 | `e9ddb283303167331fb6f5e76fedbf95ffa2b272` | bench: measure compact reconstruction cache tradeoffs | L6.2: Fold producer cache benchmarks; distinguish production path from modeled metadata; no required performance gain. |
+| S29 | `e9ddb283303167331fb6f5e76fedbf95ffa2b272` | bench: measure compact reconstruction cache tradeoffs | L6.2/L10: Native microbenchmarks complement the restored isolated exact-Core-versus-Roots multi-cell experiment, not replace it. Explicit v31.1/v32.1 adapters preserve raw samples, instrumentation and controls; no required performance gain. |
 | S30 | `5fa358fbb7ce5e95be8f959888ae25dd70e3b1de` | docs: clarify compact reconstruction cache accounting | L6.2/L10: Fold corrected charged-dynamic-storage/cache accounting explanations; historical 32768 default superseded by S34. |
 | S31 | `f6f9987732b9452b3b7883145de19ed9e8a840a7` | chore(release): prepare v31.1-roots.4 identity and notes | L10: Retain roots.4 historical notes; supersede active revision identity. |
 | S32 | `7588cf44afc6bfbc06de67c0fb61f386ff16e13d` | docs(release): regenerate manuals for v31.1-roots.4 | L10: Supersede roots.4 generated help through current native generators; no manual edits. |
@@ -1280,3 +1280,31 @@ tools and broader native/functional/platform gates remain explicit. The L10.2
 signed snapshot/replay applies only to its frozen source; later identity/docs
 changes require a renewed final accepted-SHA portable replay. Parent review,
 full applicable qualification and commit authorization remain separate.
+
+## L10 audit correction: historical review and offline cache tooling
+
+The preservation audit found that the released S29 cache experiment helpers,
+tests and guide had been omitted while native producer microbenchmarks were
+carried. Those are distinct tools. The restored `contrib/roots/cache_bench*`
+helpers inject insertion and InitData thread CPU/wall timers and reference
+snapshots only into disposable exact Git exports. Their Linux workload captures
+process RSS/HWM/CPU, actual reconstruction hits/requests/roundtrips/wire bytes
+and per-cell raw samples. It retains paired seeds, warmup/sample separation,
+bounded ownership/timeouts, failures and provenance. There was no perf/BPF
+collector in the released tool and none is added here.
+
+The current adapter recognizes only exact v31.1/v32.1 version tuples, pinned
+Core bases and reviewed insertion/InitData bodies. Current logging APIs and the
+100-entry default require intentional adaptations; nominal full overlap cannot
+imply full hits when 128 offers exceed that capacity. Production cache defaults
+(100 entries/10 decimal MB), relay/permissions, consensus and privacy behavior
+are unchanged. Native microbenchmarks and source/unit/compile checks do not
+establish an instrumented experiment run or production performance result.
+
+The S27 policy review and its later released updates are preserved byte-for-byte
+under `doc/historical/mempool-policy-review-v31.1-roots.6.md`. The active
+`doc/mempool-policy-review.md` records that historical/current distinction and
+links the current parsing/effective-policy/subdust and preservation contracts.
+The old 32,768-slot measurements, warmed-vector limitations and unanswered
+questions remain historical. They cannot qualify v32 or justify a default
+change; current owning evidence must be assessed independently.
