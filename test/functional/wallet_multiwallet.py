@@ -268,7 +268,7 @@ class MultiWalletTest(BitcoinTestFramework):
         discovered = {w['name'] for w in node.listwalletdir()['wallets']}
         assert 'w5' in discovered
         assert 'indexes/wallet_discovery_fixture' not in discovered
-        shutil.rmtree(hidden_wallet_dir)
+        self.cleanup_folder(hidden_wallet_dir)
         if os.name != 'nt':
             self.log.info("Verify wallet discovery does not descend through symlinks")
             linked_wallet_dir = os.path.join(self.options.tmpdir, 'linked_wallet_fixture')
@@ -280,7 +280,7 @@ class MultiWalletTest(BitcoinTestFramework):
             discovered = {w['name'] for w in node.listwalletdir()['wallets']}
             assert 'wallet_discovery_link/nested' not in discovered
             os.unlink(link)
-            shutil.rmtree(linked_wallet_dir)
+            self.cleanup_folder(linked_wallet_dir)
         competing_wallet_dir = os.path.join(self.options.tmpdir, 'competing_walletdir')
         os.mkdir(competing_wallet_dir)
         self.restart_node(0, ['-nowallet', '-walletdir=' + competing_wallet_dir])

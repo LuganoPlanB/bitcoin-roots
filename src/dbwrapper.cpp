@@ -4,7 +4,7 @@
 
 #include <dbwrapper.h>
 
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <leveldb/cache.h>
 #include <leveldb/db.h>
@@ -422,12 +422,14 @@ std::span<const std::byte> CDBIterator::GetKeyImpl() const
 {
     // The returned span borrows from the current iterator entry and is only
     // valid until the iterator is advanced.
-    return MakeByteSpan(m_impl_iter->iter->key());
+    const auto key{m_impl_iter->iter->key()};
+    return std::as_bytes(std::span{key.data(), key.size()});
 }
 
 std::span<const std::byte> CDBIterator::GetValueImpl() const
 {
-    return MakeByteSpan(m_impl_iter->iter->value());
+    const auto value{m_impl_iter->iter->value()};
+    return std::as_bytes(std::span{value.data(), value.size()});
 }
 
 CDBIterator::~CDBIterator() = default;

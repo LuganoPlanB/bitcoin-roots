@@ -5,7 +5,6 @@
 """Dynamic dust startup, publication, immutable deficits, retry and shutdown."""
 
 from decimal import Decimal
-import shutil
 
 from test_framework.messages import COIN, CTxOut
 from test_framework.test_framework import BitcoinTestFramework
@@ -102,7 +101,7 @@ class DynamicDustTest(BitcoinTestFramework):
         # Exercise the existing production retry branch: its first mempool is
         # destroyed before any dynamic-dust task is registered.
         self.stop_node(0)
-        shutil.rmtree(node.blocks_path / "index")
+        self.cleanup_folder(node.blocks_path / "index")
         offset = node.debug_log_path.stat().st_size
         self.start_node(0, extra_args=["-dustdynamic=mempool:1", "-test=reindex_after_failure_noninteractive_yes"])
         current = node.debug_log_path.read_text()[offset:]

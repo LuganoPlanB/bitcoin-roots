@@ -39,7 +39,9 @@ BOOST_AUTO_TEST_CASE(directory_write_probe)
     if (geteuid() != 0) BOOST_CHECK(!IsDirWritable(dir));
     fs::permissions(dir, fs::perms::owner_all);
 #endif
-    fs::remove_all(dir);
+    BOOST_CHECK(fs::remove(file));
+    BOOST_CHECK(fs::remove(dir));
+    BOOST_CHECK(!fs::exists(dir));
 }
 
 BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)

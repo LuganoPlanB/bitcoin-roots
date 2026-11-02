@@ -502,10 +502,43 @@ struct StringContentsSerializer {
         uint8_t c{0};
         while (!s.empty()) {
             s >> c;
-            str.push_back(c);
+            str.push_back(static_cast<char>(c));
         }
     }
 };
+
+BOOST_AUTO_TEST_CASE(iterator_empty_and_binary_data)
+{
+    for (const bool obfuscate : {false, true}) {
+        const fs::path path{m_args.GetDataDirBase() / (obfuscate ? "iterator_empty_binary_obfuscated" : "iterator_empty_binary_plain")};
+        CDBWrapper dbw({.path = path, .cache_bytes = 1_MiB, .memory_only = true, .obfuscate = obfuscate});
+        const StringContentsSerializer empty;
+        // Sort after the wrapper's reserved metadata while retaining binary bytes.
+        const StringContentsSerializer binary_key{std::string{"\xff\0", 2}};
+        const StringContentsSerializer binary_value{std::string{"\0\xff\x7f", 3}};
+        dbw.Write(empty, empty);
+        dbw.Write(binary_key, binary_value);
+
+        std::unique_ptr<CDBIterator> it{dbw.NewIterator()};
+        it->Seek(empty);
+        BOOST_REQUIRE(it->Valid());
+        StringContentsSerializer key{"sentinel"};
+        StringContentsSerializer value{"sentinel"};
+        BOOST_REQUIRE(it->GetKey(key));
+        BOOST_REQUIRE(it->GetValue(value));
+        BOOST_CHECK(key.str.empty());
+        BOOST_CHECK(value.str.empty());
+
+        it->Seek(binary_key);
+        BOOST_REQUIRE(it->Valid());
+        BOOST_REQUIRE(it->GetKey(key));
+        BOOST_REQUIRE(it->GetValue(value));
+        BOOST_CHECK_EQUAL(key.str, binary_key.str);
+        BOOST_CHECK_EQUAL(value.str, binary_value.str);
+        it->Next();
+        BOOST_CHECK(!it->Valid());
+    }
+}
 
 BOOST_AUTO_TEST_CASE(iterator_string_ordering)
 {

@@ -6,7 +6,7 @@
 
 # Shared APT refresh helper for Linux CI scripts. CI_RETRY_EXE is a
 # space-separated command supplied by ci/test/00_setup_env.sh (normally
-# "retry --"), so split it once into an argv array before execution.
+# "retry"), so split it once into an argv array before execution.
 export LC_ALL=C.UTF-8
 
 ci_retry_apt_update()

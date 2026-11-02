@@ -5,6 +5,8 @@
 #include <qt/test/wallettests.h>
 #include <qt/test/util.h>
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <util/rbf.h>
 #include <wallet/coincontrol.h>
 #include <interfaces/chain.h>
