@@ -8,6 +8,7 @@
 #include <policy/policy.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <util/string.h>
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/test/unit_test.hpp>
@@ -68,7 +69,7 @@ BOOST_AUTO_TEST_CASE(carrier_decimal_quarter_oracle)
     // Find the least integral weight whose rational cost covers the request.
     using Wide = boost::multiprecision::cpp_int;
     for (uint64_t cents{0}; cents <= 10000; ++cents) {
-        const std::string value{std::to_string(cents / 100) + "." + std::to_string(100 + cents % 100).substr(1)};
+        const std::string value{util::ToString(cents / 100) + "." + util::ToString(100 + cents % 100).substr(1)};
         const auto parsed{ParseDataCarrierCost(value)};
         BOOST_REQUIRE(parsed);
         const Wide covered{Wide{*parsed} * 25};
@@ -76,7 +77,7 @@ BOOST_AUTO_TEST_CASE(carrier_decimal_quarter_oracle)
         if (*parsed > 0) BOOST_CHECK(covered - 25 < cents);
     }
     for (const uint64_t cents : {uint64_t{107374182374}, uint64_t{107374182375}, uint64_t{107374182376}}) {
-        const auto value{std::to_string(cents / 100) + "." + std::to_string(100 + cents % 100).substr(1)};
+        const auto value{util::ToString(cents / 100) + "." + util::ToString(100 + cents % 100).substr(1)};
         const auto parsed{ParseDataCarrierCost(value)};
         const bool representable{Wide{cents} <= Wide{UINT32_MAX} * 25};
         BOOST_REQUIRE_EQUAL(bool(parsed), representable);

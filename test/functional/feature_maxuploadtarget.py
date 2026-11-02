@@ -51,6 +51,8 @@ class MaxUploadTest(BitcoinTestFramework):
         self.extra_args = [[
             f"-maxuploadtarget={UPLOAD_TARGET_MB}M",
             "-maxscriptsize=1000000", "-datacarriersize=1000000",  # Large-block padding.
+            # The fixed request count assumes approximately 1 MB serialized blocks.
+            "-blockmaxweight=4000000", "-blockprioritysize=0",
         ]]
 
     def assert_uploadtarget_state(self, *, target_reached, serve_historical_blocks):

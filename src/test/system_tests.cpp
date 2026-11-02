@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(signer_closes_inherited_descriptors)
     const int inherited = fcntl(fd, F_DUPFD, 123);
     close(fd);
     BOOST_REQUIRE(inherited >= 123);
-    const auto result = RunCommandParseJSON(mock_executable("check_inherited_fd"), std::to_string(inherited));
+    const auto result = RunCommandParseJSON(mock_executable("check_inherited_fd"), util::ToString(inherited));
     close(inherited);
     BOOST_CHECK(!result.find_value("inherited").get_bool());
 }

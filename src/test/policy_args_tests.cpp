@@ -56,11 +56,12 @@ BOOST_AUTO_TEST_CASE(boolean_values)
 
 BOOST_AUTO_TEST_CASE(integer_boundaries)
 {
-    for (const auto& [option, maximum] : std::vector<std::pair<std::string, std::string>>{
-             {"maxscriptsize", "4294967295"}, {"bytespersigopstrict", "4294967295"},
-             {"maxtxlegacysigops", "4294967295"}, {"minrelaycoinblocks", "9223372036854775807"},
-             {"minrelaymaturity", "2147483647"}, {"blockmaxsize", "4000000"},
-             {"blockprioritysize", "9223372036854775807"}}) {
+    // Literal one-past limits keep fixture construction independent of policy parsing.
+    for (const auto& [option, maximum, too_large] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"maxscriptsize", "4294967295", "4294967296"}, {"bytespersigopstrict", "4294967295", "4294967296"},
+             {"maxtxlegacysigops", "4294967295", "4294967296"}, {"minrelaycoinblocks", "9223372036854775807", "9223372036854775808"},
+             {"minrelaymaturity", "2147483647", "2147483648"}, {"blockmaxsize", "4000000", "4000001"},
+             {"blockprioritysize", "9223372036854775807", "9223372036854775808"}}) {
         for (const auto& value : std::vector<std::string>{"0", "1", "+1", "01", "-0", maximum}) {
             BOOST_TEST_CONTEXT(option << "=" << value) {
                 ArgsManager args;
@@ -68,7 +69,7 @@ BOOST_AUTO_TEST_CASE(integer_boundaries)
                 BOOST_CHECK(ValidateRootsPolicyOptions(args));
             }
         }
-        for (const auto& value : std::vector<std::string>{"", "-1", "+-0", "++1", " 1", "1 ", "1junk", "1.5", "1e0", "junk", "9223372036854775808", std::to_string(std::stoull(maximum) + 1)}) {
+        for (const auto& value : std::vector<std::string>{"", "-1", "+-0", "++1", " 1", "1 ", "1junk", "1.5", "1e0", "junk", "9223372036854775808", too_large}) {
             BOOST_TEST_CONTEXT(option << "=" << value) {
                 ArgsManager args;
                 args.ForceSetArg("-" + option, value);

@@ -3,8 +3,8 @@
 // file COPYING or https://opensource.org/license/mit/.
 
 // TEMPORARY Linux benchmark instrumentation. Copied only into exported sources.
-#ifndef BITCOIN_ISSUE56_BENCH_H
-#define BITCOIN_ISSUE56_BENCH_H
+#ifndef BITCOIN_ROOTS_CACHE_BENCH_METRICS_H
+#define BITCOIN_ROOTS_CACHE_BENCH_METRICS_H
 
 #include <core_memusage.h>
 #include <primitives/transaction.h>
@@ -94,4 +94,4 @@ struct Reconstruction {
     }
 };
 } // namespace issue56
-#endif // BITCOIN_ISSUE56_BENCH_H
+#endif // BITCOIN_ROOTS_CACHE_BENCH_METRICS_H

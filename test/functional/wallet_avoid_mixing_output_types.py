@@ -164,6 +164,9 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             tx = self.make_payment(
                 A, B, v, random.choice(ADDRESS_TYPES)
             )
+            # B submits locally; wait for A to receive the payment before mining.
+            # The next payment should not depend on unconfirmed change.
+            self.sync_mempools()
             self.generate(A, 1)
             assert is_same_type(B, tx)
 

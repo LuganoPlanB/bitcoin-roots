@@ -1308,3 +1308,273 @@ links the current parsing/effective-policy/subdust and preservation contracts.
 The old 32,768-slot measurements, warmed-vector limitations and unanswered
 questions remain historical. They cannot qualify v32 or justify a default
 change; current owning evidence must be assessed independently.
+
+## L11.1 folded-series audit and qualification fixtures
+
+The renewed audit starts from accepted candidate
+`98166e6a54bccd7e44cbf89d4ac58e338a109fac`, tree
+`1681cf5294af773f7361b52b2d021b5dbf5a3268`, directly above exact Core
+`f0de87f040621468b956f01f526a43a010310501`. The twelve new commits form a
+linear series, including the ordinary starting-height and audit-correction
+commits. There is no old Roots merge, fixup/squash residue or new committed
+build, database, log or evidence artifact. Each commit has the required signing
+and primary fingerprint. The complete range-diff is a folding aid rather than
+a one-to-one patch-equivalence claim: all 38 released source commits and their
+350 distinct changed paths remain individually accounted for above. The 148
+main-only paths retain their separate qualification/integration owners; main's
+older integrated product does not replace later released repairs.
+
+### Current contract and source dispositions
+
+The 25 stable IDs and supplemental address export resolve to current code and
+observable regressions, not merely to historical case totals:
+
+| Contract | Current implementation and regression boundary |
+| --- | --- |
+| `policy-parsing` | `src/node/mempool_args.cpp` retains strict carrier/dynamic-dust grammar; `policy_args_tests.cpp` and `feature_policy_args.py` retain boundary/error oracles. |
+| `effective-policy` | `getmempoolinfo.policy` reports initialized settings through `src/rpc/mempool.cpp`; `rpc_effective_policy.py` checks values, schema, precedence and admission parity. It is not a new `geteffectivepolicy` RPC. |
+| `policy-standardness` | `src/policy/policy.cpp` and admission-only `MemPoolAccept` checks retain configured script/input/witness limits and reasons; local-policy and sigop fixtures retain valid-block separation. |
+| `policy-carrier` | `DatacarrierBytes`/`CalculateExtraTxWeight` retain aggregate recognition and quarter-vbyte arithmetic; carrier, Taproot and independent oracle fixtures retain their distinct policy/consensus expectations. |
+| `policy-dust` | `CTxMemPool::GetDustRelayFee`/`UpdateDynamicDustFee` and node-owned scheduling retain atomic snapshots and floor fallback; dust/lifecycle fixtures remain registered. |
+| `policy-subdust` | Admission and mempool entries retain the deficit's modified-fee effect; native multiprecision and functional decimal oracles remain independent of production calculations. Actual fees/rewards remain distinct. |
+| `policy-replacement` | Admission uses configured RBF/TRUC gates over native graph accounting; replacement/package/TRUC regressions retain fee and ancestor boundaries. |
+| `policy-coinage` | Admission retains next-height maturity and capped coin-block arithmetic; mining priority derives current UTXO age without changing block validity. |
+| `policy-reuse` | `CTxMemPool::GetScriptConflicts` and staged admission retain creation/spend conflict tracking and package/RBF boundaries; `spkreuse=allow` stays default. |
+| `mining-template` | `BlockAssembler::addPriorityTxs` and residual `addChunks` retain ordering and accounting; template and generated C++ IPC regressions cover the supported interface. |
+| `peer-controls` | Explicit permission implications, current transport privacy and compact-cache accounting remain in networking code; native and functional fixtures preserve count 100, 10 decimal MB and either-zero disabling. |
+| `peer-health` | VERSION-derived per-connection `m_starting_height` reaches node statistics and the real Qt Starting Block view. Unavailable state clears honestly; deprecated `startingheight`/`misbehavior_score` RPC fields remain removed. |
+| `wallet-foundation` | Native SQLite write-access validation remains present; database discovery and Unix signer descriptor closure retain their corrections. Wallet lock/unlock and descriptor boundaries remain native. |
+| `wallet-rbf` | The wallet-derived GUI choice reaches the prepared transaction; decoded transaction/PSBT tests distinguish signaling from replacement policy and preserve native PSBT v2. |
+| `wallet-sweep` | `CanSweepTo`/`CreateSweepTransaction`, backend authorization and the guarded GUI preview retain local satisfaction, transient keys, cancellation and exact-txid submission boundaries. |
+| `wallet-coin-control` | Wallet interfaces and coin-control rows retain factual effective value, locked/reused/grouped outputs and notification invalidation; no privacy score is introduced. |
+| `runtime-config` | Read/write config merging and `ModifyRWConfigFile`/`EraseRWConfigFile` retain precedence, complete-read and atomic-publication safeguards; settings/config fixtures retain failure cases. |
+| `operator-stats` | Native monotonic uptime remains active. Statistics sources remain dormant: no option/RPC registration or production sampling is added. Model source is not a shipped statistics service. |
+| `runtime-resources` | File allocation, FD saturation, native checked byte-unit conversion and safe empty `AutoFile` writes retain their regressions. Native RAM/index cache defaults remain unchanged. |
+| `build-portability` | Current system-library probes and Qt6 target wiring remain registered; obsolete Qt5/libevent support is not reinstated. Unavailable platform execution remains unqualified. |
+| `identity-desktop` | Roots identity/icons/QR behavior retain native numeric version and Satoshi wire identity. Platform notices now separate Foundation 2026 from Core 2009-year credit. |
+| `maintenance-ci` | Current classifiers, export regression selection, failure diagnostics and bounded assurance cadence remain maintained; local fixture results do not establish hosted CI. |
+| `maintenance-release` | Git-native immutable source/tag checks, signed portable imports, hosting exclusions and archive/notice/draft fixtures remain intact; publication authority is separate. |
+| `maintenance-docs` | Current feature/privacy/build/help guidance is separate from byte-preserved historical notes and policy measurements. Generated manuals remain tied to their recorded native help inputs. |
+| `maintenance-native` | Scoped stream/process/test/fuzz adaptations remain attached to their owning behavior; broad historical overlays are not imported by name alone. |
+| Supplemental address export | `ExportAddressKeys`, checked descriptor derivation/MuSig2 provenance and secure key extraction retain the full roots.6 contract, unlock/opt-in boundaries, partial ownership and RPC/Qt secret-history regressions. |
+
+The six previously undisposed S27/S29 tooling/review paths are restored by the
+accepted correction. The historical policy review is byte-identical to the
+released source; its active replacement explicitly separates v31 measurements
+from current contracts. The three S35 platform metadata inputs now retain both
+copyright holders and their correct year ranges, with numeric bundle/resource
+versions unchanged. These are source/configured-preprocessing results; they do
+not claim Windows/macOS runtime execution.
+
+Only four original net-source paths remain absent. `FindLibevent.cmake` and its
+Homebrew fixture are obsolete because v32's native HTTP transport has no
+libevent dependency. `src/test/mock_process.cpp` is replaced by the mock
+dispatcher and inherited-descriptor/lowered-limit regressions in
+`src/test/system_tests.cpp`. The old `doc/roots-v31-port-review.md` remains a
+pinned historical review; this v32 review replaces active acceptance claims.
+Neither an absent filename nor a renamed upstream API establishes retirement
+of an operator behavior.
+
+The remaining native-file adoptions have observable replacements. Qt5-only
+branches in the address filter, translation generation, options/model startup
+and Qt test linkage are superseded by the supported Qt6 paths and retained Qt6
+persistence tests. SQLite's directory write check and SOCKS credential-log
+redaction are already present in exact Core v32. Native `_GiB` uses checked
+conversion, with current resource callers/tests retaining their bounds. Legal
+help moved to `src/common/license_info.cpp`; the ordinary client version code
+and numeric identifiers remain native. Upstream contributor/build/dependency/
+release guidance remains upstream guidance, complemented by current Roots
+build and maintainer documents rather than copied historical instructions.
+
+### Released fixture repairs and marker isolation
+
+The audit found that the before-mining synchronization repair in the released
+wallet output-type fixture had been lost. Bob submits locally, so the current
+fixture again calls `sync_mempools()` before Alice mines each returned payment.
+Framework synchronization after mining does not replace this ordering barrier.
+The coin-selection and final mixed-input assertions are unchanged.
+
+Two other released fixture adaptations also remain necessary on v32. The
+sequence-lock fixture deliberately lowers a transaction's modified fee to zero;
+its two nodes now explicitly disable the priority area so that the transaction
+remains available for subsequent lock assertions. The UTXO-to-SQLite fixture
+creates arbitrary tiny outputs; it now disables the subdust penalty only for
+that conversion experiment, while retaining native `coinstatsindex` setup.
+Fresh failures before these repairs reproduced premature priority inclusion and
+the dust-deficit modified-fee rejection respectively. No production mining,
+wallet, admission default or consensus assertion was changed.
+
+Released fixture-only `rejectparasites=0` flags are not blindly restored. Current
+`GetAntiFeeSnipingLockTime` in `src/wallet/spend.cpp` excludes the reserved CAT21
+marker before ordinary wallet transactions are produced. Output-type grouping,
+backup and wallet-group fixtures exercise that current path with normal local
+policy. This source-based disposition is separate from the two necessary
+non-marker isolation settings above.
+
+### Intermediate buildability and accepted-source replay
+
+Historical precommit source captures are reconciled to each accepted thematic
+commit, not to an equal tip tree. Original dirty patches reconstruct the exact
+accepted complete trees for L2/L3/L4/L5/L6/L9. L8's complete 3,059-path source
+capture matches its accepted tree. L7's changed source identities match its
+accepted commit; its earlier documentation snapshot is distinguished from
+post-build executable identities. The ordinary L6 correction was built in the
+headless profile while protected Qt/documentation work was dirty; those GUI
+inputs were outside that profile, and its owned node/fixture inputs match the
+correction commit. Later L4 fuzz, L5 IPC and L6 benchmark build receipts cover
+their final compiled fixtures. L1 is documentation-only.
+
+The original L10 complete source capture matches its accepted 3,128-path tree.
+The later 14-path audit correction preserves runtime compilation inputs; actual
+native translation-unit preprocessing is identical across its resource-only
+header change. Its configured platform metadata, helper suites and bounded
+isolated experiment have distinct receipts. This supports the affected Linux
+profiles, without inventing a fresh platform build or treating the experiment
+as an uninstrumented production performance result.
+
+Recorded builds used their original prior HEAD plus dirty source and generated
+Git metadata. Their later clean commit SHA was not their version stamp.
+Pre-build binary hashes and superseded binaries are not asserted to be current
+post-build identities. Complete source/command/configuration/binary provenance
+and original successful build logs support the intermediate compilation claims;
+the final tree's green result alone is not used for them.
+
+The accepted `98166e6a54bccd7e44cbf89d4ac58e338a109fac` export has an actual
+exact-Core replay of twelve signed commits ending at
+`58c7da17032832204ca4fd27d938e83f5246993b`. All 3,136 source entries, product
+blobs/modes/symlinks, author/date/message attribution and CRLF bytes agree, while
+`.github/**` remains exact Core. The earlier e979 replay remains historical;
+these source/replay/accepted identities are separate. Qualification fixture and
+review-document changes after this accepted source require final accepted-SHA
+reconciliation at the later parent/handoff gate.
+
+The aggregate audit leaves consensus directories, primitive serialization,
+script interpreter, cryptographic dependencies and chain parameters unchanged.
+Necessary `validation.cpp` touches stay within local admission/package policy;
+descriptor/key extensions support wallet export and transient sweep rather
+than changing consensus validation or signing algorithms. No translation
+subtree is mass-rebranded. Contributor/source credits remain explicit.
+Full candidate, external compatibility, hosted/platform and instrumented
+acceptance gates remain separate work; this audit is not their passing result.
+
+
+## L11.2 external compatibility qualification
+
+The main-only external harness is retained as a separately qualified source
+package for later main integration. Its baseline is main commit
+`5d09cb937f0024a6fae0b4ba3da7f0ae7fd0063f`; seven compatibility-tool paths are
+adapted without importing those tools into this product branch. The maintained
+30.3 profile remains the default, with its regression support intact. The
+explicit 32.1 profile requires exact Core
+`f0de87f040621468b956f01f526a43a010310501` and Roots
+`98166e6a54bccd7e44cbf89d4ac58e338a109fac`, committed version metadata,
+official Core origin/tag identity, ancestry, CLI/RPC version and fresh controlled
+build provenance. Caller-provided binaries remain unqualified. The upstream
+Core-tag signature check was explicitly waived; exact source matching remains
+required and no upstream signer-authentication result is asserted.
+
+All 70 external-tool regressions passed. Fresh exports built both binaries
+with caches disabled before the six-case full comparison executed. Roots
+produced the ordinary transaction's block through its native producer and
+Core accepted the returned bytes. Core produced a block containing the
+Roots-policy-rejected carrier transaction and Roots accepted its returned
+bytes. The report retains both directions, raw block/transaction identities,
+producer/receiver binaries, pre-submit tips and equal post-exchange UTXO state.
+Eight admission checks, valid/invalid block outcomes, sigop/subdust boundaries,
+disconnect/reconnect and two successful restarts per node remain distinct.
+Four intermediate and two final shutdowns exited successfully. This qualifies
+the pinned native component pair; later source SHAs require their own exact
+qualification decision.
+
+## L11.3 initial candidate matrix and corrected-source renewal
+
+The initial Linux matrix below used accepted `98166e6` native source plus
+the declared qualification fixture/document changes. Its logs, snapshots and
+tested binaries remain historical evidence for that exact state. GNU 14.2 RelWithDebInfo enables wallet,
+Qt 6.8.2, QR, IPC, external signer, benchmark, experimental kernel and chainstate
+targets. Compilation and linking settle before each affected binary is tested.
+Frozen source, compiler/configuration/generated-header and binary identities
+accompany every profile; earlier source snapshots, failures and tested binaries
+remain retrievable. The bounded source/lint correction described below has a separate signed
+private snapshot and renewed source/configuration/binary evidence. The table
+records the initial matrix; its numeric totals are not transferred to the
+corrected binaries. Current acceptance requires the renewed matrix and the
+external gates below.
+
+| Current execution | Observed scope and result |
+| --- | --- |
+| Full native unit executable | 917 cases passed, 26,949,822 assertions, no skipped cases. |
+| Complete configured CTest | All 386 registered tests passed with no skips, including embedded-library, IPC, kernel and GUI registrations. |
+| Complete extended functional runner | All 519 selected instances completed: 503 passed, 16 prerequisite skips, no failures. This includes 197 benchmark sanity instances and 322 functional/script instances; benchmark sanity is not performance measurement. |
+| Full Qt6 executable | Six classes passed all 10 substantive registered functions plus 12 setup/cleanup functions; 22 PASS rows, no failures/skips. |
+| Maintainer fixtures | The complete 179-test current maintenance suite passed; source/lint proposal validation is recorded separately from canonical application. |
+| Current bounded instrumented fuzz | All nine maintained fast targets passed with 238,077 measured inputs, including `dynamic_dust_fee` and `policy_args`. Each uses the five-second campaign, five-second input, seed-one and 15-second outer bounds. |
+| Current resource instrumentation | Clang 19 ASan/UBSan passed 16 allocation scenarios, two stream profiles and the dormant-model exercise. Five GiB compile contracts include four expected rejections; signed/unsigned FD models passed 24 cases under address/undefined/integer/float-divide instrumentation. These models do not establish another platform's ABI. |
+
+The official unit-test asset file was fetched independently of any full fuzz
+corpus, pinned to qa-assets commit
+`b33d85102d169b54d966ea315ad81a636680aefa` and checked against its Git blob and
+SHA256. Its 2,244 vectors executed in `script_assets_test` with 141,917 passing
+assertions. The historical missing-assets warning/CTest skip above is closed
+for this current profile. Both bind-address fixtures also executed using
+already assigned routable IPv4/IPv6 addresses; no host address/routing change
+was made.
+
+Four native test/fuzz sources now use locale-independent formatting or literal
+boundary inputs. Integer one-past-limit fixtures remain independent of the
+production parser, with their original accept/reject assertions and inputs.
+Three Core mining experiments explicitly request their required mining profile:
+fee-free orphan checks disable the Roots priority area, disconnect-pool FIFO
+checks use full-size fee-ordered blocks, and the upload-budget experiment uses
+full-size blocks for its fixed request count. The initial failures and repaired
+runs are retained. Production mining/admission defaults and consensus rules
+remain unchanged.
+
+The first native XML-file-sink capture reproduced a Boost cleanup failure in
+the forked lock-directory test. The identical case and complete native suite
+passed with normal CI-style output; external CTest JUnit provides structured
+results without that file-sink lifetime interaction. The initial fuzz starts
+executed zero inputs because the local environment omitted current CI's
+existing dependency suppressions. The passing campaigns use the unchanged
+Core v32 suppression files and current CI sanitizer environment. No new
+suppression or ignored test was added. Leak detection was enabled in the
+bounded fuzz/resource runs; these are not full-corpus or unbounded leak-free
+claims.
+
+Sixteen functional prerequisite skips remain explicit: seven previous-release
+profiles, two Python Cap'n Proto interfaces, ZeroMQ, five USDT profiles and the
+plyvel-backed UTXO corruption test. Existing local/tool paths were checked.
+Required-feature configure probes fail for missing ZeroMQ, USDT, system LevelDB
+and system secp256k1 dependencies; native embedded libraries remain enabled.
+Rust lint infrastructure, ruff/mypy/lief, actionlint, PowerShell and offline
+Markdown-link tooling are unavailable in this environment. Current hosted
+Clang 23, instrumented MSan libc++, cross toolchains/emulators and native
+Windows/macOS runners remain unqualified. Their exact prerequisites and case
+identities belong to the canonical review/CI handoff owner.
+
+The root approved the exact bounded source/lint correction under final
+qualification ownership: fifteen executable script modes, the benchmark
+helper's path-correct include guard, six release scripts and one CI helper
+using the native `C.UTF-8` locale, and removal of the unused `policy/policy.h`
+include from `policy/settings.cpp`. Both externally visible policy defaults
+remain 20. Incidental unused static initialization disappears, so binary
+identity is renewed; the initial matrix is not relabeled as current evidence.
+All test assertions remain intact and no production default changes.
+
+The corrected full source and intended executable modes are frozen in a
+required-key-signed private qualification snapshot. The canonical index stays
+untouched; metadata-dependent lints run against the byte/mode-equivalent
+snapshot. Portable export/replay, deterministic release fixtures and current
+native/instrumented gates are renewed from that identity. The original seven
+external compatibility-tool paths and their initial native qualification stay
+unchanged. A separate copied package deliberately pins the exact corrected
+snapshot, retains every provenance/generation guard and fresh controlled-build
+requirement, and runs its full regression and six-case bidirectional exchange
+qualification. The eventual accepted product SHA remains a distinct identity
+requiring final reconciliation; no private snapshot implies release authority.
+
+Read-only queries found no existing 32.1 review branch/PR or normal
+pull-request workflow run at the pinned candidate SHA. The canonical review
+handoff must obtain normal exact-SHA hosted CI under its own authority. No
+public ref, workflow dispatch, release signing or publication is performed by
+this qualification. Final parent/whole-branch review remains required.
