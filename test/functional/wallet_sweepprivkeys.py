@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Plan-B Foundation
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Exercise transient-key sweep preview and broadcast without import."""
 from decimal import Decimal
 from pathlib import Path
@@ -15,9 +18,14 @@ class SweepPrivKeysTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [[], []]
+        self.allow_dangerous_rpc = True
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+
+    def add_options(self, parser):
+        parser.add_argument('--test-runtime-config', action='store_true',
+                            help='Exercise the integrated read/write configuration contract after the runtime port')
 
     def run_test(self):
         node, miner = self.nodes
@@ -166,32 +174,45 @@ class SweepPrivKeysTest(BitcoinTestFramework):
         miner.sendtoaddress(key_to_p2pkh(small_pubkey), Decimal('0.00010000'))
         self.generate(miner, 1)
         self.sync_blocks()
-        # Integrated runtime configuration must feed the same initialized
-        # relay fee used by reporting and sweep's required-fee calculation.
         wallet_name = wallet.getwalletinfo()['walletname']
+        # The released read/write configuration branch is also exercised by
+        # the runtime owner using --test-runtime-config. CLI fee precedence is
+        # always checked independently of that configuration facility.
         rw_path = node.chain_path / 'bitcoin_rw.conf'
-        self.stop_node(0)
-        rw_path.write_text('minrelaytxfee=0.00100000\n', encoding='utf-8')
-        self.start_node(0)
+        if self.options.test_runtime_config:
+            self.stop_node(0)
+            rw_path.write_text('minrelaytxfee=0.00100000\n', encoding='utf-8')
+            self.start_node(0)
+            self.connect_nodes(0, 1)
+            wallet = node.get_wallet_rpc(wallet_name)
+            wallet.walletpassphrase('pass', 60)
+            assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
+            assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
+        self.restart_node(0, extra_args=['-minrelaytxfee=0.00100000'])
         self.connect_nodes(0, 1)
         wallet = node.get_wallet_rpc(wallet_name)
-        wallet.walletpassphrase('pass', 60)
         assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00100000'))
         assert_raises_rpc_error(-6, 'Fee exceeds swept value', wallet.sweepprivkeys, [small_wif], destination)
         self.restart_node(0, extra_args=['-minrelaytxfee=0.00001000'])
         self.connect_nodes(0, 1)
         wallet = node.get_wallet_rpc(wallet_name)
-        wallet.walletpassphrase('pass', 60)
         assert_equal(node.getmempoolinfo()['minrelaytxfee'], Decimal('0.00001000'))
         assert_equal(wallet.sweepprivkeys([small_wif], destination)['broadcast'], False)
-        self.stop_node(0)
-        rw_path.unlink()
-        self.start_node(0)
-        self.connect_nodes(0, 1)
-        wallet = node.get_wallet_rpc(wallet_name)
-        wallet.walletpassphrase('pass', 60)
-        wallet_name = wallet.getwalletinfo()['walletname']
+        if self.options.test_runtime_config:
+            self.stop_node(0)
+            rw_path.unlink()
+            self.start_node(0)
+            self.connect_nodes(0, 1)
+            wallet = node.get_wallet_rpc(wallet_name)
         dust_destination = wallet.getnewaddress(address_type='legacy')
+        self.restart_node(0, extra_args=['-fallbackfee=0'])
+        self.connect_nodes(0, 1)
+        wallet = self.nodes[0].get_wallet_rpc(wallet_name)
+        fee_disabled_state = wallet.listdescriptors(), wallet.listlabels(), wallet.getwalletinfo()['keypoolsize']
+        for broadcast in (False, True):
+            assert_raises_rpc_error(-4, 'Fallbackfee is disabled', wallet.sweepprivkeys, [small_wif], dust_destination, broadcast)
+        assert_equal((wallet.listdescriptors(), wallet.listlabels(), wallet.getwalletinfo()['keypoolsize']), fee_disabled_state)
+        assert_equal(wallet.getaddressinfo(key_to_p2pkh(small_pubkey))['ismine'], False)
         self.restart_node(0, extra_args=['-fallbackfee=0.00052000'])
         self.connect_nodes(0, 1)
         wallet = self.nodes[0].get_wallet_rpc(wallet_name)

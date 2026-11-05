@@ -36,18 +36,18 @@ if(MSVC)
     NAMES miniupnpc PATHS ${MiniUPnPc_IMPORTED_PATH}/lib
     NO_DEFAULT_PATH
   )
-  set(MiniUPnPc_required MiniUPnPc_IMPORTED_PATH)
+  include(SelectLibraryConfigurations)
+  select_library_configurations(MiniUPnPc)
 else()
   find_library(MiniUPnPc_LIBRARY
     NAMES miniupnpc
     PATHS ${PC_MiniUPnPc_LIBRARY_DIRS}
   )
-  set(MiniUPnPc_required MiniUPnPc_LIBRARY)
 endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(MiniUPnPc
-  REQUIRED_VARS ${MiniUPnPc_required} MiniUPnPc_INCLUDE_DIR MiniUPnPc_API_VERSION_OK
+  REQUIRED_VARS MiniUPnPc_LIBRARY MiniUPnPc_INCLUDE_DIR MiniUPnPc_API_VERSION_OK
 )
 
 if(MiniUPnPc_FOUND AND NOT TARGET MiniUPnPc::MiniUPnPc)

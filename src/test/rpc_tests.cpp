@@ -11,6 +11,7 @@
 #include <rpc/util.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
+#include <test/util/time.h>
 #include <univalue.h>
 #include <util/time.h>
 
@@ -151,6 +152,39 @@ BOOST_AUTO_TEST_CASE(rpc_namedonlyparams)
     // Make sure options object specified through args array conflicts.
     BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"args": [1, 2, {"opt1": 10}], "opt2": 20})"), arg_names), UniValue,
                           HasJSON(R"({"code":-8,"message":"Parameter options specified twice both as positional and named argument"})"));
+}
+
+BOOST_AUTO_TEST_CASE(rpc_remove_command_cleans_up_empty_entry)
+{
+    CRPCTable table;
+    RpcMethodFnType method{
+        []() -> RPCMethod {
+            return RPCMethod{
+                "method",
+                "Test RPC method.\n",
+                {},
+                RPCResult{RPCResult::Type::STR, "", ""},
+                RPCExamples{""},
+                [](const RPCMethod&, const JSONRPCRequest&) -> UniValue { return "ok"; },
+            };
+        }
+    };
+    CRPCCommand command{"test", method};
+
+    table.appendCommand(command.name, &command);
+    BOOST_CHECK(table.removeCommand(command.name, &command));
+
+    bool found{false};
+    for (const auto& name : table.listCommands()) {
+        if (name == command.name) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_CHECK(!found);
+
+    UniValue doc{table.buildOpenRPCDoc()};
+    BOOST_CHECK(doc.isObject());
 }
 
 BOOST_AUTO_TEST_CASE(rpc_rawparams)
@@ -359,10 +393,9 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
 
     BOOST_CHECK_NO_THROW(CallRPC(std::string("clearbanned")));
 
-    auto now = 10'000s;
-    SetMockTime(now);
+    FakeNodeClock clock{10'000s};
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("setban 127.0.0.0/24 add 200")));
-    SetMockTime(now += 2s);
+    clock += 2s;
     const int64_t time_remaining_expected{198};
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
@@ -373,7 +406,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     const int64_t ban_duration{o1.find_value("ban_duration").getInt<int64_t>()};
     const int64_t time_remaining{o1.find_value("time_remaining").getInt<int64_t>()};
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
-    BOOST_CHECK_EQUAL(banned_until, time_remaining_expected + now.count());
+    BOOST_CHECK_EQUAL(banned_until, time_remaining_expected + TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()));
     BOOST_CHECK_EQUAL(ban_duration, banned_until - ban_created);
     BOOST_CHECK_EQUAL(time_remaining, time_remaining_expected);
 
@@ -419,6 +452,18 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     o1 = ar[0].get_obj();
     adr = o1.find_value("address");
     BOOST_CHECK_EQUAL(adr.get_str(), "2001:4d48:ac57:400:cacf:e9ff:fe1d:9c63/128");
+}
+
+BOOST_AUTO_TEST_CASE(rpc_convert_values_exportaddresskey)
+{
+    for (const auto* mode : {"wallet", "taproot_output", "null", "true", "1"}) {
+        const auto positional = RPCConvertValues("exportaddresskey", {"address", mode});
+        BOOST_CHECK_EQUAL(positional[0].get_str(), "address");
+        BOOST_CHECK_EQUAL(positional[1].get_str(), mode);
+        const auto named = RPCConvertNamedValues("exportaddresskey", {"address=address", std::string{"key_type="} + mode});
+        BOOST_CHECK_EQUAL(named["address"].get_str(), "address");
+        BOOST_CHECK_EQUAL(named["key_type"].get_str(), mode);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(rpc_convert_values_generatetoaddress)
@@ -540,7 +585,7 @@ BOOST_AUTO_TEST_CASE(check_dup_param_names)
             }
         }
         push_options();
-        return RPCHelpMan{"method_name", "description", params, RPCResults{}, RPCExamples{""}};
+        return RPCMethod{"method_name", "description", params, RPCResults{}, RPCExamples{""}};
     };
 
     // No errors if parameter names are unique.
@@ -608,10 +653,10 @@ BOOST_AUTO_TEST_CASE(help_example)
     BOOST_CHECK_NE(HelpExampleRpcNamed("foo", {{"arg", true}}), HelpExampleRpcNamed("foo", {{"arg", "true"}}));
 }
 
-static void CheckRpc(const std::vector<RPCArg>& params, const UniValue& args, RPCHelpMan::RPCMethodImpl test_impl)
+static void CheckRpc(const std::vector<RPCArg>& params, const UniValue& args, RPCMethod::RPCMethodImpl test_impl)
 {
     auto null_result{RPCResult{RPCResult::Type::NONE, "", "None"}};
-    const RPCHelpMan rpc{"dummy", "dummy description", params, null_result, RPCExamples{""}, test_impl};
+    const RPCMethod rpc{"dummy", "dummy description", params, null_result, RPCExamples{""}, test_impl};
     JSONRPCRequest req;
     req.params = args;
 
@@ -624,7 +669,7 @@ BOOST_AUTO_TEST_CASE(rpc_arg_helper)
     constexpr auto DEFAULT_STRING = "default";
     constexpr uint64_t DEFAULT_UINT64_T = 3;
 
-    //! Parameters with which the RPCHelpMan is instantiated
+    //! Parameters with which the RPCMethod is instantiated
     const std::vector<RPCArg> params{
         // Required arg
         {"req_int", RPCArg::Type::NUM, RPCArg::Optional::NO, ""},
@@ -639,7 +684,7 @@ BOOST_AUTO_TEST_CASE(rpc_arg_helper)
     };
 
     //! Check that `self.Arg` returns the same value as the `request.params` accessors
-    RPCHelpMan::RPCMethodImpl check_positional = [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+    RPCMethod::RPCMethodImpl check_positional = [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue {
             BOOST_CHECK_EQUAL(self.Arg<int>("req_int"), request.params[0].getInt<int>());
             BOOST_CHECK_EQUAL(self.Arg<std::string_view>("req_str"), request.params[1].get_str());
             BOOST_CHECK_EQUAL(self.Arg<uint64_t>("def_uint64_t"), request.params[2].isNull() ? DEFAULT_UINT64_T : request.params[2].getInt<uint64_t>());

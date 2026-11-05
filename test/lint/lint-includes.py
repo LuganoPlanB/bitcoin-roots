@@ -21,7 +21,6 @@ EXCLUDED_DIRS = ["contrib/devtools/bitcoin-tidy/",
                 ] + SHARED_EXCLUDED_SUBTREES
 
 EXPECTED_BOOST_INCLUDES = [
-                           "boost/cstdlib.hpp",
                            "boost/multi_index/detail/hash_index_iterator.hpp",
                            "boost/multi_index/hashed_index.hpp",
                            "boost/multi_index/identity.hpp",
@@ -31,13 +30,18 @@ EXPECTED_BOOST_INCLUDES = [
                            "boost/multi_index/tag.hpp",
                            "boost/multi_index_container.hpp",
                            "boost/operators.hpp",
-                           "boost/signals2/connection.hpp",
-                           "boost/signals2/optional_last_value.hpp",
-                           "boost/signals2/signal.hpp",
                            "boost/test/included/unit_test.hpp",
                            "boost/test/unit_test.hpp",
                            "boost/tuple/tuple.hpp",
                           ]
+
+# Independent policy arithmetic oracles deliberately use multiprecision. Keep
+# this exception tied to the test file, without permitting production callers.
+TEST_ONLY_BOOST_INCLUDES = {
+    ("src/test/fuzz/tx_pool.cpp", "boost/multiprecision/cpp_int.hpp"),
+    ("src/test/mempool_tests.cpp", "boost/multiprecision/cpp_int.hpp"),
+    ("src/test/roots_policy_oracle_tests.cpp", "boost/multiprecision/cpp_int.hpp"),
+}
 
 
 def get_toplevel():
@@ -74,7 +78,11 @@ def find_included_cpps():
         if e.returncode > 1:
             raise e
 
-    return included_cpps
+    # Exception: `#include <moc_*.cpp>` statements in src/qt source files are permitted.
+    # See:
+    # - https://doc.qt.io/qt-6/moc.html
+    # - https://cmake.org/cmake/help/latest/prop_tgt/AUTOMOC.html
+    return [i for i in included_cpps if not re.match(r"src/qt/[^:]+\.cpp:#include <moc_[^<>:]+\.cpp>$", i)]
 
 
 def find_extra_boosts():
@@ -89,7 +97,10 @@ def find_extra_boosts():
             raise e
 
     for boost in included_boosts:
-        filtered_included_boost_set.add(re.findall(r'(?<=\<).+?(?=\>)', boost)[0])
+        inclusion = re.findall(r'(?<=\<).+?(?=\>)', boost)[0]
+        if (boost.split(":", 1)[0], inclusion) in TEST_ONLY_BOOST_INCLUDES:
+            continue
+        filtered_included_boost_set.add(inclusion)
 
     for expected_boost in EXPECTED_BOOST_INCLUDES:
         for boost in filtered_included_boost_set:

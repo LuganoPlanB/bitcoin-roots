@@ -11,9 +11,9 @@
 
 #include <univalue.h>
 
-static RPCHelpMan getmempoolstats()
+static RPCMethod getmempoolstats()
 {
-    return RPCHelpMan{"getmempoolstats",
+    return RPCMethod{"getmempoolstats",
                 "\nReturns the collected mempool statistics (non-linear non-interpolated samples).\n",
                 {},
                 RPCResult{
@@ -36,7 +36,7 @@ static RPCHelpMan getmempoolstats()
                     HelpExampleCli("getmempoolstats", "")
             + HelpExampleRpc("getmempoolstats", "")
                 },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [&](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     // get stats from the core stats model
     uint64_t timeFrom = 0;

@@ -1,4 +1,4 @@
-# Copyright (c) 2025-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 

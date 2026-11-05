@@ -1,4 +1,4 @@
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -54,20 +54,7 @@ jobs:
       - name: Run release metadata tests
         run: |
           set -Eeuo pipefail
-          python3 ci/test/test_create_patch_series.py
-          python3 ci/test/test_prepare_release_source.py
-          python3 ci/test/test_prepare_release.py
-          python3 ci/test/test_release_notices.py
-          python3 ci/test/test_runner_release_notices.py
-          python3 ci/test/test_create_ci_release_draft.py
-          python3 ci/test/test_create_release_draft.py
-          python3 ci/test/test_sign_manifest.py
-          python3 ci/test/test_validate_release_tag.py
-          python3 ci/test/test_validate_release_source.py
-          python3 ci/test/test_release_version.py
-          python3 ci/test/test_homebrew_boost_headers.py
-          python3 ci/test/test_homebrew_capnp_headers.py
-          python3 ci/test/test_homebrew_libevent_headers.py
+          python3 -m unittest discover -s ci/test
 
       - name: Generate verified patch series
         run: |
@@ -96,6 +83,7 @@ jobs:
       RUN_UNIT_TESTS: 'false'
       RUN_FUNCTIONAL_TESTS: 'false'
       RUN_FUZZ_TESTS: 'false'
+      ROOTS_JOB_TIMEOUT_MINUTES: 180
     strategy:
       fail-fast: false
       matrix:
@@ -131,6 +119,14 @@ jobs:
 
       - name: Build release artifacts
         run: ./ci/test_run_all.sh
+
+      - name: Retain failed Linux build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failure-${{ matrix.artifact-name }}-${{ env.RELEASE_TAG }}
+          path: ${{ env.ROOTS_ARTIFACTS_DIR }}/
+          if-no-files-found: warn
 
       - name: Package release artifacts
         env:
@@ -213,7 +209,7 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: |
-          cmake --build build -j $env:NUMBER_OF_PROCESSORS --config Release
+          cmake --build build -j 2 --config Release
           $archiveRoot = (& python ci/release/archive.py root-name).Trim()
           if ($LASTEXITCODE -ne 0) { throw "Failed to determine archive root" }
           $installParent = Join-Path $env:RUNNER_TEMP "release-install"
@@ -251,6 +247,7 @@ jobs:
       RUN_UNIT_TESTS: 'false'
       RUN_FUNCTIONAL_TESTS: 'false'
       RUN_FUZZ_TESTS: 'false'
+      ROOTS_JOB_TIMEOUT_MINUTES: 180
     strategy:
       fail-fast: false
       matrix:
@@ -264,6 +261,11 @@ jobs:
             expected-arch: arm64
             artifact-name: bitcoin-roots-darwin-arm64
     steps:
+      - name: Configure temporary paths
+        run: |
+          printf 'BASE_BUILD_DIR=%s/release-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'ROOTS_ARTIFACTS_DIR=%s/roots-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: Check out release source
         uses: actions/checkout@v6
         with:
@@ -287,7 +289,7 @@ jobs:
             printf 'Expected %s, runner reported %s\n' "$EXPECTED_ARCH" "$actual_arch" >&2
             exit 1
           fi
-          sudo xcode-select --switch /Applications/Xcode_16.0.app
+          sudo xcode-select --switch /Applications/Xcode_16.2.app
 
       - name: Install Homebrew packages
         env:
@@ -295,10 +297,18 @@ jobs:
         run: |
           set -Eeuo pipefail
           brew install --quiet python@3 || brew link --overwrite python@3
-          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost miniupnpc zeromq qt@6 qrencode capnp
 
       - name: Build release package
         run: ./ci/test_run_all.sh
+
+      - name: Retain failed macOS build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failure-${{ matrix.artifact-name }}-${{ env.RELEASE_TAG }}
+          path: ${{ env.ROOTS_ARTIFACTS_DIR }}/
+          if-no-files-found: warn
 
       - name: Stage release package
         env:
@@ -306,7 +316,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           shopt -s nullglob
-          packages=("${GITHUB_WORKSPACE}"/ci/scratch/build-*/*.zip)
+          packages=("${BASE_BUILD_DIR}"/bitcoin-macos-app.zip)
           if (( ${#packages[@]} != 1 )); then
             printf 'Expected one macOS package, found %s\n' "${#packages[@]}" >&2
             exit 1

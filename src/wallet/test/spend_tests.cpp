@@ -2,29 +2,31 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <algorithm>
-#include <barrier>
-#include <thread>
-#include <util/rbf.h>
-#include <wallet/fees.h>
-#include <interfaces/wallet.h>
 #include <consensus/amount.h>
+#include <interfaces/wallet.h>
 #include <key.h>
 #include <key_io.h>
-#include <policy/fees/block_policy_estimator.h>
 #include <policy/policy.h>
+#include <psbt.h>
 #include <random.h>
-#include <script/solver.h>
 #include <script/descriptor.h>
+#include <script/solver.h>
+#include <streams.h>
+#include <util/rbf.h>
 #include <util/strencodings.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/context.h>
+#include <wallet/fees.h>
 #include <wallet/spend.h>
 #include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <algorithm>
+#include <barrier>
+#include <thread>
 
 namespace wallet {
 BOOST_FIXTURE_TEST_SUITE(spend_tests, WalletTestingSetup)
@@ -147,9 +149,10 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
     provider.keys.emplace(key.GetPubKey().GetID(), key);
     provider.pubkeys.emplace(key.GetPubKey().GetID(), key.GetPubKey());
     interfaces::SweepAuthorization success_authorization;
+    WITH_LOCK(wallet->cs_wallet, wallet->m_fallback_fee = CFeeRate{1000});
     auto success{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) { ++broadcasts; return true; }, success_authorization)};
     BOOST_REQUIRE(success);
-    BOOST_CHECK_GE(success->fee, GetMinimumFee(*wallet, GetVirtualTransactionSize(*success->tx), CCoinControl{}, nullptr));
+    BOOST_CHECK_GE(success->fee, GetMinimumFee(GetMinimumFeeRate(*wallet, CCoinControl{}), GetVirtualTransactionSize(*success->tx)));
     BOOST_CHECK_EQUAL(broadcasts, 1);
 
     std::string rejection;
@@ -162,6 +165,17 @@ BOOST_FIXTURE_TEST_CASE(sweep_transaction_failure_atomicity, TestChain100Setup)
     BOOST_CHECK(!broadcast_failure);
     BOOST_CHECK(util::ErrorString(broadcast_failure).original.find("txn-mempool-conflict") != std::string::npos);
     BOOST_CHECK_EQUAL(broadcasts, 2);
+
+    WITH_LOCK(wallet->cs_wallet, wallet->m_fallback_fee = CFeeRate{0});
+    interfaces::SweepAuthorization no_fee_authorization;
+    auto no_fee{CreateSweepTransaction(*wallet, provider, coins, script, [&](const CTransactionRef&, std::string&) {
+        ++broadcasts;
+        return true;
+    }, no_fee_authorization)};
+    BOOST_CHECK(!no_fee);
+    BOOST_CHECK(util::ErrorString(no_fee).original.find("Fallbackfee is disabled") != std::string::npos);
+    BOOST_CHECK_EQUAL(broadcasts, 2);
+    BOOST_CHECK(!no_fee_authorization.BroadcastStarted());
 
     interfaces::SweepAuthorization cancelled_authorization;
     BOOST_REQUIRE(cancelled_authorization.Cancel());
@@ -352,6 +366,34 @@ BOOST_FIXTURE_TEST_CASE(manual_coin_control_honors_selection_and_rbf, TestChain1
     BOOST_REQUIRE_EQUAL(rbf->tx->vin.size(), 1U);
     BOOST_CHECK(rbf->tx->vin.front().prevout == selected_coin.outpoint);
     BOOST_CHECK_EQUAL(rbf->tx->vin.front().nSequence, MAX_BIP125_RBF_SEQUENCE);
+
+    // Preserve the wallet preference, explicit per-send choices, and actual
+    // transaction sequences across native PSBT v0 and the v32 default v2.
+    for (const bool default_rbf : {false, true}) {
+        WITH_LOCK(wallet->cs_wallet, wallet->m_signal_rbf = default_rbf);
+        for (const auto override_rbf : {std::optional<bool>{}, std::optional<bool>{false}, std::optional<bool>{true}}) {
+            coin_control.m_signal_bip125_rbf = override_rbf;
+            const auto prepared{CreateTransaction(*wallet, {recipient}, std::nullopt, coin_control, /*sign=*/false)};
+            BOOST_REQUIRE(prepared);
+            const uint32_t sequence{override_rbf.value_or(default_rbf) ? MAX_BIP125_RBF_SEQUENCE : CTxIn::MAX_SEQUENCE_NONFINAL};
+            BOOST_REQUIRE_EQUAL(prepared->tx->vin.size(), 1U);
+            BOOST_CHECK_EQUAL(prepared->tx->vin.front().nSequence, sequence);
+            const CMutableTransaction transaction{*prepared->tx};
+            BOOST_CHECK_EQUAL(PartiallySignedTransaction{transaction}.GetVersion(), 2U);
+            for (const uint32_t version : {0U, 2U}) {
+                DataStream stream;
+                stream << PartiallySignedTransaction{transaction, version};
+                const PartiallySignedTransaction decoded{deserialize, stream};
+                BOOST_CHECK_EQUAL(decoded.GetVersion(), version);
+                const auto decoded_tx{decoded.GetUnsignedTx()};
+                BOOST_REQUIRE(decoded_tx);
+                BOOST_REQUIRE_EQUAL(decoded_tx->vin.size(), 1U);
+                BOOST_CHECK(decoded_tx->vin.front().prevout == selected_coin.outpoint);
+                BOOST_CHECK_EQUAL(decoded_tx->vin.front().nSequence, sequence);
+                BOOST_CHECK(decoded_tx->GetHash() == prepared->tx->GetHash());
+            }
+        }
+    }
 
     WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(selected_coin.outpoint, /*persist=*/false));
     const auto available_after_lock{WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).All())};

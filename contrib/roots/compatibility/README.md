@@ -2,12 +2,38 @@
 
 ## Supported generation
 
-This harness and its regression tests are retained from the 30.3 development
-line. Its qualification gates explicitly accept **Core 30.3 only**. The 31.1
-PR, nightly and release workflows do not call this lane; retaining its code is
-not a claim that 31.1 has passed paired-node qualification. Port and review the
-fixture expectations before enabling it for another generation. Existing 30.3
-workflow integration remains in Git history and the maintained 30.3 line.
+The retained **30.3** profile remains the default with its existing fixture and
+cleanup contracts. The explicitly selected **32.1** qualification profile pins
+Core to `f0de87f040621468b956f01f526a43a010310501` and the accepted canonical Roots
+product anchor `82833dc95f6866d87718f328ed92186702d51afc`. This is the unpublished
+v32.1-roots.1 candidate, not a published release or an assertion that its public
+source ref exists. Supply the exact local canonical checkout. Earlier private
+snapshot qualification retains its original source/binary identity and does not
+qualify these exact accepted-source binaries. The original qualification packages
+and point-in-time results remain unchanged. The guard checks both committed version
+metadata, the official Core origin and exact v32.1 tag identity, Core ancestry,
+CLI version, and RPC numeric version 320100. Other pins or generations fail
+closed. Core tag signature authentication is outside this qualification; exact
+source checks remain mandatory.
+
+This external tool package is seeded from immutable main commit
+`5d09cb937f0024a6fae0b4ba3da7f0ae7fd0063f`. It is qualification tooling for later
+L13 integration into main, separate from the pinned native Roots source. The
+canonical candidate's files are separate from this main-only package.
+Retained reusable-workflow source-resolution guards remain 30.3 context; this
+package does not enable or establish hosted v32 CI.
+
+The integrated main source is a different exact Git identity from the canonical
+product anchor. For its qualification, freeze a separately signed full source
+commit after verifying its two planned history parents and every product and
+inventoried tooling difference. An external evidence copy of this tool may then
+pin only that exact Roots commit in place of the canonical anchor. Keep the
+remaining package byte-identical and record both tool hashes; every other commit
+must still fail the exact-pin guard. Build and execute fresh nodes from that
+source with the ordinary product/tooling/site gates. A prior binary or equal
+product tree does not qualify the integration. Never hardcode a future source
+commit into itself, accept aliases or arbitrary versions, or treat this route as
+a CI proof exception.
 
 ## Comparison command
 
@@ -56,6 +82,32 @@ and add `--build-from-source --qualification`. `--build-jobs` is bounded to 1–
 budget (default 1800 seconds, maximum 3600). `--work-dir` also selects the parent
 for these owned builds. The command removes its build snapshots/binaries at the
 end; the JSON report carries their identity and evidence.
+
+For the reviewed v32 pair, select `--generation 32.1 --profile full`. To retain
+fresh build evidence, add `--retain-builds /new/private/evidence/builds`; the
+path must not exist. This opt-in retains immutable exports, source snapshots,
+CMake caches, exact compiler/build logs and the built binaries. Private runtime
+datadirs are still removed after bounded node cleanup. Only explicitly allowed
+process/debug logs are copied with credential redaction; wallets, cookies,
+configuration and database files/journals are excluded. Without this option,
+the original 30.3 temporary build cleanup semantics remain unchanged.
+
+The 32.1 ordinary case submits its transaction to Roots' mempool and calls
+Roots' native `generatetoaddress`, then sends the returned raw block to Core.
+The datacarrier case submits the policy-contrast transaction to Core's mempool,
+calls Core's native producer, and sends its exact returned bytes to Roots.
+Reports record each producer/receiver, native RPC, binary identities, raw block
+and transaction, header/byte hashes, pre-submit tips, receiver result, and paired
+post-exchange UTXO state. Python-constructed shared funding, sigop, subdust and
+invalid blocks remain distinct evidence. A fixed regtest mock time permits
+native block templates alongside deterministic funding times. Neither local
+policy rejection nor a shared fabricated block establishes an exchange direction.
+
+Use the external package's report gate with `--generation 32.1 --tool-source
+/path/to/qualified-tool-source`; the native `--roots-source` continues to point
+to the pinned Git checkout. The v32 gate requires both actual directions and
+successful cleanup at every restart. Existing 30.3 source-resolution/hosted
+workflow guards remain deliberately restricted to their reviewed generation.
 
 The fixed profile disables wallet, GUI, IPC, application tests, benchmarks and
 fuzzing; it uses Release and disables compiler caches/launchers. Reports record

@@ -70,6 +70,15 @@ class ChangeClassifierTest(unittest.TestCase):
         self.assertFalse(any(result["selected"][name] for name in (
             "nightly_sanitizers", "nightly_fuzz", "nightly_platforms")))
 
+    def test_v32_profiles_schemas_and_system_library_inputs_keep_fast_coverage(self):
+        for path in ['CMakePresets.json', 'vcpkg.json', 'depends/packages/qt.mk',
+                     'cmake/module/FindCapnp.cmake', 'src/ipc/capnp/mining.capnp',
+                     'src/leveldb/util/env_posix.cc', 'src/httpserver.cpp']:
+            with self.subTest(path=path):
+                result = MODULE.result_for([path], [], False, False, self.policy)
+                self.assertTrue(result['selected']['sanitizers'])
+                self.assertTrue(result['selected']['platforms'])
+
     def test_individual_extended_labels_select_their_nightly_groups(self):
         for label, selection in (("ci:sanitizers", "nightly_sanitizers"),
                                  ("ci:fuzz", "nightly_fuzz"),

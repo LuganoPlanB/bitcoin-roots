@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -25,7 +25,7 @@ class BuildIdentityTest(unittest.TestCase):
         version_block = config[start.start():].split("#=============================", 1)[0]
         metadata = "\n".join(
             re.search(rf"set\({name} [^)]+\)", config).group(0)
-            for name in ("CLIENT_VERSION_MAJOR", "CLIENT_VERSION_MINOR", "CLIENT_VERSION_RC")
+            for name in ("CLIENT_NAME", "CLIENT_VERSION_MAJOR", "CLIENT_VERSION_MINOR", "CLIENT_VERSION_BUILD", "CLIENT_VERSION_RC")
         )
         with tempfile.TemporaryDirectory(prefix="roots-build-identity-") as directory:
             source = Path(directory)
@@ -33,7 +33,7 @@ class BuildIdentityTest(unittest.TestCase):
                 "cmake_minimum_required(VERSION 3.22)\n"
                 "project(IdentityTest LANGUAGES NONE)\n"
                 + metadata + "\n" + version_block
-                + f'configure_file("{ROOT / "cmake/bitcoin-build-config.h.in"}" '
+                + f'configure_file("{(ROOT / "cmake/bitcoin-build-config.h.in").as_posix()}" '
                 '"${CMAKE_BINARY_DIR}/identity.h" @ONLY)\n', encoding="utf-8",
             )
             command = [args.cmake, "-S", str(source), "-B", str(source / "build")]
@@ -44,16 +44,17 @@ class BuildIdentityTest(unittest.TestCase):
             return result, header.read_text(encoding="utf-8") if header.exists() else ""
 
     def test_release_version_without_git(self):
-        for tag in ("v31.1-roots.2", "v31.1-roots.4"):
+        for tag in ("v32.1-roots.1", "v32.1-roots.6"):
             with self.subTest(tag=tag):
                 result, header = self.configure(tag)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(f'#define CLIENT_VERSION_STRING "{tag[1:]}"', header)
-                self.assertIn("#define CLIENT_VERSION_MAJOR 31", header)
+                self.assertIn("#define CLIENT_VERSION_MAJOR 32", header)
                 self.assertIn("#define CLIENT_VERSION_MINOR 1", header)
+                self.assertIn('#define CLIENT_NAME "Bitcoin Roots"', header)
 
     def test_wrong_base_and_invalid_release(self):
-        for tag in ("v30.3-roots.4", "v31x1-roots.4", "v31.1-roots.0", "v31.1-knots.4", ""):
+        for tag in ("v31.1-roots.6", "v32x1-roots.1", "v32.1-roots.0", "v32.1-knots.1", ""):
             with self.subTest(tag=tag):
                 result, _ = self.configure(tag)
                 self.assertNotEqual(result.returncode, 0)
@@ -62,7 +63,7 @@ class BuildIdentityTest(unittest.TestCase):
     def test_default_version(self):
         result, header = self.configure()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "31.1-roots.2"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "32.1-roots.1"', header)
 
 
 if __name__ == "__main__":

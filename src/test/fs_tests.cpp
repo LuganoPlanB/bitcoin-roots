@@ -9,6 +9,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <cstdio>
+#include <cstdint>
 #include <fstream>
 #include <ios>
 #include <limits>
@@ -38,7 +39,9 @@ BOOST_AUTO_TEST_CASE(directory_write_probe)
     if (geteuid() != 0) BOOST_CHECK(!IsDirWritable(dir));
     fs::permissions(dir, fs::perms::owner_all);
 #endif
-    fs::remove_all(dir);
+    BOOST_CHECK(fs::remove(file));
+    BOOST_CHECK(fs::remove(dir));
+    BOOST_CHECK(!fs::exists(dir));
 }
 
 BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)
@@ -203,6 +206,28 @@ BOOST_AUTO_TEST_CASE(allocate_file_range_preserves_data)
     AllocateFileRange(file.get(), 65536, 128);
     BOOST_REQUIRE_EQUAL(std::fseek(file.get(), 0, SEEK_END), 0);
     BOOST_CHECK_EQUAL(std::ftell(file.get()), contents.size() + 256);
+}
+
+BOOST_AUTO_TEST_CASE(allocate_file_range_rejects_unrepresentable_end)
+{
+    const auto path{m_args.GetDataDirBase() / "allocate-bounds.dat"};
+    const auto close_file{[](FILE* file) { std::fclose(file); }};
+    std::unique_ptr<FILE, decltype(close_file)> file{fsbridge::fopen(path, "w+b"), close_file};
+    BOOST_REQUIRE(file);
+    const std::string contents{"preserve live data"};
+    BOOST_REQUIRE_EQUAL(std::fwrite(contents.data(), 1, contents.size(), file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(std::fflush(file.get()), 0);
+    for (const auto offset : {uint64_t{0}, uint64_t{1} << 32, uint64_t{std::numeric_limits<int64_t>::max()}, std::numeric_limits<uint64_t>::max()}) {
+        AllocateFileRange(file.get(), offset, 0);
+    }
+    AllocateFileRange(file.get(), std::numeric_limits<int64_t>::max(), 1);
+    AllocateFileRange(file.get(), std::numeric_limits<uint64_t>::max(), 1);
+    BOOST_REQUIRE_EQUAL(FileSeek64(file.get(), 0, SEEK_END), 0);
+    BOOST_CHECK_EQUAL(FileTell64(file.get()), contents.size());
+    BOOST_REQUIRE_EQUAL(FileSeek64(file.get(), 0, SEEK_SET), 0);
+    std::string actual(contents.size(), '\0');
+    BOOST_REQUIRE_EQUAL(std::fread(actual.data(), 1, actual.size(), file.get()), actual.size());
+    BOOST_CHECK_EQUAL(actual, contents);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

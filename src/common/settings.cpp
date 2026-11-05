@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <common/settings.h>
-
 #include <bitcoin-build-config.h> // IWYU pragma: keep
+
+#include <common/settings.h>
 
 #include <tinyformat.h>
 #include <univalue.h>
 #include <util/fs.h>
 
-#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -34,7 +33,7 @@ enum class Source {
 const std::string SETTINGS_WARN_MSG_KEY{"_warning_"};
 
 //! Merge settings from multiple sources in precedence order:
-//! Forced config > command line > read-write settings file > config file network-specific section > config file default section
+//! Forced config > command line > read-write text config > JSON settings > config network section > config default section
 //!
 //! This function is provided with a callback function fn that contains
 //! specific logic for how to merge the sources.
@@ -49,7 +48,7 @@ static void MergeSettings(const Settings& settings, const std::string& section, 
     if (auto* values = FindKey(settings.command_line_options, name)) {
         fn(SettingsSpan(*values), Source::COMMAND_LINE);
     }
-    // Merge in the rw config file
+    // Merge in the read-write text config.
     if (auto* values = FindKey(settings.rw_config, name)) {
         fn(SettingsSpan(*values), Source::CONFIG_FILE_RW);
     }

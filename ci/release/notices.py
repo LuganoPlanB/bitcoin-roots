@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,7 +23,7 @@ TRACKED_NOTICES = {
     "RobotoMono-Apache2": "contrib/roots/notices/RobotoMono-APACHE-2.0.txt",
     "RobotoMono-attribution": "contrib/roots/notices/RobotoMono-NOTICE.txt",
 }
-COMMON_EXTERNAL = {"qt", "boost", "libevent", "zeromq", "qrencode", "sqlite", "miniupnpc"}
+COMMON_EXTERNAL = {"qt", "boost", "zeromq", "qrencode", "sqlite", "miniupnpc"}
 MACOS_EXTERNAL = {"pcre2", "libsodium", "brotli", "graphite2", "md4c", "glib", "libpng", "openssl", "freetype", "harfbuzz", "icu", "gettext", "dbus", "zstd", "libb2", "double-conversion"}
 WINDOWS_EXTERNAL = {"zlib", "libpng", "pcre2", "bzip2", "brotli", "freetype", "double-conversion", "libiconv"}
 PLATFORMS = {"linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64"}

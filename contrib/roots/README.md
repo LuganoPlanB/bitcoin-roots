@@ -1,39 +1,34 @@
 # Bitcoin Roots maintainer workflow
 
 Bitcoin Roots is maintained as a small, reviewable Git history on top of
-Bitcoin Core. Bitcoin Core v31.1 is the authenticated direct base of the
-published v31.1-roots.1 release.
+Bitcoin Core. The exact Bitcoin Core v32.1 commit is the direct base of this
+unpublished `v32.1-roots.1` candidate. The complete released v31 series through
+roots.6 is folded by observable contract, with source credits preserved.
 Publishing, release tags and main promotion require separate authorization.
+The examples below describe later operator actions; they do not establish that
+this unpublished candidate has a public canonical branch or release tag.
 Bitcoin Knots is historical provenance for selected Roots policy features, not
 an upstream, a dependency, or a source of consensus rules.
+
+The [offline cache experiment](cache-bench.md) retains the released methodology
+with explicit v31.1/v32.1 source/configuration adapters. Its exports,
+instrumentation, datadirs and raw measurements are disposable evidence;
+historical v31 measurements do not qualify v32.1. Native cache microbenchmarks
+complement this isolated multi-cell experiment. The [historical/current policy
+review disposition](../../doc/mempool-policy-review.md) and
+[port review](../../doc/roots-v32-port-review.md) record their separate limits.
 
 Git history is the canonical representation of Roots changes. Do not maintain
 replay frameworks, patch manifests, generated evidence, frozen candidate state,
 or promotion metadata alongside it. The archived replay branch is historical
 evidence only; do not rewrite or depend on it.
 
-## Continuing development after v31.1-roots.1
-
-`main` integrates the released 31.1 product while retaining the website,
-clangd setup, and external 30.3 compatibility tooling. The integration merge
-preserves both histories; product C++, build inputs and functional tests come
-from the published release. The release tag and its assets remain immutable.
-Main-only documentation, website/lint support and tooling are not a new release.
-
-The retained external compatibility harness is qualified only for 30.3 and is
-not called by 31.1 PR, nightly or release workflows. Its source-tool regressions
-still run. Qualifying 31.1 requires a separate fixture review; do not weaken the
-generation guard or report retained tooling as executed compatibility coverage.
-
-Start product fixes on `topic/31.1/<area>` from `roots/31.1`, review and test
-them, then advance that canonical branch normally and integrate into `main`.
-Start website or main-only tooling work from current `main`. Never base new
-31.1 product work on the old 30.3 checkout or overwrite the published tag.
-
-A pure promotion may reuse canonical CI only under the proof below. An
-integration that also retains or changes main-only tooling uses a `topic/`
-branch and ordinary CI; it must not claim pure-promotion tree parity or bypass
-the proof by adding exceptions for build/test/workflow changes.
+Maintainers sign every new Roots commit, including disposable patch imports,
+with key `5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`. Set repository-local
+`user.signingkey`, `commit.gpgsign=true` and `gpg.format=openpgp`; use explicit
+`-S`/`--gpg-sign` and verify the resulting exact `VALIDSIG`. Preserve authorship
+and credits. A signing failure leaves work pending; no unsigned fallback or
+history rewrite is permitted. Commit signing does not authorize release signing.
 
 ## Branch roles
 
@@ -47,9 +42,10 @@ release artifacts separate:
   commits are applied to the canonical release line.
 - `integration/<core-version>` is disposable combined-CI state. It may be
   rebuilt and must not be used as the base for durable work.
-- `main` is the currently promoted product history. An explicit promotion merge
-  connects it to a reviewed canonical release line; the merge result must have
-  exactly the same tree as that canonical tip.
+- `main` is the product integration history, including its separately maintained
+  website and tooling. An integration merge connects it to a reviewed canonical
+  release line. Verify product parity and review every main-only path deviation;
+  complete-tree equality applies only to the conditional pure promotion below.
 - `archive/*` preserves superseded candidates and retired maintenance systems.
   Archive branches are evidence, not dependencies or release inputs.
 
@@ -58,20 +54,23 @@ starts directly at `v31.1`. Do not merge the complete 29.4 branch into the 31.1
 branch. Port the semantic Roots commits to the new Core base, dropping behavior
 that Core has adopted and adapting or splitting commits when its APIs changed.
 
-Pull requests that promote a release into `main` and pull requests that review
+Pull requests that integrate a release into `main` and pull requests that review
 the canonical patch series have different bases. Never rebase or squash the
-canonical series merely to make a promotion pull request appear linear. Build
-the promotion from `main`, retain the canonical tip as a merge parent, and
-verify tree equality before publishing it.
+canonical series merely to make an integration pull request appear linear. Build
+the integration from `main`, retain the canonical tip as a merge parent, and
+verify product blobs, modes and symlinks separately from the complete tree.
+Preserve inventoried main-only website/tooling paths, record reviewed per-path
+deviations and run ordinary exact-SHA product, tooling and site CI for the planned
+v32 integration. Pure-promotion proof reuse does not qualify that integration.
 
 ## Inspecting a maintenance branch
 
-Start from a clean worktree and name the Core base explicitly. For the v31.1
-work, the peeled Core commit is `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
+Start from a clean worktree and name the Core base explicitly. For the v32.1
+work, the peeled Core commit is `f0de87f040621468b956f01f526a43a010310501`.
 The following commands inspect history without changing it:
 
 ```sh
-core_base=9be056a8a72b624dae9623b2f7bded92c2a21c91
+core_base=f0de87f040621468b956f01f526a43a010310501
 git status --short
 git show --no-patch --decorate "$core_base"
 git log --oneline --decorate "$core_base"..HEAD
@@ -84,10 +83,11 @@ using a local name in automation. `git merge-base --is-ancestor A B` succeeds
 only when `A` is an ancestor of `B`; it is preferable to inferring ancestry
 from a graph view. Confirm object identities with `git rev-parse <ref>^{commit}`.
 
-Authenticate the official tag and its signer key through independent trusted
-sources before claiming verification. A missing local signer key is not proof
-of an invalid signature. Run `git verify-tag v31.1` with the authenticated key
-and record both the signature result and its trust basis.
+Authenticate source identities before claiming verification. For this v32.1
+port the user explicitly waived upstream Core-tag signature verification;
+it is not a passed signature check. Official tag/commit identity and ancestry
+checks remain required. A missing signer key is not proof of an invalid
+signature. Roots commit signing remains mandatory and is a separate check.
 
 ## Exporting and reviewing a series
 
@@ -148,9 +148,10 @@ During that port:
 4. Verify portable patch replay and product-tree parity against the new tip.
    Keep old release URLs, assets and history available unchanged.
 
-Promotion to `main` separately records an accepted canonical tip in product
-history, with exact tree equality. It neither Folds the series nor changes the
-base used for release patch exports.
+Integration into `main` separately records an accepted canonical tip in product
+history. It neither Folds the series nor changes the base used for release patch
+exports. Product parity and reviewed main-only deviations govern the planned v32
+integration; exact complete-tree equality is a conditional pure-promotion check.
 
 ## Porting a Core release
 
@@ -162,13 +163,13 @@ ordinary Git operations:
 
 ```sh
 core_remote=<configured-bitcoin-core-remote>
-core_tag=v31.1
+core_tag=v32.1
 git remote get-url "$core_remote"
 git fetch "$core_remote" --tags
 core_commit=$(git rev-parse "$core_tag^{commit}")
 git show --no-patch --decorate "$core_commit"
-git switch --create roots/31.1 "$core_commit"
-git cherry-pick -x <semantic-roots-commit>
+git switch --create roots/32.1 "$core_commit"
+git cherry-pick -S -x <semantic-roots-commit>
 ```
 
 Apply the [Folding policy](#folding-at-a-new-core-base) when assembling this new
@@ -205,26 +206,43 @@ A maintenance release therefore advances its own canonical branch, for example
 from `v29.4-roots.1` to `v29.4-roots.2`; it does not require merging a newer
 Core line into the older one.
 
-## Promoting a canonical line into `main`
+## Integrating a canonical line into `main`
 
-Create the promotion in a separate worktree so that the canonical branch stays
-clean:
+The planned v32.1 integration is an ordinary integration, preserving the
+inventoried main-only website and tooling. Prepare it in a separate worktree
+from the pinned current `main`, retain the exact accepted canonical tip as a
+merge parent, and resolve only reviewed differences. Compare product blobs,
+modes and symlinks to that tip; separately inventory and review every deviation
+needed to preserve or adapt main-only paths. A whole-tree comparison exposes
+those differences but is not required to be empty. Do not overwrite main-only
+content to make complete trees equal. Run ordinary product, tooling and site CI
+at the exact proposed integration SHA, with explicit source identities and
+reviewed per-path dispositions. The pure-promotion recipe and CI proof reuse
+below are not this candidate's integration path.
+
+### Conditional pure promotion example
+
+Use this recipe only when a separately reviewed pure promotion intentionally
+requires complete-tree equality and no main-only content would be lost. The
+generic `EXAMPLE` references are placeholders, not the current v32.1 recipe.
+Create it in a separate worktree so the canonical branch stays clean:
 
 ```sh
-canonical_ref=origin/roots/31.1
-git switch --create promote/31.1 origin/main
+canonical_ref=origin/roots/EXAMPLE
+git switch --create promote/EXAMPLE origin/main
 git merge --no-ff --no-commit "$canonical_ref"
 # Resolve deliberately, then verify the proposed index and worktree.
 git diff --cached --name-status
-git commit
+git commit -S
 git diff --exit-code "$canonical_ref"..HEAD
 test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$canonical_ref^{tree}")"
 ```
 
-The last two commands are the defining promotion check: the merge records both
-histories, but its product tree is identical to the canonical release tip. A
-promotion branch is review state and may be rebuilt with a force-with-lease;
-the canonical release branch is not rewritten after publication.
+The last two commands define this conditional complete-tree promotion check:
+the merge records both histories and the whole tree is identical to the canonical
+release tip. They do not apply to an integration retaining reviewed main-only
+differences. A promotion branch is review state and may be rebuilt with a
+force-with-lease; the canonical release branch is not rewritten after publication.
 
 ## Editing policy safely
 
@@ -246,7 +264,7 @@ then the relevant broad suite. At handoff, also run:
 
 ```sh
 cmake -S . -B build
-cmake --build build --target bitcoind test_bitcoin -j 4
+cmake --build build --target bitcoind test_bitcoin -j 2
 build/test/functional/test_runner.py mempool_dust.py
 git diff --check
 git status --short
@@ -281,7 +299,15 @@ Never force-push release tags. Preserve archival branches.
 
 ## Reusing canonical CI for a pure main promotion
 
-Run ordinary fix CI, review it and integrate the canonical topic by fast-forward
+This conditional optimization is not the planned v32.1 integration, which
+preserves inventoried main-only website/tooling with reviewed deviations and
+requires ordinary exact-SHA product, tooling and site CI. Do not submit a pure
+promotion proof to replace those integration gates. The complete-tree example
+above is narrower than the proof checker's explicit reviewed exceptions; neither
+turns an arbitrary integration into an eligible pure promotion.
+
+For a separately eligible pure promotion, run ordinary fix CI, review it and
+integrate the canonical topic by fast-forward
 before opening/updating its main promotion PR. Preserve a two-parent promotion
 with current main first and the exact current canonical tip second.
 `verify-promotion-ci.py` checks blob/mode/symlink parity outside the reviewed
@@ -320,8 +346,8 @@ release. It also refuses to run if the future tag already exists remotely.
 For an explicitly requested optional rehearsal:
 
 ```sh
-release_tag=v31.1-roots.1
-release_commit=$(git rev-parse origin/roots/31.1^{commit})
+release_tag=v32.1-roots.1
+release_commit=$(git rev-parse origin/roots/32.1^{commit})
 gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
 ```
@@ -335,16 +361,16 @@ Fetch again and verify the annotated tag target and ancestry
 immediately before pushing:
 
 ```sh
-release_tag=v31.1-roots.1
+release_tag=v32.1-roots.1
 git check-ref-format "refs/tags/$release_tag"
-git fetch origin roots/31.1
+git fetch origin roots/32.1
 git fetch https://github.com/bitcoin/bitcoin.git \
-    refs/tags/v31.1:refs/tags/v31.1
-release_commit=$(git rev-parse origin/roots/31.1^{commit})
+    refs/tags/v32.1:refs/tags/v32.1
+release_commit=$(git rev-parse origin/roots/32.1^{commit})
 git tag --annotate "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
 git rev-parse "$release_tag^{commit}"
 test "$(git rev-parse "$release_tag^{commit}")" = \
-    "$(git rev-parse origin/roots/31.1^{commit})"
+    "$(git rev-parse origin/roots/32.1^{commit})"
 ci/release/validate-release-source.sh "$release_tag"
 ```
 

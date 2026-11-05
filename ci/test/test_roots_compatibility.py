@@ -288,9 +288,9 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
         args.core_bitcoind = args.roots_bitcoind = None
         original_command = comparison.command
 
-        def simulated_cmake(argv, timeout=30):
+        def simulated_cmake(argv, timeout=30, log_path=None):
             if argv[0] != "cmake":
-                return original_command(argv, timeout)
+                return original_command(argv, timeout, log_path=log_path)
             if "-B" in argv:
                 snapshot = Path(argv[argv.index("-S") + 1])
                 self.assertEqual((snapshot / "README.md").read_text(), "Fake source for infrastructure tests only.\n")
@@ -307,6 +307,8 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
                 binary = build / "bin/bitcoind"
                 binary.write_bytes(getattr(self, label).read_bytes())
                 binary.chmod(0o700)
+            if log_path:
+                Path(log_path).write_text("simulated build (unit test only)\n")
             return "simulated build (unit test only)"
 
         with patch.object(comparison, "command", simulated_cmake), patch.object(comparison, "run_cases", cases or self.successful_cases):
@@ -326,6 +328,31 @@ class CompatibilityInfrastructureTest(unittest.TestCase):
             self.assertEqual(node["build"]["source_tree"], self.git("rev-parse", "HEAD^{tree}").strip())
             self.assertEqual(node["build"]["binary_sha256"], node["binary"]["sha256"])
             self.assertEqual(node["build"]["commands"][0]["argv"][3], "archive")
+        self.assert_cleaned()
+
+    def test_opt_in_build_retention_preserves_inputs_outputs_and_safe_logs(self):
+        retained = self.directory / "retained"
+        code, report = self.simulated_build_comparison(extra=("--retain-builds", str(retained)))
+        self.assertEqual(code, 0, report.get("error"))
+        self.assertTrue(report["qualified"])
+        for label, node in report["nodes"].items():
+            self.assertTrue((retained / (label + "-build") / "source.tar").is_file())
+            self.assertTrue(Path(node["binary"]["path"]).is_file())
+            for step in node["build"]["commands"]:
+                self.assertEqual(comparison.digest(step["log"]["path"]), step["log"]["sha256"])
+            self.assertEqual({Path(item["path"]).name for item in node["retained_logs"]}, {"process.log"})
+        self.assertFalse(list(retained.rglob(".cookie")))
+        self.assert_cleaned()
+        # A retained build root is never silently reused by another run.
+        code, report = self.simulated_build_comparison(extra=("--retain-builds", str(retained)))
+        self.assertEqual(code, 1)
+        self.assertFalse(report["qualified"])
+
+    def test_retention_cannot_authenticate_caller_binaries(self):
+        args = comparison.parser().parse_args(self.arguments(["--retain-builds", str(self.directory / "retained")]))
+        code = comparison.compare(args)
+        self.assertEqual(code, 1)
+        self.assertFalse(json.loads(self.output.read_text())["qualified"])
         self.assert_cleaned()
 
     def test_forced_shutdown_cannot_qualify_in_run_builds(self):
@@ -584,6 +611,102 @@ class SourceArchiveTest(unittest.TestCase):
                         stream.addfile(member, io.BytesIO(b"x"))
                 with self.assertRaisesRegex(comparison.ComparisonError, "escapes snapshot"):
                     builder.extract_source(archive, directory / ("snapshot" + str(index)), comparison.ComparisonError)
+
+
+class Generation32Test(unittest.TestCase):
+    def test_canonical_anchor_keeps_default_and_refuses_unqualified_source_identities(self):
+        self.assertEqual(comparison.SUPPORTED_32, {
+            "core": "f0de87f040621468b956f01f526a43a010310501",
+            "roots": "82833dc95f6866d87718f328ed92186702d51afc",
+        })
+        self.assertEqual(comparison.parser().get_default("generation"), "30.3")
+        with patch.object(comparison, "command", side_effect=self.response):
+            accepted = comparison.validate_generation("32.1", self.identities())
+        self.assertEqual(accepted["exact_pins"], comparison.SUPPORTED_32)
+        for candidate in ("d6be4bce6bcbcb5244767b148b207474dab07238",
+                          "8e521a7ff370663700e1cca380d7581f433eae0f",
+                          "cd18bcf77baa0325e28dc60b11d35fd8fe532904",
+                          "5d09cb937f0024a6fae0b4ba3da7f0ae7fd0063f",
+                          "cd18bcf", "topic/32.1/main-integration", "1" * 40):
+            nodes = self.identities()
+            nodes["roots"]["source"]["commit"] = candidate
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(comparison.ComparisonError, "exact pin"):
+                comparison.validate_generation("32.1", nodes)
+
+    def identities(self):
+        return {label: {"source": {"path": "/explicit/" + label, "commit": commit}}
+                for label, commit in comparison.SUPPORTED_32.items()}
+
+    def response(self, argv, **kwargs):
+        if "show" in argv:
+            return "set(CLIENT_VERSION_MAJOR 32)\nset(CLIENT_VERSION_MINOR 1)\nset(CLIENT_VERSION_BUILD 0)\n"
+        if "get-url" in argv:
+            return "https://github.com/bitcoin/bitcoin.git"
+        if "rev-parse" in argv:
+            return comparison.SUPPORTED_32["core"]
+        return ""
+
+    def test_exact_profile_accepts_only_reviewed_pins_official_tag_and_metadata(self):
+        with patch.object(comparison, "command", side_effect=self.response):
+            comparison.validate_generation("32.1", self.identities())
+        for label in ("core", "roots"):
+            nodes = self.identities()
+            nodes[label]["source"]["commit"] = "1" * 40
+            with self.subTest(label=label), self.assertRaisesRegex(comparison.ComparisonError, "exact pin"):
+                comparison.validate_generation("32.1", nodes)
+        for bad in ("31.1", "32.2", "33.0", "32.1rc1"):
+            with self.subTest(generation=bad), self.assertRaisesRegex(comparison.ComparisonError, "unsupported"):
+                comparison.validate_generation(bad, self.identities())
+        for fault in ("metadata", "origin", "tag"):
+            def response(argv, **kwargs):
+                if fault == "metadata" and "show" in argv:
+                    return self.response(argv).replace("MINOR 1", "MINOR 2")
+                if fault == "origin" and "get-url" in argv:
+                    return "https://example.invalid/bitcoin/bitcoin"
+                if fault == "tag" and "rev-parse" in argv:
+                    return "0" * 40
+                return self.response(argv)
+            with self.subTest(fault=fault), patch.object(comparison, "command", side_effect=response), self.assertRaises(comparison.ComparisonError):
+                comparison.validate_generation("32.1", self.identities())
+
+    def test_retained_command_keeps_complete_output_and_failure_log(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "build.log"
+            output = comparison.command([sys.executable, "-c", "print('x' * 5000000)"], log_path=log)
+            self.assertEqual(log.stat().st_size, 5000001)
+            self.assertLessEqual(len(output), comparison.MAX_RPC_BYTES)
+            failed = Path(temporary) / "failed.log"
+            with self.assertRaises(comparison.ComparisonError):
+                comparison.command([sys.executable, "-c", "print('compiler failure'); raise SystemExit(3)"], log_path=failed)
+            self.assertEqual(failed.read_text(), "compiler failure\n")
+
+    def test_restart_refuses_exited_process_without_successful_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            node = comparison.Node("roots", "/unexecuted", Path(temporary), 1, 1)
+            node.process = Mock()
+            node.process.poll.return_value = 0
+            for cleanup in (None, {"stopped": False, "returncode": 0}, {"stopped": True, "returncode": -9}):
+                node.cleanup_result = cleanup
+                with self.subTest(cleanup=cleanup), self.assertRaisesRegex(comparison.ComparisonError, "successful prior cleanup"):
+                    node.start()
+
+    def test_safe_log_retention_excludes_databases_credentials_and_wallets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "node"
+            (data / "regtest/chainstate").mkdir(parents=True)
+            node = comparison.Node("roots", "/unexecuted", data, 1, 1)
+            node.credentials.add("synthetic:secret")
+            (data / "process.log").write_text("safe\nsecret\nAuthorization: unsafe\n")
+            (data / "regtest/debug.log").write_text("validation passed\n")
+            for path in ("regtest/.cookie", "regtest/chainstate/000001.log", "wallet.dat", "bitcoin.conf"):
+                (data / path).write_text("excluded fixture")
+            records = node.retain_logs(root / "retained")
+            self.assertEqual({Path(item["path"]).name for item in records}, {"process.log", "debug.log"})
+            text = "".join(Path(item["path"]).read_text() for item in records)
+            self.assertNotIn("secret", text)
+            self.assertNotIn("unsafe", text)
+            self.assertIn("validation passed", text)
 
 
 if __name__ == "__main__":

@@ -1,2 +1,5 @@
 src/clientversion.cpp export-subst
+src/CMakeLists.txt export-subst
+
+# The packaged project notice keeps canonical LF bytes on Windows too.
 /COPYING text eol=lf

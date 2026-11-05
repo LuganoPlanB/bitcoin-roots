@@ -51,6 +51,7 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
                    ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-consolidatefeerate=<amt>", strprintf("The maximum feerate (in %s/kvB) at which transaction building may use more inputs than strictly necessary so that the wallet's UTXO pool can be reduced (default: %s).", CURRENCY_UNIT, FormatMoney(DEFAULT_CONSOLIDATE_FEERATE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-disablewallet", "Do not load the wallet and disable wallet RPC calls", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-allow-dangerous-rpc", "Enable exportaddresskey, listdescriptors, gethdkeys and derivehdkey (DANGEROUS; default: 0). These methods are disabled entirely by default, including public-only modes. Command-line only; configuration files and runtime settings cannot enable this option. Requires restart; wallet unlock and RPC authentication requirements still apply. Use =0 to disable.", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::RPC);
     argsman.AddArg("-discardfee=<amt>", strprintf("The fee rate (in %s/kvB) that indicates your tolerance for discarding change by adding it to the fee (default: %s). "
                                                                 "Note: An output is discarded if it is dust at this rate, but we will always discard up to the dust relay fee and a discard fee above that is limited by the fee estimate for the longest target",
                                                               CURRENCY_UNIT, FormatMoney(DEFAULT_DISCARD_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
@@ -74,7 +75,7 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
 #if HAVE_SYSTEM
     argsman.AddArg("-walletnotify=<cmd>", "Execute command when a wallet transaction changes. %s in cmd is replaced by TxID, %w is replaced by wallet name, %b is replaced by the hash of the block including the transaction (set to 'unconfirmed' if the transaction is not included) and %h is replaced by the block height (-1 if not included). %w is not currently implemented on windows. On systems where %w is supported, it should NOT be quoted because this would break shell escaping used to invoke the command.", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
 #endif
-    argsman.AddArg("-walletrbf", strprintf("Send transactions with full-RBF opt-in enabled (RPC only, default: %u)", DEFAULT_WALLET_RBF), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-walletrbf", strprintf("(DEPRECATED) Send transactions with full-RBF opt-in enabled (default: %u)", DEFAULT_WALLET_RBF), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
 
     argsman.AddArg("-unsafesqlitesync", "Set SQLite synchronous=OFF to disable waiting for the database to sync to disk. This is unsafe and can cause data loss and corruption. This option is only used by tests to improve their performance (default: false)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::WALLET_DEBUG_TEST);
 
@@ -84,6 +85,9 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
 
 bool WalletInit::ParameterInteraction() const
 {
+    if (!gArgs.GetCommandLineBoolArg("-allow-dangerous-rpc", false).has_value()) {
+        return InitError(Untranslated("Invalid -allow-dangerous-rpc value (expected 0 or 1)"));
+    }
     if (gArgs.GetBoolArg("-disablewallet", DEFAULT_DISABLE_WALLET)) {
         for (const std::string& wallet : gArgs.GetArgs("-wallet")) {
             LogInfo("Parameter interaction: -disablewallet -> ignoring -wallet=%s", wallet);

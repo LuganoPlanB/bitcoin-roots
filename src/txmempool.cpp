@@ -53,7 +53,7 @@ bool TestLockPointValidity(CChain& active_chain, const LockPoints& lp)
     if (lp.maxInputBlock) {
         // Check whether active_chain is an extension of the block at which the LockPoints
         // calculation was valid.  If not LockPoints are no longer valid
-        if (!active_chain.Contains(lp.maxInputBlock)) {
+        if (!active_chain.Contains(*lp.maxInputBlock)) {
             return false;
         }
     }
@@ -216,7 +216,7 @@ std::optional<CFeeRate> CTxMemPool::EstimateDustFromMempool(int32_t target_kvb) 
     LOCK(cs);
     for (const auto& entry : GetSortedScoreWithTopology()) {
         remaining -= entry->GetTxSize();
-        if (remaining <= 0) return CFeeRate{entry->GetFee(), static_cast<int32_t>(entry->GetTxSize())};
+        if (remaining <= 0) return CFeeRate{entry->GetFee(), entry->GetTxSize()};
     }
     return std::nullopt;
 }
@@ -464,7 +464,7 @@ void CTxMemPool::removeConflicts(const CTransaction &tx)
     }
 }
 
-void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigned int nBlockHeight)
+std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx)
 {
     // Remove confirmed txs and conflicts when a new block is connected, updating the fee logic
     AssertLockHeld(cs);
@@ -482,14 +482,12 @@ void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigne
             ClearPrioritisation(tx->GetHash());
         }
     }
-    if (m_opts.signals) {
-        m_opts.signals->MempoolTransactionsRemovedForBlock(txs_removed_for_block, nBlockHeight);
-    }
     lastRollingFeeUpdate = GetTime();
     blockSinceLastRollingFeeBump = true;
     if (!m_txgraph->DoWork(/*max_cost=*/POST_CHANGE_COST)) {
         LogDebug(BCLog::MEMPOOL, "Mempool in non-optimal ordering after block.");
     }
+    return txs_removed_for_block;
 }
 
 void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const
@@ -522,7 +520,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
     assert(diagram.size() <= score_with_topo.size() + 1);
     assert(diagram.size() >= 1);
 
-    std::optional<Wtxid> last_wtxid = std::nullopt;
+    std::optional<txiter> last_iter = std::nullopt;
     auto diagram_iter = diagram.cbegin();
 
     for (const auto& it : score_with_topo) {
@@ -549,11 +547,10 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         innerUsage += it->DynamicMemoryUsage();
         const CTransaction& tx = it->GetTx();
 
-        // CompareMiningScoreWithTopology should agree with GetSortedScoreWithTopology()
-        if (last_wtxid) {
-            assert(CompareMiningScoreWithTopology(*last_wtxid, tx.GetWitnessHash()));
+        if (last_iter) {
+            assert(m_txgraph->CompareMainOrder(**last_iter, *it) < 0);
         }
-        last_wtxid = tx.GetWitnessHash();
+        last_iter = it;
 
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setParentCheck;
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setParentsStored;
@@ -625,20 +622,62 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
     assert(innerUsage == cachedInnerUsage);
 }
 
-bool CTxMemPool::CompareMiningScoreWithTopology(const Wtxid& hasha, const Wtxid& hashb) const
+std::vector<CTxMemPool::txiter> CTxMemPool::ExtractBestByMiningScoreWithTopology(std::vector<Wtxid>& wtxids, size_t n_to_sort) const
 {
-    /* Return `true` if hasha should be considered sooner than hashb, namely when:
-     *     a is not in the mempool but b is, or
-     *     both are in the mempool but a is sorted before b in the total mempool ordering
-     *     (which takes dependencies and (chunk) feerates into account).
+    /* This function takes a vector of `wtxids`, and returns the
+     * best mempool entries corresponding to those `wtxids` (by mining
+     * score/topology). It updates the input `wtxids` so that multiple
+     * calls with the same vector will drain that vector to empty.
+     *
+     * It operates under the following constraints:
+     *   - wtxids that do not correspond to a mempool entry are dropped
+     *   - the return vector contains no duplicates, either with itself
+     *     or with the updated `wtxids` input.
+     *   - the return vector will have `n_to_sort` entries (or `wtxids`
+           will become empty).
+     *   - the `wtxids` vector will be reduced by at least `n_to_sort`
+     *     entries (or will become empty).
      */
-    LOCK(cs);
-    auto j{GetIter(hashb)};
-    if (!j.has_value()) return false;
-    auto i{GetIter(hasha)};
-    if (!i.has_value()) return true;
 
-    return m_txgraph->CompareMainOrder(*i.value(), *j.value()) < 0;
+    auto cmp = [&](const auto& a, const auto& b) EXCLUSIVE_LOCKS_REQUIRED(cs) noexcept { return m_txgraph->CompareMainOrder(*a, *b) < 0; };
+
+    std::vector<txiter> res;
+
+    n_to_sort = std::min(wtxids.size(), n_to_sort);
+    if (n_to_sort > 0) {
+        res.reserve(wtxids.size());
+        std::sort(wtxids.begin(), wtxids.end());
+        for (auto it = wtxids.begin(); it != wtxids.end(); ++it) {
+            // skip duplicates
+            auto itnext = it + 1;
+            if (itnext != wtxids.end() && *it == *itnext) continue;
+
+            if (auto i{GetIter(*it)}; i.has_value()) {
+                res.push_back(i.value());
+            }
+        }
+        wtxids.clear();
+
+        if (!res.empty()) {
+            auto begin = res.begin();
+            auto end = res.end();
+            auto middle = end;
+            if (n_to_sort >= res.size()) {
+                // use regular sort when sorting everything
+                std::sort(begin, end, cmp);
+            } else {
+                middle = begin + n_to_sort;
+                std::partial_sort(begin, middle, end, cmp);
+            }
+            auto it = middle;
+            while (it != end) {
+                wtxids.push_back((*it)->GetTx().GetWitnessHash());
+                ++it;
+            }
+            res.erase(middle, end);
+        }
+    }
+    return res;
 }
 
 std::vector<CTxMemPool::indexed_transaction_set::const_iterator> CTxMemPool::GetSortedScoreWithTopology() const
@@ -699,6 +738,15 @@ CTransactionRef CTxMemPool::get(const Txid& hash) const
     return i->GetSharedTx();
 }
 
+CTransactionRef CTxMemPool::get(const Wtxid& hash) const
+{
+    LOCK(cs);
+    const auto& wtxid_map{mapTx.get<index_by_wtxid>()};
+    const auto it{wtxid_map.find(hash)};
+    if (it == wtxid_map.end()) return nullptr;
+    return it->GetSharedTx();
+}
+
 std::set<Txid> CTxMemPool::GetScriptConflicts(const CScript& script, bool creating) const
 {
     AssertLockHeld(cs);
@@ -728,18 +776,17 @@ bool CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelt
     {
         LOCK(cs);
         txiter it = mapTx.find(hash);
+        const auto previous_delta = mapDeltas.find(hash);
+        const CAmount delta = SaturatingAdd(previous_delta == mapDeltas.end() ? CAmount{0} : previous_delta->second, nFeeDelta);
         if (it != mapTx.end()) {
-            const auto new_fee = SaturatingAdd(it->GetModifiedFee(), nFeeDelta);
+            // Recompute from the authoritative aggregate operator delta, in the
+            // same order as admission. Relative updates of a saturated modified
+            // fee lose information and disagree with removal/re-admission.
+            const CAmount new_fee = SaturatingAdd(SaturatingAdd(it->GetFee(), delta), -it->m_dust_penalty);
             const auto other_usage = m_modified_fee_usage - AbsoluteFee(it->GetModifiedFee()) + m_staged_fee_usage;
             if (AbsoluteFee(new_fee) > uint64_t{INT64_MAX} - other_usage) return false;
             m_modified_fee_usage = m_modified_fee_usage - AbsoluteFee(it->GetModifiedFee()) + AbsoluteFee(new_fee);
-        }
-        CAmount &delta = mapDeltas[hash];
-        delta = SaturatingAdd(delta, nFeeDelta);
-        if (it != mapTx.end()) {
-            // PrioritiseTransaction calls stack on previous ones. Set the new
-            // transaction fee to be current modified fee + feedelta.
-            it->UpdateModifiedFee(nFeeDelta);
+            it->SetModifiedFee(new_fee);
             m_txgraph->SetTransactionFee(*it, it->GetModifiedFee());
             ++nTransactionsUpdated;
         }
@@ -747,6 +794,7 @@ bool CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelt
             mapDeltas.erase(hash);
             LogInfo("PrioritiseTransaction: %s (%sin mempool) delta cleared\n", hash.ToString(), it == mapTx.end() ? "not " : "");
         } else {
+            mapDeltas[hash] = delta;
             LogInfo("PrioritiseTransaction: %s (%sin mempool) fee += %s, new delta=%s\n",
                       hash.ToString(),
                       it == mapTx.end() ? "not " : "",
@@ -893,7 +941,7 @@ void CTxMemPool::RemoveUnbroadcastTx(const Txid& txid, const bool unchecked) {
 
     if (m_unbroadcast_txids.erase(txid))
     {
-        LogDebug(BCLog::MEMPOOL, "Removed %i from set of unbroadcast txns%s\n", txid.GetHex(), (unchecked ? " before confirmation that txn was sent out" : ""));
+        LogDebug(BCLog::MEMPOOL, "Removed %s from set of unbroadcast txns%s", txid.GetHex(), (unchecked ? " before confirmation that txn was sent out" : ""));
     }
 }
 
@@ -907,6 +955,12 @@ void CTxMemPool::RemoveStaged(setEntries &stage, MemPoolRemovalReason reason) {
 bool CTxMemPool::CheckPolicyLimits(const CTransactionRef& tx)
 {
     LOCK(cs);
+    // This structural wallet query stages a zero-base-fee transaction. Reserve
+    // its applied operator delta and weight before touching the native graph,
+    // just as ordinary admission does for its fully evaluated policy values.
+    CAmount modified_fee{0};
+    ApplyDelta(tx->GetHash(), modified_fee);
+    if (!CanAddModifiedFee(modified_fee) || !CanAddPolicyWeight(GetTransactionWeight(*tx))) return false;
     // Use ChangeSet interface to check whether the cluster count
     // limits would be violated. Note that the changeset will be destroyed
     // when it goes out of scope.

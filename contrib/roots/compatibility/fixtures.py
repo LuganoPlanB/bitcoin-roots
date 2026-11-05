@@ -8,6 +8,7 @@ from copy import deepcopy
 from decimal import Decimal
 import hashlib
 import importlib
+import io
 from pathlib import Path
 import sys
 import time
@@ -73,7 +74,7 @@ class FixtureRunner:
         report["serialization"] = {"source_commit": args.roots_commit, "files": provenance}
         report["fixture_revision"] = {"path": "contrib/roots/compatibility/fixtures.py",
                                       "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-        _, self.taproot = self.a.create_deterministic_address_bcrt1_p2tr_op_true()
+        self.address, self.taproot = self.a.create_deterministic_address_bcrt1_p2tr_op_true()
         self.output_script = self.s.CScript([self.s.OP_1, self.taproot.output_pubkey])
         self.funding = []
         self.outputs = []
@@ -93,6 +94,7 @@ class FixtureRunner:
             utxos = {txid + ":" + str(vout): normalized_utxo(self.rpc(node, "gettxout", txid, vout, False))
                      for txid, vout in self.outputs}
             snapshots[node.label] = {"bestblockhash": info["bestblockhash"], "height": info["blocks"], "utxos": utxos}
+        self.last_snapshots = deepcopy(snapshots)
         state = compare_snapshots(snapshots, self.error)
         if state["height"] != self.height or state["bestblockhash"] != self.tip:
             raise self.error("paired tip differs from submitted fixture chain")
@@ -102,7 +104,7 @@ class FixtureRunner:
         coinbase = self.b.create_coinbase(self.height + 1, script_pubkey=self.output_script)
         if invalid:
             coinbase.vout[0].nValue += 1  # No fees: violates the coinbase reward limit.
-        block = self.b.create_block(int(self.tip, 16), coinbase, GENESIS_TIME + (self.height + 1) * 600,
+        block = self.b.create_block(int(self.tip, 16), coinbase, ntime=GENESIS_TIME + (self.height + 1) * 600,
                                     txlist=transactions)
         if any(not tx.wit.is_null() for tx in transactions):
             self.b.add_witness_commitment(block)
@@ -174,10 +176,56 @@ class FixtureRunner:
         if roots_reason and observations["roots"].get("reject-reason") != roots_reason:
             raise self.error("Roots rejection does not identify the tested policy")
 
+    def exchange(self, transaction, producer_label, record):
+        """Mine with an actual producer, then submit its exact bytes to the peer."""
+        producer = next(node for node in self.nodes if node.label == producer_label)
+        receiver = next(node for node in self.nodes if node is not producer)
+        before = deepcopy(self.snapshot())
+        txid = self.rpc(producer, "sendrawtransaction", transaction.serialize().hex())
+        if txid != transaction.txid_hex:
+            raise self.error("producer transaction identity mismatch")
+        hashes = self.rpc(producer, "generatetoaddress", 1, self.address)
+        if not isinstance(hashes, list) or len(hashes) != 1:
+            raise self.error("producer did not generate exactly one block")
+        raw = self.rpc(producer, "getblock", hashes[0], 0)
+        block = self.m.CBlock()
+        block.deserialize(io.BytesIO(bytes.fromhex(raw)))
+        if block.hash_hex != hashes[0] or transaction.txid_hex not in [tx.txid_hex for tx in block.vtx]:
+            raise self.error("producer block identity or fixture transaction mismatch")
+        produced = self.rpc(producer, "getblockchaininfo")
+        waiting = self.rpc(receiver, "getblockchaininfo")
+        if produced["bestblockhash"] != hashes[0] or produced["blocks"] != self.height + 1 or waiting["bestblockhash"] != self.tip:
+            raise self.error("producer or receiver exchange precondition mismatch")
+        result = self.rpc(receiver, "submitblock", raw)
+        if result is not None:
+            raise self.error("receiver rejected producer block")
+        self.height += 1
+        self.tip = hashes[0]
+        self.blocks[self.tip] = raw
+        self.outputs.extend((transaction.txid_hex, index) for index in range(len(transaction.vout)))
+        state = self.snapshot()
+        self.snapshots[self.tip] = deepcopy(state)
+        observation = {"hash": self.tip, "serialized_sha256": hashlib.sha256(bytes.fromhex(raw)).hexdigest(),
+                       "expected_valid": True, "outcomes": {"core": None, "roots": None}}
+        record["blocks"].append(observation)
+        record["states"].append(state)
+        self.report.setdefault("exchanges", []).append({
+            "case": record["id"], "producer": producer.label, "receiver": receiver.label,
+            "production_rpc": "generatetoaddress", "producer_binary_sha256": self.report["nodes"][producer.label]["binary"]["sha256"],
+            "receiver_binary_sha256": self.report["nodes"][receiver.label]["binary"]["sha256"],
+            "block_hash": self.tip, "raw_block": raw, "serialized_sha256": observation["serialized_sha256"],
+            "transaction": {"txid": transaction.txid_hex, "raw": transaction.serialize().hex()},
+            "before": before, "producer_tip_before_submit": {"bestblockhash": produced["bestblockhash"], "height": produced["blocks"]},
+            "receiver_tip_before_submit": {"bestblockhash": waiting["bestblockhash"], "height": waiting["blocks"]},
+            "receiver_submit_result": result, "after": deepcopy(self.last_snapshots)})
+
     def ordinary(self, record):
         tx = self.spend(0, [])
         self.admission(tx, {"core": True, "roots": True}, record, "ordinary")
-        self.submit(self.block([tx]), record)
+        if self.args.generation == "32.1":
+            self.exchange(tx, "roots", record)
+        else:
+            self.submit(self.block([tx]), record)
 
     def datacarrier(self, record):
         # At 83 bytes a single carrier is standard; two individually small
@@ -189,7 +237,10 @@ class FixtureRunner:
                               "rejected_individual_bytes": [42, 42]}
         self.admission(at, {"core": True, "roots": True}, record, "at-83-bytes")
         self.admission(rejected, {"core": True, "roots": False}, record, "aggregate-84-bytes", "datacarrier")
-        self.submit(self.block([rejected]), record)
+        if self.args.generation == "32.1":
+            self.exchange(rejected, "core", record)
+        else:
+            self.submit(self.block([rejected]), record)
         record["selected_block"] = self.tip
 
     def invalid_block(self, record):

@@ -1,94 +1,44 @@
 # Bitcoin Roots contributor and agent guide
 
-The v31.1-roots.2 candidate is based directly on authenticated Bitcoin Core
-v31.1 (`9be056a8a72b624dae9623b2f7bded92c2a21c91`). Selected Bitcoin Knots
-`29.3.knots20260507` behavior is historical lineage, not another upstream or a
-consensus specification. Read `README.md`, `doc/roots-features.md`,
-`doc/wallet-privacy.md` and `doc/roots-v31-port-review.md` before changing behavior.
+This unpublished port starts directly from Bitcoin Core v32.1
+(`f0de87f040621468b956f01f526a43a010310501`). Read
+`doc/roots-v32-port-review.md` for pinned source, preservation contracts and
+acceptance owners. A planned disposition does not establish an active feature.
 
-## Invariants and scope
+Keep local admission, relay and template policy separate from consensus: valid
+blocks containing locally rejected transactions must remain acceptable. Do not
+add RDTS/BIP110 enforcement or activate dormant statistics. Preserve descriptor
+wallet/SQLite and wallet/node/GUI interface boundaries. Keep changes minimal,
+preserve unrelated edits and upstream/Jaromil/devjoinedthechat attribution,
+and avoid cosmetic changes to embedded subtrees or generated translations.
+Follow `doc/design/libraries.md` and register new sources in their native targets.
 
-- Roots remains compatible with Bitcoin Core consensus. Local mempool, relay
-  and template rejection must not invalidate consensus-valid blocks.
-- Do not add or imply RDTS/BIP110 enforcement. Dormant statistics, historical
-  notes and unused support helpers do not establish active features.
-- Preserve wallet authorization, transient-secret handling, descriptor/SQLite
-  boundaries and the separation of wallet, node and GUI through interfaces.
-- Keep consensus, serialization, validation, networking, wallet and cryptographic
-  changes minimal, with observable regressions. Avoid incidental refactoring.
-- Keep historical/upstream attribution and protocol identifiers. Do not mass
-  rebrand comments, translated text, old release notes or embedded subtrees.
-- Use disposable explicit regtest datadirs, including for daemon/wallet/GUI help
-  generation. Early option setup can access wallet directories before printing
-  help; do not point development commands at a real wallet/datadir.
-- Preserve unrelated work and public refs. No dependency installation, system
-  install, release dispatch, tagging, signing, publication or main promotion
-  is authorized merely by an implementation task.
+Use out-of-source CMake builds with `-j 2`. See `doc/dependencies.md` and
+`doc/roots-build-portability.md`: CMake >=3.22, GCC >=12.1 or Clang >=17,
+Boost >=1.74, Python >=3.10 for tests, SQLite for wallets and Qt >=6.2 for GUI.
+Qt6 is the supported GUI; v32 native HTTP needs no libevent. Wallet/tests and
+embedded libraries default on; GUI defaults off. Do not silently disable a
+feature to claim a full profile pass. Record optional dependency/platform gaps.
+Use disposable explicit regtest datadirs, including for daemon/wallet/GUI help.
+Never relink a binary while its tests run. Run focused checks while editing and
+one full applicable suite at acceptance; preserve logs and executed/skipped counts.
+Generate manuals/example configuration only from current candidate help using
+the existing generators and isolated datadirs. Do not substitute old help.
 
-`src/` owns production C++; `test/functional/` owns isolated RPC/P2P integration;
-`src/qt/test/` owns GUI tests; `ci/test/` owns maintenance fixtures and cadence;
-`ci/release/` owns Git-native release validation/export; `depends/` owns pinned
-release dependencies. Follow `doc/design/libraries.md` and
-`doc/developer-notes.md`. Do not cosmetically edit vendored subtrees or manually
-edit generated translations. Register added files in the relevant CMake target.
+Sign every new Bitcoin Roots commit with Denis Roio's OpenPGP key, fingerprint
+`5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32` (jaromil@dyne.org), across all
+worktrees, including merges, cherry-picks and patch imports. Set repository-local
+`user.signingkey` to that fingerprint, `commit.gpgsign=true`, `gpg.format=openpgp`;
+use explicit `-S`/`--gpg-sign` where needed and inspect the resulting signature.
+Preserve original authorship/credits. If signing fails, leave the commit pending
+and report it; never disable signing, use an unsigned fallback or rewrite history
+merely to add signatures. Commit signing does not authorize release signing.
 
-## Builds and evidence
-
-Use out-of-source CMake and conservative fixed parallelism. Minimums include
-CMake 3.22, Python 3.10, GCC 12.1 or Clang 17, Boost 1.74 and libevent 2.1.8;
-see `doc/dependencies.md` for actual supported profiles. Wallet/tests default on,
-GUI defaults off, embedded libraries default on. Qt5/Qt6 selection is supported.
-Optional IPC/USDT/ZeroMQ/system-library/platform gaps are not passing evidence.
-Windows GUI builds that request MiniUPnPc also request its optional vcpkg feature.
-
-```sh
-cmake -S . -B build -DENABLE_IPC=OFF
-cmake --build build --target bitcoind test_bitcoin -j 2
-python3 ci/test/roots-regressions.py plan --cadence fast \
-  --files-json '["src/policy/policy.cpp"]'
-python3 -m unittest discover -s ci/test
-```
-
-Use affected regressions and short time-bounded smoke checks while editing;
-retain one full applicable suite at acceptance. Reuse evidence only when tested
-code, binaries and fixtures match, recording provenance. Broad optional-platform,
-extended and longer sanitizer/fuzz coverage belongs to scheduled/manual assurance;
-see `ci/README.md` for exact budgets and commands. Input counts are results, not
-campaign quotas. Preserve failure logs and state executed/skipped counts; a
-compile or local YAML check does not establish a hosted or cross-platform pass.
-Never relink binaries while dependent tests use the same build directory.
-
-Manpages and `share/examples/bitcoin.conf` come only from current candidate help
-through `contrib/devtools/gen-manpages.py` and `gen-bitcoin-conf.sh`. Use isolated
-help wrappers when needed. Inspect generated diffs for profile-specific omissions
-and reproducible output. Do not substitute older help or hand-edit the manuals.
-
-## Maintenance and release boundaries
-
-Git history is the source of Roots patches. Start `roots/<version>` at its exact
-authenticated Core tag and port semantic commits; never merge an older Roots
-line into a new base or rewrite published history. Review topic branches and
-use exact canonical source/CI parity for promotions. See `contrib/roots/README.md`.
-
-For every release cycle, revisions on one exact Core base are append-only:
-each `v<core-version>-roots.<revision>` retains the previous published revision
-as an ancestor. Carry fixes forward as ordinary commits;
-do not reorganize a published series to reduce its commit count. **Folding**
-means incorporating accumulated fixes into the relevant semantic commits while
-porting to a new Core base, preserving source attribution and review evidence.
-Folding is not a Git command or promotion to `main`. Follow the
-[Folding policy](contrib/roots/README.md#folding-at-a-new-core-base).
-
-Portable patches exclude `.github/**` and replay with `git am -3 --keep-cr`;
-product paths must match the selected tip while Core hosting files stay unchanged.
-Retain author/contributor credit, including Jaromil and devjoinedthechat.
-Signing and new-draft creation stay confined to the permanent tag workflow's
-release environment; manual rehearsal remains read-only and cannot publish.
-Existing draft/public releases block replacement. Manifest signing, Git-tag
-signing and platform signing are distinct; expanded notice coverage is deferred.
-
-Before handoff, run focused tests, relevant lint, `git diff --check`, and inspect
-sorted intended scope/status. Disclose missing tools, dependencies and platform
-coverage. Do not commit build trees, caches, fuzz crash artifacts, generated
-patch exports or workspace-local coordination/evidence data. Org plans are never
-Git deliverables; inspect staged names and bytes before an accepted commit.
+Git history is canonical. Fold still-needed fixes into thematic changes on a new
+exact Core base; never merge old Roots history into it or rewrite published
+releases. Do not introduce replay frameworks, checked-in exports/manifests or
+generated evidence. Keep builds, caches, logs and coordination data outside Git.
+Inspect sorted status, staged names/bytes and whitespace before commits.
+Dependency installation, system changes, canonical public-ref updates, main
+promotion, workflow dispatch, permanent tags, release signing, release/draft
+creation and publication require their own authorization.

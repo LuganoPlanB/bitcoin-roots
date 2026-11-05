@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test sub-dust output fee penalty (-subdustfeepenalty)."""
@@ -20,7 +20,7 @@ from test_framework.script import (
 )
 from test_framework.script_util import PAY_TO_ANCHOR
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
 
 
@@ -28,9 +28,12 @@ DUST_THRESHOLD = 330  # P2TR: (43 + 67) * 3000 / 1000 = 330 sats
 
 
 class SubDustFeePenaltyTest(BitcoinTestFramework):
+    def add_options(self, parser):
+        parser.add_argument("--test-mining-priority", action="store_true", help="Exercise the separately owned Roots mining priority area")
+
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-acceptnonstdtxn=1", "-subdustfeepenalty=1"]]
+        self.extra_args = [["-acceptnonstdtxn=1", "-subdustfeepenalty=1", "-blockprioritysize=0"]]
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
@@ -176,7 +179,7 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
     def reset_policy(self, *args):
         # Confirm previous fixtures before reloading policy; avoid repricing saved entries.
         self.generate(self.wallet, 1)
-        self.restart_node(0, extra_args=["-acceptnonstdtxn=1", "-subdustfeepenalty=1", *args])
+        self.restart_node(0, extra_args=["-acceptnonstdtxn=1", "-subdustfeepenalty=1", "-blockprioritysize=0", *args])
         self.wallet.rescan_utxos()
 
     def check_boundary(self, values, penalty, **kwargs):
@@ -233,6 +236,10 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
         txid = self.nodes[0].sendrawtransaction(high.serialize().hex())
         entry = self.nodes[0].getmempoolentry(txid)
         assert_equal(entry["vsize"], policy_vsize)
+        assert_equal(entry["vsize_adjusted"], policy_vsize)
+        assert_equal(entry["vsize_bip141"], high.get_vsize())
+        assert_equal(entry["weight"], high.get_weight())
+        assert entry["vsize_adjusted"] > entry["vsize_bip141"]
         assert_equal(entry["fees"]["base"], Decimal(fee) / COIN)
         assert_equal(entry["fees"]["modified"], Decimal(policy_vsize) / COIN)
         self.reset_policy("-datacarriercost=0")
@@ -261,6 +268,13 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
         replacement = node.sendrawtransaction(high.serialize().hex())
         assert_equal(node.getrawmempool(), [replacement])
         assert_equal(node.getmempoolentry(replacement)["fees"]["modified"], Decimal(1670) / COIN)
+        self.wallet.send_self_transfer(from_node=node, fee=Decimal("0.00001"))
+        before_fees = node.getmempoolentry(replacement)["fees"]
+        before_deltas = node.getprioritisedtransactions()
+        assert_raises_rpc_error(-8, "Fee delta would overflow native mempool graph accounting",
+                                node.prioritisetransaction, replacement, 0, 2**63 - 1)
+        assert_equal(node.getmempoolentry(replacement)["fees"], before_fees)
+        assert_equal(node.getprioritisedtransactions(), before_deltas)
         self.reset_policy()
         # A pre-admission delta raises policy fees without changing actual output values.
         tx = self.build_tx_with_dust([0], 0)
@@ -326,7 +340,7 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
     def test_mining_and_block_acceptance(self):
         self.log.info("Templates select modified fees, while blocks reward actual fees and accept local rejects")
         node = self.nodes[0]
-        self.reset_policy("-blockprioritysize=0", "-blockmintxfee=0.00002")
+        self.reset_policy("-blockmintxfee=0.00002")
         probe = self.build_tx_with_dust([0], 1000)
         min_fee = self.get_min_relay_fee(probe)
         low = self.build_tx_with_dust([0], min_fee)
@@ -353,10 +367,12 @@ class SubDustFeePenaltyTest(BitcoinTestFramework):
         assert txid in [entry["txid"] for entry in mined["tx"]]
         # Regtest at this height has a 25 BTC subsidy. Penalty/delta do not alter reward.
         assert_equal(sum(output["value"] for output in mined["tx"][0]["vout"]), Decimal(25) + Decimal(fee) / COIN)
-        self.reset_policy("-blockprioritysize=0", "-blockmintxfee=0.00002", "-subdustfeepenalty=0")
+        self.reset_policy("-blockmintxfee=0.00002", "-subdustfeepenalty=0")
         tx = self.build_tx_with_dust([0], fee)
         txid = node.sendrawtransaction(tx.serialize().hex())
         assert txid in [entry["txid"] for entry in node.getblocktemplate({"rules": ["segwit"]})["transactions"]]
+        if not self.options.test_mining_priority:
+            return  # The priority-area assertions below remain an L5 gate.
         self.reset_policy("-blockprioritysize=100000", "-blockmintxfee=0.00002")
         # The explicit priority area can mine sufficiently aged coins below the
         # template's fee floor. The dust penalty still appears in entry accounting.

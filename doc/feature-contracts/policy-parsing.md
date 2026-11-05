@@ -1,29 +1,23 @@
 # Roots policy input compatibility
 
-**v31 candidate status: L7 local policy, L8 graph/dynamic dust and L9 mining consumers implemented.**
-Carrier cost, sub-dust modified fees, replacement/TRUC modes and script reuse
-have native consumers. Dynamic dust publication is synchronized. Serialized
-size and coin-age priority controls now affect local templates, with the same
-scoped parsing grammar and no staged-control warnings.
-Only integrated
-Roots `confrw` precedence awaits L12; CLI, ordinary config and JSON settings
-passed the L7.1 startup matrix. Candidate tests are
-[`policy_args_tests.cpp`](../../src/test/policy_args_tests.cpp) and
-[`feature_policy_args.py`](../../test/functional/feature_policy_args.py).
-L7.2 carries the source
-[`policy_args` fuzz target](../../src/test/fuzz/policy_args.cpp): Boolean and
-integer independent grammar oracles, trailing-junk rejection, quarter-vbyte
-canonical round trips, dynamic-mode syntax round trips, JSON types and raw
-negation. Clang 19 ASan/UBSan/libFuzzer executed 103,911 inputs over 121 seconds
-with seed 31 and no findings. This bounds the reported campaign, not all inputs.
-Historical paths/results below are source evidence.
+This v32 port implements scoped startup parsing, local standardness, carrier
+extra weight, sub-dust modified fees and replacement/TRUC/reuse controls over
+the native graph. Dynamic dust publishes synchronized admission snapshots;
+mining controls enforce serialized size, priority area and native weight limits.
+Read/write text configuration and initialized effective-policy RPC integration
+are also carried; see the [applied-policy contract](effective-policy.md).
+Native Core CLI, config and JSON selection are retained. See the
+[graph fee contract](subdust.md) for the active accounting boundaries.
 
-**Contract ID: policy-parsing.** Scope: startup input for the Roots-added local
-policy controls listed below. This contract supplements `runtime-config` and the
-policy contracts in [the catalog](../roots-features.md). It does not change
-admission rules, block validity, or defaults. Scoped startup validation enforces
-the decided grammar; the baseline column records the former permissive behavior
-and explains migration.
+Contract: `policy-parsing`. Adapted from Roots source
+`e5445b7c96193c7ec141705aac5ba96651e0ee30` with independent oracle corrections
+from `9aaf62146fae1a89d65121468633d5c1701699e9`. Jaromil supplied the carried
+implementation and contracts; upstream Bitcoin Core attribution is retained.
+
+The ranges below describe parsing and active mining defaults. Local policy
+never changes consensus block validity. Native v32 reserved-weight and maximum
+weight validation remains strict: incompatible reserve/maximum settings fail
+rather than silently producing an empty template.
 
 ## Scope, defaults and ranges
 
@@ -102,11 +96,21 @@ zeros. Empty values, extra separators, suffixes and unknown modes are errors.
 double-negative `-nodustdynamic=0` yields `1` and remains an invalid mode.
 Validate the raw negated Boolean value before conversion.
 
+Dynamic dust initializes after successful chainstate loading and estimator
+construction, then updates every 15 minutes. The block-target mode uses the
+native block-policy long-horizon estimate at an 80% success threshold; the
+mempool mode uses actual fees at the selected decimal-kvB policy-size position.
+The configured `dustrelayfee` is both floor and missing-estimate fallback.
+Scaling uses thousandths, rounding down with signed saturation. The synchronized
+rate reaches standardness, new admission deficits and node/wallet interfaces;
+resident deficits remain immutable. See [the lifecycle contract](subdust.md).
+
 Keep these mode/list forms and their existing precedence semantics:
 
 - `mempoolreplacement`: Boolean alias, or `fee`, `optin`, `-optin` tokens
-  separated by `,` or `+`. `0` disables replacement; empty/`1` enables fee-based
-  replacement. Repeated recognized tokens retain their current meaning;
+  separated by `,` or `+`. `0` disables input-conflict replacement; empty/`1`
+  enables fee-based input-conflict replacement. Repeated recognized tokens
+  retain their current meaning;
   the last `optin`/`-optin` token wins. Preserve the existing interaction with
   inherited `mempoolfullrbf`, including its contradiction warning.
 - `mempooltruc`: Boolean alias, or `reject`, `accept`, `enforce`, `optin`,
@@ -118,6 +122,14 @@ Keep these mode/list forms and their existing precedence semantics:
   all three exceptions, `0`/`reject` disables them. Preserve existing implied
   flags and last assignment to each flag, including signed recognized tokens.
 - `spkreuse`: `allow`/`1`/empty allows reuse, `conflict`/`0` rejects conflicts.
+
+Replacement selection above governs conflicting prevouts. With
+`spkreuse=conflict`, script-only conflicts using independent inputs still face
+native replacement economics even under Never (`mempoolreplacement=0`) or
+OptIn with a non-signaling original. A transaction that also conflicts on a
+prevout must pass the input-conflict mode gate. This preserves the released
+runtime behavior; older catalog prose saying Never disables all replacement
+was broader than its implementation. The current help makes the scope explicit.
 
 Lists must contain recognized nonempty tokens only; unknown tokens and leading,
 trailing, or doubled separators are errors. Whitespace is not token syntax.
@@ -162,116 +174,3 @@ the offending value, and its accepted grammar/range. Preserve the existing
 `Invalid -datacarriercost value: '…'` diagnostic prefix and the specific
 `dustdynamic` failure context, adding useful bounds without disguising the
 reason. Errors must not report unrelated configuration values or secrets.
-
-## Baseline evidence and remaining acceptance gates
-
-Characterized at `f66eca4ae466e198fecd66cac22a0033918b12ec` (same production
-parser as source `17e1d484aba2a881be03b8928fba3c0125e027a2`). Paths:
-argument conversion (`src/common/args.cpp`, source reference),
-config reading (`src/common/config.cpp`, source reference),
-merging (`src/common/settings.cpp`, source reference),
-mempool options (`src/node/mempool_args.cpp`, source reference),
-startup options (`src/init.cpp`, source reference),
-template options (`src/node/miner.cpp`, source reference), and
-fixed-point conversion (`src/util/strencodings.cpp`, source reference).
-
-Focused baseline evidence: `getarg_tests` (10 cases),
-`feature_config_args.py`, and a 160-case isolated regtest startup matrix exercising
-Boolean/integer/cost classes, list aliases/junk, CLI/config pairs, repeated
-options, section precedence, negation and bounds. Configuration trims outer
-whitespace; CLI does not. The cost cases verify last CLI / first config /
-CLI-over-config / network-over-default selection with invalid shadowed values.
-The matrix produced 127 clean startups/shutdowns, 30 expected startup diagnostics,
-and the three existing runtime aborts described below. All 160 outcomes matched
-the source-derived characterization; an expected rejection is not a test failure.
-
-**Historical source runtime gap (repair authorized for L8):** non-off `dustdynamic` modes can parse successfully but
-abort startup because the mempool is constructed without its required scheduler.
-Parser acceptance does not prove these modes operate. This contract records that
-baseline failure; The user authorized a bounded L8 runtime repair with node-owned scheduling,
-retry/shutdown lifetime safety, unavailable-estimate floor fallback and safe
-multiplier scaling. L8.2 implements that authorized repair; it is not an L7
-parser claim. See [sub-dust runtime semantics](subdust.md).
-
-Acceptance: policy_args_tests.cpp (`src/test/policy_args_tests.cpp`, source reference)
-`boolean_values`, `integer_boundaries`, `carrier_cost_compatibility`, `mode_tokens`,
-`raw_negation_is_scoped`, `defaults_and_mode_semantics`,
-`settings_types_and_precedence`, and `dynamic_dust_grammar_without_runtime_claim`
-cover parser boundaries, exact weight rounding, defaults, types and aliases.
-feature_policy_args.py (`test/functional/feature_policy_args.py`, source reference) `run_test`
-covers isolated CLI/config startup parity, shadowing, negation and unchanged
-inherited Core parsing. Dynamic-dust non-off grammar is unit-tested without
-claiming a working startup. Configuration and affected
-carrier/sub-dust/dust/replacement/TRUC/template policy suites remain regression
-gates.
-Retirement requires an upstream parser with the same grammar, default values,
-precedence, diagnostics and covered policy behavior. No PR number is known;
-a release note must be added when one is assigned.
-
-## Scoped fuzz evidence
-
-`policy_args` in policy_args.cpp (`src/test/fuzz/policy_args.cpp`, source reference) exercises
-the production option validator, carrier-cost and dynamic-dust parsers, and raw
-Boolean negation. Its independent bounded decimal oracle checks complete integer
-consumption and range limits; Boolean grammar, rejection of appended junk,
-canonical cost/dynamic round trips and JSON setting types have explicit
-invariants. The entire input is a value, retaining embedded NULs; only the argv
-negation check skips NUL-containing values because argv strings cannot carry them.
-Dynamic parsing does not construct a dynamic mempool or establish runtime support.
-
-`subdust_fee_penalty` exercises actual admission and entry fee accounting against
-a wide-integer oracle; its supported arithmetic domain and remaining gates are
-in [the sub-dust contract](subdust.md). Both targets use the existing fuzz registry.
-
-Use the existing `libfuzzer` preset when its compiler runtime is installed. A
-sanitizer corpus replay can also use the supported standalone fuzz runner:
-
-```sh
-cmake -B build_fuzz_policy -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
-  -DCMAKE_BUILD_TYPE=Debug -DBUILD_FOR_FUZZING=ON -DSANITIZERS=address,undefined \
-  -DENABLE_WALLET=OFF -DBUILD_GUI=OFF -DENABLE_IPC=OFF
-cmake --build build_fuzz_policy -j4
-ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 FUZZ=policy_args \
-  timeout 120 build_fuzz_policy/bin/fuzz /path/to/local/policy_args
-ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 FUZZ=subdust_fee_penalty \
-  timeout 120 build_fuzz_policy/bin/fuzz /path/to/local/subdust_fee_penalty
-```
-
-Keep inputs and artifacts outside Git. Capture the exact source revision and dirty
-diff, binary/configuration, generator, PRNG seed, input counts, wall time and exits
-for every campaign. The preservation run at base `b60a6e04` plus the L5 test diff
-used GCC 14 ASan/UBSan, Python PRNG seed `310503`, 52 parser boundary spellings
-plus 5,000 mutations, and 225 arithmetic boundaries plus 1,000 generated cases.
-Both 120-second replay budgets completed: 5,052 parser inputs in 34 seconds and
-1,225 arithmetic inputs in 4 seconds, without sanitizer reports. These are bounded
-smoke results, not proof of exhaustive coverage.
-
-Parser seeds include empty/Boolean/signed/overflow integers, exact and rounded
-carrier costs, exponents, embedded NUL and trailing junk, malformed lists, JSON
-types, dynamic multiplier/target bounds and a 4,096-digit value. Arithmetic seeds
-combine rates `0`, `1`, `3000`, `INT64_MAX/2` and `INT64_MAX`; actual fees `0`,
-`1000`, `1000000`; deltas `-MAX_MONEY`, `0`, `MAX_MONEY`; zero-valued P2TR/P2A/
-OP_RETURN, mixed sixteen-output fixtures and sixteen above-default-dust outputs.
-Arithmetic inputs consume integers from the end using `FuzzedDataProvider`:
-rate (8 bytes), fee (3), delta plus `MAX_MONEY` (7), output count minus one (1),
-then each output value (2) and script index (1); integers are little endian and
-the chunks are concatenated in reverse consumption order.
-
-The installed Clang 19 lacked compiler-rt/libFuzzer/ASan archives; the compile
-probe failed before testing. GCC sanitizer compilation and execution succeeded.
-The executed campaigns therefore used corpus replay, including generated
-mutations, with no coverage-guided engine. A coverage-guided libFuzzer campaign
-remains an explicit evidence gap, and cannot be claimed from these replay counts.
-
-## Candidate split and current gates
-
-L7 carries complete-token/negation/type/cost/mode syntax and local standardness,
-carrier budgets, fixed dust and relay age/maturity. The native v31 cluster limits
-and typed script flags remain intact. Mode-resolution/enforcement tests belong
-L8, and template-normalization tests belong L9; their source assertions are
-retained as explicit owning-theme gates, not represented as L7 passes.
-
-`feature_policy_args.py` retains independently runnable CLI/config/JSON cases;
-only its historical text read/write-config integration cases defer to L12.
-`policy_args_tests` retains parser boundaries and local/ephemeral defaults.
-Dynamic-dust grammar is tested without a runtime support claim.

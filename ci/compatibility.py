@@ -230,7 +230,10 @@ def validate_lifecycle(cases):
         require(all(txid in pool for pool in pools.values()), "persistence control missing from node mempool")
 
 
-def validate_report(report, roots_source, core_source, candidate, core_sha, profile):
+def validate_report(report, roots_source, core_source, candidate, core_sha, profile, tool_source=None, generation="30.3"):
+    tool_source = Path(tool_source) if tool_source is not None else roots_source
+    require(generation in ("30.3", "32.1"), "unsupported report generation")
+    require(report.get("generation", "30.3") == generation, "report generation mismatch")
     identity(candidate)
     identity(core_sha)
     require(profile in CASES, "unknown profile")
@@ -275,11 +278,11 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
             previous_state = state
     if profile == "full":
         validate_lifecycle(cases)
-    spec = importlib.util.spec_from_file_location("compatibility_build", ROOT / "contrib/roots/compatibility/build.py")
+    spec = importlib.util.spec_from_file_location("compatibility_build", tool_source / "contrib/roots/compatibility/build.py")
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
-    require(report.get("harness_sha256") == file_digest(roots_source / "contrib/roots/compatibility/compare.py"), "wrong harness revision")
-    require(report.get("fixture_revision", {}).get("sha256") == file_digest(roots_source / "contrib/roots/compatibility/fixtures.py"), "wrong fixture revision")
+    require(report.get("harness_sha256") == file_digest(tool_source / "contrib/roots/compatibility/compare.py"), "wrong harness revision")
+    require(report.get("fixture_revision", {}).get("sha256") == file_digest(tool_source / "contrib/roots/compatibility/fixtures.py"), "wrong fixture revision")
     digests = []
     require(set(report.get("nodes", {})) == {"core", "roots"}, "wrong node inventory")
     for label, source, commit in (("core", core_source, core_sha), ("roots", roots_source, candidate)):
@@ -292,7 +295,7 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
         require(build["status"] == provenance["status"] == "built-in-run", "unverified binary provenance")
         require(build["source_commit"] == provenance["source_commit"] == commit
                 and build["source_tree"] == provenance["source_tree"] == tree, "build identity mismatch")
-        require(build["builder_sha256"] == file_digest(roots_source / "contrib/roots/compatibility/build.py"), "builder revision mismatch")
+        require(build["builder_sha256"] == file_digest(tool_source / "contrib/roots/compatibility/build.py"), "builder revision mismatch")
         require(build["configuration"] == list(builder.CMAKE_OPTIONS)
                 and node["build_configuration"] == build["configuration"], "build configuration mismatch")
         require(build["archive_sha256"] == provenance["archive_sha256"], "export identity mismatch")
@@ -313,6 +316,53 @@ def validate_report(report, roots_source, core_source, candidate, core_sha, prof
         require(not path.is_absolute() and ".." not in path.parts
                 and path.as_posix().startswith("test/functional/test_framework/"), "unsafe serialization path")
         require(entry["sha256"] == file_digest(roots_source / path), "serialization revision mismatch")
+    if generation == "32.1":
+        spec = importlib.util.spec_from_file_location("compatibility_exact_profile", tool_source / "contrib/roots/compatibility/compare.py")
+        comparator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(comparator)
+        try:
+            comparator.validate_generation(generation, {label: {"source": {**report["nodes"][label]["source"], "path": str(source)}}
+                                                       for label, source in (("core", core_source), ("roots", roots_source))})
+        except comparator.ComparisonError as error:
+            raise GateError("32.1 source profile rejected") from error
+        exchanges = report.get("exchanges")
+        require(isinstance(exchanges, list) and len(exchanges) == 2, "missing actual exchange directions")
+        require([(item.get("producer"), item.get("receiver"), item.get("case")) for item in exchanges]
+                == [("roots", "core", "ordinary"), ("core", "roots", "datacarrier")], "exchange direction mismatch")
+        for exchange, case in zip(exchanges, cases):
+            require(exchange.get("production_rpc") == "generatetoaddress", "block was not produced by a native node")
+            try:
+                raw = bytes.fromhex(exchange["raw_block"])
+                tx = bytes.fromhex(exchange["transaction"]["raw"])
+            except (ValueError, KeyError, TypeError) as error:
+                raise GateError("invalid exchange bytes") from error
+            require(len(raw) > 80 and len(tx) > 0, "missing exchange bytes")
+            require(hashlib.sha256(raw).hexdigest() == exchange["serialized_sha256"] == case["blocks"][0]["serialized_sha256"],
+                    "exchange byte digest mismatch")
+            block_hash = hashlib.sha256(hashlib.sha256(raw[:80]).digest()).digest()[::-1].hex()
+            require(block_hash == exchange["block_hash"] == case["blocks"][0]["hash"], "exchange block header mismatch")
+            require(tx in raw and exchange["transaction"]["txid"] in [item["txid"] for item in case["admission"]],
+                    "exchange fixture transaction mismatch")
+            require(exchange["receiver_submit_result"] is None, "receiver rejected exchange")
+            require(set(exchange["after"]) == {"core", "roots"}, "missing exchanged paired state")
+            require(exchange["after"]["core"] == exchange["after"]["roots"] == case["states"][0], "exchange state mismatch")
+            require(exchange["producer_tip_before_submit"] == {"bestblockhash": block_hash, "height": case["states"][0]["height"]},
+                    "producer did not own exchanged block")
+            require(exchange["receiver_tip_before_submit"] == {key: exchange["before"][key] for key in ("height", "bestblockhash")},
+                    "receiver already had exchanged block")
+            require(exchange["before"]["height"] + 1 == case["states"][0]["height"], "exchange height mismatch")
+            for role in ("producer", "receiver"):
+                require(exchange[role + "_binary_sha256"] == report["nodes"][exchange[role]]["binary"]["sha256"],
+                        "exchange binary identity mismatch")
+        for node in report["nodes"].values():
+            require(type(node["cleanup"].get("returncode")) is int, "invalid cleanup exit type")
+            require(node.get("network_identity", {}).get("version") == 320100, "wrong RPC generation")
+            require(re.search(r"\bv32\.1(?:\.0)?(?:-roots\.[0-9]+)?(?:\s|$)", node["binary"].get("version", "")), "wrong CLI generation")
+        if profile == "full":
+            for node in report["nodes"].values():
+                require(len(node.get("restart_shutdowns", [])) == 2 and all(item.get("stopped") is True and type(item.get("returncode")) is int
+                        and item["returncode"] == 0 for item in node["restart_shutdowns"]), "intermediate restart cleanup failed")
+
 
 
 def prepare_artifacts(report_path, output):
@@ -377,6 +427,8 @@ def main():
     parser.add_argument("mode", choices=("inputs", "sources", "report", "name", "artifacts"))
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--core-sha")
+    parser.add_argument("--generation", choices=("30.3", "32.1"), default="30.3")
+    parser.add_argument("--tool-source", type=Path)
     parser.add_argument("--roots-source", type=Path)
     parser.add_argument("--core-source", type=Path)
     parser.add_argument("--context-ref")
@@ -403,7 +455,7 @@ def main():
             args.output.write_text(json.dumps(evidence, indent=2) + "\n")
         else:
             validate_report(load_report(args.report), args.roots_source, args.core_source,
-                            args.candidate_sha, args.core_sha, args.profile)
+                            args.candidate_sha, args.core_sha, args.profile, tool_source=args.tool_source, generation=args.generation)
     except GateError as error:
         print("Compatibility gate failed: " + str(error), file=sys.stderr)
         return 1

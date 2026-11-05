@@ -6,22 +6,32 @@
 #ifndef BITCOIN_UTIL_TIME_H
 #define BITCOIN_UTIL_TIME_H
 
-#include <functional>
+// The `util/time.h` header is designed to be a drop-in replacement for `chrono`.
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
+#include <ctime>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 
+#ifdef WIN32
+#include <winsock2.h>
+#else
+#include <sys/time.h>
+#endif
+
 using namespace std::chrono_literals;
 
-/** Mockable clock in the context of tests, otherwise the system clock */
+/// Version of the system clock that is mockable in the context of tests (via
+/// FakeNodeClock or ::SetMockTime), otherwise the system clock.
 struct NodeClock : public std::chrono::system_clock {
     using time_point = std::chrono::time_point<NodeClock>;
     /** Return current system time or mocked time, if set */
     static time_point now() noexcept;
     static std::time_t to_time_t(const time_point&) = delete; // unused
     static time_point from_time_t(std::time_t) = delete;      // unused
+    static constexpr time_point epoch{};
 };
 using NodeSeconds = std::chrono::time_point<NodeClock, std::chrono::seconds>;
 
@@ -32,10 +42,9 @@ using SteadyMicroseconds = std::chrono::time_point<std::chrono::steady_clock, st
 
 using SystemClock = std::chrono::system_clock;
 
-/**
- * Version of SteadyClock that is mockable in the context of tests (set the
- * current value with SetMockTime), otherwise the system steady clock.
- */
+/// Version of SteadyClock that is mockable in the context of tests (via
+/// FakeSteadyClock, or Self::SetMockTime), otherwise the system steady
+/// clock.
 struct MockableSteadyClock : public std::chrono::steady_clock {
     using time_point = std::chrono::time_point<MockableSteadyClock>;
 
@@ -104,14 +113,6 @@ using MillisecondsDouble = std::chrono::duration<double, std::chrono::millisecon
  */
 int64_t GetTime();
 
-/**
- * DEPRECATED
- * Use SetMockTime with chrono type
- *
- * @param[in] nMockTimeIn Time in seconds.
- */
-void SetMockTime(int64_t nMockTimeIn);
-
 /** For testing. Set e.g. with the setmocktime rpc, or -mocktime argument */
 void SetMockTime(std::chrono::seconds mock_time_in);
 void SetMockTime(std::chrono::time_point<NodeClock, std::chrono::seconds> mock);
@@ -159,32 +160,16 @@ struct timeval MillisToTimeval(int64_t nTimeout);
  */
 struct timeval MillisToTimeval(std::chrono::milliseconds ms);
 
-/**
- * Retrieve the CPU time (user + system) spent by the current thread.
- */
+/** Current thread CPU time (user + system), or zero when unavailable. */
 std::chrono::nanoseconds ThreadCpuTime();
 
-/**
- * Measure CPU time spent by the current thread.
- * A clock is started when a CpuTimer is created. When the object is destroyed
- * the elapsed CPU time is calculated and a callback function is invoked,
- * providing it the elapsed CPU time.
- */
+/** Report CPU time spent in a scope when the platform supplies a valid clock. */
 class CpuTimer
 {
 public:
     using FinishedCB = std::function<void(std::chrono::nanoseconds)>;
-
-    /**
-     * Construct a timer.
-     * @param[in] finished_cb A callback to invoke when this object is destroyed.
-     */
-    CpuTimer(const FinishedCB& finished_cb)
-        : m_start{ThreadCpuTime()},
-          m_finished_cb{finished_cb}
-    {
-    }
-
+    explicit CpuTimer(const FinishedCB& finished_cb)
+        : m_start{ThreadCpuTime()}, m_finished_cb{finished_cb} {}
     ~CpuTimer()
     {
         const auto end{ThreadCpuTime()};

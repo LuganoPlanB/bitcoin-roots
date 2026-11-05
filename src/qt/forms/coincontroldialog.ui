@@ -364,7 +364,7 @@
         <item row="1" column="0" colspan="3">
          <widget class="QLabel" name="labelAvailable">
           <property name="wordWrap"><bool>true</bool></property>
-          <property name="text"><string>Available: 0 (0 eligible)</string></property>
+          <property name="text"><string>Safe local-key outputs: 0 (0)</string></property>
          </widget>
         </item>
         <item row="1" column="3" colspan="3">

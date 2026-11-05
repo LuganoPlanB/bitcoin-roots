@@ -19,6 +19,7 @@
 #include <script/solver.h>
 #include <serialize.h>
 #include <span.h>
+#include <tinyformat.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -26,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-// Standardness also links into standalone wallet tools through bitcoin_common.
+// Standardness is also linked by standalone wallet tools through bitcoin_common.
 unsigned int g_script_size_policy_limit = DEFAULT_SCRIPT_SIZE_POLICY_LIMIT;
 
 CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
@@ -48,7 +49,7 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
     if (txout.scriptPubKey.IsUnspendable())
         return 0;
 
-    size_t nSize = GetSerializeSize(txout);
+    uint64_t nSize{GetSerializeSize(txout)};
     int witnessversion = 0;
     std::vector<unsigned char> witnessprogram;
 
@@ -107,7 +108,7 @@ bool IsStandard(const CScript& scriptPubKey, TxoutType& whichType)
 }
 
 static inline bool MaybeReject_(std::string& out_reason, const std::string& reason, const std::string& reason_prefix, const ignore_rejects_type& ignore_rejects) {
-    if (ignore_rejects.count(reason_prefix + reason)) {
+    if (ignore_rejects.contains(reason_prefix + reason)) {
         return false;
     }
 
@@ -381,7 +382,7 @@ static bool CheckLegacyPolicySigops(const CTransaction& tx, const CCoinsViewCach
  *
  * Note that only the non-witness portion of the transaction is checked here.
  *
- * We also check the local transaction limit for potentially executed legacy sigops.
+ * We also check the total number of non-witness sigops across the whole transaction, as per BIP54.
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, const StandardnessOptions& opts, const std::string& reason_prefix, std::string& out_reason, const ignore_rejects_type& ignore_rejects)
 {
@@ -449,6 +450,57 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& map_inputs
     StandardnessOptions opts;
     std::string reason;
     return AreInputsStandard(tx, map_inputs, opts, "", reason);
+}
+
+TxValidationState ValidateInputsStandardness(const CTransaction& tx, const CCoinsViewCache& mapInputs)
+{
+    TxValidationState state;
+    if (tx.IsCoinBase()) {
+        return state; // Coinbases don't use vin normally
+    }
+
+    if (!CheckLegacyPolicySigops(tx, mapInputs, StandardnessOptions{})) {
+        state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", "non-witness sigops exceed bip54 limit");
+        return state;
+    }
+
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
+        const CTxOut& prev = mapInputs.AccessCoin(tx.vin[i].prevout).out;
+
+        std::vector<std::vector<unsigned char> > vSolutions;
+        TxoutType whichType = Solver(prev.scriptPubKey, vSolutions);
+        if (whichType == TxoutType::NONSTANDARD) {
+            state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", strprintf("input %u script unknown", i));
+            return state;
+        } else if (whichType == TxoutType::WITNESS_UNKNOWN) {
+            // WITNESS_UNKNOWN failures are typically also caught with a policy
+            // flag in the script interpreter, but it can be helpful to catch
+            // this type of NONSTANDARD transaction earlier in transaction
+            // validation.
+            state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", strprintf("input %u witness program is undefined", i));
+            return state;
+        } else if (whichType == TxoutType::SCRIPTHASH) {
+            std::vector<std::vector<unsigned char> > stack;
+            ScriptError serror;
+            // convert the scriptSig into a stack, so we can inspect the redeemScript
+            if (!EvalScript(stack, tx.vin[i].scriptSig, SCRIPT_VERIFY_NONE, BaseSignatureChecker(), SigVersion::BASE, &serror)) {
+                state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", strprintf("p2sh scriptsig malformed (input %u: %s)", i, ScriptErrorString(serror)));
+                return state;
+            }
+            if (stack.empty()) {
+                state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", strprintf("input %u P2SH redeemscript missing", i));
+                return state;
+            }
+            CScript subscript(stack.back().begin(), stack.back().end());
+            unsigned int sigop_count = subscript.GetSigOpCount(true);
+            if (sigop_count > MAX_P2SH_SIGOPS) {
+                state.Invalid(TxValidationResult::TX_INPUTS_NOT_STANDARD, "bad-txns-nonstandard-inputs", strprintf("p2sh redeemscript sigops exceed limit (input %u: %u > %u)", i, sigop_count, MAX_P2SH_SIGOPS));
+                return state;
+            }
+        }
+    }
+
+    return state;
 }
 
 bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, const std::string& reason_prefix, std::string& out_reason, const ignore_rejects_type& ignore_rejects)
@@ -543,7 +595,7 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs,
                 }
                 if ((control_block[0] & TAPROOT_LEAF_MASK) == TAPROOT_LEAF_TAPSCRIPT) {
                     // Leaf version 0xc0 (aka Tapscript, see BIP 342)
-                    if (!ignore_rejects.count(reason_prefix + "taproot-stackitem-size")) {
+                    if (!ignore_rejects.contains(reason_prefix + "taproot-stackitem-size")) {
                     for (const auto& item : stack) {
                             if (item.size() > MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE) {
                                 out_reason = reason_prefix + "taproot-stackitem-size";
@@ -582,7 +634,7 @@ bool SpendsNonAnchorWitnessProg(const CTransaction& tx, const CCoinsViewCache& p
         }
 
         // For P2SH extract the redeem script and check if it spends a non-Taproot witness program. Note
-        // this is fine to call EvalScript (as done in AreInputsStandard/IsWitnessStandard) because this
+        // this is fine to call EvalScript (as done in ValidateInputsStandardness/IsWitnessStandard) because this
         // function is only ever called after IsStandardTx, which checks the scriptsig is pushonly.
         if (prev_spk.IsPayToScriptHash()) {
             // If EvalScript fails or results in an empty stack, the transaction is invalid by consensus.

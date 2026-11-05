@@ -26,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -263,6 +264,28 @@ BOOST_AUTO_TEST_CASE(onion_socket_permissions)
     BOOST_CHECK(nodes[0]->m_permission_flags == socket_flags);
     peerman->FinalizeNode(*nodes[0]);
     connman.ClearTestNodes();
+
+    // A wildcard Tor target must match the concrete address from getsockname,
+    // but must not suppress grants on other ports or non-local connections.
+    options.onion_binds.clear();
+    options.vBinds = {LookupNumeric("0.0.0.0:18444")};
+    options.listenonion = true;
+    options.vWhitelistedRangeIncoming.clear();
+    BOOST_REQUIRE(NetWhitelistPermissions::TryParse("all@0.0.0.0/0", permissions, direction, error));
+    options.vWhitelistedRangeIncoming.push_back(permissions);
+    connman.Init(options);
+    for (const auto& [local_bind, remote, is_onion] : {
+             std::tuple{bind, peer, true},
+             std::tuple{CAddress{LookupNumeric("127.0.0.1:18445"), NODE_NONE}, peer, false},
+             std::tuple{bind, CAddress{LookupNumeric("192.0.2.1:12345"), NODE_NETWORK}, false}}) {
+        connman.CreateNodeFromAcceptedSocketPublic(std::make_unique<ZeroSock>(), socket_flags, local_bind, remote);
+        const auto accepted{connman.TestNodes()};
+        BOOST_REQUIRE_EQUAL(accepted.size(), 1U);
+        BOOST_CHECK_EQUAL(accepted[0]->m_inbound_onion, is_onion);
+        BOOST_CHECK(accepted[0]->m_permission_flags == (is_onion ? socket_flags : NetPermissionFlags::All));
+        peerman->FinalizeNode(*accepted[0]);
+        connman.ClearTestNodes();
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

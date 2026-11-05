@@ -29,15 +29,9 @@ from test_framework.util import (
 NODE_NETWORK_LIMITED_MIN_BLOCKS = 288
 
 class P2PIgnoreInv(P2PInterface):
-    firstAddrnServices = 0
     def on_inv(self, message):
         # The node will send us invs for other blocks. Ignore them.
         pass
-    def on_addr(self, message):
-        self.firstAddrnServices = message.addrs[0].nServices
-    def wait_for_addr(self, timeout=5):
-        test_function = lambda: self.last_message.get("addr")
-        self.wait_until(test_function, timeout=timeout)
     def send_getdata_for_block(self, blockhash):
         getdata_request = msg_getdata()
         getdata_request.inv.append(CInv(MSG_BLOCK, int(blockhash, 16)))
@@ -124,7 +118,7 @@ class NodeNetworkLimitedTest(BitcoinTestFramework):
             expected_services |= NODE_P2P_V2
 
         self.log.info("Check that node has signalled expected services.")
-        assert_equal(node.nServices, expected_services | NODE_BLOOM)  # Implicit loopback bloom is per-peer only.
+        assert_equal(node.nServices, expected_services | NODE_BLOOM)  # Per-peer loopback service only.
 
         self.log.info("Check that the localservices is as expected.")
         assert_equal(int(self.nodes[0].getnetworkinfo()['localservices'], 16), expected_services)

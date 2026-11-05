@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -113,7 +113,7 @@ class RunnerNoticeTest(unittest.TestCase):
                 # Homebrew recurses by default; multi-formula intersection
                 # drops dependencies that only one requested formula needs.
                 self.assertEqual(args, ('brew', 'deps', '--installed', '--union',
-                                       'qt@6', 'boost', 'libevent', 'zeromq',
+                                       'qt@6', 'boost', 'zeromq',
                                        'qrencode', 'miniupnpc', 'capnp'))
                 required = runner.notices.required_components('darwin-arm64') - {'qt', 'sqlite', 'openssl', 'icu'}
                 return '\n'.join(sorted(required | {'ca-certificates', 'qt', 'qtbase',
@@ -195,7 +195,8 @@ class RunnerNoticeTest(unittest.TestCase):
                'RELEASE_NOTICE_PLATFORM': 'linux-aarch64', 'BITCOIN_ROOTS_GPG_SK': 'fixture-never-export',
                'PATH': os.environ.get('PATH', '/usr/bin'), 'DANGER_RUN_CI_ON_HOST': '1', 'BASE_ROOT_DIR': str(self.work),
                'BASE_READ_ONLY_DIR': str(ROOT), 'BASE_SCRATCH_DIR': str(self.work / 'scratch'),
-               'CCACHE_DIR': str(self.work / 'ccache'), 'PREVIOUS_RELEASES_DIR': str(self.work / 'previous')}
+               'CCACHE_DIR': str(self.work / 'ccache'), 'PREVIOUS_RELEASES_DIR': str(self.work / 'previous'),
+               'FILE_ENV': './ci/test/00_setup_env_linux_x86_64_release.sh'}
         path = Path(f"/tmp/env-{env['USER']}-{env['CONTAINER_NAME']}")
         self.addCleanup(path.unlink, missing_ok=True)
         with patch.dict(os.environ, env, clear=True), patch.object(container, 'run', return_value=SimpleNamespace(stdout='export CONTAINER_NAME=fixture')):
@@ -213,7 +214,11 @@ class RunnerNoticeTest(unittest.TestCase):
         for job, following in [('linux-release', 'windows-release'), ('windows-release', 'macos-release'), ('macos-release', 'publish-release')]:
             block = workflow.split(f'  {job}:', 1)[1].split(f'  {following}:', 1)[0]
             self.assertLess(block.index('ci/release/archive.py stage-copying'), block.index('ci/release/archive.py validate'))
-            self.assertLess(block.index('ci/release/archive.py validate'), block.index('uses: actions/upload-artifact'))
+            self.assertLess(block.index('ci/release/archive.py validate'), block.index('name: Upload unsigned release package'))
+            if 'Retain failed' in block:
+                diagnostic = block.split('Retain failed', 1)[1].split('      - name:', 1)[0]
+                self.assertIn('if: failure()', diagnostic)
+                self.assertIn('${{ env.ROOTS_ARTIFACTS_DIR }}/', diagnostic)
 
 
 if __name__ == '__main__':

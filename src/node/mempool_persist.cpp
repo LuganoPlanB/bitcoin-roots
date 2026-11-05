@@ -6,7 +6,6 @@
 
 #include <clientversion.h>
 #include <consensus/amount.h>
-#include <logging.h>
 #include <primitives/transaction.h>
 #include <random.h>
 #include <serialize.h>
@@ -16,6 +15,7 @@
 #include <uint256.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
+#include <util/log.h>
 #include <util/obfuscation.h>
 #include <util/signalinterrupt.h>
 #include <util/syserror.h>
@@ -196,9 +196,8 @@ bool DumpMempool(const CTxMemPool& pool, const fs::path& dump_path, FopenFn mock
         for (const auto& i : vinfo) {
             file << TX_WITH_WITNESS(*(i.tx));
             file << int64_t{count_seconds(i.m_time)};
-            // Modified fees include the immutable admission-time dust deficit.
-            // Persist only operator deltas; admission recomputes its own deficit
-            // from the live dust floor/rate when these transactions are loaded.
+            // Admission deficits are immutable policy state, not operator deltas.
+            // Reload computes one new deficit at its live dust rate.
             const auto delta = mapDeltas.find(i.tx->GetHash());
             file << int64_t{delta == mapDeltas.end() ? 0 : delta->second};
             mapDeltas.erase(i.tx->GetHash());

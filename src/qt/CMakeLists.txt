@@ -11,27 +11,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   string(APPEND CMAKE_OBJCXX_COMPILE_OBJECT " ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}")
 endif()
 
-get_target_property(qt_lib_type Qt${WITH_QT_VERSION}::Core TYPE)
-if(qt_lib_type STREQUAL "STATIC_LIBRARY" AND NOT COMMAND qt${WITH_QT_VERSION}_import_plugins)
-  message(FATAL_ERROR "Static Qt requires the import_plugins CMake command (Qt 5.14 or newer for Qt 5).")
-endif()
+get_target_property(qt_lib_type Qt6::Core TYPE)
 
 function(import_plugins target)
   if(qt_lib_type STREQUAL "STATIC_LIBRARY")
-    set(plugins Qt${WITH_QT_VERSION}::QMinimalIntegrationPlugin)
-    if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|FreeBSD)$")
-      list(APPEND plugins Qt${WITH_QT_VERSION}::QXcbIntegrationPlugin)
+    set(plugins Qt6::QMinimalIntegrationPlugin)
+    if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|FreeBSD|OpenBSD)$")
+      list(APPEND plugins Qt6::QXcbIntegrationPlugin)
     elseif(WIN32)
-      list(APPEND plugins Qt${WITH_QT_VERSION}::QWindowsIntegrationPlugin)
-      if(WITH_QT_VERSION STREQUAL "5")
-        list(APPEND plugins Qt5::QWindowsVistaStylePlugin)
-      else()
-        list(APPEND plugins Qt6::QModernWindowsStylePlugin)
-      endif()
+      list(APPEND plugins Qt6::QWindowsIntegrationPlugin Qt6::QModernWindowsStylePlugin)
     elseif(APPLE)
-      list(APPEND plugins Qt${WITH_QT_VERSION}::QCocoaIntegrationPlugin Qt${WITH_QT_VERSION}::QMacStylePlugin)
+      list(APPEND plugins Qt6::QCocoaIntegrationPlugin Qt6::QMacStylePlugin)
     endif()
-    cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins ${target}
+    qt6_import_plugins(${target}
       INCLUDE ${plugins}
       EXCLUDE_BY_TYPE
         accessiblebridge
@@ -63,8 +55,8 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
 set(CMAKE_AUTORCC OFF)
 configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
-cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_QRC bitcoin.qrc)
-cmake_language(CALL qt${WITH_QT_VERSION}_add_resources BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
+qt6_add_resources(BITCOIN_QRC bitcoin.qrc)
+qt6_add_resources(BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
 # See: https://bugreports.qt.io/browse/QTBUG-141858.
 get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
 if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
@@ -153,7 +145,7 @@ set_property(SOURCE macnotificationhandler.mm
 )
 target_link_libraries(bitcoinqt
   PUBLIC
-    Qt${WITH_QT_VERSION}::Widgets
+    Qt6::Widgets
   PRIVATE
     core_interface
     bitcoin_cli
@@ -233,23 +225,28 @@ if(ENABLE_WALLET)
   target_link_libraries(bitcoinqt
     PRIVATE
       bitcoin_wallet
-      Qt${WITH_QT_VERSION}::Network
+      Qt6::Network
   )
 endif()
 
 if(WITH_DBUS)
-  target_link_libraries(bitcoinqt PRIVATE Qt${WITH_QT_VERSION}::DBus)
+  target_link_libraries(bitcoinqt PRIVATE Qt6::DBus)
 endif()
 
+option(WITH_TASKBAR_PROGRESS "Show synchronization progress in the Windows taskbar" ${WIN32})
 if(WITH_TASKBAR_PROGRESS)
+  if(NOT WIN32)
+    message(FATAL_ERROR "WITH_TASKBAR_PROGRESS requires a Windows GUI build")
+  endif()
   target_sources(bitcoinqt PRIVATE wintaskbarprogress.cpp wintaskbarprogress.h)
+  target_compile_definitions(bitcoinqt PUBLIC BITCOIN_QT_WIN_TASKBAR)
   target_link_libraries(bitcoinqt PRIVATE ole32)
 endif()
 
 if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   # We want to define static plugins to link ourselves, thus preventing
   # automatic linking against a "sane" set of default static plugins.
-  cmake_language(CALL qt${WITH_QT_VERSION}_import_plugins bitcoinqt
+  qt6_import_plugins(bitcoinqt
     EXCLUDE_BY_TYPE
       accessiblebridge
       platforms
@@ -270,15 +267,16 @@ endif()
 
 add_subdirectory(locale)
 
-add_executable(bitcoin-qt
+add_executable(bitcoin-qt WIN32
   main.cpp
   ../init/bitcoin-qt.cpp
 )
 
 if(WIN32)
   configure_file(res/bitcoin-qt-res.rc res/bitcoin-qt-res.rc USE_SOURCE_PERMISSIONS @ONLY)
-  add_windows_resources(bitcoin-qt ${CMAKE_CURRENT_BINARY_DIR}/res/bitcoin-qt-res.rc)
+  target_sources(bitcoin-qt PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/res/bitcoin-qt-res.rc)
 endif()
+
 add_windows_application_manifest(bitcoin-qt)
 
 target_link_libraries(bitcoin-qt
@@ -289,12 +287,9 @@ target_link_libraries(bitcoin-qt
 
 import_plugins(bitcoin-qt)
 install_binary_component(bitcoin-qt HAS_MANPAGE)
-if(WIN32)
-  set_target_properties(bitcoin-qt PROPERTIES WIN32_EXECUTABLE TRUE)
-endif()
 
 if(ENABLE_IPC)
-  add_executable(bitcoin-gui
+  add_executable(bitcoin-gui WIN32
     main.cpp
     ../init/bitcoin-gui.cpp
   )
@@ -306,9 +301,6 @@ if(ENABLE_IPC)
   )
   import_plugins(bitcoin-gui)
   install_binary_component(bitcoin-gui INTERNAL)
-  if(WIN32)
-    set_target_properties(bitcoin-gui PROPERTIES WIN32_EXECUTABLE TRUE)
-  endif()
 endif()
 
 if(BUILD_GUI_TESTS)
@@ -324,8 +316,7 @@ else()
   add_custom_target(translate COMMAND ${CMAKE_COMMAND}
     -D "PROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     -D "COPYRIGHT_HOLDERS=${COPYRIGHT_HOLDERS}"
-    -D "LCONVERT_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lconvert>"
-    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt${WITH_QT_VERSION}::lupdate>"
+    -D "LUPDATE_EXECUTABLE=$<TARGET_FILE:Qt6::lupdate>"
     -D "XGETTEXT_EXECUTABLE=${XGETTEXT_EXECUTABLE}"
     -P ${PROJECT_SOURCE_DIR}/share/qt/translate.cmake
   )

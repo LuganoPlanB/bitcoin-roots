@@ -20,11 +20,30 @@ requires `bash`, `docker`, and `python3` to be installed. To run on different ar
 sudo apt install bash docker.io python3 qemu-user-static
 ```
 
-It is recommended to run the ci system in a clean env. To run the test stage
-with a specific configuration,
+For some sanitizer builds, the kernel's address-space layout randomization
+(ASLR) entropy can cause sanitizer shadow memory mappings to fail. When running
+the CI locally you may need to reduce that entropy by running:
 
 ```
-env -i HOME="$HOME" PATH="$PATH" USER="$USER" bash -c 'FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh'
+sudo sysctl -w vm.mmap_rnd_bits=28
+```
+
+To run a test that requires emulating a CPU architecture different from the
+host, we may rely on the container environment recognizing foreign executables
+and automatically running them using `qemu`. The following sets us up to do so
+(also works for `podman`):
+
+```
+docker run --rm --privileged docker.io/multiarch/qemu-user-static --reset -p yes
+```
+
+It is recommended to run the CI system in a clean environment. The `env -i`
+command below ensures that *only* specified environment variables are propagated
+into the local CI.
+To run the test stage with a specific configuration:
+
+```
+env -i HOME="$HOME" PATH="$PATH" USER="$USER" FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh
 ```
 
 ## Configurations
@@ -43,125 +62,146 @@ It is also possible to force a specific configuration without modifying the
 file. For example,
 
 ```
-env -i HOME="$HOME" PATH="$PATH" USER="$USER" bash -c 'MAKEJOBS="-j1" FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh'
+env -i HOME="$HOME" PATH="$PATH" USER="$USER" MAKEJOBS="-j1" FILE_ENV="./ci/test/00_setup_env_arm.sh" ./ci/test_run_all.sh
 ```
 
 The files starting with `0n` (`n` greater than 0) are the scripts that are run
 in order.
 
-## GitHub Actions policy
+## Cache
 
-Bitcoin Roots uses a smaller, risk-selected pull-request matrix rather than
-running every Bitcoin Core CI configuration on every change:
+In order to avoid rebuilding all dependencies for each build, the binaries are
+cached and reused when possible. Changes in the dependency-generator will
+trigger cache-invalidation and rebuilds as necessary.
 
-| Workflow | Events | Purpose |
-| --- | --- | --- |
-| `.github/workflows/ci.yml` | pull request | Required lint plus path-selected build and test coverage. |
-| `.github/workflows/nightly.yml` | schedule, manual dispatch, reusable call | Expensive sanitizer, fuzz, compatibility, and platform assurance. |
-| `.github/workflows/release.yml` | Roots release tags, manual dispatch | Validate a canonical release tag and produce the five release packages and portable patch. |
+## Roots GitHub Actions policy
 
-These repository workflows are kept in every canonical Roots branch and release
-tag so a PR tests the code it proposes. They are hosting automation, however,
-so `ci/release/create-patch-series.sh` excludes `.github/**` from the
-downloadable patch applied on top of Bitcoin Core. Source tests and CI support
-under `test/**`, `src/**/test/**`, and `ci/**` remain in that patch.
-
-### Fast PR and development coverage
-
-`ci/change-classifier.py` retains additive categories and labels. Complete file
-lists select affected groups; malformed, truncated, empty and unknown input
-selects broad **fast** coverage. Lint/classifier checks always run. The stable
-`required result` check rejects failure, cancellation or skipping of a selected
-job. Verified pure promotions may reuse exact successful canonical CI; explicit
-`ci:*` labels still request fresh coverage.
+The v32.1 candidate keeps path-selected PR coverage and a separate expensive
+assurance cadence. `.github/workflows/ci.yml` runs on pull requests with a
+stable `required result` gate. Classifier, maintenance fixtures and lint always
+run; malformed, incomplete, empty or unknown path input requests broad fast
+coverage. Selected failed, cancelled or skipped jobs fail the result gate.
+Exact successful canonical PR CI may be reused only after the promotion
+verifier checks current `roots/<core-version>` ancestry and product parity;
+`promote/32.1-*` is covered by its local fixtures. Explicit `ci:*` labels
+request fresh coverage. A fixture pass is not successful hosted CI.
 
 | Change | Automatic fast coverage beyond lint |
 | --- | --- |
-| Documentation only | No compiled job. |
-| Branding or GUI | Actual Qt/resource build and GUI unit tests. |
-| Wallet, general C/C++, critical/build/unknown | Headless ASan/UBSan unit tests, affected Roots functional regressions, bounded libFuzzer smoke. |
+| Documentation | No compiled job. |
+| Branding or GUI | Qt6/resources build and GUI unit tests. |
+| Wallet, C/C++, critical, build or unknown | ASan/UBSan native suite, affected Roots functional regressions and bounded libFuzzer smoke. |
 
-Fast functional selection and fuzz budgets are implemented by
-`ci/test/roots-regressions.py`, invoked through the existing
-`ci/test_run_all.sh` / `ci/test/03_test_script.sh` entry points. Known wallet,
-network, runtime, policy and mining paths select their acceptance groups;
-mixed paths take the union. Networking selection includes peer permissions,
-address relay/cache limits, Roots controls and tracked manual block fetching.
-Network and blockchain RPC sources also retain runtime/policy coverage.
-Unknown input selects all 21 Roots functional
-regressions and 9 fuzz targets. Fast functional execution has a 900-second
-process-group timeout. Each selected libFuzzer target has a 5-second campaign,
-5-second per-input limit and 15-second outer timeout; input counts are reported
-results, never a campaign quota. Fixed seed 1 makes smoke commands reproducible.
-Fast fuzz does not download or replay the full external corpus.
-
-Developer commands using an already configured/built profile:
+`ci/test/roots-regressions.py` owns the additive functional/fuzz selection.
+It retains roots.6 address-key-export coverage and adds current graph/RBF,
+compact-reconstruction cache, native HTTP and IPC-mining regressions. Unknown
+input selects all 28 functional scripts and 9 fuzz targets. Changes to the
+selected test scripts select their owners too. Fast functional execution has
+a 900-second process-group limit. Each fast libFuzzer campaign runs for 5
+seconds, with a 5-second per-input limit, seed 1 and 15-second outer limit.
+Input counts are measured results, not a quota. Fast fuzz uses current native
+libFuzzer binaries and does not download the external full corpus.
 
 ```sh
 python3 ci/test/roots-regressions.py plan --cadence fast \
-  --files-json '["src/wallet/spend.cpp"]'
+  --files-json '["src/ipc/capnp/mining.capnp"]'
 python3 ci/test/roots-regressions.py functional --cadence fast \
   --files-json '["src/wallet/spend.cpp"]' --build-dir build \
-  --artifacts /tmp/roots-fast-functional -- -j2 --quiet
+  --artifacts /tmp/roots-functional -- -j2 --quiet
 python3 ci/test/roots-regressions.py fuzz --cadence fast \
   --files-json '["src/policy/policy.cpp"]' --build-dir build_fuzz \
-  --artifacts /tmp/roots-fast-fuzz
+  --artifacts /tmp/roots-fuzz
 python3 -m unittest discover -s ci/test
 ```
 
-Fuzz execution requires the native libFuzzer build (`--preset libfuzzer` or
-`00_setup_env_native_fuzz.sh`), not a plain standalone corpus-replay binary.
-Selection/result JSON and per-command logs are temporary failure artifacts,
-not a second source of configuration or a release-state ledger. Timed-out owned
-process groups are terminated; unowned node processes are untouched.
+Fast/native GUI profiles require current Qt6, SQLite and Cap'n Proto/pycapnp
+where appropriate; the fast headless profile enables IPC so its mining test
+can execute. v32 uses native HTTP and has no libevent dependency. Keep native
+v32 compiler/dependency profiles, Unicode/space build paths, Nix Windows cross
+support and per-profile container networks. Windows smoke requests optional
+MiniUPnPc explicitly; Windows fuzz disables ZMQ to match its wallet manifest.
 
-Hosted runners set `ROOTS_ARTIFACTS_DIR` to an absolute host directory and
-bind-mount it at the same path inside the test container. The regression
-runner writes per-target logs, result JSON and crash artifacts there; workflow
-uploads use that exact directory. Local runs without the setting retain the
-scratch-directory fallback. Failed commands also print the exit status, full
-log path and at most 12 tail lines of 240 characters from the last 4 KiB.
-The artifact keeps complete output; the bounded console tail may omit earlier
-diagnostics. Ordinary mock-runner tests cover transport and retention without
-executing a fuzz campaign.
+### Diagnostics and assurance cadence
 
-### Nightly/manual assurance and caches
+Hosted container jobs set an absolute `ROOTS_ARTIFACTS_DIR` and bind-mount the
+same path on host and guest. The CI-script wrapper records complete output,
+exact argv, timeout and exit in `ci.log`/`ci-results.json`. Failed commands
+print the exact command, target, log path and at most 12 tail lines of 240
+characters from the last 4 KiB; earlier diagnostics remain in the full log.
+Functional/fuzz result JSON and per-target logs/crash files use this directory.
+The failure collector copies CMake/CTest and node/framework diagnostics from
+the actual configured build/scratch paths, including Unicode/space paths.
+It excludes configs, wallets, keys and database files, including numeric
+LevelDB `.log` journals. Uploads use these diagnostic outputs, not raw datadirs.
+Native Windows/macOS jobs retain separate configure/build/test logs and results.
+Local runs without the variable keep the native console/scratch fallback.
 
-`nightly.yml` keeps cron `23 2 * * *` (UTC), `workflow_dispatch` and explicit
-label-triggered reusable calls. Ordinary PRs do not run the broad platform
-matrix. Nightly/manual coverage includes full ASan/USDT/Qt, TSan, MSan,
-clang-tidy/dependency boundaries, i686 no-IPC, ARM32, native kernel/chainstate,
-previous-release extended compatibility, extended functional tests, Windows and
-both macOS architecture smokes, and native Linux/macOS/Windows full fuzz corpora.
-Selected empty matrices are skipped before strategy expansion. The schedule
-skips only after the same SHA's preceding completed scheduled run succeeded;
-failed or unavailable/malformed history retries conservatively.
+Container wrappers stop five minutes before their declared job budget where
+configured, leaving time for diagnostics and uploads; manual jobs default to
+a 355-minute script bound. Native platform wrappers have explicit command
+bounds. A hosted runner cancellation can still prevent upload: current local
+fixtures prove command/timeout/selection and mocked bind transport only, not
+GitHub service behavior or platform execution.
 
-| Execution | Explicit budget |
+`nightly.yml` keeps cron `23 2 * * *` UTC, manual suite selection and reusable
+label requests. Scheduled work skips only after a validated immediate completed
+successful scheduled run at the same SHA; uncertain history retries. Long
+coverage includes ASan/USDT/Qt6, TSan, MSan, tidy/dependency boundaries, i686
+no-IPC, ARM32, native kernel/chainstate, previous-release extended tests,
+extended functional tests, explicit system LevelDB/secp256k1, Windows and both
+macOS architectures, plus native Linux/macOS/Windows full fuzz corpus replay.
+System-library discovery is required in its profile: missing libraries/modules
+fail configure rather than silently using embedded copies. Nightly Linux adds
+selected 60-second libFuzzer campaigns (75-second outer limits) after full
+corpus replay. Direct nightly functional selection has a 7200-second bound.
+
+| Jobs | Budget |
 | --- | --- |
-| PR classifier/result and lint | 10 / 20 minutes. |
-| PR native ASan and fuzz builds plus bounded regressions | 60 minutes each. |
-| PR GUI build/unit checks | 120 minutes. |
-| Nightly ASan | 180 minutes; full applicable native suite. |
-| Nightly TSan/MSan/i686/Linux full corpus | 240 minutes each. |
-| Previous-release extended compatibility | 300 minutes. |
-| Extended functional/tidy/native platform fuzz | 360 minutes. |
-| Nightly selected Roots fuzz campaigns | 60 seconds/target, 75-second outer timeout, after full Linux corpus replay. |
+| PR classifier/result; lint | 10; 20 minutes |
+| PR ASan/fuzz; GUI | 60; 120 minutes |
+| Nightly ASan | 180 minutes |
+| TSan/MSan/i686/system libraries/Linux full corpus | 240 minutes |
+| Previous-release extended tests | 300 minutes |
+| Tidy/extended functional/native platform fuzz | 360 minutes |
 
-Direct `--cadence nightly` functional execution has a 7200-second outer budget;
-full/extended hosted suites use their existing native runners and job budgets.
-Labels `ci:sanitizers`, `ci:fuzz`, `ci:platforms` and `ci:full` explicitly request
-reusable heavy coverage; `ci:compat` requests fresh fast compatibility
-regressions. Manual suite selection can request previous-release/extended
-coverage independently. Failure artifacts retain native test logs, CTest
-output and fuzz crashes/results. Job timeouts are bounds, not measured cold
-build predictions. Local selector/fixture validation does not establish a
-hosted job pass or Windows/macOS/32-bit execution.
+Labels `ci:sanitizers`, `ci:fuzz`, `ci:platforms` and `ci:full` request heavy
+reusable assurance; `ci:compat` requests fresh fast compatibility regressions.
+The main-only differential compatibility harness was guarded for Core 30.3.
+Its v32 source/binary qualification and workflow import remain owned by the
+whole-candidate compatibility gate; ordinary previous-release tests and local
+maintenance fixtures do not establish that qualification. No exact-SHA hosted,
+Windows/macOS, system-library or long sanitizer/fuzz success is implied here.
+Release/source/export tooling is qualified separately before release use.
 
-Compiler/dependency caches remain read-only to PR code; trusted default-branch
-nightly/manual compiler cache saves retain the source behavior. Native v31
-cache-action paths, compiler profiles, no-IPC i686 profile and VS2026 static
-preset replace obsolete v30 names. Windows GUI workflows request the optional
-vcpkg `miniupnpc` feature when enabling `WITH_MINIUPNPC`; fuzz builds explicitly
-disable ZMQ to match their wallet-only dependency manifest. Release signing
-secrets never enter these test containers.
+These policies Fold roots.6 CI/diagnostic repairs (notably
+`9aaf62146fae1a89d65121468633d5c1701699e9`,
+`7cd11e298ec99e9bfc497f0fe3b9a18ab48a61a7` and
+`b8c98a129f141ac5ba077c33b473120f0cd2ece4`) into current Core v32.1 interfaces.
+The pinned main selector omitted the later address-export regression, so the
+released source retains ownership. Preserve upstream and Plan-B credits.
+
+## Configuring upstream-compatible cache providers
+
+### Primary repository
+
+To configure the primary repository, follow these steps:
+
+1. Register with [WarpBuild](https://www.warpbuild.com/) and purchase runners.
+2. Install the WarpBuild GitHub app against the GitHub organization.
+3. Enable organisation-level runners to be used in public repositories:
+   1. `Org settings -> Actions -> Runner Groups -> Default -> Allow public repos`
+4. Permit the following actions to run:
+   1. actions/cache/restore@\*
+   1. actions/cache/save@\*
+   1. actions/github-script@\*
+   1. docker/setup-buildx-action@\*
+   1. warpbuilds/cache/restore@\*
+   1. warpbuilds/cache/save@\*
+
+### Forked repositories
+
+When used in a fork the CI will run on GitHub's free hosted runners by default.
+In this case, GitHub's cache size limitations may cause caches to be frequently evicted and missed, but the workflows will run (slowly).
+
+It is also possible to use your own WarpBuild Runners in your own fork by replacing the references to `bitcoin/bitcoin` in `../.github/workflows/ci.yml` with the name of your fork (e.g. `your-org/bitcoin`).
+NB that WarpBuild Runners only work at an organisation level, therefore in order to use your own WarpBuild Runners, *the fork must be within your own organisation*.

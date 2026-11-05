@@ -5,9 +5,9 @@
 
 #include <chainparams.h>
 #include <common/args.h>
-#include <logging.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
+#include <util/log.h>
 #include <wallet/db.h>
 
 #include <algorithm>
@@ -24,8 +24,10 @@ bool operator<(std::span<const std::byte> a, BytePrefix b) { return std::ranges:
 
 std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wallet_dir)
 {
-    const fs::path& data_dir = gArgs.GetDataDirNet();
-    const fs::path& blocks_dir = gArgs.GetBlocksDirPath();
+    // Wallet verification canonicalizes -walletdir, while the data/blocks
+    // arguments can retain symlink aliases. Compare filesystem identities.
+    const fs::path data_dir{fs::weakly_canonical(gArgs.GetDataDirNet())};
+    const fs::path blocks_dir{fs::weakly_canonical(gArgs.GetBlocksDirPath())};
 
     // Here we place the top level dirs we want to skip in case walletdir is datadir or blocksdir
     // Those directories are referenced in doc/files.md
@@ -49,13 +51,12 @@ std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wall
     for (auto it = fs::recursive_directory_iterator(wallet_dir, ec); it != fs::recursive_directory_iterator(); it.increment(ec)) {
         assert(!ec); // Loop should exit on error.
 
-        // We don't want to iterate through those special node dirs
-        if (ignore_paths.count(it->path())) {
-            it.disable_recursion_pending();
-            continue;
-        }
-
         try {
+            // Keep directory aliases from bypassing node database exclusions.
+            if (ignore_paths.contains(fs::weakly_canonical(it->path()))) {
+                it.disable_recursion_pending();
+                continue;
+            }
             const fs::path path{it->path().lexically_relative(wallet_dir)};
 
             if (IsSymlink(it->path())) {

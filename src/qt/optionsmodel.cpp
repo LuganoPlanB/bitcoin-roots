@@ -24,7 +24,6 @@
 
 #include <QDebug>
 #include <QLatin1Char>
-#include <QMetaType>
 #include <QSettings>
 #include <QStringList>
 #include <QVariant>
@@ -150,11 +149,6 @@ OptionsModel::FontChoice OptionsModel::FontChoiceFromString(const QString& s)
 OptionsModel::OptionsModel(interfaces::Node& node, QObject *parent) :
     QAbstractListModel(parent), m_node{node}
 {
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    // Qt6 registers enum stream operators automatically; Qt5 needs this before
-    // QSettings loads or saves the selected display unit.
-    qRegisterMetaTypeStreamOperators<BitcoinUnit>();
-#endif
 }
 
 void OptionsModel::addOverriddenOption(const std::string &option)
@@ -475,7 +469,7 @@ QVariant OptionsModel::getOption(OptionID option, const std::string& suffix) con
                suffix.empty()          ? getOption(option, "-prev") :
                                          DEFAULT_PRUNE_TARGET_GB;
     case DatabaseCache:
-        return qlonglong(SettingTo<int64_t>(setting(), node::GetDefaultDBCache() >> 20));
+        return qlonglong(SettingTo<int64_t>(setting(), node::GetDefaultDBCache() / 1_MiB));
     case ThreadsScriptVerif:
         return qlonglong(SettingTo<int64_t>(setting(), DEFAULT_SCRIPTCHECK_THREADS));
     case Listen:
@@ -738,7 +732,7 @@ void OptionsModel::checkAndMigrate()
         // see https://github.com/bitcoin/bitcoin/pull/8273
         // force people to upgrade to the new value if they are using 100MB
         if (settingsVersion < 130000 && settings.contains("nDatabaseCache") && settings.value("nDatabaseCache").toLongLong() == 100)
-            settings.setValue("nDatabaseCache", (qint64)(DEFAULT_DB_CACHE >> 20));
+            settings.setValue("nDatabaseCache", qint64(DEFAULT_KERNEL_CACHE / 1_MiB));
 
         settings.setValue(strSettingsVersionKey, CLIENT_VERSION);
     }

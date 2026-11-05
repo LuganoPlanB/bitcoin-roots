@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 """Exercise actual affected selections, execution budgets and failure artifacts."""
 import contextlib
@@ -9,6 +9,9 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
+import shutil
+import time
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -25,6 +28,8 @@ class RootsRegressionTest(unittest.TestCase):
         plan = MODULE.selection(['src/wallet/spend.cpp'], 'fast')
         self.assertIn('wallet_sweepprivkeys.py', plan['functional'])
         self.assertIn('wallet_signer.py', plan['functional'])
+        self.assertIn('wallet_exportaddresskey.py', plan['functional'])
+        self.assertIn('wallet_dangerous_rpc.py', plan['functional'])
         self.assertNotIn('rpc_net.py', plan['functional'])
         self.assertEqual(plan['budgets']['fuzz'], 5)
         self.assertLess(plan['budgets']['functional'], MODULE.selection(None, 'nightly')['budgets']['functional'])
@@ -48,7 +53,7 @@ class RootsRegressionTest(unittest.TestCase):
         expected = {
             'p2p_filter.py', 'p2p_invalid_messages.py', 'rpc_net.py',
             'p2p_permissions.py', 'p2p_addr_relay.py', 'p2p_getaddr_caching.py',
-            'p2p_roots_controls.py', 'rpc_getblockfrompeer.py',
+            'p2p_roots_controls.py', 'rpc_getblockfrompeer.py', 'p2p_compactblocks_extratxs.py',
         }
         for path in ['src/net.cpp', 'src/net_permissions.cpp', 'src/net_permissions.h',
                      'src/net_processing.cpp', 'src/protocol.h',
@@ -72,7 +77,7 @@ class RootsRegressionTest(unittest.TestCase):
     def test_fallback_retains_all_groups_and_documented_counts(self):
         plan = MODULE.selection(None, 'fast')
         self.assertEqual(plan['groups'], ['mining', 'net', 'policy', 'runtime', 'wallet'])
-        self.assertEqual(len(plan['functional']), 21)
+        self.assertEqual(len(plan['functional']), 28)
         self.assertEqual(len(plan['fuzz']), 9)
         self.assertEqual(plan['budgets']['functional'], 900)
 
@@ -120,6 +125,26 @@ class RootsRegressionTest(unittest.TestCase):
             self.assertEqual(MODULE.run_bounded([str(Path(directory) / 'absent')], 1, log), 127)
             self.assertTrue(log.stat().st_size)
 
+    @unittest.skipUnless(os.name == 'posix' and Path('/proc').is_dir(), 'Linux process-state fixture')
+    def test_timeout_stops_child_that_outlives_its_group_leader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / 'group.log'
+            child = 'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print("ready", flush=True); time.sleep(30)'
+            parent = ('import subprocess,sys,time; '
+                      f'p=subprocess.Popen([sys.executable,"-c",{child!r}], stdout=subprocess.PIPE); '
+                      'p.stdout.readline(); print(p.pid, flush=True); time.sleep(30)')
+            self.assertEqual(MODULE.run_bounded([sys.executable, '-c', parent], .5, log), 124)
+            pid = int(log.read_text().splitlines()[0])
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                status = Path(f'/proc/{pid}/stat')
+                if not status.exists() or status.read_text().split()[2] == 'Z':
+                    break
+                time.sleep(.02)
+            else:
+                os.kill(pid, 9)
+                self.fail(f'Owned child {pid} survived the timeout')
+
     def test_failure_summary_is_bounded_and_full_output_is_retained(self):
         with tempfile.TemporaryDirectory() as directory:
             build = Path(directory)
@@ -151,10 +176,17 @@ class RootsRegressionTest(unittest.TestCase):
                    'BASE_READ_ONLY_DIR': str(ROOT), 'BASE_ROOT_DIR': str(work / 'guest'),
                    'CCACHE_DIR': str(work / 'ccache'), 'DEPENDS_DIR': str(work / 'depends'),
                    'PREVIOUS_RELEASES_DIR': str(work / 'previous'), 'CI_IMAGE_NAME_TAG': 'fixture',
-                   'CI_IMAGE_PLATFORM': 'linux', 'FILE_ENV': 'fixture'}
+                   'CI_IMAGE_PLATFORM': 'linux', 'FILE_ENV': './ci/test/00_setup_env_native_fast.sh'}
             env_file = Path(f"/tmp/env-{env['USER']}-{env['CONTAINER_NAME']}")
             self.addCleanup(env_file.unlink, missing_ok=True)
             calls = []
+            original_run = container.run
+            guest_scripts = work / 'guest/ci/test'
+            guest_scripts.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'ci/test/roots-regressions.py', guest_scripts / 'roots-regressions.py')
+            guest_test = guest_scripts / '03_test_script.sh'
+            guest_test.write_text('#!' + sys.executable + '\nimport sys\nprint("host-visible failure", flush=True)\nsys.exit(3)\n')
+            guest_test.chmod(0o755)
 
             def run(command, **kwargs):
                 calls.append(command)
@@ -166,18 +198,93 @@ class RootsRegressionTest(unittest.TestCase):
                     self.assertIn(f'ROOTS_ARTIFACTS_DIR={artifacts}', env_file.read_text())
                     return SimpleNamespace(stdout='fixture-container\n')
                 if command[:2] == ['docker', 'exec'] and command[-1].endswith('/03_test_script.sh'):
-                    # Emulate writes through the declared bind mount. No actual
-                    # Docker build, dependency install or fuzz target executes.
-                    log = artifacts / 'functional.log'
-                    result = MODULE.run_bounded([sys.executable, '-c', 'import sys; print("host-visible failure"); sys.exit(3)'], 5, log)
-                    (artifacts / 'functional-results.json').write_text(json.dumps({'exit': result, 'log': log.name}))
+                    # Run the real command/log/result wrapper after stripping
+                    # only the mocked Docker transport. No container, install,
+                    # native build or fuzz campaign executes in this fixture.
+                    return original_run(command[5:], **kwargs)
                 return SimpleNamespace(stdout='', returncode=0)
 
             with patch.dict(os.environ, env, clear=True), patch.object(container, 'run', side_effect=run):
-                container.main()
-            self.assertIn('host-visible failure', (artifacts / 'functional.log').read_text())
-            self.assertEqual(json.loads((artifacts / 'functional-results.json').read_text())['exit'], 3)
+                with self.assertRaises(SystemExit):
+                    container.main()
+            self.assertIn('host-visible failure', (artifacts / 'ci.log').read_text())
+            self.assertEqual(json.loads((artifacts / 'ci-results.json').read_text())['exit'], 3)
             self.assertTrue(any(command[:2] == ['docker', 'run'] for command in calls))
+            wrapper = next(command for command in calls if command[:2] == ['docker', 'exec'] and 'command' in command)
+            self.assertIn('--artifacts', wrapper)
+            self.assertIn(str(artifacts), wrapper)
+
+    def test_v32_owned_regressions_are_selected_by_source_and_test(self):
+        for path, expected in [
+            ('src/ipc/capnp/mining.cpp', 'interface_ipc_mining.py'),
+            ('src/txgraph.cpp', 'mempool_graph_policy.py'),
+            ('src/txmempool.cpp', 'mempool_rbf_policy.py'),
+            ('src/net_processing.cpp', 'p2p_compactblocks_extratxs.py'),
+            ('src/common/args.cpp', 'interface_http.py'),
+        ]:
+            self.assertIn(expected, MODULE.selection([path], 'fast')['functional'])
+            self.assertIn(expected, MODULE.selection(['test/functional/' + expected], 'fast')['functional'])
+
+    def test_command_failure_timeout_and_complete_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / 'host output'
+            command = [sys.executable, str(ROOT / 'ci/test/roots-regressions.py'), 'command',
+                       '--artifacts', str(artifacts), '--timeout', '1', '--',
+                       sys.executable, '-c', 'import time; print("failure detail " + "x" * 20000, flush=True); time.sleep(30)']
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 124)
+            record = json.loads((artifacts / 'ci-results.json').read_text())
+            self.assertEqual(record['exit'], 124)
+            self.assertEqual(record['command'], command[command.index('--') + 1:])
+            self.assertGreater((artifacts / record['log']).stat().st_size, 20000)
+            self.assertIn('Command:', result.stderr)
+            self.assertIn('exit 124', result.stderr)
+            self.assertIn('CI command failed', result.stderr)
+            self.assertNotIn('Roots regression', result.stderr)
+            self.assertLess(len(result.stderr), 4000)
+
+    def test_collector_retains_diagnostics_and_excludes_databases_and_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build, scratch, artifacts = root / 'build', root / 'scratch', root / 'artifacts'
+            expected = ['Testing/Temporary/LastTest.log', 'CMakeFiles/CMakeConfigureLog.yaml']
+            for name in expected:
+                path = build / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('complete diagnostic\n' * 5000)
+            for name in ['case/node0/regtest/debug.log', 'case/test_framework.log', 'crash-fixture']:
+                path = scratch / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('failure')
+            for name in ['case/node0/regtest/chainstate/000123.log', 'case/wallet.dat', 'case/bitcoin.conf', 'case/private.key']:
+                path = scratch / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('must not upload')
+            (scratch / 'debug.log').symlink_to(scratch / 'case/private.key')
+            MODULE.collect(build, scratch, artifacts)
+            records = json.loads((artifacts / 'diagnostics.json').read_text())['files']
+            self.assertEqual(len(records), 5)
+            for name in expected:
+                self.assertEqual((artifacts / 'build' / name).read_bytes(), (build / name).read_bytes())
+            self.assertFalse(any('000123' in name or name.endswith(('wallet.dat', 'bitcoin.conf', 'private.key')) for name in records))
+
+    def test_actual_failure_trap_collects_and_preserves_exit_status(self):
+        script = (ROOT / 'ci/test/03_test_script.sh').read_text()
+        start = script.index('collect_failure() {')
+        end = script.index('\n}\n', start) + 2
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            build, scratch, artifacts = work / 'build_ test', work / 'scratch_ test', work / 'artifacts'
+            log = build / 'Testing/Temporary/LastTest.log'
+            log.parent.mkdir(parents=True)
+            log.write_text('native test failure')
+            scratch.mkdir()
+            result = subprocess.run(['bash', '-c', script[start:end] + '\ntrap collect_failure EXIT\nexit 7\n'],
+                                    env=os.environ | {'BASE_ROOT_DIR': str(ROOT), 'BASE_BUILD_DIR': str(build),
+                                                      'BASE_SCRATCH_DIR': str(scratch), 'ROOTS_ARTIFACTS_DIR': str(artifacts)},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual((artifacts / 'build/Testing/Temporary/LastTest.log').read_text(), 'native test failure')
 
 
 if __name__ == '__main__':

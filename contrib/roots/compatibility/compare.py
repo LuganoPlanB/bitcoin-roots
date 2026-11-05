@@ -61,9 +61,9 @@ def digest(path):
     return hasher.hexdigest()
 
 
-def command(args, timeout=30):
+def command(args, timeout=30, log_path=None):
     """Own the entire command process group, including on cancellation."""
-    with tempfile.TemporaryFile() as output:
+    with (Path(log_path).open("x+b") if log_path else tempfile.TemporaryFile()) as output:
         process = subprocess.Popen(args, stdout=output, stderr=output, start_new_session=True)
         failure = None
         try:
@@ -74,7 +74,9 @@ def command(args, timeout=30):
             kill_group(process, signal.SIGKILL)
             if process.poll() is None:
                 process.wait(timeout=5)
-        output.seek(0)
+        output.seek(0, os.SEEK_END)
+        size = output.tell()
+        output.seek(max(0, size - MAX_RPC_BYTES) if log_path else 0)
         data = output.read(MAX_RPC_BYTES + 1)
     if failure or process.returncode:
         error = ComparisonError(failure or "command failed (exit %d)" % process.returncode)
@@ -96,6 +98,38 @@ def source_identity(path, commit):
     status = command(["git", "-C", str(path), "status", "--porcelain=v1", "--untracked-files=all"])
     tree = command(["git", "-C", str(path), "rev-parse", actual + "^{tree}"])
     return {"path": str(path), "commit": actual, "tree": tree, "clean": not status, "status": status.splitlines()}
+
+
+SUPPORTED_32 = {"core": "f0de87f040621468b956f01f526a43a010310501",
+                "roots": "82833dc95f6866d87718f328ed92186702d51afc"}
+
+
+def validate_generation(generation, nodes):
+    """The retained 30.3 API is unchanged; 32.1 is an explicit pinned profile."""
+    if generation == "30.3":
+        return {"generation": "30.3", "policy": "retained legacy profile"}
+    if generation != "32.1":
+        raise ComparisonError("unsupported qualification generation")
+    if any(nodes[label]["source"]["commit"] != expected for label, expected in SUPPORTED_32.items()):
+        raise ComparisonError("32.1 source does not match reviewed exact pin")
+    for label, expected in SUPPORTED_32.items():
+        source = nodes[label]["source"]
+        metadata = command(["git", "-C", source["path"], "show", expected + ":CMakeLists.txt"])
+        for key, value in (("MAJOR", "32"), ("MINOR", "1"), ("BUILD", "0")):
+            if re.findall(r"(?m)^set\(CLIENT_VERSION_" + key + r" ([0-9]+)\)$", metadata) != [value]:
+                raise ComparisonError("32.1 source version metadata mismatch")
+    core = nodes["core"]["source"]["path"]
+    remote = command(["git", "-C", core, "remote", "get-url", "origin"]).removesuffix(".git").rstrip("/")
+    if remote != "https://github.com/bitcoin/bitcoin":
+        raise ComparisonError("Core checkout must identify official bitcoin/bitcoin origin")
+    if command(["git", "-C", core, "rev-parse", "refs/tags/v32.1^{commit}"]) != SUPPORTED_32["core"]:
+        raise ComparisonError("Core 32.1 official tag identity mismatch")
+    command(["git", "-C", nodes["roots"]["source"]["path"], "merge-base", "--is-ancestor",
+             SUPPORTED_32["core"], SUPPORTED_32["roots"]])
+    return {"generation": generation, "exact_pins": dict(SUPPORTED_32), "core_origin": remote,
+            "core_tag": "v32.1", "core_tag_commit": SUPPORTED_32["core"],
+            "core_ancestor_of_roots": True, "metadata": {"major": 32, "minor": 1, "build": 0},
+            "tag_signature": "not checked; upstream signature waiver; exact identity retained"}
 
 
 def binary_identity(path):
@@ -137,10 +171,14 @@ class Node:
         self.cookie = None
         self.credentials = set()
         self.cleanup_result = None
+        self.owned_pids = []
 
     def start(self, deadline=None):
         if self.process is not None and self.process.poll() is None:
             raise ComparisonError("node is already running")
+        if self.process is not None and (not self.cleanup_result or self.cleanup_result.get("stopped") is not True
+                                         or self.cleanup_result.get("returncode") != 0):
+            raise ComparisonError("restart requires successful prior cleanup")
         self.datadir.mkdir(parents=True, exist_ok=True)
         reservation = reserve_port()
         self.port = reservation.getsockname()[1]
@@ -155,6 +193,7 @@ class Node:
             reservation.close()
             self.process = subprocess.Popen([str(self.binary), *self.flags], stdout=self.log,
                                             stderr=self.log, start_new_session=True)
+            self.owned_pids.append(self.process.pid)
             startup_deadline = time.monotonic() + self.startup_timeout
             deadline = startup_deadline if deadline is None else min(deadline, startup_deadline)
             while time.monotonic() < deadline:
@@ -273,6 +312,24 @@ class Node:
                 self.log.close()
             self.cookie = None
 
+    def redact(self, text):
+        for cookie in self.credentials:
+            for secret in (cookie, cookie.split(":", 1)[1], base64.b64encode(cookie.encode()).decode()):
+                text = text.replace(secret, "[redacted]")
+        return re.sub(r"(?i)(authorization|cookie|rpcpassword|rpcuser)[^\n]*", "[redacted]", text)
+
+    def retain_logs(self, directory):
+        directory.mkdir()
+        files = []
+        # An allowlist deliberately excludes databases, journals, wallets, settings and credentials.
+        for name, path in (("process.log", self.datadir / "process.log"),
+                           ("debug.log", self.datadir / "regtest" / "debug.log")):
+            if path.is_file() and not path.is_symlink():
+                target = directory / name
+                target.write_text(self.redact(path.read_text(errors="replace")))
+                files.append({"path": str(target), "sha256": digest(target), "bytes": target.stat().st_size})
+        return files
+
     def diagnostic(self):
         # Preserve bounded complete log lines, never a truncated credential or
         # the cookie file itself. Startup and validation logs are separate.
@@ -305,7 +362,8 @@ def pinned_build(source, directory, args, record):
     spec = importlib.util.spec_from_file_location("roots_compatibility_build", Path(__file__).with_name("build.py"))
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
-    return builder.build_source(source, directory, args.build_timeout, args.build_jobs, command, ComparisonError, record)
+    return builder.build_source(source, directory, args.build_timeout, args.build_jobs, command, ComparisonError, record,
+                                retain_logs=bool(args.retain_builds))
 
 
 def write_report(path, report):
@@ -339,6 +397,8 @@ def parser():
         result.add_argument("--" + label + "-commit")
         result.add_argument("--" + label + "-build-config", default="unspecified",
                             help="caller description; does not authenticate a local binary")
+    result.add_argument("--generation", choices=("30.3", "32.1"), default="30.3")
+    result.add_argument("--retain-builds", help="new private directory retaining fresh build inputs, outputs and safe logs")
     result.add_argument("--profile", choices=CASES, default="smoke")
     result.add_argument("--output", required=True)
     result.add_argument("--qualification", action="store_true", help="require verified build provenance")
@@ -356,7 +416,7 @@ def parser():
 
 def compare(args):
     started = time.monotonic()
-    report = {"schema_version": SCHEMA_VERSION, "profile": args.profile, "status": "failed",
+    report = {"schema_version": SCHEMA_VERSION, "generation": args.generation, "profile": args.profile, "status": "failed",
               "harness_sha256": digest(__file__),
               "qualified": False, "required_cases": list(CASES[args.profile]),
               "cases": [{"id": case, "status": "not-run"} for case in CASES[args.profile]], "nodes": {},
@@ -372,7 +432,15 @@ def compare(args):
             record = report["nodes"][label] = {}
             record["source"] = source_identity(getattr(args, label + "_source"), getattr(args, label + "_commit"))
             record["build_configuration"] = getattr(args, label + "_build_config")
+        report["generation_verification"] = validate_generation(args.generation, report["nodes"])
         temporary = tempfile.TemporaryDirectory(prefix="roots-compatibility-", dir=args.work_dir)
+        build_root = Path(temporary.name)
+        if args.retain_builds:
+            if not args.build_from_source:
+                raise ComparisonError("build retention requires in-run builds")
+            build_root = Path(args.retain_builds).resolve()
+            build_root.mkdir(mode=0o700, exist_ok=False)
+            report["retention"] = {"build_root": str(build_root), "runtime": "private temporary; removed after cleanup"}
         fixture_args = argparse.Namespace(**vars(args))
         fixture_args.roots_commit = report["nodes"]["roots"]["source"]["commit"]
         for label in ("core", "roots"):
@@ -381,7 +449,7 @@ def compare(args):
             if args.build_from_source:
                 if path:
                     raise ComparisonError("in-run builds cannot use caller binary paths")
-                path, evidence = pinned_build(record["source"], Path(temporary.name) / (label + "-build"), args, record)
+                path, evidence = pinned_build(record["source"], build_root / (label + "-build"), args, record)
                 record["binary"] = binary_identity(path)
                 record["binary"]["provenance"] = {"status": "built-in-run", "source_commit": record["source"]["commit"],
                                                   "source_tree": record["source"]["tree"],
@@ -400,18 +468,30 @@ def compare(args):
                 raise ComparisonError("qualification requires distinct binary paths and digests")
             if not args.build_from_source:
                 raise ComparisonError("qualification requires verified pinned-source build provenance")
+        if args.generation == "32.1" and any(not re.search(r"\bv32\.1(?:\.0)?(?:-roots\.[0-9]+)?(?:\s|$)", item["version"]) for item in (core, roots)):
+            raise ComparisonError("binary version differs from exact 32.1 generation")
         for label in ("core", "roots"):
             record = report["nodes"][label]
             node = Node(label, record["binary"]["path"], Path(temporary.name) / label,
-                        args.startup_timeout, args.rpc_timeout, extra_flags=("-acceptnonstdtxn=0", "-persistmempool=1"))
+                        args.startup_timeout, args.rpc_timeout, extra_flags=("-acceptnonstdtxn=0", "-persistmempool=1",
+                            *(("-mocktime=1296761202",) if args.generation == "32.1" else ())))
             nodes.append(node)  # Own cleanup before startup can fail.
             node.start()
+            if args.generation == "32.1":
+                record["network_identity"] = node.rpc("getnetworkinfo")
+                if record["network_identity"].get("version") != 320100:
+                    raise ComparisonError("RPC numeric generation mismatch")
             record["launch_flags"] = node.flags
             record["launch_history"] = [list(node.flags)]
         run_cases(nodes, fixture_args, report)
         actual = [case["id"] for case in report["cases"]]
         if actual != list(CASES[args.profile]) or any(case["status"] != "passed" for case in report["cases"]):
             raise ComparisonError("required case accounting failed")
+        if args.generation == "32.1":
+            directions = [(item.get("producer"), item.get("receiver"), item.get("production_rpc"))
+                          for item in report.get("exchanges", [])]
+            if directions != [("roots", "core", "generatetoaddress"), ("core", "roots", "generatetoaddress")]:
+                raise ComparisonError("required native exchange direction accounting failed")
         report["status"] = "passed"
         report["qualified"] = args.build_from_source
         exit_code = 0
@@ -437,9 +517,12 @@ def compare(args):
             for node in reversed(nodes):
                 record = report["nodes"][node.label]
                 record["launch_flags"] = node.flags
+                record["owned_pids"] = list(node.owned_pids)
                 try:
                     node.stop()
                     record["cleanup"] = node.cleanup_result
+                    if args.retain_builds:
+                        record["retained_logs"] = node.retain_logs(build_root / (node.label + "-logs"))
                     if not exit_code and (record["cleanup"].get("stopped") is not True
                                           or record["cleanup"].get("returncode") != 0):
                         report["status"] = "failed"

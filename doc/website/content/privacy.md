@@ -17,6 +17,12 @@ assume a fresh configuration and wallet. Existing configuration, GUI settings,
 wallet flags, and command-line arguments can change them. Check your executable
 with `bitcoin-cli --version` and its built-in help.
 
+For the current v32.1 source, consult the [feature catalogue](/doc/roots-features)
+and [wallet manual](/doc/wallet-privacy). The versioned defaults in this guide
+remain a v31.1-roots.2 snapshot. In v32.1, key-disclosure RPCs require the explicit
+startup `--allow-dangerous-rpc` opt-in; configuration files and persistent settings
+cannot enable them. See [Wallet privacy tools](/wallet-privacy) for that boundary.
+
 ## Defaults at a glance
 
 | Feature or setting | Default | How to enable or use it |

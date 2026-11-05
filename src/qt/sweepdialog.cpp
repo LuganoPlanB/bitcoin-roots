@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying file COPYING or http://www.opensource.org/licenses/MIT.
 
 #include <qt/sweepdialog.h>
@@ -92,6 +92,7 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
     m_result = new QLabel(this);
     m_result->setObjectName("sweepResult");
     m_result->setWordWrap(true);
+    m_result->setTextFormat(Qt::PlainText);
     m_result->setAccessibleName(tr("Sweep preview"));
     m_result->setAccessibleDescription(tr("Non-secret sweep preview, status, and error details."));
     layout->addWidget(m_result);
@@ -132,6 +133,10 @@ SweepDialog::SweepDialog(WalletModel* wallet_model, QWidget* parent)
         m_result->setText(tr("Sweep state changed. Enter the private key and create a fresh preview."));
     });
     connect(m_wallet_model, &WalletModel::sweepFinished, this, &SweepDialog::handleSweepFinished);
+    connect(m_wallet_model, &QObject::destroyed, this, [this] {
+        clearSensitive();
+        setEnabled(false);
+    });
 }
 
 SweepDialog::~SweepDialog() { clearSensitive(); }
@@ -147,7 +152,7 @@ void SweepDialog::clearPrivateKeyCache()
 
 void SweepDialog::invalidate()
 {
-    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
+    if (m_wallet_model && m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
         m_result->setText(tr("Sweep broadcast submission has started and can no longer be cancelled. Wait for its result."));
         return;
     }
@@ -177,11 +182,16 @@ void SweepDialog::setResult(const QString& text, bool can_broadcast)
 
 void SweepDialog::preview()
 {
+    if (!m_wallet_model || m_busy) return;
     clearPrivateKeyCache();
-    const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
-    if (!IsValidDestination(destination)) { setResult(tr("Enter a valid destination address."), false); return; }
     const QSignalBlocker block{m_private_key};
     m_private_key_cache = static_cast<SecureLineEdit*>(m_private_key)->TakeText();
+    const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
+    if (!IsValidDestination(destination)) {
+        clearPrivateKeyCache();
+        setResult(tr("Enter a valid destination address."), false);
+        return;
+    }
     if (m_private_key_cache.empty()) { setResult(tr("Enter a private key."), false); return; }
     setBusy(true);
     m_result->setText(tr("Scanning for eligible coins and preparing a preview…"));
@@ -195,11 +205,15 @@ void SweepDialog::preview()
 
 void SweepDialog::broadcast()
 {
-    if (!m_preview_current || m_private_key_cache.empty()) return;
+    if (!m_wallet_model || m_busy || !m_preview_current || m_private_key_cache.empty()) return;
+    const QString confirmed_txid{m_preview_txid};
     const auto answer = QMessageBox::warning(this, tr("Broadcast sweep"),
         tr("Broadcast this exact preview now? This action is irreversible and may fail if the chain state or fee conditions changed."),
         QMessageBox::Cancel | QMessageBox::Yes, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes) return;
+    // The modal confirmation processes wallet notifications. Authorization
+    // applies only if that same preview survived the nested event loop.
+    if (!m_wallet_model || !m_preview_current || m_private_key_cache.empty() || m_preview_txid != confirmed_txid) return;
     const CTxDestination destination{DecodeDestination(m_destination->text().toStdString())};
     const auto expected_txid{Txid::FromHex(m_preview_txid.toStdString())};
     if (!expected_txid) {
@@ -220,7 +234,7 @@ void SweepDialog::broadcast()
 
 void SweepDialog::reject()
 {
-    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
+    if (m_wallet_model && m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) {
         m_result->setText(tr("Sweep broadcast submission has started and can no longer be cancelled. Wait for its result."));
         return;
     }
@@ -250,18 +264,19 @@ void SweepDialog::handleSweepFinished(uint64_t generation, bool broadcast, bool 
     }
     m_preview_txid = txid;
     const qint64 fee_rate{vsize > 0 ? (fee + vsize - 1) / vsize : 0};
-    setResult(tr("Wallet: %1\nDestination: %2\n%3 input(s), total %4, fee %5, net received %6.\nFee rate: %7 sat/vB. Replace-By-Fee: %8. Review these facts before irreversible broadcast.")
+    setResult(tr("Wallet: %1\nDestination: %2\n%3 input(s), total %4, fee %5, net received %6.\nFee rate: %7 sat/vB. Replace-By-Fee: %8.\nTransaction: %9\nReview these facts before irreversible broadcast.")
                   .arg(m_wallet_model->getDisplayName(), m_destination->text())
                   .arg(inputs).arg(BitcoinUnits::formatWithUnit(m_wallet_model->getOptionsModel()->getDisplayUnit(), amount))
                   .arg(BitcoinUnits::formatWithUnit(m_wallet_model->getOptionsModel()->getDisplayUnit(), fee))
                   .arg(BitcoinUnits::formatWithUnit(m_wallet_model->getOptionsModel()->getDisplayUnit(), amount - fee))
                   .arg(fee_rate)
-                  .arg(rbf ? tr("signaled") : tr("not signaled")), true);
+                  .arg(rbf ? tr("signaled") : tr("not signaled"))
+                  .arg(txid), true);
 }
 
 void SweepDialog::clearSensitive()
 {
-    if (m_request_generation != 0 && !m_wallet_model->invalidateSweepRequests()) return;
+    if (m_wallet_model && m_request_generation != 0) m_wallet_model->invalidateSweepRequests();
     m_request_generation = 0;
     const QSignalBlocker block{m_private_key};
     static_cast<SecureLineEdit*>(m_private_key)->ClearText();

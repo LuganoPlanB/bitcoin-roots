@@ -12,6 +12,7 @@
 #include <random.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <util/byte_units.h>
 #include <util/log.h>
 #include <util/threadnames.h>
 #include <util/vector.h>
@@ -86,14 +87,33 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 
 std::optional<Coin> CCoinsViewDB::GetCoin(const COutPoint& outpoint) const
 {
-    if (Coin coin; m_db->Read(CoinEntry(&outpoint), coin)) {
-        Assert(!coin.IsSpent()); // The UTXO database should never contain spent coins
-        return coin;
+    Coin coin;
+    const CDBWrapper::ReadStatus res = m_db->TryRead(CoinEntry(&outpoint), coin);
+    if (!res) {
+        // Propagate errors so CCoinsViewErrorCatcher triggers a clean shutdown.
+        switch (const auto& [err_code, err_msg] = res.error(); err_code) {
+            case CDBWrapper::ReadFailure::Code::DeserializationError:
+                throw dbwrapper_error{strprintf("Coin deserialization failure: %s", err_msg)};
+            case CDBWrapper::ReadFailure::Code::DatabaseError:
+                throw dbwrapper_error{strprintf("Coin DB read failure: %s", err_msg)};
+        } // no default case, so the compiler can warn about missing cases
+        std::abort(); // unreachable
     }
-    return std::nullopt;
+
+    // Check whether the coin exists
+    if (!res.value()) return std::nullopt;
+    // Coin found, ensure UTXO database never contains spent coins
+    Assert(!coin.IsSpent());
+    return coin;
 }
 
-bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
+std::optional<Coin> CCoinsViewDB::PeekCoin(const COutPoint& outpoint) const
+{
+    return GetCoin(outpoint);
+}
+
+bool CCoinsViewDB::HaveCoin(const COutPoint& outpoint) const
+{
     return m_db->Exists(CoinEntry(&outpoint));
 }
 
@@ -112,22 +132,22 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     return vhashHeadBlocks;
 }
 
-void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock)
+void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash)
 {
     CDBBatch batch(*m_db);
     size_t count = 0;
     const size_t dirty_count{cursor.GetDirtyCount()};
-    assert(!hashBlock.IsNull());
+    assert(!block_hash.IsNull());
 
     uint256 old_tip = GetBestBlock();
     if (old_tip.IsNull()) {
         // We may be in the middle of replaying.
         std::vector<uint256> old_heads = GetHeadBlocks();
         if (old_heads.size() == 2) {
-            if (old_heads[0] != hashBlock) {
+            if (old_heads[0] != block_hash) {
                 LogError("The coins database detected an inconsistent state, likely due to a previous crash or shutdown. You will need to restart bitcoind with the -reindex-chainstate or -reindex configuration option.\n");
             }
-            assert(old_heads[0] == hashBlock);
+            assert(old_heads[0] == block_hash);
             old_tip = old_heads[1];
         }
     }
@@ -137,11 +157,11 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashB
         dirty_count, cursor.GetTotalCount()), BCLog::BENCH);
 
     // In the first batch, mark the database as being in the middle of a
-    // transition from old_tip to hashBlock.
+    // transition from old_tip to block_hash.
     // A vector is used for future extensibility, as we may want to support
     // interrupting after partial writes from multiple independent reorgs.
     batch.Erase(DB_BEST_BLOCK);
-    batch.Write(DB_HEAD_BLOCKS, Vector(hashBlock, old_tip));
+    batch.Write(DB_HEAD_BLOCKS, Vector(block_hash, old_tip));
 
     for (auto it{cursor.Begin()}; it != cursor.End();) {
         if (it->second.IsDirty()) {
@@ -155,7 +175,7 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashB
         count++;
         it = cursor.NextAndMaybeErase(*it);
         if (batch.ApproximateSize() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.ApproximateSize() * (1.0 / 1048576.0));
+            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
 
             m_db->WriteBatch(batch);
             batch.Clear();
@@ -169,11 +189,11 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashB
         }
     }
 
-    // In the last batch, mark the database as consistent with hashBlock again.
+    // In the last batch, mark the database as consistent with block_hash again.
     batch.Erase(DB_HEAD_BLOCKS);
-    batch.Write(DB_BEST_BLOCK, hashBlock);
+    batch.Write(DB_BEST_BLOCK, block_hash);
 
-    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.ApproximateSize() * (1.0 / 1048576.0));
+    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
     m_db->WriteBatch(batch);
     LogDebug(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...", (unsigned int)dirty_count, (unsigned int)count);
 }
@@ -188,7 +208,7 @@ std::optional<std::string> CCoinsViewDB::GetDBProperty(const std::string& proper
     return m_db->GetProperty(property);
 }
 
-std::shared_future<void> CCoinsViewDB::CompactFull()
+std::shared_future<void> CCoinsViewDB::CompactFullAsync()
 {
     AssertLockHeld(::cs_main);
     if (m_compaction.valid() && m_compaction.wait_for(std::chrono::seconds{0}) != std::future_status::ready) return m_compaction;
@@ -213,8 +233,8 @@ class CCoinsViewDBCursor: public CCoinsViewCursor
 public:
     // Prefer using CCoinsViewDB::Cursor() since we want to perform some
     // cache warmup on instantiation.
-    CCoinsViewDBCursor(CDBIterator* pcursorIn, const uint256&hashBlockIn):
-        CCoinsViewCursor(hashBlockIn), pcursor(pcursorIn) {}
+    CCoinsViewDBCursor(CDBIterator* pcursorIn, const uint256& in_block_hash):
+        CCoinsViewCursor(in_block_hash), pcursor(pcursorIn) {}
     ~CCoinsViewDBCursor() = default;
 
     bool GetKey(COutPoint &key) const override;

@@ -8,6 +8,7 @@
 #include <util/time.h>
 
 #include <boost/test/unit_test.hpp>
+#include <chrono>
 
 BOOST_FIXTURE_TEST_SUITE(stats_tests, BasicTestingSetup)
 
@@ -15,19 +16,28 @@ BOOST_AUTO_TEST_CASE(stats)
 {
     BOOST_CHECK(!CStats::m_stats_enabled);
     CStats::DefaultStats()->setMaxMemoryUsageTarget(CStats::DEFAULT_MAX_STATS_MEMORY);
+    struct DisableOnExit {
+        ~DisableOnExit() { CStats::DefaultStats()->setMaxMemoryUsageTarget(0); }
+    } disable_on_exit;
+    unsigned notifications{0};
+    btcsignals::scoped_connection connection{CStats::DefaultStats()->MempoolStatsDidChange.connect([&] { ++notifications; })};
 
-    uint64_t start = GetTime();
-    SetMockTime(start);
+    const auto start{GetTime()};
+    SetMockTime(std::chrono::seconds{start});
 
     CStats::DefaultStats()->addMempoolSample(0, 1, 1);
-    SetMockTime(start + 1);
+    SetMockTime(std::chrono::seconds{start + 1});
     CStats::DefaultStats()->addMempoolSample(0, 2, 2); //1second should be to short
-    SetMockTime(start + 5);
+    SetMockTime(std::chrono::seconds{start + 2});
+    CStats::DefaultStats()->addMempoolSample(0, 2, 2); //the exact spacing boundary is also skipped
+    SetMockTime(std::chrono::seconds{start + 5});
     CStats::DefaultStats()->addMempoolSample(3, 4, 3);
 
     uint64_t queryFromTime = start;
     uint64_t queryToTime = start + 3600;
     mempoolSamples_t samples = CStats::DefaultStats()->mempoolGetValuesInRange(queryFromTime, queryToTime);
+    BOOST_REQUIRE_EQUAL(samples.size(), 2U);
+    BOOST_CHECK_EQUAL(notifications, 2U);
 
     BOOST_CHECK_EQUAL(samples[0].m_time_delta, 0U);
     BOOST_CHECK_EQUAL(samples[1].m_time_delta, 5U);
@@ -45,7 +55,7 @@ BOOST_AUTO_TEST_CASE(stats)
 
     // add some samples
     for (int i = 0; i < 10000; i++) {
-        SetMockTime(start + 10 + i * 5);
+        SetMockTime(std::chrono::seconds{start + 10 + i * 5});
         CStats::DefaultStats()->addMempoolSample(i, i + 1, i + 2);
     }
 
@@ -62,7 +72,7 @@ BOOST_AUTO_TEST_CASE(stats)
     // reduce max memory and add 100 samples to ensure it triggers the cleanup
     CStats::DefaultStats()->setMaxMemoryUsageTarget(10 * 1024);
     for (int i = 10000; i < 10100; i++) {
-        SetMockTime(start + 10 + i * 5);
+        SetMockTime(std::chrono::seconds{start + 10 + i * 5});
         CStats::DefaultStats()->addMempoolSample(i, i + 1, i + 2);
     }
 

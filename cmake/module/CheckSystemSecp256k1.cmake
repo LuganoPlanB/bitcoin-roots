@@ -1,8 +1,8 @@
-# Copyright (c) 2025-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
-# Adapted from the Roots system-library checks for Core v31's MuSig API.
+# Adapted from the Roots system-library checks for Core v32's MuSig API.
 find_package(PkgConfig REQUIRED)
 # Refresh this project's pkg-config prefix when an operator changes package
 # search paths in an existing build. Symbol probes alone would otherwise keep
@@ -42,6 +42,6 @@ check_secp256k1_symbol(secp256k1_musig.h secp256k1_musig_pubkey_get)
 cmake_pop_check_state()
 if(missing_symbols)
   list(JOIN missing_symbols ", " missing_symbols)
-  message(FATAL_ERROR "System libsecp256k1 lacks required v31 APIs: ${missing_symbols}.")
+  message(FATAL_ERROR "System libsecp256k1 lacks required v32 APIs: ${missing_symbols}.")
 endif()
 add_library(secp256k1 ALIAS PkgConfig::libsecp256k1)

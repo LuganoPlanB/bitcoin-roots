@@ -52,21 +52,7 @@ jobs:
           persist-credentials: false
       - name: Run classifier regression tests
         run: |
-          python3 ci/test/test_change_classifier.py
-          python3 ci/test/test_promotion_ci.py
-          python3 ci/test/test_gui_qrencode.py
-          python3 ci/test/test_fuzz_workflows.py
-          python3 ci/test/test_sanitizer_workflows.py
-          python3 ci/test/test_wallet_privacy_contract.py
-          python3 ci/test/test_release_version.py
-          python3 ci/test/test_homebrew_boost_headers.py
-          python3 ci/test/test_release_notices.py
-          python3 ci/test/test_runner_release_notices.py
-          python3 ci/test/test_create_ci_release_draft.py
-          python3 ci/test/test_create_release_draft.py
-          python3 ci/test/test_windows_gui_workflows.py
-          python3 ci/test/test_compatibility_ci.py
-          python3 ci/test/test_roots_compatibility.py
+          python3 -m unittest discover -s ci/test
       - name: Retrieve changed files
         id: files
         uses: actions/github-script@v8
@@ -171,6 +157,7 @@ jobs:
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ./ci/test/00_setup_env_native_gui.sh
       ROOTS_CI_CADENCE: fast
+      ROOTS_JOB_TIMEOUT_MINUTES: 120
     steps:
       - &checkout-pr
         name: Checkout PR head
@@ -205,7 +192,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gui-test-failures
-          path: ${{ runner.temp }}/build/Testing/Temporary/
+          path: ${{ env.ROOTS_ARTIFACTS_DIR }}/
           if-no-files-found: warn
 
   sanitizers:
@@ -235,6 +222,7 @@ jobs:
       FILE_ENV: ./ci/test/00_setup_env_native_fuzz.sh
       ROOTS_CI_CADENCE: fast
       ROOTS_CHANGED_FILES_JSON: ${{ needs.classify.outputs.docs == 'true' && 'null' || needs.classify.outputs.files }}
+      ROOTS_JOB_TIMEOUT_MINUTES: 60
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v6

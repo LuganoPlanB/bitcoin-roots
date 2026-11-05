@@ -8,7 +8,9 @@ include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(O_CLOEXEC "fcntl.h" HAVE_O_CLOEXEC)
 check_cxx_symbol_exists(fdatasync "unistd.h" HAVE_FDATASYNC)
 check_cxx_symbol_exists(fork "unistd.h" HAVE_DECL_FORK)
-check_cxx_symbol_exists(pipe2 "unistd.h" HAVE_DECL_PIPE2)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  check_cxx_symbol_exists(pipe2 "unistd.h" HAVE_DECL_PIPE2)
+endif()
 check_cxx_symbol_exists(setsid "unistd.h" HAVE_DECL_SETSID)
 
 if(NOT WIN32)
@@ -17,13 +19,14 @@ if(NOT WIN32)
 endif()
 
 include(TestAppendRequiredLibraries)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
 test_append_atomic_library(core_interface)
+endif()
 
 # Even though ::system is part of the standard library, we still check
 # for it, to support building targets that don't have it, such as iOS.
 check_cxx_symbol_exists(std::system "cstdlib" HAVE_STD_SYSTEM)
-check_cxx_symbol_exists(::_wsystem "stdlib.h" HAVE__WSYSTEM)
-if(HAVE_STD_SYSTEM OR HAVE__WSYSTEM)
+if(HAVE_STD_SYSTEM)
   set(HAVE_SYSTEM 1)
 endif()
 
@@ -75,6 +78,10 @@ check_cxx_source_compiles("
   " HAVE_STRONG_GETAUXVAL
 )
 
+# Check for SetThreadDescription(), which is missing from mingw-w64 headers
+# before 12.0.0.
+check_cxx_symbol_exists(SetThreadDescription "windows.h" HAVE_SETTHREADDESCRIPTION)
+
 # Check for UNIX sockets.
 check_cxx_source_compiles("
   #include <sys/socket.h>
@@ -88,36 +95,23 @@ check_cxx_source_compiles("
   " HAVE_SOCKADDR_UN
 )
 
-# Check for close_range().
-# NOTE: At least FreeBSD supports the generic variant.
+# Check safe signer descriptor closure without scanning a numeric soft limit.
 check_cxx_source_compiles("
-  // same as in src/util/subprocess.cpp
   #include <limits.h>
   #include <unistd.h>
-
-  int main()
-  {
-    return close_range(3, UINT_MAX, 0);
-  }
+  int main() { return close_range(3, UINT_MAX, 0); }
   " HAVE_CLOSE_RANGE_GENERIC
 )
 if(NOT HAVE_CLOSE_RANGE_GENERIC)
   check_cxx_source_compiles("
-    // same as in src/util/subprocess.cpp
     #define _GNU_SOURCE
     #include <linux/close_range.h>
     #include <limits.h>
     #include <unistd.h>
-
-    int main()
-    {
-      return close_range(3, UINT_MAX, 0);
-    }
+    int main() { return close_range(3, UINT_MAX, 0); }
     " HAVE_CLOSE_RANGE_LINUX
   )
 endif()
-
-# Native BSD/Solaris close-from fallback (Linux uses raw /proc enumeration).
 check_cxx_source_compiles("
   #include <unistd.h>
   int main() { closefrom(4); }

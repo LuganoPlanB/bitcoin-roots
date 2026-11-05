@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit.
 """Roots permission, transport and Tor-bind resource boundaries."""
@@ -74,6 +74,17 @@ class RootsPeerControlsTest(BitcoinTestFramework):
         assert peer.last_message['version'].nServices & NODE_BLOOM
         node.disconnect_p2ps()
 
+        self.log.info("An automatic Tor target on a wildcard bind suppresses local address grants")
+        node.replace_in_config([('bind=127.0.0.1\n', 'bind=0.0.0.0\n')])
+        try:
+            self.restart_node(0, ['-listenonion=1', '-whitelist=all@127.0.0.1'])
+            peer = node.add_p2p_connection(P2PInterface())
+            assert_equal(node.getpeerinfo()[0]['permissions'], [])
+            assert peer.last_message['version'].nServices & NODE_BLOOM == 0
+            node.disconnect_p2ps()
+        finally:
+            node.replace_in_config([('bind=0.0.0.0\n', 'bind=127.0.0.1\n')])
+
         self.log.info("Forceinbound permission is distinct from noban and actual eviction")
         for permission, expected in [
             ('noban', ['noban', 'download']),
@@ -88,7 +99,7 @@ class RootsPeerControlsTest(BitcoinTestFramework):
             node.disconnect_p2ps()
 
         self.log.info("Forceinbound frees a protected slot but cannot evict a noban connection")
-        self.restart_node(0, ['-peerbloomfilters=0', '-listenonion=0', '-maxconnections=12', f'-whitebind=forceinbound@127.0.0.1:{port}'])
+        self.restart_node(0, ['-peerbloomfilters=0', '-listenonion=0', '-maxconnections=12', '-inboundrelaypercent=100', f'-whitebind=forceinbound@127.0.0.1:{port}'])
         ordinary = node.add_p2p_connection(P2PInterface())
         node.add_p2p_connection(P2PInterface(), dstport=port)
         ordinary.wait_for_disconnect()
@@ -111,7 +122,7 @@ class RootsPeerControlsTest(BitcoinTestFramework):
         conf.addr = ('127.0.0.1', 0)
         conf.unauth = True
         conf.auth = True
-        conf.destinations_factory = lambda address, port: {'actual_to_addr': '127.0.0.1', 'actual_to_port': p2p_port(1)}
+        conf.destinations_factory = lambda address, port, proxy_client: {'actual_to_addr': '127.0.0.1', 'actual_to_port': p2p_port(1)}
         proxy = Socks5Server(conf)
 
         def next_proxy_command():

@@ -4,18 +4,18 @@
 //
 
 #include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <common/run_command.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
 #include <univalue.h>
 #include <util/string.h>
 
-#ifdef ENABLE_EXTERNAL_SIGNER
-#include <util/subprocess.h>
-#endif // ENABLE_EXTERNAL_SIGNER
+#include <cstdlib>
+#include <iostream>
+#include <string_view>
 
-#include <boost/cstdlib.hpp>
+#include <util/subprocess.h>
+
 #include <boost/test/unit_test.hpp>
 
 #include <string>
@@ -27,13 +27,59 @@
 #include <unistd.h>
 #endif
 
+namespace {
+// When set in the environment, test_bitcoin acts as a mock subprocess for the
+// run_command test below instead of running unit tests.
+constexpr const char* MOCK_PROCESS_ENV = "BITCOIN_TEST_MOCK_PROCESS";
+
+const bool g_maybe_run_mock_dispatcher_before_main{[]() {
+    const char* name = std::getenv(MOCK_PROCESS_ENV);
+    if (!name) return false;
+    const std::string_view n{name};
+    if (n == "valid_json") {
+        std::cout << R"({"success": true})" << std::endl;
+        std::_Exit(EXIT_SUCCESS);
+    }
+    if (n == "nonzeroexit_nooutput") {
+        std::_Exit(EXIT_FAILURE);
+    }
+    if (n == "nonzeroexit_stderroutput") {
+        std::cerr << "err" << std::endl;
+        std::_Exit(EXIT_FAILURE);
+    }
+    if (n == "invalid_json") {
+        std::cout << "{" << std::endl;
+        std::_Exit(EXIT_SUCCESS);
+    }
+    if (n == "pass_stdin_to_stdout") {
+        std::string s;
+        std::getline(std::cin, s);
+        std::cout << s << std::endl;
+        std::_Exit(EXIT_SUCCESS);
+    }
+#ifndef WIN32
+    if (n == "check_inherited_fd") {
+        int fd;
+        std::cin >> fd;
+        std::cout << "{\"inherited\":" << (fcntl(fd, F_GETFD) == -1 ? "false" : "true") << "}" << std::endl;
+        std::_Exit(EXIT_SUCCESS);
+    }
+#endif
+    std::cerr << "Unknown mock process: " << n << std::endl;
+    std::_Exit(EXIT_FAILURE);
+}()};
+} // namespace
+
 BOOST_FIXTURE_TEST_SUITE(system_tests, BasicTestingSetup)
 
-#ifdef ENABLE_EXTERNAL_SIGNER
-
-static std::vector<std::string> mock_executable(std::string name)
+static std::vector<std::string> mock_executable(const std::string& name)
 {
-    return {boost::unit_test::framework::master_test_suite().argv[0], "--log_level=nothing", "--report_level=no", "--run_test=mock_process/" + name};
+#if defined(WIN32)
+    _putenv_s(MOCK_PROCESS_ENV, name.c_str());
+#else
+    setenv(MOCK_PROCESS_ENV, name.c_str(), /*overwrite=*/1);
+#endif
+    return {boost::unit_test::framework::master_test_suite().argv[0]};
 }
 
 BOOST_AUTO_TEST_CASE(run_command)
@@ -63,7 +109,7 @@ BOOST_AUTO_TEST_CASE(run_command)
         const std::vector<std::string> command = mock_executable("nonzeroexit_nooutput");
         BOOST_CHECK_EXCEPTION(RunCommandParseJSON(command), std::runtime_error, [&](const std::runtime_error& e) {
             const std::string what{e.what()};
-            BOOST_CHECK(what.find(strprintf("RunCommandParseJSON error: process(%s) returned %d: \n", util::Join(command, " "), boost::exit_test_failure)) != std::string::npos);
+            BOOST_CHECK(what.find(strprintf("RunCommandParseJSON error: process(%s) returned %d: \n", util::Join(command, " "), EXIT_FAILURE)) != std::string::npos);
             return true;
         });
     }
@@ -73,7 +119,7 @@ BOOST_AUTO_TEST_CASE(run_command)
         const std::string expected{"err"};
         BOOST_CHECK_EXCEPTION(RunCommandParseJSON(command), std::runtime_error, [&](const std::runtime_error& e) {
             const std::string what(e.what());
-            BOOST_CHECK(what.find(strprintf("RunCommandParseJSON error: process(%s) returned %s: %s", util::Join(command, " "), boost::exit_test_failure, "err")) != std::string::npos);
+            BOOST_CHECK(what.find(strprintf("RunCommandParseJSON error: process(%s) returned %s: %s", util::Join(command, " "), EXIT_FAILURE, "err")) != std::string::npos);
             BOOST_CHECK(what.find(expected) != std::string::npos);
             return true;
         });
@@ -91,6 +137,7 @@ BOOST_AUTO_TEST_CASE(run_command)
         BOOST_CHECK_EQUAL(success.get_bool(), true);
     }
 }
+
 #ifndef WIN32
 BOOST_AUTO_TEST_CASE(signer_fallback_closes_descriptors_above_lowered_limit)
 {
@@ -128,7 +175,7 @@ BOOST_AUTO_TEST_CASE(signer_fallback_closes_descriptors_above_lowered_limit)
     BOOST_REQUIRE_EQUAL(waitpid(child, &status, 0), child);
     BOOST_CHECK(WIFEXITED(status));
     BOOST_CHECK_EQUAL(WEXITSTATUS(status), 0);
-#if defined(__linux__) || HAVE_CLOSEFROM
+#if defined(__linux__) || defined(__APPLE__) || HAVE_CLOSEFROM
     BOOST_CHECK_EQUAL(facts, 31);
 #else
     BOOST_CHECK_EQUAL(facts & 1, 0); // Unsupported platforms fail closed.
@@ -143,11 +190,10 @@ BOOST_AUTO_TEST_CASE(signer_closes_inherited_descriptors)
     const int inherited = fcntl(fd, F_DUPFD, 123);
     close(fd);
     BOOST_REQUIRE(inherited >= 123);
-    const auto result = RunCommandParseJSON(mock_executable("check_inherited_fd"), std::to_string(inherited));
+    const auto result = RunCommandParseJSON(mock_executable("check_inherited_fd"), util::ToString(inherited));
     close(inherited);
     BOOST_CHECK(!result.find_value("inherited").get_bool());
 }
 #endif
-#endif // ENABLE_EXTERNAL_SIGNER
 
 BOOST_AUTO_TEST_SUITE_END()

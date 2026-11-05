@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -81,11 +81,7 @@ void WinTaskbarProgress::releaseTaskbarButton()
     }
 }
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 bool WinTaskbarProgress::nativeEventFilter(const QByteArray& event_type, void* message, qintptr* result)
-#else
-bool WinTaskbarProgress::nativeEventFilter(const QByteArray& event_type, void* message, long* result)
-#endif
 {
     Q_UNUSED(result);
     if (event_type != "windows_generic_MSG" && event_type != "windows_dispatcher_MSG") return false;

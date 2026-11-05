@@ -43,6 +43,18 @@ using wallet::CCoinControl;
 using wallet::CRecipient;
 using wallet::DEFAULT_DISABLE_WALLET;
 
+namespace {
+// Queued calls may be discarded at shutdown. Cleanse even when the worker
+// never executes, including short strings held inside the string object.
+struct SweepKey {
+    SecureString value;
+    ~SweepKey()
+    {
+        if (!value.empty()) memory_cleanse(value.data(), value.size());
+    }
+};
+} // namespace
+
 WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel& client_model, const PlatformStyle *platformStyle, QObject *parent) :
     QObject(parent),
     m_wallet(std::move(wallet)),
@@ -82,22 +94,25 @@ bool WalletModel::invalidateSweepRequests()
 uint64_t WalletModel::requestSweep(SecureString private_key, CTxDestination destination, bool broadcast,
                                    std::optional<Txid> expected_txid)
 {
+    auto key{std::make_shared<SweepKey>()};
+    key->value = private_key;
+    if (!private_key.empty()) memory_cleanse(private_key.data(), private_key.size());
+    SecureString{}.swap(private_key);
     if (m_sweep_authorization && !m_sweep_authorization->Cancel()) return 0;
     const uint64_t generation{++m_sweep_request_generation};
     auto authorization{std::make_shared<interfaces::SweepAuthorization>()};
     m_sweep_authorization = authorization;
-    QMetaObject::invokeMethod(&m_sweep_context, [this, generation, authorization, private_key = std::move(private_key), destination = std::move(destination), broadcast, expected_txid]() mutable {
+    QMetaObject::invokeMethod(&m_sweep_context, [this, generation, authorization, key = std::move(key), destination = std::move(destination), broadcast, expected_txid]() mutable {
         auto result{[&]() -> util::Result<interfaces::WalletSweepResult> {
             try {
-                return m_wallet->sweepPrivateKey(private_key, destination, broadcast, expected_txid, authorization);
+                return m_wallet->sweepPrivateKey(key->value, destination, broadcast, expected_txid, authorization);
             } catch (const std::exception&) {
                 // RPC interruption can throw during shutdown. Keep errors non-secret
                 // and finish disposal instead of unwinding through Qt's event loop.
                 return util::Error{Untranslated("Sweep interrupted or unavailable")};
             }
         }()};
-        if (!private_key.empty()) memory_cleanse(private_key.data(), private_key.size());
-        SecureString{}.swap(private_key);
+        key.reset();
 
         const bool success{result.has_value()};
         const QString error{success ? QString{} : QString::fromStdString(util::ErrorString(result).original)};
@@ -305,15 +320,16 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction)
     QByteArray transaction_array; /* store serialized transaction */
 
     {
-        std::vector<std::pair<std::string, std::string>> vOrderForm;
+        std::vector<std::string> messages;
         for (const SendCoinsRecipient &rcp : transaction.getRecipients())
         {
-            if (!rcp.message.isEmpty()) // Message from normal bitcoin:URI (bitcoin:123...?message=example)
-                vOrderForm.emplace_back("Message", rcp.message.toStdString());
+            if (!rcp.message.isEmpty()) { // Message from normal bitcoin:URI (bitcoin:123...?message=example)
+                messages.emplace_back(rcp.message.toStdString());
+            }
         }
 
         auto& newTx = transaction.getWtx();
-        wallet().commitTransaction(newTx, /*value_map=*/{}, std::move(vOrderForm));
+        wallet().commitTransaction(newTx, messages);
 
         DataStream ssTx;
         ssTx << TX_WITH_WITNESS(*newTx);
@@ -588,7 +604,7 @@ bool WalletModel::bumpFee(Txid hash, Txid& new_hash)
         // "Create Unsigned" clicked
         PartiallySignedTransaction psbtx(mtx);
         bool complete = false;
-        const auto err{wallet().fillPSBT(std::nullopt, /*sign=*/false, /*bip32derivs=*/true, nullptr, psbtx, complete)};
+        const auto err{wallet().fillPSBT({.sign = false, .bip32_derivs = true}, nullptr, psbtx, complete)};
         if (err || complete) {
             QMessageBox::critical(nullptr, tr("Fee bump error"), tr("Can't draft transaction."));
             return false;

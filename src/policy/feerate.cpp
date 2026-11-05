@@ -8,8 +8,8 @@
 #include <tinyformat.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
-
 
 CFeeRate::CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes)
 {
@@ -27,8 +27,8 @@ CAmount CFeeRate::GetFee(int32_t virtual_bytes) const
     if (virtual_bytes == 0) return 0;
     constexpr CAmount maximum{std::numeric_limits<CAmount>::max()};
     constexpr CAmount minimum{std::numeric_limits<CAmount>::min()};
-    if (m_feerate >> FeePerVSize{maximum, virtual_bytes}) return maximum;
-    if (m_feerate << FeePerVSize{minimum, virtual_bytes}) return minimum;
+    if (ByRatio{m_feerate} > ByRatio{FeePerVSize{maximum, virtual_bytes}}) return maximum;
+    if (ByRatio{m_feerate} < ByRatio{FeePerVSize{minimum, virtual_bytes}}) return minimum;
     CAmount nFee = CAmount(m_feerate.EvaluateFeeUp(virtual_bytes));
     if (nFee == 0 && virtual_bytes != 0 && m_feerate.fee < 0) return CAmount(-1);
     return nFee;
@@ -39,8 +39,8 @@ CAmount CFeeRate::GetFeePerK() const
     if (m_feerate.IsEmpty()) return 0;
     constexpr CAmount maximum{std::numeric_limits<CAmount>::max()};
     constexpr CAmount minimum{std::numeric_limits<CAmount>::min()};
-    if (m_feerate >> FeePerVSize{maximum, 1000}) return maximum;
-    if (m_feerate << FeePerVSize{minimum, 1000}) return minimum;
+    if (ByRatio{m_feerate} > ByRatio{FeePerVSize{maximum, 1000}}) return maximum;
+    if (ByRatio{m_feerate} < ByRatio{FeePerVSize{minimum, 1000}}) return minimum;
     return m_feerate.EvaluateFeeDown(1000);
 }
 
@@ -59,9 +59,16 @@ CFeeRate ScaleDustFee(const CFeeRate& estimate, int multiplier)
 std::string CFeeRate::ToString(FeeRateFormat fee_rate_format) const
 {
     const CAmount feerate_per_kvb{GetFeePerK()};
+    const auto format_feerate = [](const CAmount fee_rate, const CAmount divisor, const int decimals, const std::string& currency_unit, const std::string& size_unit) {
+        Assert(divisor > 0);
+        const char* sign{fee_rate < 0 ? "-" : ""};
+        const CAmount quotient{std::abs(fee_rate / divisor)};
+        const CAmount remainder{std::abs(fee_rate % divisor)};
+        return strprintf("%s%d.%0*d %s/%s", sign, quotient, decimals, remainder, currency_unit, size_unit);
+    };
     switch (fee_rate_format) {
-    case FeeRateFormat::BTC_KVB: return strprintf("%d.%08d %s/kvB", feerate_per_kvb / COIN, feerate_per_kvb % COIN, CURRENCY_UNIT);
-    case FeeRateFormat::SAT_VB: return strprintf("%d.%03d %s/vB", feerate_per_kvb / 1000, feerate_per_kvb % 1000, CURRENCY_ATOM);
+    case FeeRateFormat::BTC_KVB: return format_feerate(feerate_per_kvb, COIN, /*decimals=*/8, CURRENCY_UNIT, "kvB");
+    case FeeRateFormat::SAT_VB: return format_feerate(feerate_per_kvb, 1000, /*decimals=*/3, CURRENCY_ATOM, "vB");
     } // no default case, so the compiler can warn about missing cases
     assert(false);
 }

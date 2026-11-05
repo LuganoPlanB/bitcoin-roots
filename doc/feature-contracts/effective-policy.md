@@ -1,11 +1,11 @@
 # Effective mempool policy (`effective-policy`)
 
-**v31 candidate status: implemented in L12.1.** The additive schema is
-preserved from the accepted 30.3 source. Carrier weight and script reuse now
-come from immutable v31 mempool options rather than process globals; the live
-dust rate remains synchronized with admission. Native v31 cluster fields remain
-available alongside this object. [The port review](../roots-v31-port-review.md)
-records ownership and evidence.
+**v32 port: L9.1.** The additive schema preserves released Roots behavior.
+Carrier weight and script reuse come from immutable mempool options; the live
+dust rate is synchronized with admission. Native v32 cluster fields and OpenRPC
+schemas remain available. The legacy top-level `fullrbf` field is only exposed
+with `-deprecatedrpc=fullrbf`, as in native v32.
+[The port review](../roots-v32-port-review.md) records qualification evidence.
 
 ## Scope and compatibility
 
@@ -98,7 +98,7 @@ and initialized before RPC warmup finishes. The live dust rate and top-level
 rolling minimum are read with existing locking; there is no policy setter RPC.
 
 The historical source's non-off `dustdynamic` failed startup because scheduler
-wiring was missing. Candidate L8.2 repairs node-owned scheduling, retry/teardown
+wiring was missing. The retained dynamic-dust implementation provides node-owned scheduling, retry/teardown
 lifetime, synchronized live-rate reads, estimate fallback and bounded scaling;
 see [runtime semantics](subdust.md). The effective-policy RPC schema reads that synchronized publication. Dormant `getmempoolstats` is outside this contract. Mining
 options are reconstructed and clamped by individual block assemblers, with no
@@ -116,7 +116,7 @@ parity, including standardness-independent full carrier counting and a valid
 block containing a locally rejected carrier transaction. The existing
 `feature_policy_args.py`, `mempool_datacarrier.py` and
 `mempool_subdust_fee_penalty.py` establish parsing and representative enforcement
-before the new RPC is implemented. Keep their valid-block acceptance coverage.
+alongside the reporting RPC. Keep their valid-block acceptance coverage.
 
 Retire a version-specific reporting implementation only when a reviewed upstream
 interface provides equivalent initialized values, units, gates, consistency and

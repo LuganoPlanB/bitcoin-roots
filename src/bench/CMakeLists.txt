@@ -19,6 +19,7 @@ add_executable(bench_bitcoin
   checkblockindex.cpp
   checkqueue.cpp
   cluster_linearize.cpp
+  compact_extra_transactions.cpp
   connectblock.cpp
   crypto_hash.cpp
   descriptors.cpp
@@ -52,6 +53,7 @@ add_executable(bench_bitcoin
   strencodings.cpp
   txgraph.cpp
   txorphanage.cpp
+  uint256_blob.cpp
   util_time.cpp
   verify_script.cpp
 )
@@ -70,6 +72,10 @@ target_link_libraries(bench_bitcoin
   Boost::headers
 )
 
+if(WITH_EMBEDDED_ASMAP)
+  target_sources(bench_bitcoin PRIVATE asmap.cpp)
+endif()
+
 if(ENABLE_WALLET)
   target_sources(bench_bitcoin
     PRIVATE
@@ -77,6 +83,7 @@ if(ENABLE_WALLET)
       wallet_balance.cpp
       wallet_create.cpp
       wallet_create_tx.cpp
+      wallet_encrypt.cpp
       wallet_loading.cpp
       wallet_ismine.cpp
       wallet_migration.cpp

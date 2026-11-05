@@ -11,12 +11,12 @@
 #include <common/messages.h>
 #include <consensus/amount.h>
 #include <kernel/chainparams.h>
-#include <logging.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <tinyformat.h>
 #include <txgraph.h>
 #include <univalue.h>
+#include <util/log.h>
 #include <util/moneystr.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -28,6 +28,7 @@
 #include <limits>
 #include <memory>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 using common::AmountErrMsg;
@@ -394,8 +395,8 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         ApplyPermitEphemeralOption(argsman.GetSetting("-permitephemeral"), mempool_opts);
     }
     if (const auto value = argsman.GetArg("-dustdynamic")) {
-        // v31's long estimator horizon is 1008 blocks. L8 runtime wiring will
-        // additionally validate against the initialized estimator's horizon.
+        // The long estimator horizon is 1008 blocks. Runtime initialization
+        // additionally validates against the initialized block-policy estimator.
         const auto parsed = ParseDustDynamicOpt(*value, 1008);
         if (!parsed) return util::Error{strprintf(_("Invalid mode for dustdynamic: %s (value: '%s'; expected off or [multiplier*]target:blocks or [multiplier*]mempool:kvB)"), util::ErrorString(parsed), *value)};
         std::tie(mempool_opts.dust_relay_target, mempool_opts.dust_relay_multiplier) = parsed.value();

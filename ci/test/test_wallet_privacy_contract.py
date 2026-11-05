@@ -27,15 +27,15 @@ class WalletPrivacyContractTest(unittest.TestCase):
         self.assertIn("authorization.IsCancelled()", spend)
 
     def test_coin_control_documentation_matches_its_row_filter(self):
-        documentation = (ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8")
+        documentation = ' '.join((ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8").split())
         wallet_interface = (ROOT / "src/wallet/interfaces.cpp").read_text(encoding="utf-8")
         wallet_spend = (ROOT / "src/wallet/spend.cpp").read_text(encoding="utf-8")
         coin_control = (ROOT / "src/wallet/coincontrol.h").read_text(encoding="utf-8")
 
         self.assertIn("starts with the wallet's normal available-output list", documentation)
-        self.assertIn("Locked\n  outputs remain visible", documentation)
+        self.assertIn("Locked outputs remain visible", documentation)
         self.assertIn("Unsafe and immature outputs are not added merely to show a status", documentation)
-        self.assertIn("not an\n  inventory of unavailable outputs", documentation)
+        self.assertIn("not an inventory of unavailable outputs", documentation)
         self.assertNotIn("Locked, unsafe,\n  immature, or unavailable inputs are reported", documentation)
 
         list_coins = wallet_spend[wallet_spend.index("ListCoins(const CWallet& wallet)"):]
@@ -49,7 +49,7 @@ class WalletPrivacyContractTest(unittest.TestCase):
         guide = (ROOT / "doc/wallet-privacy.md").read_text(encoding="utf-8")
         release_notes = (ROOT / "contrib/release/release-notes.md").read_text(encoding="utf-8")
         for document in (catalog, guide):
-            self.assertIn("v31", document)
+            self.assertIn("v32", document)
             self.assertIn("candidate", document)
         self.assertIn("Bitcoin Knots", release_notes)
         self.assertIn("devjoinedthechat", release_notes)

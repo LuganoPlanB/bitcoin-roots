@@ -411,6 +411,78 @@ class CompatibilityCITest(unittest.TestCase):
         self.assertEqual(sanitized["state"]["utxos"][outpoint], {"value_sats": 42})
         self.assertNotIn("Authorization", sanitized)
 
+    def v32_report(self):
+        report = self.report()
+        report["generation"] = "32.1"
+        for label, node in report["nodes"].items():
+            node["network_identity"] = {"version": 320100}
+            node["binary"]["version"] = "Bitcoin daemon version v32.1 bitcoind"
+        exchanges = []
+        for index, (producer, receiver) in enumerate((("roots", "core"), ("core", "roots"))):
+            case = report["cases"][index]
+            tx = bytes([index + 3]) * 60
+            raw = bytes([index + 1]) * 80 + tx
+            block_hash = ci.hashlib.sha256(ci.hashlib.sha256(raw[:80]).digest()).digest()[::-1].hex()
+            digest = ci.hashlib.sha256(raw).hexdigest()
+            state = case["states"][0]
+            state["bestblockhash"] = block_hash
+            for value in state["utxos"].values():
+                value["bestblock"] = block_hash
+            case["blocks"][0].update(hash=block_hash, serialized_sha256=digest)
+            if "selected_block" in case:
+                case["selected_block"] = block_hash
+            before = copy.deepcopy(report["cases"][index - 1]["states"][0]) if index else copy.deepcopy(state)
+            if not index:
+                before["height"] -= 1
+                before["bestblockhash"] = "0" * 64
+            exchanges.append({"case": case["id"], "producer": producer, "receiver": receiver,
+                              "production_rpc": "generatetoaddress", "raw_block": raw.hex(), "block_hash": block_hash,
+                              "serialized_sha256": digest, "transaction": {"raw": tx.hex(), "txid": case["admission"][-1]["txid"]},
+                              "receiver_submit_result": None, "before": before,
+                              "producer_tip_before_submit": {"bestblockhash": block_hash, "height": state["height"]},
+                              "receiver_tip_before_submit": {key: before[key] for key in ("bestblockhash", "height")},
+                              "after": {"core": copy.deepcopy(state), "roots": copy.deepcopy(state)},
+                              "producer_binary_sha256": report["nodes"][producer]["binary"]["sha256"],
+                              "receiver_binary_sha256": report["nodes"][receiver]["binary"]["sha256"]})
+        report["cases"][2]["states"] = copy.deepcopy(report["cases"][1]["states"])
+        report["exchanges"] = exchanges
+        return report
+
+    def test_v32_external_tool_package_and_direction_guards(self):
+        # Unit report fixtures isolate structural gates; exact source guards are
+        # independently tested by Generation32Test and the actual qualification.
+        def validate(report):
+            with patch("importlib.util.module_from_spec", wraps=ci.importlib.util.module_from_spec) as load:
+                original = load._mock_wraps
+                def module(spec):
+                    result = original(spec)
+                    if spec.name == "compatibility_exact_profile":
+                        execute = spec.loader.exec_module
+                        def execute_profile(module):
+                            execute(module)
+                            module.validate_generation = lambda generation, nodes: None
+                        spec.loader.exec_module = execute_profile
+                    return result
+                load.side_effect = module
+                ci.validate_report(report, self.roots, self.core, self.candidate, self.core_sha, "smoke", tool_source=ROOT, generation="32.1")
+        report = self.v32_report()
+        validate(report)
+        for fault in ("missing", "duplicate", "producer", "raw", "transaction", "tip", "binary", "state", "cleanup", "unverified"):
+            bad = copy.deepcopy(report)
+            exchange = bad["exchanges"][0]
+            if fault == "missing": bad["exchanges"].pop()
+            elif fault == "duplicate": bad["exchanges"][1] = copy.deepcopy(exchange)
+            elif fault == "producer": exchange["production_rpc"] = "python block constructor"
+            elif fault == "raw": exchange["raw_block"] = "00" + exchange["raw_block"][2:]
+            elif fault == "transaction": exchange["transaction"]["raw"] = "ff" * 90
+            elif fault == "tip": exchange["receiver_tip_before_submit"] = exchange["producer_tip_before_submit"]
+            elif fault == "binary": exchange["producer_binary_sha256"] = "0" * 64
+            elif fault == "state": exchange["after"]["core"]["height"] += 1
+            elif fault == "cleanup": bad["nodes"]["roots"]["cleanup"]["returncode"] = -9
+            elif fault == "unverified": bad["nodes"]["core"]["binary"]["provenance"]["status"] = "unverified"
+            with self.subTest(fault=fault), self.assertRaises(ci.GateError):
+                validate(bad)
+
     def test_cli_missing_report_is_failure(self):
         result = subprocess.run(["python3", str(ROOT / "ci/compatibility.py"), "report", "--candidate-sha", self.candidate,
                                  "--core-sha", self.core_sha, "--report", str(self.directory / "missing")], capture_output=True)

@@ -218,7 +218,7 @@ class P2PPermissionsTests(BitcoinTestFramework):
         for option in ["-addnode", "-connect"]:
             self.log.info(f"Test manual permission inheritance through {option}")
             self.restart_node(0, ["-peerbloomfilters=0", "-whitelist=noban,addr,relay,out@127.0.0.1", f"{option}={target}"])
-            self.wait_until(lambda: len(node.getpeerinfo()) == 1 and node.getpeerinfo()[0]["version"] > 0)
+            self.wait_until(lambda: len(peers := node.getpeerinfo()) == 1 and peers[0]["version"] > 0)
             info = node.getpeerinfo()[0]
             assert_equal(info["connection_type"], "manual")
             assert_equal(info["permissions"], trusted)
@@ -251,7 +251,8 @@ class P2PPermissionsTests(BitcoinTestFramework):
         self.restart_node(0, args)
         with node.assert_debug_log(["retrying with v1"]):
             node.addnode(target, "onetry", True)
-            self.wait_until(lambda: len(node.getpeerinfo()) == 1 and node.getpeerinfo()[0]["transport_protocol_type"] == "v1" and node.getpeerinfo()[0]["version"] > 0)
+            # The v2 attempt can disappear before its v1 retry. Use one RPC snapshot.
+            self.wait_until(lambda: len(peers := node.getpeerinfo()) == 1 and peers[0]["transport_protocol_type"] == "v1" and peers[0]["version"] > 0)
         info = node.getpeerinfo()[0]
         assert_equal(info["connection_type"], "manual")
         assert_equal(info["permissions"], trusted)

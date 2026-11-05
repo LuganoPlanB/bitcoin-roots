@@ -1,252 +1,160 @@
-# Sub-dust effective-fee contract
+# Roots graph fees and policy weight
 
-**v31 candidate status: L8 graph/dynamic dust and L9 mining implemented.**
-The source contract below remains the preservation reference. Admission stores
-an immutable dust deficit and carrier weight on each entry; actual fees and
-transaction weight remain separate. Staging receives the final modified fee
-before graph insertion. Native graph fee updates, replacement diagrams, block
-removal, reorg dependency discovery and trimming use these same entry values.
-Dynamic dust lifecycle is repaired in L8.2. L9 priority selection and native
-residual chunks preserve admission-time deficits and carrier-adjusted policy
-weight while rewards use actual fees. Integrated `confrw` precedence remains L12.
+Stable IDs: `policy-subdust`, `policy-carrier`, `policy-replacement`,
+`policy-reuse`, `policy-dust`. Adapted from Roots `846c9de12a5e71259dc1ed829413d68f449ebfd5`
+and the complete released `e93a8cca047c12ce9cab97181dd30705ed0e7e83` source,
+with Jaromil and devjoinedthechat attribution and upstream Core/Knots lineage
+retained. Native v32 graph and cluster algorithms remain authoritative.
 
-Dynamic dust updates are node-owned: one task is registered after the final
-successful chainstate load, updates immediately and every 15 minutes, and is
-stopped/joined before the final mempool or estimator is destroyed. Failed/retried
-constructors register no callbacks. The live rate and standardness snapshots
-share the mempool lock. Updating the rate does not reprice resident entries;
-new admission captures its own immutable deficit. Wallet dust queries and
-ephemeral checks use the same published rate.
+The current graph work activates carrier extra weight, immutable admission dust
+deficits, modified fees, configured replacement/TRUC/reuse and dynamic-dust
+publication. Mining priority/serialized limits, integrated read/write
+configuration and initialized effective-policy RPC reporting are also carried
+by the current candidate. Their owning-theme evidence is in the
+[port review](../roots-v32-port-review.md); argument parsing alone is not
+evidence of enforcement.
 
-`off` remains the default. Target mode uses the initialized long-horizon raw
-estimate at success threshold 0.8; unavailable/zero estimates fall back to the
-configured dustrelayfee floor. Mempool mode walks native chunk/topological order
-to the configured decimal-kvB position and uses that entry's actual fee divided
-by its policy vsize, preserving the source boundary units and fee meaning.
-An empty/short mempool also falls back to the floor. Scaling first quantizes the
-estimate to sat/kvB, applies the thousandths multiplier with floor rounding, and
-saturates at INT64_MAX without overflowing an intermediate multiplication.
-These lifecycle/fallback/boundary semantics repair the documented source gaps.
+## Deficits, units and independent fees
 
-The v31 adaptation makes numerical limits explicit. Fee-rate evaluation
-saturates an unrepresentable signed-64-bit quotient; output thresholds then
-saturate at `INT64_MAX`, followed by the existing deficit/subtraction saturation.
-The graph reserves the sum of absolute modified fees across resident and staged
-entries up to `INT64_MAX`, and adjusted weight up to `INT32_MAX`. Pending removals
-remain reserved until commit. Out-of-budget admission fails locally with
-`mempool-fee-overflow` or `too-large-cluster`; a resident fee delta that exhausts
-the budget fails without changing either the entry, graph or persisted delta.
-This conservative bound is an adaptation to native graph and diagram storage,
-not a consensus limit or a change to actual transaction fees. It can reject
-extreme replacement proposals even if the final graph alone would fit. The bound
-is global, not per cluster: it also rejects cancelling positive/negative fees
-whose absolute sum exceeds the limit, and independent clusters whose individual
-fees fit but whose combined absolute fees do not. These are representable
-combinations, not inherently overflowing transactions. Per-cluster bounds alone
-would leave multi-cluster replacement diagrams and their cumulative `FeeFrac`
-arithmetic unprotected; preserving those extremes requires a separate widening
-of native graph arithmetic. This adapter deliberately reserves main and staged
-states conservatively rather than widening native storage.
-The existing local sigop-cost ceiling is checked before policy multiplication;
-an extreme bytespersigop setting whose vsize exceeds CFeeRate's int32 domain is
-rejected before narrowing. The sigop fixture verifies graceful local rejection
-and acceptance of the same consensus-valid transaction in a block.
-`amount_tests/FeeRateSaturatedEvaluation` and
-`mempool_tests/GraphPolicyBudgetsAndReuseClaims` cover these limits.
-
-`mempool_tests/GraphPolicyAccounting` checks staging/rollback, fee deltas,
-block removal and reorg dependency restoration against native diagrams.
-`mempool_subdust_fee_penalty.py` retains source fee, carrier, package/TRUC,
-replacement and actual-reward fixtures; its priority-area portion is explicitly
-owned by L9. `subdust_fee_penalty` retains L5's wide-integer admission oracle;
-`carrier_policy_weight` independently checks output-carrier arithmetic and
-entry sizes through the extra-weight clamp.
-[The port review](../roots-v31-port-review.md) records ownership and current gates.
-
-Stable ID: **policy-subdust**. Depends on **policy-dust** and the shared local
-policy/configuration invariants in the [catalog](/doc/roots-features.md).
-This worked section is split out for readability. It describes pinned Roots
-`17e1d484aba2a881be03b8928fba3c0125e027a2`; implementation links are aids for
-that version, not a requirement to keep a particular acceptance function or
-check location.
-
-## Observable behavior and units
-
-When enabled, subtract the sum of output dust-threshold deficits from a
-transaction's modified policy fee. Actual input/output values, transaction ID
-and actual fee do not change. Paying enough to cover the deficit may satisfy
-fee checks; it never overrides another standardness, script, replacement,
-package or consensus check.
-
-For each output `i`, let `A_i` be its value in integer satoshis, `R` the current
-effective dust relay rate in sat/kvB, and `S_i` its serialized output size in
-bytes, including value and script-length encoding:
+For each output with value `A` satoshis and serialized size `S` bytes, the dust
+threshold at the effective dust relay rate `R` sat/kvB is:
 
 ```
-T_i = 0                                      if scriptPubKey is unspendable
-T_i = ceil(R * (S_i + 67) / 1000)             for a witness program
-T_i = ceil(R * (S_i + 148) / 1000)            otherwise
-D_i = max(0, T_i - A_i)
-P   = saturating_sum(D_i)
-F   = saturating_add(F_before_penalty, -P)
+T = 0                             for an unspendable output
+T = ceil(R * (S + 67) / 1000)      for a witness program
+T = ceil(R * (S + 148) / 1000)     otherwise
+D = max(0, T - A)
+P = saturating_sum(D)
+F = saturating_sub(saturating_add(actual_fee, operator_delta), P)
 ```
 
-Here `F_before_penalty` includes any `prioritisetransaction` fee delta; `F` is
-the effective modified fee in satoshis. The 67-byte estimate uses integer
-`107 / 4 = 26` in the discounted spend estimate; it is not 67.75 rounded later.
-The witness estimate also applies to Taproot and future witness programs,
-without assuming a smaller Taproot satisfaction. The ceiling is per output
-threshold, before subtracting its value or accumulating deficits. At rate zero
-all thresholds and the penalty are zero. For supported nonnegative rates there
-is no floating-point arithmetic in this calculation.
+Thresholds and subsequent signed arithmetic saturate at their signed 64-bit
+bounds. The ceiling applies separately to each output. The witness estimate
+uses the source integer discount and also applies to Taproot/future witness
+programs. A zero-valued spendable output contributes its entire threshold;
+anchors are not exempt. Disabling `subdustfeepenalty` sets `P` to zero without
+changing ordinary dust/ephemeral checks. The default is enabled.
 
-For an ordinary individually accepted non-TRUC transaction with policy virtual
-size `V`, the relay fee gate requires `F >= ceil(minrelay_sat_per_kvB * V / 1000)`.
-`V` is the node's policy size, including sigop/data-cost adjustments, not
-necessarily the size displayed by a generic raw decoder. Rolling mempool fees
-can require more. Entry modified fees and ancestor/descendant accounting carry
-the penalty into package/replacement/mining fee selection; this is not a
-separate coin transfer or a charge added to a mined transaction's actual fee.
+At the fixed default 3000 sat/kvB:
 
-Version-specific sources: dust threshold (`src/policy/policy.cpp`, source reference)
-`GetDustThreshold`, fee rounding (`src/policy/feerate.cpp`, source reference) and
-integer evaluation (`src/util/feefrac.h`, source reference), penalty application (`src/validation.cpp`, source reference),
-entry modified fees (`src/kernel/mempool_entry.h`, source reference),
-saturation (`src/util/overflow.h`, source reference) and policy size (`src/txmempool.h`, source reference).
+| Output | Threshold | Value | Deficit |
+| --- | --- | --- | --- |
+| P2PKH | 546 | 545 | 1 |
+| P2WPKH | 294 | 294 | 0 |
+| P2TR | 330 | 0 | 330 |
+| P2TR | 330 | 100 | 230 |
+| Two zero-valued P2TR outputs | 330 each | 0 each | 660 total |
+| OP_RETURN | 0 | 0 | 0 |
 
-## Worked boundaries
+For a 200-vbyte policy size at 1000 sat/kvB minimum relay and one 100-sat P2TR
+output, the fee gate requires 430 actual satoshis with no operator delta:
+429 fails and 430 reaches equality. This assumes other standardness rules
+permit the transaction. Paying a deficit never bypasses another local,
+package, replacement, script or consensus check.
 
-At the static default `R = 3000` sat/kvB:
+Carrier cost rounds upward to quarters of a vbyte. Entries retain actual weight
+separately from carrier extra weight and apply the native sigop adjustment to
+their policy weight. Admission, staged additions, chunk/replacement diagrams,
+fee updates, trimming and ancestor/descendant aggregation use the same modified
+fee and policy weight. Actual fees, transaction identifiers, BIP141 weight and
+block rewards retain their ordinary meaning. Deficits are captured at admission.
 
-| Output | Serialized size + spend estimate | Threshold | Value | Deficit |
-| --- | --- | --- | --- | --- |
-| P2PKH | 34 + 148 bytes | 546 sat | 545 sat | 1 sat |
-| P2WPKH | 31 + 67 bytes | 294 sat | 294 sat | 0 sat |
-| P2TR | 43 + 67 bytes | 330 sat | 0 sat | 330 sat |
-| P2TR | 43 + 67 bytes | 330 sat | 100 sat | 230 sat |
-| Two P2TR outputs | 110 bytes each | 330 sat each | 0 sat each | 660 sat total |
-| OP_RETURN | Unspendable | 0 sat | 0 sat | 0 sat |
+Resident operator changes recompute the formula from the aggregate stored delta;
+they do not repeatedly add to a previously saturated modified fee. This repairs
+a released-source discrepancy at signed extremes and preserves the same result
+after removal/re-admission. Rejected changes leave the entry, graph, operator
+delta and reservations unchanged. The wallet's structural chain-limit query
+also rejects an infeasible fee/weight reservation before staging it.
 
-If the measured policy size is 200 vB and minimum relay rate is 1,000 sat/kvB,
-one 100-sat P2TR output requires an actual fee of at least `200 + 230 = 430`
-sat when no fee delta or other gate applies. A 429-sat fee fails this gate;
-430 sat reaches equality. This example assumes dust standardness is relaxed
-on regtest, as in the owned test; the default standardness check may reject the
-output first. The 200-vB size illustrates the formula, not the size of every
-fixture. At `R = 1` sat/kvB a P2TR threshold is `ceil(110/1000) = 1` sat.
+## Dynamic dust lifecycle
 
-An output exactly at/above its threshold contributes nothing. Unspendable
-outputs contribute nothing. A **zero-valued spendable** output contributes its
-entire threshold; neither zero amount nor P2A classification is an automatic
-penalty exemption. Anchor/ephemeral permission and penalty arithmetic are
-separate checks in this source.
+The default is `off`. Enabled startup settings initialize and schedule a
+node-owned update only after the final successful chainstate load and native
+fee-estimator construction. Retries cannot retain a callback to an abandoned
+mempool. Shutdown stops and joins the scheduler before destroying its owners.
+The initial update precedes asynchronous mempool reload, then runs every
+15 minutes. Missing estimates fall back to the configured `dustrelayfee` floor.
 
-## Bounds, defaults and interactions
+Target mode requests the native block-policy LONG estimate at 80% success.
+Mempool mode walks native score/topology order to the selected decimal-kvB
+policy size and uses the boundary transaction's actual fee and policy size.
+Operator deltas and dust deficits affect ordering, but do not replace that
+actual fee. Multiplication uses thousandth precision, floors fractional
+satoshis per kvB and saturates at `INT64_MAX` before applying the configured
+floor. Zero or unavailable estimates cannot erase the floor.
 
-- `subdustfeepenalty` is a boolean, defaults to true, and is disabled with
-  `-subdustfeepenalty=0` (or its equivalent boolean negation). It is not a fee
-  amount or multiplier. CLI values override config; ordinary repeated CLI
-  scalar values take the last value after negation processing, while config
-  takes the first. Full precedence is in **runtime-config** in the catalog.
-  The initialized mempool option is startup state, not a mutable RPC setting.
-  See option loading (`src/node/mempool_args.cpp`, source reference) and
-  boolean conversion (`src/common/args.cpp`, source reference). Accepted Boolean grammar and
-  malformed-input diagnostics are specified by [policy-parsing](policy-parsing.md).
-- Disabling removes this deficit subtraction only. It does not disable dust
-  standardness or lower relay/mempool minimum fees. `acceptnonstdtxn=1` is
-  test-chain-only and does not itself disable the penalty. `dustrelayfee=0`
-  produces zero thresholds only if dynamic dust does not raise the effective
-  rate. Dynamic dust changes `R` and therefore future admission penalties;
-  current source does not reprice every existing entry when that rate changes.
-- Deficits accumulate using signed 64-bit `CAmount` saturation: `P` stops at
-  `INT64_MAX`. Subtracting that nonnegative penalty uses saturation down to
-  `INT64_MIN` for modified-fee accounting; it must not wrap into a high fee.
-  Valid output amounts are nonnegative and checked before this calculation.
-  Saturating accumulation does **not** make arbitrarily large configured fee
-  rates safe: threshold evaluation requires its result to fit in signed
-  64-bit, and dynamic rate multiplication has its own arithmetic limits.
-  Extreme configuration/threshold tests are an open gap.
-- Standard dust/ephemeral checks can reject before or after penalty calculation.
-  The normal zero-fee ephemeral requirement remains; permission does not imply
-  automatic subtraction bypass. Enforced TRUC can bypass the individual relay
-  floor for a package-funded parent, but package/mempool/replacement gates still
-  use their own rules. Internal reorg rejection exceptions are not a public
-  option to bypass arbitrary validation. Fee-delta, CPFP, RBF/TRUC and priority
-  mining interactions require their own acceptance coverage.
-- **Consensus invariant:** a consensus-valid block containing a transaction
-  rejected locally for this effective-fee deficit must still be accepted.
-  The penalty must not alter block fee/reward calculation or consensus script
-  flags. This is a required acceptance case even when local admission fails.
+Publication and complete standardness snapshots share the mempool lock.
+Admission sees one rate for standardness, ephemeral checks and its immutable
+deficit; subsequent publication never reprices resident entries. Node/wallet
+dust interfaces and prioritisation checks read the same synchronized rate.
+Mempool persistence stores only the operator delta, never the already-subtracted
+dust deficit. Reload and reorg admission compute a fresh deficit once at the
+current rate; confirmed transactions retain native clearing of operator deltas.
+Restart setting changes initialize a fresh rate. The full initialized reporting
+schema is documented in the [effective-policy contract](effective-policy.md).
 
-## Acceptance evidence and gaps
+## Native storage bounds
 
-mempool_subdust_fee_penalty.py (`test/functional/mempool_subdust_fee_penalty.py`, source reference)
-uses regtest with `acceptnonstdtxn=1` to isolate the fee gate. Its exact cases are
-`test_dust_output_increases_required_fee` (zero P2TR output, one below/equal fee),
-`test_partial_dust_proportional_penalty` (100-sat output),
-`test_multiple_dust_outputs_stack` (two zero outputs), `test_penalty_disabled`,
-`test_op_return_not_penalized` and `test_above_dust_not_penalized`.
-mempool_dust.py (`test/functional/mempool_dust.py`, source reference) `test_dust_output` separately
-checks different script thresholds and exact threshold/one below;
-mempool_tests.cpp (`src/test/mempool_tests.cpp`, source reference) `DynamicDustFeePublication`
-checks changing published dust state.
+The graph reserves the sum of absolute modified fees up to `INT64_MAX`, and
+adjusted weights up to `INT32_MAX`, across resident and staged additions.
+Pending removals remain reserved until commit; abort releases staged reserves.
+Admission outside those budgets fails with `mempool-fee-overflow` or
+`too-large-cluster`. A resident fee change outside the budget fails atomically
+and the RPC returns an error. No invalid fee/weight pair enters native graph
+arithmetic. Extreme fee-rate evaluation saturates before narrowing.
 
-The same sub-dust test also owns these interaction acceptance cases:
+These global conservative bounds also reject some representable final states:
+cancelling positive/negative fees, independent clusters with excessive combined
+absolute fees, or replacements that fit only after removals. Per-cluster limits
+alone cannot bound multi-cluster replacement diagrams. This preserves the
+released adapter rather than widening native storage or adding ancestor indexes.
 
-- `test_threshold_and_low_rate_boundaries`: exact threshold/one below, per-output
-  ceiling at one sat/kvB, and zero dust rate with the penalty still enabled.
-- `test_anchor_and_standardness`: zero-valued P2A contributes 240 sat at the
-  default rate; paying more cannot bypass standard dust/ephemeral checks, and
-  disabling the penalty retains ordinary dust rejection.
-- `test_carrier_cost_interaction`: carrier cost `1.01` rounds upward to five
-  weight units/byte; exact fee/one below, base versus modified fee and policy
-  size, zero cost, and full-count budget enforcement enabled/disabled.
-- `test_fee_delta_and_replacement`: pre-admission and resident fee deltas,
-  an RBF rejection despite a higher actual fee, replacement with sufficient
-  modified fees, and unchanged actual fees.
-- `test_package_and_truc`: ordinary v2 retains the individual relay floor;
-  enforced v3 sponsorship pays the parent's negative modified fee, including
-  the exact package minimum/one below and ancestor/descendant accounting.
-  `mempooltruc=accept` retains the individual floor. A consensus-valid block
-  containing the locally rejected v2 parent and its child is accepted.
-- `test_mining_and_block_acceptance`: explicit valid block containing a locally
-  rejected sub-dust transaction; template exclusion/inclusion across its fee
-  floor via a one-sat delta; actual transaction fees and coinbase reward remain
-  unchanged. Penalty disabling and an enabled priority area have separate
-  template inclusion cases.
+## Modes and RPC compatibility
 
-Repeated/config precedence is covered by `feature_policy_args.py` and
-`rpc_effective_policy.py`, as specified in [policy-parsing](policy-parsing.md).
-These cases isolate fees on regtest using nonstandard admission where needed;
-they do not establish permission to bypass standard ephemeral spending rules.
+The default replacement mode is Always/full RBF (`fee,-optin`). Never rejects
+input conflicts; OptIn accepts signaling conflicts and non-signaling v3/TRUC
+conflicts. Configured TRUC Reject/Accept/Enforce governs local v3 rejection,
+inheritance/resource checks and sponsorship. Ordinary non-TRUC parents retain
+their individual minimum relay floor; enforced TRUC packages can sponsor a
+parent, subject to native modified-package fee and replacement rules.
 
-The `subdust_fee_penalty` target in
-tx_pool.cpp (`src/test/fuzz/tx_pool.cpp`, source reference) drives production admission with the
-penalty enabled and disabled. An independent wide-integer oracle checks output
-thresholds and expected acceptance, and admitted entry base/modified/ancestor/
-descendant fees. Inputs include arbitrary nonnegative signed-64-bit dust rates,
-up to sixteen small P2TR/P2WPKH/P2A/P2PKH/OP_RETURN outputs plus change, and
-positive/negative fee deltas bounded by `MAX_MONEY`. Seeded cases exercise
-accumulated deficits exceeding `INT64_MAX` and subtraction reaching `INT64_MIN`:
-these must reject without wrapping into a high fee. Output sizes are deliberately
-bounded so each individual threshold fits in signed 64-bit; the target does not
-promise arbitrary configured rate/script combinations are safe. See the
-[scoped fuzz procedure](policy-parsing.md#scoped-fuzz-evidence).
+`spkreuse=allow` is the default. Conflict tracking uses full scripts and sets
+of all creator/spender claims, covering duplicate outputs, input/output reuse,
+ancestor conflicts, staged package claims, removal, replacement and reorgs.
+It does not infer script ownership or privacy. With independent inputs, these
+script conflicts can replace under Never or OptIn even if the original is
+non-signaling. They must still cover the original modified fees, pay the exact
+incremental relay requirement and improve the native feerate diagram. Direct
+prevout conflicts remain subject to the configured input-conflict RBF gate.
+This is the released runtime behavior; the older catalog's broad statement that
+Never disables all replacement did not describe the script-only path.
 
-**Unresolved preservation gates:** extreme configured thresholds beyond the
-target's representable size/rate domain, dynamic dust repricing/startup, interactions with
-rolling mempool pressure, package replacement/sibling eviction with dust,
-reorg accounting, and the complete ephemeral exception/fee-delta matrix.
-The bounded arithmetic campaign does not establish full admission safety at
-extreme rates or prove saturated ancestor accounting for arbitrary packages.
-Dynamic modes retain the known scheduler startup failure recorded in
-`policy-parsing`. Existing dust/TRUC/package/reorg suites cover their ordinary
-cases, but cannot be presented as proof of these combined cases. A port must
-retain these gates until focused coverage or an explicit compatibility decision
-resolves them.
+The native `vsize_bip141` and `weight` fields report actual transaction metrics;
+`vsize_adjusted`, legacy `vsize`, cluster/chunk weight and ancestor sizes report
+policy adjustments. The deprecated `fullrbf` field remains available only with
+`-deprecatedrpc=fullrbf` and reports the initialized input-conflict Always mode;
+it does not describe independent script-only replacement. Deprecated
+`bip125-replaceable` retains its native signaling meaning, independently of
+configured acceptance. The additive effective-policy object reports the applied
+settings and enforcement gates independently of deprecated native fields.
 
-Retirement requires upstream equivalence of this formula, rounding, effective
-fee accounting, defaults/disable behavior and configuration interactions,
-with the owned tests and valid-block invariant passing. An upstream dust
-standardness check alone is not this fee penalty. Apply the catalog's shared
-retirement rule and retain the unresolved-gap record until tested.
+## Verification boundaries
+
+Native `GraphPolicyAccounting`, `GraphPolicyMultiAncestorAccounting`,
+`GraphPolicyBudgetsAndReuseClaims`, `GraphPolicyTrimUsesModifiedFees` and
+`GraphPolicyFeeDeltaSaturation` cover staged/committed/aborted state, shared
+ancestors, fee changes, block removal/re-admission and independent arithmetic.
+The owned functional scripts are `mempool_graph_policy.py`,
+`mempool_rbf_policy.py` and `mempool_subdust_fee_penalty.py`, alongside the
+native package/RBF/TRUC/cluster profiles. Subdust's optional
+`--test-mining-priority` assertions remain an explicit L5 gate. Arithmetic fuzz
+targets are registered separately from their actual execution. Lifecycle tests
+cover restart/operator persistence, floor changes, scheduler updates, missing
+and warmed estimator results, reindex retry and reorg re-admission. Independent
+carrier fixtures compose legacy, P2WSH and Taproot input data with OP_RETURN,
+check exact adjusted fee boundaries, actual BIP141 metrics and same-tx blocks.
+
+Local policy never changes block consensus: consensus-valid blocks containing
+locally rejected carrier, dust, TRUC or reuse transactions remain acceptable.
+Ordinary dust checks, parser success and native full-RBF defaults alone do not
+establish equivalence to these complete contracts.

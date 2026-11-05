@@ -183,12 +183,12 @@ const validationStages = [
     <section class="roots-wallet-privacy" aria-labelledby="wallet-privacy-title">
       <div class="roots-section-heading">
         <div>
-          <p class="roots-wallet-privacy__eyebrow">v29.4-roots.3 candidate</p>
+          <p class="roots-wallet-privacy__eyebrow">Wallet workflows</p>
           <h2 id="wallet-privacy-title">Review wallet privacy choices before signing</h2>
         </div>
         <div>
           <p>
-            The candidate adds an explicit private-key sweep workflow and
+            Bitcoin Roots preserves an explicit private-key sweep workflow and
             privacy-aware coin control facts without promising anonymity.
           </p>
           <ul>
@@ -201,8 +201,12 @@ const validationStages = [
             private-key export, or a privacy score. Keep an independent backup
             until a sweep confirms.
           </p>
+          <p>
+            Separate key-disclosure RPCs are disabled by default and require an
+            explicit startup opt-in. Review their risks in the wallet manual.
+          </p>
           <a class="roots-text-link" :href="withBase('/wallet-privacy')">
-            Review the candidate wallet tools
+            Review the wallet tools
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg>
           </a>
         </div>

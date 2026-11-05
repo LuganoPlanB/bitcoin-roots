@@ -21,13 +21,12 @@ class UniValue;
 struct bilingual_str;
 
 namespace wallet {
-class LegacyScriptPubKeyMan;
 enum class DatabaseStatus;
 struct WalletContext;
 
 extern const std::string HELP_REQUIRING_PASSPHRASE;
 
-static const RPCResult RESULT_LAST_PROCESSED_BLOCK { RPCResult::Type::OBJ, "lastprocessedblock", "hash and height of the block this information was generated on",{
+inline const RPCResult RESULT_LAST_PROCESSED_BLOCK { RPCResult::Type::OBJ, "lastprocessedblock", "hash and height of the block this information was generated on",{
     {RPCResult::Type::STR_HEX, "hash", "hash of the block this information was generated on"},
     {RPCResult::Type::NUM, "height", "height of the block this information was generated on"}}
 };
@@ -39,7 +38,7 @@ static const RPCResult RESULT_LAST_PROCESSED_BLOCK { RPCResult::Type::OBJ, "last
  * @return nullptr if no wallet should be used, or a pointer to the CWallet
  */
 std::shared_ptr<CWallet> GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
-bool GetWalletNameFromJSONRPCRequest(const JSONRPCRequest& request, std::string& wallet_name);
+std::optional<std::string> GetWalletNameFromJSONRPCRequest(const JSONRPCRequest& request);
 /**
  * Ensures that a wallet name is specified across the endpoint and wallet_name.
  * Throws `RPC_INVALID_PARAMETER` if none or different wallet names are specified.
@@ -47,6 +46,8 @@ bool GetWalletNameFromJSONRPCRequest(const JSONRPCRequest& request, std::string&
 std::string EnsureUniqueWalletName(const JSONRPCRequest& request, std::optional<std::string_view> wallet_name);
 
 void EnsureWalletIsUnlocked(const CWallet&);
+//! Require the immutable startup opt-in for the restricted wallet RPC methods.
+void EnsureDangerousRPCAllowed(const JSONRPCRequest& request);
 WalletContext& EnsureWalletContext(const std::any& context);
 
 bool GetAvoidReuseFlag(const CWallet& wallet, const UniValue& param);

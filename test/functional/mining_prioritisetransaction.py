@@ -7,6 +7,7 @@
 from decimal import Decimal
 import time
 
+from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS
 from test_framework.messages import (
     COIN,
     MAX_BLOCK_WEIGHT,
@@ -27,7 +28,8 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
             "-maxscriptsize=1000000", "-datacarriersize=1000000",
-            "-printpriority=1", "-blockprioritysize=0", "-blockmaxweight=4000000",
+            "-blockprioritysize=0", "-blockmaxweight=4000000",
+            "-printpriority=1",
         ]] * self.num_nodes
         self.supports_cli = False
 
@@ -353,14 +355,14 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         # getblocktemplate to (eventually) return a new block.
         mock_time = int(time.time())
         self.nodes[0].setmocktime(mock_time)
-        template = self.nodes[0].getblocktemplate({'rules': ['segwit']})
+        template = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
         self.nodes[0].prioritisetransaction(txid=tx_id, fee_delta=-int(self.relayfee*COIN))
 
         # Calling prioritisetransaction with the inverse amount should delete its prioritisation entry
         assert tx_id not in self.nodes[0].getprioritisedtransactions()
 
         self.nodes[0].setmocktime(mock_time+10)
-        new_template = self.nodes[0].getblocktemplate({'rules': ['segwit']})
+        new_template = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
 
         assert_not_equal(template, new_template)
 

@@ -3,6 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
+import ipaddress
 from pathlib import Path
 import os
 import shlex
@@ -20,6 +21,15 @@ def run(cmd, **kwargs):
         sys.exit(str(e))
 
 
+def llvm_apt_host_args(address):
+    if not address:
+        return []
+    parsed = ipaddress.IPv4Address(address)
+    if not parsed.is_global:
+        raise ValueError('LLVM APT route must be a public IPv4 address')
+    return [f'--add-host=apt.llvm.org:{parsed}']
+
+
 def main():
     print("Export only allowed settings:")
     settings = run(
@@ -32,10 +42,23 @@ def main():
     # they will not be passed on.
     settings.update([
         "BASE_BUILD_DIR",
+        "BIND_TEST_ROUTABLE_IPV4",
+        "BIND_TEST_ROUTABLE_IPV6",
         "CI_FAILFAST_TEST_LEAVE_DANGLING",
         "RELEASE_NOTICE_PLATFORM",
         "RELEASE_TAG",
     ])
+
+    ci_idx = sorted(path.name for path in Path(__file__).parent.glob("00_setup_env_*.sh")).index(Path(os.environ["FILE_ENV"]).name)
+    subnet_id = ci_idx % 256
+    ip4_subnet = ipaddress.IPv4Network(f"11.11.{subnet_id}.0/24")
+    ip4_addr = ip4_subnet[5]
+    ip6_subnet = ipaddress.IPv6Network(f"1111:1111:{subnet_id:x}::/112")
+    ip6_addr = ip6_subnet[5]
+
+    if not os.getenv("DANGER_RUN_CI_ON_HOST"):
+        os.environ["BIND_TEST_ROUTABLE_IPV4"] = str(ip4_addr)
+        os.environ["BIND_TEST_ROUTABLE_IPV6"] = str(ip6_addr)
 
     # Append $USER to /tmp/env to support multi-user systems and $CONTAINER_NAME
     # to allow support starting multiple runs simultaneously by the same user.
@@ -75,6 +98,10 @@ def main():
             f"--label={CI_IMAGE_LABEL}",
             f"--tag={os.environ['CONTAINER_NAME']}",
         ]
+        # Both build and runtime need the same job-scoped route: the ASan
+        # profile refreshes APT again to install matching host kernel headers.
+        llvm_host_args = llvm_apt_host_args(os.getenv("ROOTS_APT_LLVM_IPV4", ""))
+        cmd_build += llvm_host_args
         cmd_build += shlex.split(os.getenv("DOCKER_BUILD_CACHE_ARG", ""))
         cmd_build += [os.environ["BASE_READ_ONLY_DIR"]]
 
@@ -123,7 +150,8 @@ def main():
                 sys.exit(1)
             CI_CCACHE_MOUNT = f"type=bind,src={os.environ['CCACHE_DIR']},dst={os.environ['CCACHE_DIR']}"
 
-        run(["docker", "network", "create", "--ipv6", "--subnet", "1111:1111::/112", "ci-ip6net"], check=False)
+        network_name = f"{os.environ['CONTAINER_NAME']}-net"
+        run(["docker", "network", "create", "--ipv6", f"--subnet={ip6_subnet}", f"--subnet={ip4_subnet}", network_name])
 
         if os.getenv("RESTART_CI_DOCKER_BEFORE_RUN"):
             print("Restart docker before run to stop and clear all containers started with --rm")
@@ -142,6 +170,7 @@ def main():
 
         cmd_run = ["docker", "run", "--rm", "--interactive", "--detach", "--tty"]
         cmd_run += [
+            *llvm_host_args,
             "--cap-add=LINUX_IMMUTABLE",
             *shlex.split(os.getenv("CI_CONTAINER_CAP", "")),
             f"--mount=type=bind,src={os.environ['BASE_READ_ONLY_DIR']},dst={os.environ['BASE_READ_ONLY_DIR']},readonly",
@@ -153,7 +182,9 @@ def main():
             *CI_ARTIFACTS_MOUNT,
             f"--env-file={env_file}",
             f"--name={os.environ['CONTAINER_NAME']}",
-            "--network=ci-ip6net",
+            f"--network={network_name}",
+            f"--ip={ip4_addr}",
+            f"--ip6={ip6_addr}",
             f"--platform={os.environ['CI_IMAGE_PLATFORM']}",
             os.environ["CONTAINER_NAME"],
         ]
@@ -168,7 +199,13 @@ def main():
         if os.getenv("DANGER_RUN_CI_ON_HOST"):
             prefix = []
         else:
-            prefix = ["docker", "exec", container_id]
+            prefix = [
+                "docker",
+                "exec",
+                "--env",
+                "DANGER_RUN_CI_ON_HOST=1",  # Safe to set *inside* the container
+                container_id,
+            ]
 
         return run([*prefix, *cmd_inner], **kwargs)
 
@@ -183,11 +220,28 @@ def main():
         f"{os.environ['BASE_ROOT_DIR']}",
     ])
     ci_exec([f"{os.environ['BASE_ROOT_DIR']}/ci/test/01_base_install.sh"])
-    ci_exec([f"{os.environ['BASE_ROOT_DIR']}/ci/test/03_test_script.sh"])
+    test_script = f"{os.environ['BASE_ROOT_DIR']}/ci/test/03_test_script.sh"
+    test_command = [test_script]
+    if os.environ.get("HOST", "").startswith("x86_64-w64-mingw32"):
+        test_command = [
+            "env",
+            "NIX_BUILD_SHELL=bash",
+            "nix-shell",
+            f"{os.environ['BASE_ROOT_DIR']}/contrib/devtools/shell-win64-cross.nix",
+            "--run",
+            f"echo 'Windows cross compiler:' && \"$CXX\" -v && exec bash {shlex.quote(test_script)}",
+        ]
+    if os.getenv("ROOTS_ARTIFACTS_DIR"):
+        # Leave five minutes for failure collection/upload before the job limit.
+        timeout = max(60, (int(os.getenv("ROOTS_JOB_TIMEOUT_MINUTES", "360")) - 5) * 60)
+        test_command = ["python3", f"{os.environ['BASE_ROOT_DIR']}/ci/test/roots-regressions.py", "command",
+                        "--timeout", str(timeout), "--artifacts", os.environ['ROOTS_ARTIFACTS_DIR'], "--", *test_command]
+    ci_exec(test_command)
 
     if not os.getenv("DANGER_RUN_CI_ON_HOST"):
         print("Stop and remove CI container by ID")
         run(["docker", "container", "kill", container_id])
+        run(["docker", "network", "rm", network_name])
 
 
 if __name__ == "__main__":

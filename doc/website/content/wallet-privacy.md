@@ -1,6 +1,6 @@
 ---
 title: Wallet privacy tools
-description: Candidate private-key sweep and privacy-aware coin control tools for Bitcoin Roots v29.4-roots.3.
+description: Bitcoin Roots wallet workflows, current key-disclosure permissions, and historical sweep and coin-control guidance.
 pageClass: bitcoin-roots-reading
 head:
   - - meta
@@ -8,13 +8,31 @@ head:
       content: Bitcoin Roots wallet privacy tools
   - - meta
     - property: og:description
-      content: Review the guarded sweep and privacy-aware coin control tools in the v29.4-roots.3 release.
+      content: Review wallet workflows, key-disclosure permissions, and the limits of sweep and coin-control tools.
 ---
 
 # Wallet privacy tools
 
 For network routing, private broadcasting, wallet settings, and their defaults,
 see [Privacy settings](/privacy).
+
+## Current v32.1 source
+
+Read the current [wallet manual](/doc/wallet-privacy) and
+[feature catalogue](/doc/roots-features) for the v32.1 source. Source availability
+does not establish a published release; public downloads and patches are listed
+in the [release patch browser](/patches/).
+
+`exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled
+by default, including public-only modes. Enabling them requires starting the
+node with the explicit command-line option `--allow-dangerous-rpc` (or `=1`).
+Configuration files, JSON settings and runtime settings cannot enable them;
+omitting the option or using `=0` disables them. RPC authentication, selected-wallet
+authorization and normal wallet unlock remain required. Private-key disclosure
+can compromise other addresses or an HD subtree; review the complete manual
+before enabling these methods.
+
+## Historical sweep and coin-control guidance
 
 The published `v29.4-roots.3` release adds two explicit wallet workflows. This
 is release documentation. Verify the version and

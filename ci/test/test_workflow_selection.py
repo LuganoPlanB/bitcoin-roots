@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 """Execute the actual nightly matrix selector and PR result gate locally."""
 import json
@@ -35,7 +35,7 @@ class WorkflowSelectionTest(unittest.TestCase):
     def test_all_preserves_extended_platform_and_sanitizer_coverage(self):
         result, matrices = self.nightly('all')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(matrices['value']['include']), 4)
+        self.assertEqual(len(matrices['value']['include']), 5)
         self.assertEqual(len(matrices['sanitizers']['include']), 3)
         for matrix in matrices.values():
             for row in matrix['include']:
@@ -43,7 +43,7 @@ class WorkflowSelectionTest(unittest.TestCase):
                 self.assertGreater(row['timeout'], 60)
 
     def test_specific_suites_do_not_create_unrelated_matrix_jobs(self):
-        for suite in ['tsan', 'msan', 'sanitizers', 'tidy', 'i686', 'platforms', 'previous-releases', 'extended-functional', 'fuzz', 'macos-fuzz', 'windows-fuzz', 'arm32', 'kernel', 'macos-smoke', 'windows-smoke']:
+        for suite in ['tsan', 'msan', 'sanitizers', 'tidy', 'i686', 'platforms', 'previous-releases', 'extended-functional', 'system-libraries', 'fuzz', 'macos-fuzz', 'windows-fuzz', 'arm32', 'kernel', 'macos-smoke', 'windows-smoke']:
             with self.subTest(suite=suite):
                 result, matrices = self.nightly(suite)
                 self.assertEqual(result.returncode, 0, result.stderr)

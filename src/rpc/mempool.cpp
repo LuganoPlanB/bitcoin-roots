@@ -3,37 +3,69 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <rpc/blockchain.h>
+#include <rpc/mempool.h>
+#include <rpc/register.h> // IWYU pragma: associated
 
-#include <node/mempool_persist.h>
-
-#include <chainparams.h>
 #include <common/args.h>
+#include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <index/txospenderindex.h>
-#include <kernel/mempool_entry.h>
+#include <net.h>
 #include <net_processing.h>
+#include <netaddress.h>
 #include <netbase.h>
+#include <node/mempool_persist.h>
 #include <node/mempool_persist_args.h>
+#include <node/transaction.h>
+#include <node/txorphanage.h>
 #include <node/types.h>
+#include <policy/feerate.h>
+#include <policy/packages.h>
+#include <policy/policy.h>
 #include <policy/rbf.h>
-#include <policy/settings.h>
 #include <primitives/transaction.h>
+#include <rpc/protocol.h>
+#include <rpc/request.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
+#include <script/script.h>
+#include <sync.h>
+#include <tinyformat.h>
+#include <txgraph.h>
 #include <txmempool.h>
+#include <uint256.h>
 #include <univalue.h>
+#include <util/check.h>
+#include <util/expected.h>
+#include <util/feefrac.h>
 #include <util/fs.h>
 #include <util/moneystr.h>
-#include <util/strencodings.h>
+#include <util/string.h>
 #include <util/time.h>
 #include <util/vector.h>
+#include <validation.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <list>
 #include <map>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <set>
+#include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
+#include <vector>
+
+namespace node {
+struct NodeContext;
+} // namespace node
 
 using node::DumpMempool;
 
@@ -44,9 +76,9 @@ using node::NodeContext;
 using node::TransactionError;
 using util::ToString;
 
-static RPCHelpMan sendrawtransaction()
+static RPCMethod sendrawtransaction()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "sendrawtransaction",
         "Submit a raw transaction (serialized, hex-encoded) to the network.\n"
 
@@ -56,10 +88,15 @@ static RPCHelpMan sendrawtransaction()
         "privacy by leaking the transaction's origin, as nodes will normally not\n"
         "rebroadcast non-wallet transactions already in their mempool.\n"
 
-        "\nIf -privatebroadcast is enabled, then the transaction will be sent only via\n"
-        "dedicated, short-lived connections to Tor or I2P peers or IPv4/IPv6 peers\n"
-        "via the Tor network. This conceals the transaction's origin. The transaction\n"
-        "will only enter the local mempool when it is received back from the network.\n"
+        "\nIf -privatebroadcast is enabled, then the transaction will be sent via\n"
+        "dedicated, short-lived connections to Tor or I2P peers, or to IPv4/IPv6 peers\n"
+        "via the Tor network. This provides best-effort concealment of the transaction's origin.\n"
+        "Private broadcast is experimental and may change in future releases.\n"
+        "Submission does not itself add the transaction to the local mempool; normal\n"
+        "mempool acceptance and relay apply when it is received back from the network.\n"
+        "The private broadcast queue is bounded: when it is full, this RPC fails and\n"
+        "the transaction is not scheduled until an existing one completes or is\n"
+        "aborted. Use getprivatebroadcastinfo to inspect the queue and abortprivatebroadcast to abort.\n"
 
         "\nA specific exception, RPC_TRANSACTION_ALREADY_IN_UTXO_SET, may throw if the transaction cannot be added to the mempool.\n"
 
@@ -87,7 +124,7 @@ static RPCHelpMan sendrawtransaction()
             "\nAs a JSON-RPC call\n"
             + HelpExampleRpc("sendrawtransaction", "\"signedhex\"")
                 },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const CAmount max_burn_amount = request.params[2].isNull() ? 0 : AmountFromValue(request.params[2]);
 
@@ -139,11 +176,13 @@ static RPCHelpMan sendrawtransaction()
     };
 }
 
-static RPCHelpMan getprivatebroadcastinfo()
+static RPCMethod getprivatebroadcastinfo()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getprivatebroadcastinfo",
-        "Returns information about transactions that are currently being privately broadcast.\n",
+        "Returns information about transactions tracked for private broadcast.\n"
+        "Transactions that have reached the send-attempt limit remain in the result with attempts_remaining=0.\n"
+        "This method is only available when running with -privatebroadcast enabled.\n",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -155,6 +194,8 @@ static RPCHelpMan getprivatebroadcastinfo()
                                 {RPCResult::Type::STR_HEX, "txid", "The transaction hash in hex"},
                                 {RPCResult::Type::STR_HEX, "wtxid", "The transaction witness hash in hex"},
                                 {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded transaction data"},
+                                {RPCResult::Type::NUM_TIME, "time_added", "The time this transaction was added to the private broadcast queue (seconds since epoch)"},
+                                {RPCResult::Type::NUM, "attempts_remaining", "The number of additional private broadcast send attempts allowed for this transaction"},
                                 {RPCResult::Type::ARR, "peers", "Per-peer send and acknowledgment information for this transaction",
                                     {
                                         {RPCResult::Type::OBJ, "", "",
@@ -171,10 +212,14 @@ static RPCHelpMan getprivatebroadcastinfo()
             HelpExampleCli("getprivatebroadcastinfo", "")
             + HelpExampleRpc("getprivatebroadcastinfo", "")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const NodeContext& node{EnsureAnyNodeContext(request.context)};
             const PeerManager& peerman{EnsurePeerman(node)};
+            if (!peerman.GetInfo().private_broadcast) {
+                throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Private broadcast is not enabled. Ensure you're running Bitcoin Core with -privatebroadcast=1.");
+            }
+
             const auto txs{peerman.GetPrivateBroadcastInfo()};
 
             UniValue transactions(UniValue::VARR);
@@ -183,6 +228,8 @@ static RPCHelpMan getprivatebroadcastinfo()
                 o.pushKV("txid", tx_info.tx->GetHash().ToString());
                 o.pushKV("wtxid", tx_info.tx->GetWitnessHash().ToString());
                 o.pushKV("hex", EncodeHexTx(*tx_info.tx));
+                o.pushKV("time_added", TicksSinceEpoch<std::chrono::seconds>(tx_info.time_added));
+                o.pushKV("attempts_remaining", tx_info.attempts_remaining);
                 UniValue peers(UniValue::VARR);
                 for (const auto& peer : tx_info.peers) {
                     UniValue p(UniValue::VOBJ);
@@ -204,12 +251,13 @@ static RPCHelpMan getprivatebroadcastinfo()
     };
 }
 
-static RPCHelpMan abortprivatebroadcast()
+static RPCMethod abortprivatebroadcast()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "abortprivatebroadcast",
         "Abort private broadcast attempts for a transaction currently being privately broadcast.\n"
-        "The transaction will be removed from the private broadcast queue.\n",
+        "The transaction will be removed from the private broadcast queue.\n"
+        "This method is only available when running with -privatebroadcast enabled.\n",
         {
             {"id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "A transaction identifier to abort. It will be matched against both txid and wtxid for all transactions in the private broadcast queue.\n"
                                                                 "If the provided id matches a txid that corresponds to multiple transactions with different wtxids, multiple transactions will be removed and returned."},
@@ -232,12 +280,16 @@ static RPCHelpMan abortprivatebroadcast()
             HelpExampleCli("abortprivatebroadcast", "\"id\"")
             + HelpExampleRpc("abortprivatebroadcast", "\"id\"")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
-            const uint256 id{ParseHashV(self.Arg<UniValue>("id"), "id")};
 
             const NodeContext& node{EnsureAnyNodeContext(request.context)};
             PeerManager& peerman{EnsurePeerman(node)};
+            if (!peerman.GetInfo().private_broadcast) {
+                throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Private broadcast is not enabled. Ensure you're running Bitcoin Core with -privatebroadcast=1.");
+            }
+
+            const uint256 id{ParseHashV(self.Arg<UniValue>("id"), "id")};
 
             const auto removed_txs{peerman.AbortPrivateBroadcast(id)};
             if (removed_txs.empty()) {
@@ -259,9 +311,9 @@ static RPCHelpMan abortprivatebroadcast()
     };
 }
 
-static RPCHelpMan testmempoolaccept()
+static RPCMethod testmempoolaccept()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "testmempoolaccept",
         "Returns result of mempool acceptance tests indicating if raw transaction(s) (serialized, hex-encoded) would be accepted by mempool.\n"
         "\nIf multiple transactions are passed in, parents must come before children and package policies apply: the transactions cannot conflict with any mempool transactions or each other.\n"
@@ -291,11 +343,15 @@ static RPCHelpMan testmempoolaccept()
                     {RPCResult::Type::STR, "package-error", /*optional=*/true, "Package validation error, if any (only possible if rawtxs had more than 1 transaction)."},
                     {RPCResult::Type::BOOL, "allowed", /*optional=*/true, "Whether this tx would be accepted to the mempool and pass client-specified maxfeerate. "
                                                        "If not present, the tx was not fully validated due to a failure in another tx in the list."},
-                    {RPCResult::Type::NUM, "vsize", /*optional=*/true, "Virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted (only present when 'allowed' is true)"},
+                    {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Policy virtual size including sigop and data-carrier cost adjustments (only present when 'allowed' is true)."},
+                    {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
+                                                                "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
+                    {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141.\n"
+                                                                       "This is different from actual serialized size for witness transactions as witness data is discounted (only present when 'allowed' is true)."},
                     {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees (only present if 'allowed' is true)",
                     {
                         {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are modified fees from prioritisetransaction or a package feerate was used."},
+                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are operator deltas or admission dust deficits or a package feerate was used."},
                         {RPCResult::Type::ARR, "effective-includes", /*optional=*/false, "transactions whose fees and vsizes are included in effective-feerate.",
                             {RPCResult{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                         }},
@@ -315,7 +371,7 @@ static RPCHelpMan testmempoolaccept()
             "\nAs a JSON-RPC call\n"
             + HelpExampleRpc("testmempoolaccept", "[\"signedhex\"]")
                 },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const UniValue raw_transactions = request.params[0].get_array();
             if (raw_transactions.size() < 1 || raw_transactions.size() > MAX_PACKAGE_COUNT) {
@@ -382,7 +438,9 @@ static RPCHelpMan testmempoolaccept()
                         // Only return the fee and vsize if the transaction would pass ATMP.
                         // These can be used to calculate the feerate.
                         result_inner.pushKV("allowed", true);
+                        result_inner.pushKV("vsize_adjusted", virtual_size);
                         result_inner.pushKV("vsize", virtual_size);
+                        result_inner.pushKV("vsize_bip141", GetVirtualTransactionSize(*tx));
                         UniValue fees(UniValue::VOBJ);
                         fees.pushKV("base", ValueFromAmount(fee));
                         fees.pushKV("effective-feerate", ValueFromAmount(tx_result.m_effective_feerate.value().GetFeePerK()));
@@ -413,13 +471,13 @@ static RPCHelpMan testmempoolaccept()
 static std::vector<RPCResult> ClusterDescription()
 {
     return {
-        RPCResult{RPCResult::Type::NUM, "clusterweight", "total sigops-adjusted weight (as defined in BIP 141 and modified by '-bytespersigop')"},
+        RPCResult{RPCResult::Type::NUM, "clusterweight", "total policy weight including sigop and data-carrier cost adjustments"},
         RPCResult{RPCResult::Type::NUM, "txcount", "number of transactions"},
         RPCResult{RPCResult::Type::ARR, "chunks", "chunks in this cluster (in mining order)",
             {RPCResult{RPCResult::Type::OBJ, "chunk", "",
                 {
-                    RPCResult{RPCResult::Type::NUM, "chunkfee", "fees of the transactions in this chunk"},
-                    RPCResult{RPCResult::Type::NUM, "chunkweight", "sigops-adjusted weight of all transactions in this chunk"},
+                    RPCResult{RPCResult::Type::STR_AMOUNT, "chunkfee", "modified policy fees of the transactions in this chunk, including operator deltas and admission dust deficits"},
+                    RPCResult{RPCResult::Type::NUM, "chunkweight", "policy weight including sigop and data-carrier cost adjustments of all transactions in this chunk"},
                     RPCResult{RPCResult::Type::ARR, "txs", "transactions in this chunk in mining order",
                         {RPCResult{RPCResult::Type::STR_HEX, "txid", "transaction id"}}},
                 }
@@ -430,8 +488,12 @@ static std::vector<RPCResult> ClusterDescription()
 
 static std::vector<RPCResult> MempoolEntryDescription()
 {
-    return {
-        RPCResult{RPCResult::Type::NUM, "vsize", "virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
+    std::vector<RPCResult> list = {
+        {RPCResult::Type::NUM, "vsize", "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
+        "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
+        {RPCResult::Type::NUM, "vsize_bip141", "Virtual transaction size as defined in BIP 141.\n"
+        "This is different from actual serialized size for witness transactions as witness data is discounted."},
+        {RPCResult::Type::NUM, "vsize_adjusted", "Policy virtual size including sigop and data-carrier cost adjustments."},
         RPCResult{RPCResult::Type::NUM, "weight", "transaction weight as defined in BIP 141."},
         RPCResult{RPCResult::Type::NUM_TIME, "time", "local time transaction entered pool in seconds since 1 Jan 1970 GMT"},
         RPCResult{RPCResult::Type::NUM, "height", "block height when transaction entered pool"},
@@ -439,23 +501,26 @@ static std::vector<RPCResult> MempoolEntryDescription()
         RPCResult{RPCResult::Type::NUM, "descendantsize", "virtual transaction size of in-mempool descendants (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorcount", "number of in-mempool ancestor transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorsize", "virtual transaction size of in-mempool ancestors (including this one)"},
-        RPCResult{RPCResult::Type::NUM, "chunkweight", "sigops-adjusted weight (as defined in BIP 141 and modified by '-bytespersigop') of this transaction's chunk"},
+        RPCResult{RPCResult::Type::NUM, "chunkweight", "Policy weight including sigop and data-carrier cost adjustments of this transaction's chunk"},
         RPCResult{RPCResult::Type::STR_HEX, "wtxid", "hash of serialized transaction, including witness data"},
         RPCResult{RPCResult::Type::OBJ, "fees", "",
             {
                 RPCResult{RPCResult::Type::STR_AMOUNT, "base", "transaction fee, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "modified", "transaction fee with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "ancestor", "transaction fees of in-mempool ancestors (including this one) with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
-                RPCResult{RPCResult::Type::STR_AMOUNT, "descendant", "transaction fees of in-mempool descendants (including this one) with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "modified", "transaction fee with operator deltas and admission dust deficit used for policy, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "ancestor", "transaction fees of in-mempool ancestors (including this one) with operator deltas and admission dust deficits used for policy, denominated in " + CURRENCY_UNIT},
+                RPCResult{RPCResult::Type::STR_AMOUNT, "descendant", "transaction fees of in-mempool descendants (including this one) with operator deltas and admission dust deficits used for policy, denominated in " + CURRENCY_UNIT},
                 RPCResult{RPCResult::Type::STR_AMOUNT, "chunk", "transaction fees of chunk, denominated in " + CURRENCY_UNIT},
             }},
         RPCResult{RPCResult::Type::ARR, "depends", "unconfirmed transactions used as inputs for this transaction",
             {RPCResult{RPCResult::Type::STR_HEX, "transactionid", "parent transaction id"}}},
         RPCResult{RPCResult::Type::ARR, "spentby", "unconfirmed transactions spending outputs from this transaction",
             {RPCResult{RPCResult::Type::STR_HEX, "transactionid", "child transaction id"}}},
-        RPCResult{RPCResult::Type::BOOL, "bip125-replaceable", "Whether this transaction signals BIP125 replaceability or has an unconfirmed ancestor signaling BIP125 replaceability. (DEPRECATED)\n"},
         RPCResult{RPCResult::Type::BOOL, "unbroadcast", "Whether this transaction is currently unbroadcast (initial broadcast not yet acknowledged by any peers)"},
     };
+    if (IsDeprecatedRPCEnabled("bip125")) {
+        list.emplace_back(RPCResult::Type::BOOL, "bip125-replaceable", "Whether this transaction signals BIP125 replaceability or has an unconfirmed ancestor signaling BIP125 replaceability. (DEPRECATED)\n");
+    }
+    return list;
 }
 
 void AppendChunkInfo(UniValue& all_chunks, FeePerWeight chunk_feerate, std::vector<const CTxMemPoolEntry *> chunk_txs)
@@ -512,7 +577,9 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
     auto [ancestor_count, ancestor_size, ancestor_fees] = pool.CalculateAncestorData(e);
     auto [descendant_count, descendant_size, descendant_fees] = pool.CalculateDescendantData(e);
 
+    info.pushKV("vsize_adjusted", e.GetTxSize());
     info.pushKV("vsize", e.GetTxSize());
+    info.pushKV("vsize_bip141", GetVirtualTransactionSize(e.GetTx()));
     info.pushKV("weight", e.GetTxWeight());
     info.pushKV("time", count_seconds(e.GetTime()));
     info.pushKV("height", e.GetHeight());
@@ -554,18 +621,19 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
     }
 
     info.pushKV("spentby", std::move(spent));
+    info.pushKV("unbroadcast", pool.IsUnbroadcastTx(tx.GetHash()));
 
     // Add opt-in RBF status
-    bool rbfStatus = false;
-    RBFTransactionState rbfState = IsRBFOptIn(tx, pool);
-    if (rbfState == RBFTransactionState::UNKNOWN) {
-        throw JSONRPCError(RPC_MISC_ERROR, "Transaction is not in mempool");
-    } else if (rbfState == RBFTransactionState::REPLACEABLE_BIP125) {
-        rbfStatus = true;
+    if (IsDeprecatedRPCEnabled("bip125")) {
+        bool rbfStatus = false;
+        RBFTransactionState rbfState = IsRBFOptIn(tx, pool);
+        if (rbfState == RBFTransactionState::UNKNOWN) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Transaction is not in mempool");
+        } else if (rbfState == RBFTransactionState::REPLACEABLE_BIP125) {
+            rbfStatus = true;
+        }
+        info.pushKV("bip125-replaceable", rbfStatus);
     }
-
-    info.pushKV("bip125-replaceable", rbfStatus);
-    info.pushKV("unbroadcast", pool.IsUnbroadcastTx(tx.GetHash()));
 }
 
 UniValue MempoolToJSON(const CTxMemPool& pool, bool verbose, bool include_mempool_sequence)
@@ -606,9 +674,9 @@ UniValue MempoolToJSON(const CTxMemPool& pool, bool verbose, bool include_mempoo
     }
 }
 
-static RPCHelpMan getmempoolfeeratediagram()
+static RPCMethod getmempoolfeeratediagram()
 {
-    return RPCHelpMan{"getmempoolfeeratediagram",
+    return RPCMethod{"getmempoolfeeratediagram",
         "Returns the feerate diagram for the whole mempool.",
         {},
         {
@@ -618,8 +686,8 @@ static RPCHelpMan getmempoolfeeratediagram()
                     {
                         RPCResult::Type::OBJ, "", "",
                         {
-                            {RPCResult::Type::NUM, "weight", "cumulative sigops-adjusted weight"},
-                            {RPCResult::Type::NUM, "fee", "cumulative fee"}
+                            {RPCResult::Type::NUM, "weight", "cumulative policy weight including sigop and data-carrier cost adjustments"},
+                            {RPCResult::Type::STR_AMOUNT, "fee", "cumulative fee"}
                         }
                     }
                 }
@@ -629,7 +697,7 @@ static RPCHelpMan getmempoolfeeratediagram()
             HelpExampleCli("getmempoolfeeratediagram", "")
             + HelpExampleRpc("getmempoolfeeratediagram", "")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const CTxMemPool& mempool = EnsureAnyMemPool(request.context);
             LOCK(mempool.cs);
@@ -649,9 +717,9 @@ static RPCHelpMan getmempoolfeeratediagram()
     };
 }
 
-static RPCHelpMan getrawmempool()
+static RPCMethod getrawmempool()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getrawmempool",
         "Returns all transaction ids in memory pool as a json array of string transaction ids.\n"
         "\nHint: use getmempoolentry to fetch a specific transaction from the mempool.\n",
@@ -684,7 +752,7 @@ static RPCHelpMan getrawmempool()
             HelpExampleCli("getrawmempool", "true")
             + HelpExampleRpc("getrawmempool", "true")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     bool fVerbose = false;
     if (!request.params[0].isNull())
@@ -700,9 +768,9 @@ static RPCHelpMan getrawmempool()
     };
 }
 
-static RPCHelpMan getmempoolancestors()
+static RPCMethod getmempoolancestors()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getmempoolancestors",
         "If txid is in the mempool, returns all in-mempool ancestors.\n",
         {
@@ -723,7 +791,7 @@ static RPCHelpMan getmempoolancestors()
             HelpExampleCli("getmempoolancestors", "\"mytxid\"")
             + HelpExampleRpc("getmempoolancestors", "\"mytxid\"")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     bool fVerbose = false;
     if (!request.params[1].isNull())
@@ -753,7 +821,7 @@ static RPCHelpMan getmempoolancestors()
             const CTxMemPoolEntry &e = *ancestorIt;
             UniValue info(UniValue::VOBJ);
             entryToJSON(mempool, info, e);
-            o.pushKV(e.GetTx().GetHash().ToString(), std::move(info));
+            o.pushKVEnd(e.GetTx().GetHash().ToString(), std::move(info));
         }
         return o;
     }
@@ -761,9 +829,9 @@ static RPCHelpMan getmempoolancestors()
     };
 }
 
-static RPCHelpMan getmempooldescendants()
+static RPCMethod getmempooldescendants()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getmempooldescendants",
         "If txid is in the mempool, returns all in-mempool descendants.\n",
         {
@@ -784,7 +852,7 @@ static RPCHelpMan getmempooldescendants()
             HelpExampleCli("getmempooldescendants", "\"mytxid\"")
             + HelpExampleRpc("getmempooldescendants", "\"mytxid\"")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     bool fVerbose = false;
     if (!request.params[1].isNull())
@@ -818,7 +886,7 @@ static RPCHelpMan getmempooldescendants()
             const CTxMemPoolEntry &e = *descendantIt;
             UniValue info(UniValue::VOBJ);
             entryToJSON(mempool, info, e);
-            o.pushKV(e.GetTx().GetHash().ToString(), std::move(info));
+            o.pushKVEnd(e.GetTx().GetHash().ToString(), std::move(info));
         }
         return o;
     }
@@ -826,9 +894,9 @@ static RPCHelpMan getmempooldescendants()
     };
 }
 
-static RPCHelpMan getmempoolcluster()
+static RPCMethod getmempoolcluster()
 {
-    return RPCHelpMan{"getmempoolcluster",
+    return RPCMethod{"getmempoolcluster",
         "Returns mempool data for given cluster\n",
         {
             {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The txid of a transaction in the cluster"},
@@ -837,9 +905,9 @@ static RPCHelpMan getmempoolcluster()
             RPCResult::Type::OBJ, "", "", ClusterDescription()},
         RPCExamples{
             HelpExampleCli("getmempoolcluster", "txid")
-            + HelpExampleRpc("getmempoolcluster", "txid")
+            + HelpExampleRpc("getmempoolcluster", R"("txid")")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     uint256 hash = ParseHashV(request.params[0], "txid");
 
@@ -861,9 +929,9 @@ static RPCHelpMan getmempoolcluster()
     };
 }
 
-static RPCHelpMan getmempoolentry()
+static RPCMethod getmempoolentry()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getmempoolentry",
         "Returns mempool data for given transaction\n",
         {
@@ -875,7 +943,7 @@ static RPCHelpMan getmempoolentry()
             HelpExampleCli("getmempoolentry", "\"mytxid\"")
             + HelpExampleRpc("getmempoolentry", "\"mytxid\"")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     auto txid{Txid::FromUint256(ParseHashV(request.params[0], "txid"))};
 
@@ -894,9 +962,9 @@ static RPCHelpMan getmempoolentry()
     };
 }
 
-static RPCHelpMan gettxspendingprevout()
+static RPCMethod gettxspendingprevout()
 {
-    return RPCHelpMan{"gettxspendingprevout",
+    return RPCMethod{"gettxspendingprevout",
         "Scans the mempool (and the txospenderindex, if available) to find transactions spending any of the given outputs",
         {
             {"outputs", RPCArg::Type::ARR, RPCArg::Optional::NO, "The transaction outputs that we want to check, and within each, the txid (string) vout (numeric).",
@@ -934,7 +1002,7 @@ static RPCHelpMan gettxspendingprevout()
             + HelpExampleRpc("gettxspendingprevout", "\"[{\\\"txid\\\":\\\"a08e6907dbbd3d809776dbfc5d82e371b764ed838b5655e72f463568df1aadf0\\\",\\\"vout\\\":3}]\"")
             + HelpExampleCliNamed("gettxspendingprevout", {{"outputs", "[{\"txid\":\"a08e6907dbbd3d809776dbfc5d82e371b764ed838b5655e72f463568df1aadf0\",\"vout\":3}]"}, {"return_spending_tx", true}})
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const UniValue& output_params = request.params[0].get_array();
             if (output_params.empty()) {
@@ -950,15 +1018,14 @@ static RPCHelpMan gettxspendingprevout()
             const bool mempool_only{options.exists("mempool_only") ? options["mempool_only"].get_bool() : !g_txospenderindex};
             const bool return_spending_tx{options.exists("return_spending_tx") ? options["return_spending_tx"].get_bool() : false};
 
+            // Worklist of outpoints to resolve
             struct Entry {
-                const COutPoint prevout;
-                const UniValue& input;
-                UniValue output;
+                COutPoint outpoint;
+                size_t request_index;
             };
-            std::vector<Entry> prevouts;
-            prevouts.reserve(output_params.size());
-
-            for (unsigned int idx = 0; idx < output_params.size(); idx++) {
+            std::vector<Entry> prevouts_to_process;
+            prevouts_to_process.reserve(output_params.size());
+            for (const size_t idx : std::views::iota(size_t{0}, output_params.size())) {
                 const UniValue& o = output_params[idx].get_obj();
 
                 RPCTypeCheckObj(o,
@@ -972,59 +1039,67 @@ static RPCHelpMan gettxspendingprevout()
                 if (nOutput < 0) {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, vout cannot be negative");
                 }
-                prevouts.emplace_back(COutPoint{txid, uint32_t(nOutput)}, o, UniValue{});
+                prevouts_to_process.emplace_back(COutPoint{txid, static_cast<uint32_t>(nOutput)}, idx);
             }
 
-            // search the mempool first
-            bool missing_from_mempool{false};
+            auto make_output = [&output_params, return_spending_tx](const Entry& prevout, const CTransaction* spending_tx = nullptr) {
+                UniValue o{output_params[prevout.request_index]};
+                if (spending_tx) {
+                    o.pushKV("spendingtxid", spending_tx->GetHash().ToString());
+                    if (return_spending_tx) {
+                        o.pushKV("spendingtx", EncodeHexTx(*spending_tx));
+                    }
+                }
+                return o;
+            };
+
+            std::vector<UniValue> results(output_params.size());
+
+            // Search the mempool first
+            std::vector<Entry> unresolved;
+            unresolved.reserve(prevouts_to_process.size());
             {
                 const CTxMemPool& mempool = EnsureAnyMemPool(request.context);
                 LOCK(mempool.cs);
-                for (auto& entry : prevouts) {
-                    const CTransaction* spendingTx = mempool.GetConflictTx(entry.prevout);
-                    if (spendingTx != nullptr) {
-                        UniValue o{entry.input};
-                        o.pushKV("spendingtxid", spendingTx->GetHash().ToString());
-                        if (return_spending_tx) {
-                            o.pushKV("spendingtx", EncodeHexTx(*spendingTx));
-                        }
-                        entry.output = std::move(o);
+
+                // Make the result if the spending tx appears in the mempool or this is a mempool_only request
+                for (const auto& prevout : prevouts_to_process) {
+                    const auto* spending_tx{mempool.GetConflictTx(prevout.outpoint)};
+
+                    // If the outpoint is not spent in the mempool and this is not a mempool-only
+                    // request, we cannot answer it yet.
+                    if (!spending_tx && !mempool_only) {
+                        unresolved.push_back(prevout);
                     } else {
-                        missing_from_mempool = true;
+                        results[prevout.request_index] = make_output(prevout, spending_tx);
                     }
                 }
-            }
-            // if search is not limited to the mempool and no spender was found for an outpoint, search the txospenderindex
-            // we call g_txospenderindex->BlockUntilSyncedToCurrentChain() only if g_txospenderindex is going to be used
-            UniValue result{UniValue::VARR};
-            bool txospenderindex_ready{mempool_only || !missing_from_mempool || (g_txospenderindex && g_txospenderindex->BlockUntilSyncedToCurrentChain())};
-            for (auto& entry : prevouts) {
-                if (!entry.output.isNull()) {
-                    result.push_back(std::move(entry.output));
-                    continue;
-                }
-                UniValue o{entry.input};
-                if (mempool_only) {
-                    // do nothing, caller has selected to only query the mempool
-                } else if (!txospenderindex_ready) {
-                    throw JSONRPCError(RPC_MISC_ERROR, strprintf("No spending tx for the outpoint %s:%d in mempool, and txospenderindex is unavailable.", entry.prevout.hash.GetHex(), entry.prevout.n));
-                } else {
-                    // no spending tx in mempool, query txospender index
-                    const auto spender{g_txospenderindex->FindSpender(entry.prevout)};
-                    if (!spender) {
-                        throw JSONRPCError(RPC_MISC_ERROR, spender.error());
-                    }
-                    if (spender.value()) {
-                        o.pushKV("spendingtxid", spender.value()->tx->GetHash().GetHex());
-                        o.pushKV("blockhash", spender.value()->block_hash.GetHex());
-                        if (return_spending_tx) {
-                            o.pushKV("spendingtx", EncodeHexTx(*spender.value()->tx));
-                        }
-                    }
-                }
-                result.push_back(std::move(o));
             }
 
+            // mempool_only requests resolve every outpoint above, so only other requests reach the index.
+            if (!unresolved.empty() && (!g_txospenderindex || !g_txospenderindex->BlockUntilSyncedToCurrentChain())) {
+                throw JSONRPCError(RPC_MISC_ERROR, "Mempool lacks a relevant spend, and txospenderindex is unavailable.");
+            }
+
+            for (const auto& prevout : unresolved) {
+                const auto spender{g_txospenderindex->FindSpender(prevout.outpoint)};
+                if (!spender) {
+                    throw JSONRPCError(RPC_MISC_ERROR, spender.error());
+                }
+
+                if (const auto& spender_opt{spender.value()}) {
+                    UniValue o{make_output(prevout, spender_opt->tx.get())};
+                    o.pushKV("blockhash", spender_opt->block_hash.GetHex());
+                    results[prevout.request_index] = std::move(o);
+                } else {
+                    // Only return the input outpoint itself, which indicates it is unspent.
+                    results[prevout.request_index] = make_output(prevout);
+                }
+            }
+
+            UniValue result{UniValue::VARR};
+            result.reserve(results.size());
+            for (auto& output : results) result.push_back(std::move(output));
             return result;
         },
     };
@@ -1045,14 +1120,16 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_opts.min_relay_feerate.GetFeePerK()));
     ret.pushKV("incrementalrelayfee", ValueFromAmount(pool.m_opts.incremental_relay_feerate.GetFeePerK()));
     ret.pushKV("unbroadcastcount", pool.GetUnbroadcastTxs().size());
-    ret.pushKV("fullrbf", pool.m_opts.rbf_policy == RBFPolicy::Always);
     ret.pushKV("permitbaremultisig", pool.m_opts.permit_bare_multisig);
     ret.pushKV("maxdatacarriersize", pool.m_opts.max_datacarrier_bytes.value_or(0));
     ret.pushKV("limitclustercount", pool.m_opts.limits.cluster_count);
     ret.pushKV("limitclustersize", pool.m_opts.limits.cluster_size_vbytes);
     ret.pushKV("optimal", pool.m_txgraph->DoWork(0)); // 0 work is a quick check for known optimality
-    // Startup controls are initialized before RPC warmup finishes. The live dust
-    // rate shares the existing mempool critical section with the other fields.
+    if (IsDeprecatedRPCEnabled("fullrbf")) {
+        ret.pushKV("fullrbf", pool.m_opts.rbf_policy == RBFPolicy::Always);
+    }
+    // Report initialized options and the synchronized live dust rate under
+    // the existing mempool observation, without reparsing configuration.
     const auto& opts{pool.m_opts};
     UniValue policy{UniValue::VOBJ};
     policy.pushKV("require_standard", opts.require_standard);
@@ -1106,9 +1183,9 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     return ret;
 }
 
-static RPCHelpMan getmempoolinfo()
+static RPCMethod getmempoolinfo()
 {
-    return RPCHelpMan{"getmempoolinfo",
+    return RPCMethod{"getmempoolinfo",
         "Returns details on the active state of the TX memory pool.\n"
         "The policy object reports initialized local admission controls, not consensus rules or mining limits.\n"
         "Controls are startup-only, except the live dust rate; this RPC does not change policy.\n"
@@ -1117,68 +1194,74 @@ static RPCHelpMan getmempoolinfo()
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", "",
-            {
-                {RPCResult::Type::BOOL, "loaded", "True if the initial load attempt of the persisted mempool finished"},
-                {RPCResult::Type::NUM, "size", "Current tx count"},
-                {RPCResult::Type::NUM, "bytes", "Sum of all virtual transaction sizes as defined in BIP 141. Differs from actual serialized size because witness data is discounted"},
-                {RPCResult::Type::NUM, "usage", "Total memory usage for the mempool"},
-                {RPCResult::Type::STR_AMOUNT, "total_fee", "Total fees for the mempool in " + CURRENCY_UNIT + ", ignoring modified fees through prioritisetransaction"},
-                {RPCResult::Type::NUM, "maxmempool", "Maximum memory usage for the mempool"},
-                {RPCResult::Type::STR_AMOUNT, "mempoolminfee", "Minimum fee rate in " + CURRENCY_UNIT + "/kvB for tx to be accepted. Is the maximum of minrelaytxfee and minimum mempool fee"},
-                {RPCResult::Type::STR_AMOUNT, "minrelaytxfee", "Current minimum relay fee for transactions"},
-                {RPCResult::Type::NUM, "incrementalrelayfee", "minimum fee rate increment for mempool limiting or replacement in " + CURRENCY_UNIT + "/kvB"},
-                {RPCResult::Type::NUM, "unbroadcastcount", "Current number of transactions that haven't passed initial broadcast yet"},
-                {RPCResult::Type::BOOL, "fullrbf", "True if the mempool accepts RBF without replaceability signaling inspection (DEPRECATED)"},
-                {RPCResult::Type::BOOL, "permitbaremultisig", "True if the mempool accepts transactions with bare multisig outputs"},
-                {RPCResult::Type::NUM, "maxdatacarriersize", "Maximum number of bytes that can be used by OP_RETURN outputs in the mempool"},
-                {RPCResult::Type::NUM, "limitclustercount", "Maximum number of transactions that can be in a cluster (configured by -limitclustercount)"},
-                {RPCResult::Type::NUM, "limitclustersize", "Maximum size of a cluster in virtual bytes (configured by -limitclustersize)"},
-                {RPCResult::Type::BOOL, "optimal", "If the mempool is in a known-optimal transaction ordering"},
-                {RPCResult::Type::OBJ, "policy", "Initialized local mempool admission controls. Allow flags are permissions, not unconditional acceptance guarantees",
-                {
-                    {RPCResult::Type::BOOL, "require_standard", "Enable transaction/input/witness standardness checks (default: true)"},
-                    {RPCResult::Type::NUM, "max_script_size", "Script policy bound in bytes under standardness; scriptSig is also capped at 1650 bytes. Zero is a zero-byte bound (default: 1650)"},
-                    {RPCResult::Type::NUM, "bytes_per_sigop", "Policy virtual bytes per sigop; zero removes this size contribution (default: 20)"},
-                    {RPCResult::Type::NUM, "bytes_per_sigop_strict", "Accurate sigop density bound in equivalent bytes per sigop, independent of standardness; zero disables this additional check (default: 20)"},
-                    {RPCResult::Type::NUM, "max_tx_legacy_sigops", "Legacy transaction sigop bound under standardness; zero is a zero-sigop bound (default: 2500)"},
-                    {RPCResult::Type::BOOL, "datacarrier", "Whether an OP_RETURN carrier budget exists; false denies carriers under standardness/full-count checking (default: true)"},
-                    {RPCResult::Type::NUM, "max_datacarrier_bytes", "Aggregate serialized carrier budget in bytes; zero when disabled or explicitly set to zero (default: 83)"},
-                    {RPCResult::Type::BOOL, "datacarrier_fullcount", "Include recognized input/witness carriers in the aggregate budget independently of standardness (default: true)"},
-                    {RPCResult::Type::NUM, "datacarrier_weight_per_byte", "Rounded-up weight units per detected data byte, adding only weight in excess of its existing weight; zero adds none (default: 4)"},
-                    {RPCResult::Type::BOOL, "accept_nonstd_datacarrier", "Permit recognized nonstandard carriers independently of standardness; the full-count budget still applies (default: false)"},
-                    {RPCResult::Type::BOOL, "permit_bare_datacarrier", "Permit carrier-only transactions under standardness (default: false)"},
-                    {RPCResult::Type::STR_AMOUNT, "dust_relay_fee", "Live dust threshold rate in " + CURRENCY_UNIT + "/kvB, also used by the sub-dust fee penalty; zero makes thresholds zero (default: 0.00003000)"},
-                    {RPCResult::Type::BOOL, "subdust_fee_penalty", "Subtract accumulated output dust shortfalls from policy modified fees independently of standardness (default: true)"},
-                    {RPCResult::Type::BOOL, "permit_bare_pubkey", "Permit bare pubkey outputs under standardness (default: false)"},
-                    {RPCResult::Type::BOOL, "permit_bare_multisig", "Permit bare multisig outputs under standardness (default: false)"},
-                    {RPCResult::Type::BOOL, "reject_parasites", "Reject the CAT21 locktime marker under standardness (default: true)"},
-                    {RPCResult::Type::BOOL, "reject_tokens", "Enable recognized token filters under standardness (default: false)"},
-                    {RPCResult::Type::BOOL, "accept_unknown_witness", "Permit unknown witness output versions under standardness (default: true)"},
-                    {RPCResult::Type::BOOL, "permit_bare_anchor", "Permit anchor-only transactions under standardness (default: true)"},
-                    {RPCResult::Type::BOOL, "ephemeral_anchor", "Permit anchor outputs under standardness (default: true)"},
-                    {RPCResult::Type::BOOL, "ephemeral_dust", "Permit nonzero ephemeral dust under standardness, subject to other dust/package rules (default: false)"},
-                    {RPCResult::Type::BOOL, "ephemeral_send", "Permit non-anchor dust under standardness, subject to other dust/package rules (default: false)"},
-                    {RPCResult::Type::STR, "replacement", "Resolved replacement mode: never, optin, or always. Opt-in also permits non-signaling TRUC/v3 replacement (default: always)"},
-                    {RPCResult::Type::STR, "truc", "Resolved local v3 policy: reject, accept, or enforce (default: enforce)"},
-                    {RPCResult::Type::NUM, "min_relay_coinblocks", "Minimum input value times confirmation age in satoshi-blocks; zero disables this restriction (default: 0)"},
-                    {RPCResult::Type::NUM, "min_relay_maturity", "Minimum input age in blocks, measured at the next block height; zero disables this restriction (default: 0)"},
-                    {RPCResult::Type::STR, "spk_reuse", "Initialized script reuse mode for mempool policy conflicts: allow or conflict (default: allow)"},
-                }},
-            }},
+            [](){
+                std::vector<RPCResult> list = {
+                    {RPCResult::Type::BOOL, "loaded", "True if the initial load attempt of the persisted mempool finished"},
+                    {RPCResult::Type::NUM, "size", "Current tx count"},
+                    {RPCResult::Type::NUM, "bytes", "Sum of policy virtual transaction sizes, including witness discount, sigop and data-carrier cost adjustments"},
+                    {RPCResult::Type::NUM, "usage", "Total memory usage for the mempool"},
+                    {RPCResult::Type::STR_AMOUNT, "total_fee", "Total fees for the mempool in " + CURRENCY_UNIT + ", ignoring modified fees through prioritisetransaction"},
+                    {RPCResult::Type::NUM, "maxmempool", "Maximum memory usage for the mempool"},
+                    {RPCResult::Type::STR_AMOUNT, "mempoolminfee", "Minimum fee rate in " + CURRENCY_UNIT + "/kvB for tx to be accepted. Is the maximum of minrelaytxfee and minimum mempool fee"},
+                    {RPCResult::Type::STR_AMOUNT, "minrelaytxfee", "Current minimum relay fee for transactions"},
+                    {RPCResult::Type::STR_AMOUNT, "incrementalrelayfee", "minimum fee rate increment for mempool limiting or replacement in " + CURRENCY_UNIT + "/kvB"},
+                    {RPCResult::Type::NUM, "unbroadcastcount", "Current number of transactions that haven't passed initial broadcast yet"},
+                    {RPCResult::Type::BOOL, "permitbaremultisig", "True if the mempool accepts transactions with bare multisig outputs"},
+                    {RPCResult::Type::NUM, "maxdatacarriersize", "Maximum data-carrier bytes under the configured carrier policy"},
+                    {RPCResult::Type::NUM, "limitclustercount", "Maximum number of transactions that can be in a cluster (configured by -limitclustercount)"},
+                    {RPCResult::Type::NUM, "limitclustersize", "Maximum size of a cluster in virtual bytes (configured by -limitclustersize)"},
+                    {RPCResult::Type::BOOL, "optimal", "If the mempool is in a known-optimal transaction ordering"},
+                    {RPCResult::Type::OBJ, "policy", "Initialized local mempool admission controls. Allow flags are permissions, not unconditional acceptance guarantees",
+                    {
+                        {RPCResult::Type::BOOL, "require_standard", "Enable transaction/input/witness standardness checks (default: true)"},
+                        {RPCResult::Type::NUM, "max_script_size", "Script policy bound in bytes under standardness; scriptSig is also capped at 1650 bytes. Zero is a zero-byte bound (default: 1650)"},
+                        {RPCResult::Type::NUM, "bytes_per_sigop", "Policy virtual bytes per sigop; zero removes this size contribution (default: 20)"},
+                        {RPCResult::Type::NUM, "bytes_per_sigop_strict", "Accurate sigop density bound in equivalent bytes per sigop, independent of standardness; zero disables this additional check (default: 20)"},
+                        {RPCResult::Type::NUM, "max_tx_legacy_sigops", "Legacy transaction sigop bound under standardness; zero is a zero-sigop bound (default: 2500)"},
+                        {RPCResult::Type::BOOL, "datacarrier", "Whether an OP_RETURN carrier budget exists; false denies carriers under standardness/full-count checking (default: true)"},
+                        {RPCResult::Type::NUM, "max_datacarrier_bytes", "Aggregate serialized carrier budget in bytes; zero when disabled or explicitly set to zero (default: 83)"},
+                        {RPCResult::Type::BOOL, "datacarrier_fullcount", "Include recognized input/witness carriers in the aggregate budget independently of standardness (default: true)"},
+                        {RPCResult::Type::NUM, "datacarrier_weight_per_byte", "Rounded-up weight units per detected data byte, adding only weight in excess of its existing weight; zero adds none (default: 4)"},
+                        {RPCResult::Type::BOOL, "accept_nonstd_datacarrier", "Permit recognized nonstandard carriers independently of standardness; the full-count budget still applies (default: false)"},
+                        {RPCResult::Type::BOOL, "permit_bare_datacarrier", "Permit carrier-only transactions under standardness (default: false)"},
+                        {RPCResult::Type::STR_AMOUNT, "dust_relay_fee", "Live dust threshold rate in " + CURRENCY_UNIT + "/kvB, also used by the sub-dust fee penalty; zero makes thresholds zero (default: 0.00003000)"},
+                        {RPCResult::Type::BOOL, "subdust_fee_penalty", "Subtract accumulated output dust shortfalls from policy modified fees independently of standardness (default: true)"},
+                        {RPCResult::Type::BOOL, "permit_bare_pubkey", "Permit bare pubkey outputs under standardness (default: false)"},
+                        {RPCResult::Type::BOOL, "permit_bare_multisig", "Permit bare multisig outputs under standardness (default: false)"},
+                        {RPCResult::Type::BOOL, "reject_parasites", "Reject the CAT21 locktime marker under standardness (default: true)"},
+                        {RPCResult::Type::BOOL, "reject_tokens", "Enable recognized token filters under standardness (default: false)"},
+                        {RPCResult::Type::BOOL, "accept_unknown_witness", "Permit unknown witness output versions under standardness (default: true)"},
+                        {RPCResult::Type::BOOL, "permit_bare_anchor", "Permit anchor-only transactions under standardness (default: true)"},
+                        {RPCResult::Type::BOOL, "ephemeral_anchor", "Permit anchor outputs under standardness (default: true)"},
+                        {RPCResult::Type::BOOL, "ephemeral_dust", "Permit nonzero ephemeral dust under standardness, subject to other dust/package rules (default: false)"},
+                        {RPCResult::Type::BOOL, "ephemeral_send", "Permit non-anchor dust under standardness, subject to other dust/package rules (default: false)"},
+                        {RPCResult::Type::STR, "replacement", "Resolved replacement mode: never, optin, or always. Opt-in also permits non-signaling TRUC/v3 replacement (default: always)"},
+                        {RPCResult::Type::STR, "truc", "Resolved local v3 policy: reject, accept, or enforce (default: enforce)"},
+                        {RPCResult::Type::NUM, "min_relay_coinblocks", "Minimum input value times confirmation age in satoshi-blocks; zero disables this restriction (default: 0)"},
+                        {RPCResult::Type::NUM, "min_relay_maturity", "Minimum input age in blocks, measured at the next block height; zero disables this restriction (default: 0)"},
+                        {RPCResult::Type::STR, "spk_reuse", "Initialized script reuse mode for mempool policy conflicts: allow or conflict (default: allow)"},
+                    }},
+                };
+                if (IsDeprecatedRPCEnabled("fullrbf")) {
+                    list.emplace_back(RPCResult::Type::BOOL, "fullrbf", "True if input-conflict replacements are accepted without signaling inspection (DEPRECATED). Script-reuse conflicts are independent of this flag.");
+                }
+                return list;
+            }()
+            },
         RPCExamples{
             HelpExampleCli("getmempoolinfo", "")
             + HelpExampleRpc("getmempoolinfo", "")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     return MempoolInfoToJSON(EnsureAnyMemPool(request.context));
 },
     };
 }
 
-static RPCHelpMan importmempool()
+static RPCMethod importmempool()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "importmempool",
         "Import a mempool.dat file and attempt to add its contents to the mempool.\n"
         "Warning: Importing untrusted files is dangerous, especially if metadata from the file is taken over.",
@@ -1205,8 +1288,8 @@ static RPCHelpMan importmempool()
              RPCArgOptions{.oneline_description = "options"}},
         },
         RPCResult{RPCResult::Type::OBJ, "", "", std::vector<RPCResult>{}},
-        RPCExamples{HelpExampleCli("importmempool", "/path/to/mempool.dat") + HelpExampleRpc("importmempool", "/path/to/mempool.dat")},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+        RPCExamples{HelpExampleCli("importmempool", "/path/to/mempool.dat") + HelpExampleRpc("importmempool", R"("/path/to/mempool.dat")")},
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue {
             const NodeContext& node{EnsureAnyNodeContext(request.context)};
 
             CTxMemPool& mempool{EnsureMemPool(node)};
@@ -1228,7 +1311,7 @@ static RPCHelpMan importmempool()
             };
 
             if (!node::LoadMempool(mempool, load_path, chainstate, std::move(opts))) {
-                throw JSONRPCError(RPC_MISC_ERROR, "Unable to import mempool file, see debug.log for details.");
+                throw JSONRPCError(RPC_MISC_ERROR, "Unable to import mempool file, see debug log for details.");
             }
 
             UniValue ret{UniValue::VOBJ};
@@ -1237,9 +1320,9 @@ static RPCHelpMan importmempool()
     };
 }
 
-static RPCHelpMan savemempool()
+static RPCMethod savemempool()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "savemempool",
         "Dumps the mempool to disk. It will fail until the previous dump is fully loaded.\n",
         {},
@@ -1252,7 +1335,7 @@ static RPCHelpMan savemempool()
             HelpExampleCli("savemempool", "")
             + HelpExampleRpc("savemempool", "")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     const ArgsManager& args{EnsureAnyArgsman(request.context)};
     const CTxMemPool& mempool = EnsureAnyMemPool(request.context);
@@ -1281,7 +1364,8 @@ static std::vector<RPCResult> OrphanDescription()
         RPCResult{RPCResult::Type::STR_HEX, "txid", "The transaction hash in hex"},
         RPCResult{RPCResult::Type::STR_HEX, "wtxid", "The transaction witness hash in hex"},
         RPCResult{RPCResult::Type::NUM, "bytes", "The serialized transaction size in bytes"},
-        RPCResult{RPCResult::Type::NUM, "vsize", "The virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
+        RPCResult{RPCResult::Type::NUM, "vsize", "(DEPRECATED) use vsize_bip141 instead. The virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
+        RPCResult{RPCResult::Type::NUM, "vsize_bip141", "The virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
         RPCResult{RPCResult::Type::NUM, "weight", "The transaction weight as defined in BIP 141."},
         RPCResult{RPCResult::Type::ARR, "from", "",
         {
@@ -1297,6 +1381,7 @@ static UniValue OrphanToJSON(const node::TxOrphanage::OrphanInfo& orphan)
     o.pushKV("wtxid", orphan.tx->GetWitnessHash().ToString());
     o.pushKV("bytes", orphan.tx->ComputeTotalSize());
     o.pushKV("vsize", GetVirtualTransactionSize(*orphan.tx));
+    o.pushKV("vsize_bip141", GetVirtualTransactionSize(*orphan.tx));
     o.pushKV("weight", GetTransactionWeight(*orphan.tx));
     UniValue from(UniValue::VARR);
     for (const auto fromPeer: orphan.announcers) {
@@ -1306,9 +1391,9 @@ static UniValue OrphanToJSON(const node::TxOrphanage::OrphanInfo& orphan)
     return o;
 }
 
-static RPCHelpMan getorphantxs()
+static RPCMethod getorphantxs()
 {
-    return RPCHelpMan{
+    return RPCMethod{
         "getorphantxs",
         "Shows transactions in the tx orphanage.\n"
         "\nEXPERIMENTAL warning: this call may be changed in future releases.\n",
@@ -1342,7 +1427,7 @@ static RPCHelpMan getorphantxs()
             HelpExampleCli("getorphantxs", "2")
             + HelpExampleRpc("getorphantxs", "2")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const NodeContext& node = EnsureAnyNodeContext(request.context);
             PeerManager& peerman = EnsurePeerman(node);
@@ -1375,9 +1460,9 @@ static RPCHelpMan getorphantxs()
     };
 }
 
-static RPCHelpMan submitpackage()
+static RPCMethod submitpackage()
 {
-    return RPCHelpMan{"submitpackage",
+    return RPCMethod{"submitpackage",
         "Submit a package of raw transactions (serialized, hex-encoded) to local node.\n"
         "The package will be validated according to consensus and mempool policy rules. If any transaction passes, it will be accepted to mempool.\n"
         "This RPC is experimental and the interface may be unstable. Refer to doc/policy/packages.md for documentation on package policies.\n"
@@ -1410,10 +1495,13 @@ static RPCHelpMan submitpackage()
                     {RPCResult::Type::OBJ, "wtxid", "transaction wtxid", {
                         {RPCResult::Type::STR_HEX, "txid", "The transaction hash in hex"},
                         {RPCResult::Type::STR_HEX, "other-wtxid", /*optional=*/true, "The wtxid of a different transaction with the same txid but different witness found in the mempool. This means the submitted transaction was ignored."},
-                        {RPCResult::Type::NUM, "vsize", /*optional=*/true, "Sigops-adjusted virtual transaction size."},
+                        {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Policy virtual size including sigop and data-carrier cost adjustments."},
+                        {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually policy-adjusted vsize.\n"
+                                                                    "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
+                        {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141."},
                         {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees", {
                             {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with modified fees from prioritisetransaction."},
+                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with operator deltas and admission dust deficits."},
                             {RPCResult::Type::ARR, "effective-includes", /*optional=*/true, "if effective-feerate is provided, the wtxids of the transactions whose fees and vsizes are included in effective-feerate.",
                                 {{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                             }},
@@ -1431,7 +1519,7 @@ static RPCHelpMan submitpackage()
             HelpExampleRpc("submitpackage", R"(["raw-parent-tx-1", "raw-parent-tx-2", "raw-child-tx"])") +
             HelpExampleCli("submitpackage", R"('["raw-tx-without-unconfirmed-parents"]')")
         },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
         {
             const UniValue raw_transactions = request.params[0].get_array();
             if (raw_transactions.empty() || raw_transactions.size() > MAX_PACKAGE_COUNT) {
@@ -1558,7 +1646,9 @@ static RPCHelpMan submitpackage()
                     break;
                 case MempoolAcceptResult::ResultType::VALID:
                 case MempoolAcceptResult::ResultType::MEMPOOL_ENTRY:
+                    result_inner.pushKV("vsize_adjusted", it->second.m_vsize.value());
                     result_inner.pushKV("vsize", it->second.m_vsize.value());
+                    result_inner.pushKV("vsize_bip141", GetVirtualTransactionSize(*tx));
                     UniValue fees(UniValue::VOBJ);
                     fees.pushKV("base", ValueFromAmount(it->second.m_base_fees.value()));
                     if (tx_result.m_result_type == MempoolAcceptResult::ResultType::VALID) {

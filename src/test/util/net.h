@@ -5,6 +5,7 @@
 #ifndef BITCOIN_TEST_UTIL_NET_H
 #define BITCOIN_TEST_UTIL_NET_H
 
+#include <attributes.h>
 #include <compat/compat.h>
 #include <netmessagemaker.h>
 #include <net.h>
@@ -116,15 +117,14 @@ struct ConnmanTestMsg : public CConnman {
     CNode* ConnectNodePublic(PeerManager& peerman, const char* pszDest, ConnectionType conn_type)
         EXCLUSIVE_LOCKS_REQUIRED(!m_unused_i2p_sessions_mutex);
 
-    CNode* ConnectNodePublic(const char* destination, ConnectionType type, bool use_v2transport,
-                            const std::optional<Proxy>& proxy_override = std::nullopt)
+    CNode* ConnectNodePublic(const char* destination, ConnectionType type, bool v2, const std::optional<Proxy>& proxy = std::nullopt)
         EXCLUSIVE_LOCKS_REQUIRED(!m_unused_i2p_sessions_mutex)
     {
-        return ConnectNode(CAddress{}, destination, /*fCountFailure=*/false, type, use_v2transport, proxy_override);
+        return ConnectNode(CAddress{}, destination, /*fCountFailure=*/false, type, v2, proxy);
     }
 };
 
-constexpr ServiceFlags ALL_SERVICE_FLAGS[]{
+inline constexpr ServiceFlags ALL_SERVICE_FLAGS[]{
     NODE_NONE,
     NODE_NETWORK,
     NODE_BLOOM,
@@ -134,7 +134,7 @@ constexpr ServiceFlags ALL_SERVICE_FLAGS[]{
     NODE_P2P_V2,
 };
 
-constexpr NetPermissionFlags ALL_NET_PERMISSION_FLAGS[]{
+inline constexpr NetPermissionFlags ALL_NET_PERMISSION_FLAGS[]{
     NetPermissionFlags::None,
     NetPermissionFlags::BloomFilter,
     NetPermissionFlags::Relay,
@@ -143,11 +143,14 @@ constexpr NetPermissionFlags ALL_NET_PERMISSION_FLAGS[]{
     NetPermissionFlags::Mempool,
     NetPermissionFlags::Addr,
     NetPermissionFlags::Download,
+    NetPermissionFlags::ForceInbound,
+    NetPermissionFlags::BlockFilters,
+    NetPermissionFlags::BlockFilters_Explicit,
     NetPermissionFlags::Implicit,
     NetPermissionFlags::All,
 };
 
-constexpr ConnectionType ALL_CONNECTION_TYPES[]{
+inline constexpr ConnectionType ALL_CONNECTION_TYPES[]{
     ConnectionType::INBOUND,
     ConnectionType::OUTBOUND_FULL_RELAY,
     ConnectionType::MANUAL,
@@ -157,7 +160,7 @@ constexpr ConnectionType ALL_CONNECTION_TYPES[]{
     ConnectionType::PRIVATE_BROADCAST,
 };
 
-constexpr auto ALL_NETWORKS = std::array{
+inline constexpr auto ALL_NETWORKS = std::array{
     Network::NET_UNROUTABLE,
     Network::NET_IPV4,
     Network::NET_IPV6,
@@ -343,7 +346,15 @@ public:
      * @param[in] pipes Send/recv pipes used by the Send() and Recv() methods.
      * @param[in] accept_sockets Sockets to return by the Accept() method.
      */
-    explicit DynSock(std::shared_ptr<Pipes> pipes, std::shared_ptr<Queue> accept_sockets);
+    explicit DynSock(std::shared_ptr<Pipes> pipes, Queue* accept_sockets LIFETIMEBOUND);
+
+    /**
+     * Create a new mocked sock that represents a connected socket. It has pipes
+     * for data transport but there is no queue because connected sockets do
+     * not introduce new connected sockets.
+     * @param[in] pipes Send/recv pipes used by the Send() and Recv() methods.
+     */
+    explicit DynSock(std::shared_ptr<Pipes> pipes);
 
     ~DynSock();
 
@@ -363,7 +374,7 @@ private:
     DynSock& operator=(Sock&&) override;
 
     std::shared_ptr<Pipes> m_pipes;
-    std::shared_ptr<Queue> m_accept_sockets;
+    Queue* const m_accept_sockets;
 };
 
 template <typename... Args>

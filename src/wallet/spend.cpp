@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <common/args.h>
+#include <coins.h>
 #include <common/messages.h>
 #include <common/system.h>
 #include <consensus/amount.h>
@@ -16,8 +17,8 @@
 #include <policy/truc_policy.h>
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
-#include <rpc/rawtransaction_util.h>
 #include <script/script.h>
+#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <util/check.h>
@@ -118,18 +119,23 @@ util::Result<SweepTransactionResult> CreateSweepTransaction(CWallet& wallet, con
     if (coins.empty()) return util::Error{Untranslated("No spendable UTXOs found")};
     tx.vout.emplace_back(amount, destination);
     std::map<int, bilingual_str> errors;
-    if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+    if (!::SignTransaction(tx, &provider, coins, SignOptions{.sighash_type = SIGHASH_DEFAULT}, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
     // Fee settings can change while the UTXO scan runs. Take one synchronized
     // snapshot for every signing iteration without holding the wallet lock
     // during signing or broadcast.
-    const CFeeRate fee_rate{WITH_LOCK(wallet.cs_wallet, return GetMinimumFeeRate(wallet, CCoinControl{}, nullptr))};
+    const auto fee_snapshot{WITH_LOCK(wallet.cs_wallet, return std::make_pair(GetMinimumFeeRate(wallet, CCoinControl{}), wallet.m_allow_fallback_fee))};
+    const auto& [minimum_fee, allow_fallback]{fee_snapshot};
+    if (minimum_fee.fee_reason == FeeReason::FALLBACK && (!allow_fallback || minimum_fee.fee_rate == CFeeRate{0})) {
+        return util::Error{Untranslated("Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.")};
+    }
+    const CFeeRate fee_rate{minimum_fee.fee_rate};
     CAmount fee{0};
     for (int attempts{0}; attempts < 10; ++attempts) {
         fee = fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}));
         if (fee >= amount) return util::Error{Untranslated("Fee exceeds swept value")};
         tx.vout[0].nValue = amount - fee;
         errors.clear();
-        if (!::SignTransaction(tx, &provider, coins, SIGHASH_DEFAULT, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
+        if (!::SignTransaction(tx, &provider, coins, SignOptions{.sighash_type = SIGHASH_DEFAULT}, errors)) return util::Error{Untranslated("Unable to sign all swept inputs")};
         if (fee >= fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) break;
     }
     if (fee < fee_rate.GetFee(GetVirtualTransactionSize(CTransaction{tx}))) {
@@ -282,8 +288,8 @@ TxSize CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *walle
         const auto mi = wallet->mapWallet.find(input.prevout.hash);
         // Can not estimate size without knowing the input details
         if (mi != wallet->mapWallet.end()) {
-            assert(input.prevout.n < mi->second.tx->vout.size());
-            txouts.emplace_back(mi->second.tx->vout.at(input.prevout.n));
+            assert(input.prevout.n < mi->second.GetTx()->vout.size());
+            txouts.emplace_back(mi->second.GetTx()->vout.at(input.prevout.n));
         } else if (coin_control) {
             const auto& txout{coin_control->GetExternalOutput(input.prevout)};
             if (!txout) return TxSize{-1, -1};
@@ -312,10 +318,6 @@ std::vector<COutput> CoinsResult::All() const
         all.insert(all.end(), it.second.begin(), it.second.end());
     }
     return all;
-}
-
-void CoinsResult::Clear() {
-    coins.clear();
 }
 
 void CoinsResult::Erase(const std::unordered_set<COutPoint, SaltedOutpointHasher>& coins_to_remove)
@@ -389,10 +391,10 @@ util::Result<CoinsResult> FetchSelectedInputs(const CWallet& wallet, const CCoin
             }
             const CWalletTx& parent_tx = txo->GetWalletTx();
             if (wallet.GetTxDepthInMainChain(parent_tx) == 0) {
-                if (parent_tx.tx->version == TRUC_VERSION && coin_control.m_version != TRUC_VERSION) {
+                if (parent_tx.GetTx()->version == TRUC_VERSION && coin_control.m_version != TRUC_VERSION) {
                     return util::Error{strprintf(_("Can't spend unconfirmed version 3 pre-selected input with a version %d tx"), coin_control.m_version)};
-                } else if (coin_control.m_version == TRUC_VERSION && parent_tx.tx->version != TRUC_VERSION) {
-                    return util::Error{strprintf(_("Can't spend unconfirmed version %d pre-selected input with a version 3 tx"), parent_tx.tx->version)};
+                } else if (coin_control.m_version == TRUC_VERSION && parent_tx.GetTx()->version != TRUC_VERSION) {
+                    return util::Error{strprintf(_("Can't spend unconfirmed version %d pre-selected input with a version 3 tx"), parent_tx.GetTx()->version)};
                 }
             }
         } else {
@@ -486,7 +488,7 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             // be a 1-block reorg away from the chain where transactions A and C
             // were accepted to another chain where B, B', and C were all
             // accepted.
-            if (nDepth == 0 && wtx.mapValue.contains("replaces_txid")) {
+            if (nDepth == 0 && wtx.m_replaces_txid) {
                 safeTx = false;
             }
 
@@ -498,22 +500,22 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             // intending to replace A', but potentially resulting in a scenario
             // where A, A', and D could all be accepted (instead of just B and
             // D, or just A and A' like the user would want).
-            if (nDepth == 0 && wtx.mapValue.contains("replaced_by_txid")) {
+            if (nDepth == 0 && wtx.m_replaced_by_txid) {
                 safeTx = false;
             }
 
             if (nDepth == 0 && params.check_version_trucness) {
                 if (coinControl->m_version == TRUC_VERSION) {
-                    if (wtx.tx->version != TRUC_VERSION) continue;
+                    if (wtx.GetTx()->version != TRUC_VERSION) continue;
                     // this unconfirmed v3 transaction already has a child
                     if (wtx.truc_child_in_mempool.has_value()) continue;
 
                     // this unconfirmed v3 transaction has a parent: spending would create a third generation
                     size_t ancestors, unused_cluster_count;
-                    wallet.chain().getTransactionAncestry(wtx.tx->GetHash(), ancestors, unused_cluster_count);
+                    wallet.chain().getTransactionAncestry(wtx.GetTx()->GetHash(), ancestors, unused_cluster_count);
                     if (ancestors > 1) continue;
                 } else {
-                    if (wtx.tx->version == TRUC_VERSION) continue;
+                    if (wtx.GetTx()->version == TRUC_VERSION) continue;
                 }
             }
 
@@ -576,9 +578,9 @@ CoinsResult AvailableCoins(const CWallet& wallet,
 
         auto available_output_type = GetOutputType(type, is_from_p2sh);
         auto available_output = COutput(outpoint, output, nDepth, input_bytes, solvable, tx_safe, wtx.GetTxTime(), tx_from_me, feerate);
-        if (wtx.tx->version == TRUC_VERSION && nDepth == 0 && params.check_version_trucness) {
+        if (wtx.GetTx()->version == TRUC_VERSION && nDepth == 0 && params.check_version_trucness) {
             unconfirmed_truc_coins.emplace_back(available_output_type, available_output);
-            auto [it, _] = truc_txid_by_value.try_emplace(wtx.tx->GetHash(), 0);
+            auto [it, _] = truc_txid_by_value.try_emplace(wtx.GetTx()->GetHash(), 0);
             it->second += output.nValue;
         } else {
             result.Add(available_output_type, available_output);
@@ -634,16 +636,16 @@ const CTxOut& FindNonChangeParentOutput(const CWallet& wallet, const COutPoint& 
     AssertLockHeld(wallet.cs_wallet);
     const CWalletTx* wtx{Assert(wallet.GetWalletTx(outpoint.hash))};
 
-    const CTransaction* ptx = wtx->tx.get();
+    const CTransaction* ptx = wtx->GetTx().get();
     int n = outpoint.n;
     while (OutputIsChange(wallet, ptx->vout[n]) && ptx->vin.size() > 0) {
         const COutPoint& prevout = ptx->vin[0].prevout;
         const CWalletTx* it = wallet.GetWalletTx(prevout.hash);
-        if (!it || it->tx->vout.size() <= prevout.n ||
-            !wallet.IsMine(it->tx->vout[prevout.n])) {
+        if (!it || it->GetTx()->vout.size() <= prevout.n ||
+            !wallet.IsMine(it->GetTx()->vout[prevout.n])) {
             break;
         }
-        ptx = it->tx.get();
+        ptx = it->GetTx().get();
         n = prevout.n;
     }
     return ptx->vout[n];
@@ -904,7 +906,8 @@ util::Result<SelectionResult> ChooseSelectionResult(interfaces::Chain& chain, co
             return util::Error{_("Failed to calculate bump fees, because unconfirmed UTXOs depend on an enormous cluster of unconfirmed transactions.")};
         }
         CAmount bump_fee_overestimate = summed_bump_fees - combined_bump_fee.value();
-        if (bump_fee_overestimate) {
+        // Avoid negative discount if mempool changed between the two bump fee snapshots.
+        if (bump_fee_overestimate > 0) {
             result.SetBumpFeeDiscount(bump_fee_overestimate);
         }
         result.RecalculateWaste(coin_selection_params.min_viable_change, coin_selection_params.m_cost_of_change, coin_selection_params.m_change_fee);
@@ -1261,14 +1264,25 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     coin_selection_params.m_discard_feerate = GetDiscardRate(wallet);
 
     // Get the fee rate to use effective values in coin selection
-    FeeCalculation feeCalc;
-    coin_selection_params.m_effective_feerate = GetMinimumFeeRate(wallet, coin_control, &feeCalc);
+    auto min_fee_rate{GetMinimumFeeRate(wallet, coin_control)};
+    coin_selection_params.m_effective_feerate = min_fee_rate.fee_rate;
     // Do not, ever, assume that it's fine to change the fee rate if the user has explicitly
     // provided one
     if (coin_control.m_feerate && coin_selection_params.m_effective_feerate > *coin_control.m_feerate) {
-        return util::Error{strprintf(_("Fee rate (%s) is lower than the minimum fee rate setting (%s)"), coin_control.m_feerate->ToString(FeeRateFormat::SAT_VB), coin_selection_params.m_effective_feerate.ToString(FeeRateFormat::SAT_VB))};
+        const auto feerate_format = FeeRateFormat::SAT_VB;
+        auto msg{strprintf(_("Fee rate (%s) is lower than the minimum fee rate setting (%s)."),
+            coin_control.m_feerate->ToString(feerate_format),
+            coin_selection_params.m_effective_feerate.ToString(feerate_format))};
+        if (min_fee_rate.fee_reason == FeeReason::REQUIRED) {
+            msg += strprintf(_("\nConsider modifying %s (%s) or %s (%s)."),
+                "-mintxfee",
+                wallet.m_min_fee.ToString(feerate_format),
+                "-minrelaytxfee",
+                wallet.chain().relayMinFee().ToString(feerate_format));
+        }
+        return util::Error{msg};
     }
-    if (feeCalc.reason == FeeReason::FALLBACK && !wallet.m_allow_fallback_fee) {
+    if (min_fee_rate.fee_reason == FeeReason::FALLBACK && !wallet.m_allow_fallback_fee) {
         // eventually allow a fallback fee
         return util::Error{strprintf(_("Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable %s."), "-fallbackfee")};
     }
@@ -1533,15 +1547,9 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     reservedest.KeepDestination();
 
     wallet.WalletLogPrintf("Coin Selection: Algorithm:%s, Waste Metric Score:%d\n", GetAlgorithmName(result.GetAlgo()), result.GetWaste());
-    wallet.WalletLogPrintf("Fee Calculation: Fee:%d Bytes:%u Tgt:%d (requested %d) Reason:\"%s\" Decay %.5f: Estimation: (%g - %g) %.2f%% %.1f/(%.1f %d mem %.1f out) Fail: (%g - %g) %.2f%% %.1f/(%.1f %d mem %.1f out)\n",
-              current_fee, nBytes, feeCalc.returnedTarget, feeCalc.desiredTarget, StringForFeeReason(feeCalc.reason), feeCalc.est.decay,
-              feeCalc.est.pass.start, feeCalc.est.pass.end,
-              (feeCalc.est.pass.totalConfirmed + feeCalc.est.pass.inMempool + feeCalc.est.pass.leftMempool) > 0.0 ? 100 * feeCalc.est.pass.withinTarget / (feeCalc.est.pass.totalConfirmed + feeCalc.est.pass.inMempool + feeCalc.est.pass.leftMempool) : 0.0,
-              feeCalc.est.pass.withinTarget, feeCalc.est.pass.totalConfirmed, feeCalc.est.pass.inMempool, feeCalc.est.pass.leftMempool,
-              feeCalc.est.fail.start, feeCalc.est.fail.end,
-              (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) > 0.0 ? 100 * feeCalc.est.fail.withinTarget / (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) : 0.0,
-              feeCalc.est.fail.withinTarget, feeCalc.est.fail.totalConfirmed, feeCalc.est.fail.inMempool, feeCalc.est.fail.leftMempool);
-    return CreatedTransactionResult(tx, current_fee, change_pos, feeCalc);
+    wallet.WalletLogPrintf("Fee Calculation: Fee:%d Bytes:%u, Source: %s\n",
+                           current_fee, nBytes, StringForFeeReason(min_fee_rate.fee_reason));
+    return CreatedTransactionResult(tx, current_fee, change_pos, min_fee_rate.fee_reason);
 }
 
 util::Result<CreatedTransactionResult> CreateTransaction(

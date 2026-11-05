@@ -255,7 +255,8 @@ void CoinControlDialog::lockCoin()
 
     COutPoint outpt(Txid::FromHex(contextMenuItem->data(COLUMN_ADDRESS, TxHashRole).toString().toStdString()).value(), contextMenuItem->data(COLUMN_ADDRESS, VOutRole).toUInt());
     model->wallet().lockCoin(outpt, /* write_to_db = */ true);
-    contextMenuItem->setDisabled(true);
+    // Keep the mask typed; Qt 6.4's inline setDisabled() uses a signed mask.
+    contextMenuItem->setFlags(contextMenuItem->flags() & ~Qt::ItemFlags{Qt::ItemIsEnabled});
     contextMenuItem->setIcon(COLUMN_CHECKBOX, platformStyle->SingleColorIcon(":/icons/lock_closed"));
     updateLabelLocked();
 }
@@ -410,9 +411,10 @@ void CoinControlDialog::updateLabelLocked()
 
 void CoinControlDialog::updateAvailableLabel()
 {
-    ui->labelAvailable->setText(tr("Available: %1 (%2 eligible)")
+    ui->labelAvailable->setText(tr("Safe local-key outputs: %1 (%2)")
                                     .arg(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), m_available_amount))
                                     .arg(m_available_count));
+    ui->labelAvailable->setToolTip(tr("Safe, unlocked, mature outputs with local spending keys. Watch-only outputs may be selectable for PSBT preparation."));
 }
 
 void CoinControlDialog::walletChanged()
@@ -758,14 +760,15 @@ void CoinControlDialog::updateView()
             if (out.is_locked)
             {
                 m_coin_control.UnSelect(output); // just to be sure
-                itemOutput->setDisabled(true);
+                itemOutput->setFlags(itemOutput->flags() & ~Qt::ItemFlags{Qt::ItemIsEnabled});
                 itemOutput->setIcon(COLUMN_CHECKBOX, platformStyle->SingleColorIcon(":/icons/lock_closed"));
             }
 
             // set checkbox
             if (m_coin_control.IsSelected(output))
                 itemOutput->setCheckState(COLUMN_CHECKBOX, Qt::Checked);
-            if (out.is_spendable && out.is_safe && !out.is_locked && !out.is_immature) {
+            if (out.is_spendable && !out.is_watch_only && !model->wallet().hasExternalSigner() &&
+                out.is_safe && !out.is_locked && !out.is_immature) {
                 m_available_amount += out.txout.nValue;
                 ++m_available_count;
             }

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -25,11 +25,7 @@ public:
     void setValue(int value);
     void setVisible(bool visible);
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     bool nativeEventFilter(const QByteArray& event_type, void* message, qintptr* result) override;
-#else
-    bool nativeEventFilter(const QByteArray& event_type, void* message, long* result) override;
-#endif
 
 private:
     QPointer<QWindow> m_window;

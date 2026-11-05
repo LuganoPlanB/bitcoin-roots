@@ -37,6 +37,8 @@ struct WalletContext {
     interfaces::Chain* chain{nullptr};
     CScheduler* scheduler{nullptr};
     ArgsManager* args{nullptr}; // Currently a raw pointer because the memory is not managed by this struct
+    //! Captured before RPC registration; runtime/configuration settings cannot enable it.
+    bool allow_dangerous_rpc{false};
     // It is unsafe to lock this after locking a CWallet::cs_wallet mutex because
     // this could introduce inconsistent lock ordering and cause deadlocks.
     Mutex wallets_mutex;

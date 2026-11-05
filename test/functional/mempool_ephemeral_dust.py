@@ -29,6 +29,7 @@ class EphemeralDustTest(BitcoinTestFramework):
         # Mempools should match via 1P1C p2p relay
         self.num_nodes = 2
         # Exercise native dust packages with the Roots local send exception enabled.
+        # Fee-free orphan checks require fee-only mining, without Roots priority selection.
         self.extra_args = [["-permitephemeral=1", "-subdustfeepenalty=0", "-blockprioritysize=0"]] * self.num_nodes
 
         # Don't test trickling logic

@@ -14,12 +14,10 @@
 #include <interfaces/handler.h>
 #include <interfaces/init.h>
 #include <interfaces/node.h>
-#include <logging.h>
 #include <node/context.h>
 #include <node/interface_ui.h>
 #include <noui.h>
 #include <qt/bitcoingui.h>
-#include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -32,7 +30,9 @@
 #include <qt/utilitydialog.h>
 #include <qt/winshutdownmonitor.h>
 #include <uint256.h>
+#include <util/btcsignals.h>
 #include <util/exception.h>
+#include <util/log.h>
 #include <util/string.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
@@ -45,7 +45,6 @@
 #include <wallet/types.h>
 #endif // ENABLE_WALLET
 
-#include <boost/signals2/connection.hpp>
 #include <chrono>
 #include <memory>
 
@@ -55,7 +54,6 @@
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
-#include <QMetaType>
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
@@ -93,11 +91,6 @@ static void RegisterMetaTypes()
     qRegisterMetaType<QMessageBox::Icon>("QMessageBox::Icon");
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
     qRegisterMetaType<BitcoinUnit>("BitcoinUnit");
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    // Translations read QSettings before OptionsModel exists. Register streams
-    // here so that parsing language cannot cache an invalid display-unit value.
-    qRegisterMetaTypeStreamOperators<BitcoinUnit>();
-#endif
 }
 
 static QString GetLangTerritory()
@@ -136,11 +129,7 @@ static void initTranslations(QTranslator &qtTranslatorBase, QTranslator &qtTrans
     // - First load the translator for the base language, without territory
     // - Then load the more specific locale translator
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     const QString translation_path{QLibraryInfo::path(QLibraryInfo::TranslationsPath)};
-#else
-    const QString translation_path{QLibraryInfo::location(QLibraryInfo::TranslationsPath)};
-#endif
     // Load e.g. qt_de.qm
     if (qtTranslatorBase.load("qt_" + lang, translation_path)) {
         QApplication::installTranslator(&qtTranslatorBase);
@@ -496,9 +485,9 @@ int GuiMain(int argc, char* argv[])
     util::ThreadSetInternalName("main");
 
     // Subscribe to global signals from core
-    boost::signals2::scoped_connection handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(noui_ThreadSafeMessageBox);
-    boost::signals2::scoped_connection handler_question = ::uiInterface.ThreadSafeQuestion_connect(noui_ThreadSafeQuestion);
-    boost::signals2::scoped_connection handler_init_message = ::uiInterface.InitMessage_connect(noui_InitMessage);
+    btcsignals::scoped_connection handler_message_box{::uiInterface.ThreadSafeMessageBox.connect(noui_ThreadSafeMessageBox)};
+    btcsignals::scoped_connection handler_question{::uiInterface.ThreadSafeQuestion.connect(noui_ThreadSafeQuestion)};
+    btcsignals::scoped_connection handler_init_message{::uiInterface.InitMessage.connect(noui_InitMessage)};
 
     // Do not refer to data directory yet, this can be overridden by Intro::pickDataDirectory
 

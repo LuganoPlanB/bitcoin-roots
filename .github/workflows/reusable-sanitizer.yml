@@ -1,4 +1,4 @@
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 
 name: Reusable sanitizer coverage
@@ -59,6 +59,7 @@ jobs:
       FILE_ENV: ${{ inputs.file-env }}
       ROOTS_CI_CADENCE: ${{ inputs.cadence }}
       ROOTS_CHANGED_FILES_JSON: ${{ inputs.files-json }}
+      ROOTS_JOB_TIMEOUT_MINUTES: ${{ inputs.timeout }}
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -87,20 +88,18 @@ jobs:
         uses: ./.github/actions/configure-docker
       - name: Enable USDT coverage
         if: inputs.enable-usdt
-        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+        run: echo 'INSTALL_BCC_TRACING_TOOLS=true' >> "$GITHUB_ENV"
       - name: Set mmap_rnd_bits for sanitizer runtime
         if: inputs.configure-aslr
         # Prevent crashes due to high ASLR entropy.
         run: sudo sysctl -w vm.mmap_rnd_bits=28
       - name: Run sanitizer coverage
         run: ./ci/test_run_all.sh
-      - name: Preserve sanitizer failure artifacts
-        if: failure()
+      - name: Preserve sanitizer diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: sanitizer-failures-${{ inputs.name }}
+          name: sanitizer-diagnostics-${{ inputs.name }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn

@@ -5,31 +5,30 @@
 #ifndef BITCOIN_RPC_BLOCKCHAIN_H
 #define BITCOIN_RPC_BLOCKCHAIN_H
 
-#include <set>
-#include <map>
-#include <functional>
-#include <atomic>
-#include <script/script.h>
-#include <interfaces/chain.h>
-#include <coins.h>
 #include <consensus/amount.h>
-#include <core_io.h>
-#include <streams.h>
+#include <coins.h>
+#include <interfaces/chain.h>
 #include <sync.h>
-#include <threadsafety.h>
 #include <util/fs.h>
 #include <validation.h>
 
-#include <any>
+#include <atomic>
 #include <cstdint>
+#include <functional>
+#include <map>
+#include <set>
 #include <optional>
+#include <utility>
 #include <vector>
 
 class CBlock;
 class CBlockIndex;
 class CChain;
-class Chainstate;
 class UniValue;
+class AutoFile;
+class uint256;
+enum class TxVerbosity;
+
 namespace node {
 class BlockManager;
 struct NodeContext;
@@ -48,7 +47,7 @@ public:
 bool CheckInterruption(int64_t count, const std::function<void()>& interruption);
 } // namespace rpc::scan
 
-static constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
+inline constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
 
 /**
  * Get the difficulty of the net wrt to the given block index.
@@ -68,7 +67,7 @@ UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex
 void CalculatePercentilesByWeight(CAmount result[NUM_GETBLOCKSTATS_PERCENTILES], std::vector<std::pair<CAmount, int64_t>>& scores, int64_t total_weight);
 
 /**
- * Test-only helper to create UTXO snapshots given a chainstate and a file handle.
+ * Helper to create UTXO snapshots given a chainstate and a file handle.
  * @return a UniValue map containing metadata about the snapshot.
  */
 UniValue CreateUTXOSnapshot(

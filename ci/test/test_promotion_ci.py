@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -31,15 +31,15 @@ class PromotionCITest(unittest.TestCase):
         self.head, self.base, self.candidate = 'a' * 40, 'b' * 40, 'c' * 40
         repo = {'full_name': self.repository}
         self.event = {'repository': repo, 'pull_request': {
-            'head': {'ref': 'promote/30.3-fix', 'sha': self.head, 'repo': repo},
+            'head': {'ref': 'promote/32.1-fix', 'sha': self.head, 'repo': repo},
             'base': {'ref': 'main', 'sha': self.base, 'repo': repo}, 'labels': []}}
-        self.source_pr = {'head': {'sha': self.candidate, 'repo': repo, 'ref': 'topic/30.3/fix'},
-                          'base': {'ref': 'roots/30.3', 'repo': repo}}
+        self.source_pr = {'head': {'sha': self.candidate, 'repo': repo, 'ref': 'topic/32.1/fix'},
+                          'base': {'ref': 'roots/32.1', 'repo': repo}}
         self.run = {'id': 10, 'head_sha': self.candidate, 'event': 'pull_request',
                     'repository': repo, 'head_repository': repo,
                     'workflow_id': 4, 'path': '.github/workflows/ci.yml',
                     'status': 'completed', 'conclusion': 'success',
-                    'created_at': '2026-10-08T10:00:00Z', 'head_branch': 'topic/30.3/fix',
+                    'created_at': '2026-10-08T10:00:00Z', 'head_branch': 'topic/32.1/fix',
                     'pull_requests': []}
         self.runs = [self.run]
         self.jobs = [{'name': name, 'status': 'completed', 'conclusion': 'success'}
@@ -52,7 +52,7 @@ class PromotionCITest(unittest.TestCase):
         if args[1] == 'show':
             return self.base + ' ' + self.candidate
         if args[1] == 'ls-remote':
-            return self.candidate + '\trefs/heads/roots/30.3'
+            return self.candidate + '\trefs/heads/roots/32.1'
         self.assertEqual(args, ('git', 'diff', '--no-renames', '--name-only', self.candidate, self.head))
         return '\n'.join(self.differences)
 
@@ -83,9 +83,9 @@ class PromotionCITest(unittest.TestCase):
                 self.verify()
 
     def test_ordinary_pr_never_reuses_and_fork_promotion_is_rejected(self):
-        self.event['pull_request']['head']['ref'] = 'topic/30.3/fix'
+        self.event['pull_request']['head']['ref'] = 'topic/32.1/fix'
         self.assertIsNone(self.verify())
-        self.event['pull_request']['head']['ref'] = 'promote/30.3-fix'
+        self.event['pull_request']['head']['ref'] = 'promote/32.1-fix'
         self.event['pull_request']['head']['repo'] = {'full_name': 'fork/roots'}
         with self.assertRaisesRegex(ValueError, 'same repository'):
             self.verify()
@@ -111,7 +111,7 @@ class PromotionCITest(unittest.TestCase):
         self.source_pr['base']['ref'] = 'main'
         with self.assertRaisesRegex(ValueError, 'canonical-target'):
             self.verify()
-        self.source_pr['base']['ref'] = 'roots/30.3'
+        self.source_pr['base']['ref'] = 'roots/32.1'
         self.jobs.pop()
         with self.assertRaisesRegex(ValueError, 'required evidence'):
             self.verify()
@@ -152,16 +152,17 @@ class PromotionCITest(unittest.TestCase):
             moved = directory / 'src/moved.txt'
             moved.write_text('file that must remain in product\n')
             git('add', '.')
-            git('commit', '--quiet', '-m', 'fixture base')
-            base = git('rev-parse', 'HEAD')
+            # Tree objects exercise blob/mode/symlink parity without creating
+            # disposable commits or needing a contributor's signing key in CI.
+            base = git('write-tree')
             script.chmod(0o755)
             (directory / 'src/link').unlink()
             (directory / 'src/link').symlink_to('two')
             (directory / 'doc/website').mkdir(parents=True)
             moved.rename(directory / 'doc/website/moved.txt')
             git('add', '.')
-            git('commit', '--quiet', '-m', 'mode link and move')
-            differences = git('diff', '--no-renames', '--name-only', base, 'HEAD').splitlines()
+            candidate = git('write-tree')
+            differences = git('diff', '--no-renames', '--name-only', base, candidate).splitlines()
             self.assertTrue({'src/tool.py', 'src/link', 'src/moved.txt'} <= set(differences))
 
     def test_reuse_keeps_baseline_and_labels_force_selected_fresh_coverage(self):

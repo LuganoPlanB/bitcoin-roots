@@ -1,4 +1,4 @@
-// Copyright (c) 2025-present The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,6 +23,9 @@
 
 #ifdef __linux__
 #include <sys/syscall.h>
+#elif defined(__APPLE__)
+#include <libproc.h>
+#include <sys/proc_info.h>
 #endif
 
 namespace subprocess::detail {
@@ -43,7 +46,8 @@ static bool CloseProcDescriptors() noexcept
 {
     const int directory = open("/proc/self/fd", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (directory < 0) return false;
-    alignas(LinuxDirent64) char buffer[4096];
+    // MemorySanitizer cannot track the raw getdents64 syscall's buffer writes.
+    alignas(LinuxDirent64) char buffer[4096]{};
     bool success{true};
     for (;;) {
         const long count = syscall(SYS_getdents64, directory, buffer, sizeof(buffer));
@@ -83,6 +87,38 @@ static bool CloseProcDescriptors() noexcept
 }
 #endif
 
+#ifdef __APPLE__
+// libproc's descriptor query is a direct kernel-call wrapper. Use fixed stack
+// storage after fork and repeat over the remaining descriptors, independent of
+// a possibly lowered RLIMIT_NOFILE.
+static bool CloseDarwinDescriptors() noexcept
+{
+    proc_fdinfo descriptors[256];
+    for (;;) {
+        const int bytes = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, descriptors, static_cast<int>(sizeof(descriptors)));
+        if (bytes <= 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (static_cast<size_t>(bytes) > sizeof(descriptors) || static_cast<size_t>(bytes) % sizeof(descriptors[0]) != 0) return false;
+        const size_t count{static_cast<size_t>(bytes) / sizeof(descriptors[0])};
+        bool closed_any{false};
+        for (size_t i{0}; i < count; ++i) {
+            const int fd{descriptors[i].proc_fd};
+            if (fd < 0) return false;
+            if (fd <= 3) continue;
+            int result;
+            do {
+                result = close(fd);
+            } while (result < 0 && errno == EINTR);
+            if (result < 0 && errno != EBADF) return false;
+            closed_any = true;
+        }
+        if (!closed_any) return true;
+    }
+}
+#endif
+
 bool subprocess_close_all_fds(int& except_fd, [[maybe_unused]] bool force_fallback) noexcept
 {
     if (except_fd < 3) return false;
@@ -99,6 +135,8 @@ bool subprocess_close_all_fds(int& except_fd, [[maybe_unused]] bool force_fallba
 #endif
 #ifdef __linux__
     return CloseProcDescriptors();
+#elif defined(__APPLE__)
+    return CloseDarwinDescriptors();
 #elif HAVE_CLOSEFROM_RETURN_INT
     return closefrom(4) == 0;
 #elif HAVE_CLOSEFROM

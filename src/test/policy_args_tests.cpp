@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,7 @@
 #include <node/mempool_args.h>
 #include <policy/settings.h>
 #include <test/util/setup_common.h>
+#include <test/util/roots_policy_oracles.h>
 #include <univalue.h>
 #include <util/result.h>
 #include <util/translation.h>
@@ -55,11 +56,12 @@ BOOST_AUTO_TEST_CASE(boolean_values)
 
 BOOST_AUTO_TEST_CASE(integer_boundaries)
 {
-    for (const auto& [option, maximum] : std::vector<std::pair<std::string, std::string>>{
-             {"maxscriptsize", "4294967295"}, {"bytespersigopstrict", "4294967295"},
-             {"maxtxlegacysigops", "4294967295"}, {"minrelaycoinblocks", "9223372036854775807"},
-             {"minrelaymaturity", "2147483647"}, {"blockmaxsize", "4000000"},
-             {"blockprioritysize", "9223372036854775807"}}) {
+    // Literal one-past limits keep fixture construction independent of policy parsing.
+    for (const auto& [option, maximum, too_large] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"maxscriptsize", "4294967295", "4294967296"}, {"bytespersigopstrict", "4294967295", "4294967296"},
+             {"maxtxlegacysigops", "4294967295", "4294967296"}, {"minrelaycoinblocks", "9223372036854775807", "9223372036854775808"},
+             {"minrelaymaturity", "2147483647", "2147483648"}, {"blockmaxsize", "4000000", "4000001"},
+             {"blockprioritysize", "9223372036854775807", "9223372036854775808"}}) {
         for (const auto& value : std::vector<std::string>{"0", "1", "+1", "01", "-0", maximum}) {
             BOOST_TEST_CONTEXT(option << "=" << value) {
                 ArgsManager args;
@@ -67,12 +69,26 @@ BOOST_AUTO_TEST_CASE(integer_boundaries)
                 BOOST_CHECK(ValidateRootsPolicyOptions(args));
             }
         }
-        for (const auto& value : std::vector<std::string>{"", "-1", "+-0", "++1", " 1", "1 ", "1junk", "1.5", "1e0", "junk", "9223372036854775808", std::to_string(std::stoull(maximum) + 1)}) {
+        for (const auto& value : std::vector<std::string>{"", "-1", "+-0", "++1", " 1", "1 ", "1junk", "1.5", "1e0", "junk", "9223372036854775808", too_large}) {
             BOOST_TEST_CONTEXT(option << "=" << value) {
                 ArgsManager args;
                 args.ForceSetArg("-" + option, value);
                 BOOST_CHECK(!ValidateRootsPolicyOptions(args));
             }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(integer_byte_oracle)
+{
+    // Compare production whole-token parsing with independent decimal accumulation,
+    // including NUL and signed-char representations of every high-bit byte.
+    for (unsigned int byte{0}; byte <= 255; ++byte) {
+        const std::string character(1, static_cast<char>(static_cast<unsigned char>(byte)));
+        for (const auto& value : {character, "1" + character, character + "1"}) {
+            ArgsManager args;
+            args.ForceSetArg("-maxscriptsize", value);
+            BOOST_CHECK_EQUAL(bool(ValidateRootsPolicyOptions(args)), roots_test::ValidInteger(value, UINT32_MAX));
         }
     }
 }

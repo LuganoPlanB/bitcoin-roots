@@ -12,7 +12,9 @@
 #include <string>
 #include <vector>
 
-class UniValue;
+// Users of this header need to explicitly #include <univalue.h>
+// IWYU pragma: no_include <univalue.h>
+class UniValue; // IWYU pragma: keep
 
 namespace common {
 
@@ -28,13 +30,14 @@ namespace common {
 using SettingsValue = UniValue;
 
 //! Stored settings. This struct combines settings from the command line, a
-//! read-only configuration file, and a read-write runtime settings file.
+//! read-only configuration file, read-write text configuration, and a JSON
+//! runtime settings file.
 struct Settings {
     //! Map of setting name to forced setting value.
     std::map<std::string, SettingsValue> forced_settings;
     //! Map of setting name to list of command line values.
     std::map<std::string, std::vector<SettingsValue>> command_line_options;
-    //! Map of setting name to list of r/w config file values.
+    //! Map of setting name to list of read/write text config values.
     std::map<std::string, std::vector<SettingsValue>> rw_config;
     //! Map of setting name to read-write file setting value.
     std::map<std::string, SettingsValue> rw_settings;

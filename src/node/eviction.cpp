@@ -214,7 +214,7 @@ void ProtectEvictionCandidatesByRatio(std::vector<NodeEvictionCandidate>& evicti
     // or disadvantaged characteristics.
     ProtectEvictionCandidatesByRatio(vEvictionCandidates);
 
-    // May still return nullopt is `force` argument is false
+    // Without an explicit force grant, retain all normal scoring protections.
     if (vEvictionCandidates.empty()) return force_evict;
 
     // If any remaining peers are preferred for eviction consider only them.
@@ -229,7 +229,7 @@ void ProtectEvictionCandidatesByRatio(std::vector<NodeEvictionCandidate>& evicti
     // (vEvictionCandidates is already sorted by reverse connect time)
     uint64_t naMostConnections;
     unsigned int nMostConnections = 0;
-    std::chrono::seconds nMostConnectionsTime{0};
+    NodeClock::time_point nMostConnectionsTime{NodeClock::epoch};
     std::map<uint64_t, std::vector<NodeEvictionCandidate> > mapNetGroupNodes;
     for (const NodeEvictionCandidate &node : vEvictionCandidates) {
         std::vector<NodeEvictionCandidate> &group = mapNetGroupNodes[node.nKeyedNetGroup];

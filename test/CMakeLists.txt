@@ -9,9 +9,9 @@ function(create_test_config)
 
   macro(set_configure_variable var conf_var)
     if(${var})
-      set(${conf_var}_TRUE "")
+      set(${conf_var}_VALUE true)
     else()
-      set(${conf_var}_TRUE "#")
+      set(${conf_var}_VALUE false)
     endif()
   endmacro()
 
@@ -29,6 +29,7 @@ function(create_test_config)
   set_configure_variable(ENABLE_EXTERNAL_SIGNER ENABLE_EXTERNAL_SIGNER)
   set_configure_variable(WITH_USDT ENABLE_USDT_TRACEPOINTS)
   set_configure_variable(ENABLE_IPC ENABLE_IPC)
+  set_configure_variable(BUILD_GUI BUILD_GUI)
 
   configure_file(config.ini.in config.ini USE_SOURCE_PERMISSIONS @ONLY)
 endfunction()
@@ -43,6 +44,25 @@ if(BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
   )
   add_test(NAME roots_leveldb_finder
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_leveldb.py
+      --cmake ${CMAKE_COMMAND}
+      --compiler ${CMAKE_CXX_COMPILER}
+      --generator "${CMAKE_GENERATOR}"
+      --modules ${PROJECT_SOURCE_DIR}/cmake/module
+  )
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    add_test(NAME roots_secp256k1_finder
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_secp256k1.py
+        --cmake ${CMAKE_COMMAND}
+        --compiler ${CMAKE_CXX_COMPILER}
+        --generator "${CMAKE_GENERATOR}"
+        --modules ${PROJECT_SOURCE_DIR}/cmake/module
+    )
+  else()
+    message(STATUS "roots_secp256k1_finder not registered: pkg-config is unavailable")
+  endif()
+  add_test(NAME roots_miniupnpc_finder
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_miniupnpc.py
       --cmake ${CMAKE_COMMAND}
       --compiler ${CMAKE_CXX_COMPILER}
       --generator "${CMAKE_GENERATOR}"
@@ -109,6 +129,8 @@ function(create_test_directory_links)
     endif()
     file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/${f} ${CMAKE_CURRENT_BINARY_DIR}/${f} COPY_ON_ERROR ${symlink})
   endforeach()
+
+  configure_file(${PROJECT_SOURCE_DIR}/src/test/data/siphash.json ${PROJECT_BINARY_DIR}/src/test/data/siphash.json COPYONLY)
 endfunction()
 
 create_test_directory_links()

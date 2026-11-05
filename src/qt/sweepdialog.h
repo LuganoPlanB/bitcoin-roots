@@ -1,10 +1,11 @@
-// Copyright (c) 2026 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying file COPYING or http://www.opensource.org/licenses/MIT.
 
 #ifndef BITCOIN_QT_SWEEPDIALOG_H
 #define BITCOIN_QT_SWEEPDIALOG_H
 
 #include <QDialog>
+#include <QPointer>
 #include <support/allocators/secure.h>
 
 #include <cstdint>
@@ -35,7 +36,7 @@ private:
     void clearPrivateKeyCache();
     void setResult(const QString& text, bool can_broadcast);
     void setBusy(bool busy);
-    WalletModel* m_wallet_model;
+    QPointer<WalletModel> m_wallet_model;
     QLineEdit* m_private_key;
     QLineEdit* m_destination;
     QLabel* m_result;

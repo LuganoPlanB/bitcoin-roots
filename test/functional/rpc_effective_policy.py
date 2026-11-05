@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Check initialized policy reporting and representative admission parity."""
@@ -58,7 +58,8 @@ class EffectivePolicyTest(BitcoinTestFramework):
         assert_equal(info["minrelaytxfee"], min_relay_fee)
         assert_equal(info["incrementalrelayfee"], incremental_fee)
         assert_equal(info["mempoolminfee"], min_relay_fee)
-        assert_equal(info["fullrbf"], expected["replacement"] == "always")
+        # Core v32 hides the legacy alias unless explicitly requested.
+        assert "fullrbf" not in info
         assert_equal(info["permitbaremultisig"], expected["permit_bare_multisig"])
         assert_equal(info["maxdatacarriersize"], expected["max_datacarrier_bytes"])
         policy = info["policy"]
@@ -76,9 +77,25 @@ class EffectivePolicyTest(BitcoinTestFramework):
         assert "not consensus rules or mining limits" in help_text
         for field in DEFAULT_POLICY:
             assert f'"{field}"' in help_text
+        assert '"fullrbf"' not in help_text
+        mempool_schema = next(method for method in node.getopenrpcinfo()["methods"] if method["name"] == "getmempoolinfo")["result"]["schema"]
+        assert "fullrbf" not in mempool_schema["properties"]
+        policy_schema = mempool_schema["properties"]["policy"]
+        assert_equal(set(policy_schema["required"]), set(DEFAULT_POLICY))
+        for field, value in DEFAULT_POLICY.items():
+            expected_type = "boolean" if isinstance(value, bool) else "string" if isinstance(value, str) else "number"
+            assert_equal(policy_schema["properties"][field]["type"], expected_type)
+        assert "getmempoolstats" not in [method["name"] for method in node.getopenrpcinfo(True)["methods"]]
         assert "satoshi-blocks" in help_text
         # Exercise the CLI help entry point too, rather than only the RPC client.
         assert_equal(node.cli.help("getmempoolinfo"), help_text.rstrip("\n"))
+
+        self.restart_node(0, extra_args=["-deprecatedrpc=fullrbf"])
+        legacy = node.getmempoolinfo()
+        assert_equal(legacy["fullrbf"], legacy["policy"]["replacement"] == "always")
+        legacy_schema = next(method for method in node.getopenrpcinfo()["methods"] if method["name"] == "getmempoolinfo")["result"]["schema"]
+        assert_equal(legacy_schema["properties"]["fullrbf"]["type"], "boolean")
+        self.restart_node(0)
 
         self.log.info("Checking initialized overrides, rounding and resolved token modes")
         self.restart_node(0, extra_args=[
@@ -151,6 +168,8 @@ class EffectivePolicyTest(BitcoinTestFramework):
         self.check_policy({"max_datacarrier_bytes": 94, "subdust_fee_penalty": False})
         self.restart_node(0, extra_args=[f"-confrw={alternate_path}"])
         self.check_policy({"max_datacarrier_bytes": 94, "subdust_fee_penalty": False})
+        self.restart_node(0, extra_args=["-noconfrw"])
+        self.check_policy({"max_datacarrier_bytes": 94, "subdust_fee_penalty": False})
         self.stop_node(0)
         alternate_path.unlink()
         rw_path.unlink()
@@ -168,6 +187,16 @@ class EffectivePolicyTest(BitcoinTestFramework):
         self.restart_node(0)
         self.test_carrier_admission()
         self.test_subdust_admission()
+
+        self.log.info("Dormant statistics expose neither an RPC nor startup options")
+        self.stop_node(0)
+        for argument in ("-statsenable=1", "-statsmaxmemorytarget=1000"):
+            node.assert_start_raises_init_error(
+                extra_args=[argument],
+                expected_msg=f"Error: Error parsing command line arguments: Invalid parameter {argument}",
+            )
+        self.start_node(0)
+        assert_raises_rpc_error(-32601, "Method not found", node.getmempoolstats)
 
     def test_carrier_admission(self):
         self.log.info("Reported carrier budget controls admission, independently of standardness")

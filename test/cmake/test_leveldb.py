@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -19,7 +19,20 @@ import tempfile
 def run(command, *, succeeds=True):
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if (result.returncode == 0) != succeeds:
-        raise AssertionError(f"Unexpected result for {command}:\n{result.stdout}")
+        diagnostics = ""
+        if "-B" in command:
+            build = Path(command[command.index("-B") + 1])
+            for name in ("CMakeError.log", "CMakeConfigureLog.yaml"):
+                log = build / "CMakeFiles" / name
+                if log.is_file():
+                    diagnostics += f"\n{name}:\n{log.read_text(encoding='utf8')[-12000:]}"
+            cache = build / "CMakeCache.txt"
+            if cache.is_file():
+                diagnostics += "\nLevelDB cache:\n" + "\n".join(
+                    line for line in cache.read_text(encoding="utf8").splitlines()
+                    if line.startswith("LevelDB_")
+                )
+        raise AssertionError(f"Unexpected result for {command}:\n{result.stdout}{diagnostics}")
 
 
 def main():
@@ -100,12 +113,16 @@ def main():
         # A cached empty helper from an integrated package must not suppress
         # discovery of the separate helper after selecting another library.
         helper_library = library("helper")
-        shutil.copyfile(helper_library, fixture / helper_library.name.replace("helper", "memenv"))
+        # CMake 3.22 re-roots a path equal to the sysroot itself. A conventional
+        # lib/ directory stays inside the isolated target root on all versions.
+        helper_directory = fixture / "lib"
+        helper_directory.mkdir()
+        shutil.copyfile(helper_library, helper_directory / helper_library.name.replace("helper", "memenv"))
         build = root / "reconfigured"
         command = [args.cmake, "-S", str(consumer), "-B", str(build),
                    "-DCMAKE_BUILD_TYPE=Release", "-G", args.generator,
                    f"-DCMAKE_CXX_COMPILER={args.compiler}", f"-DMODULES={args.modules}",
-                   f"-DCMAKE_LIBRARY_PATH={fixture}",
+                   f"-DCMAKE_LIBRARY_PATH={helper_directory}",
                    f"-DCMAKE_FIND_ROOT_PATH={fixture}", "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY",
                    f"-DLevelDB_INCLUDE_DIR={headers}", f"-DLevelDB_MemEnv_INCLUDE_DIR={headers}",
                    "-DLevelDB_LIBRARY_DEBUG=LevelDB_LIBRARY_DEBUG-NOTFOUND",

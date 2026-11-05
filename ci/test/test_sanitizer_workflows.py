@@ -3,8 +3,12 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -25,6 +29,24 @@ def job(workflow, name):
 
 
 class SanitizerWorkflowTest(unittest.TestCase):
+    def test_requested_sanitizer_selects_only_its_complete_profile(self):
+        gate = job(NIGHTLY_WORKFLOW, 'gate')
+        selection = gate.split('      - name: Select requested Linux assurance suites\n', 1)[1]
+        script = textwrap.dedent(selection.split('        run: |\n', 1)[1])
+        for suite in ['asan', 'msan', 'tsan']:
+            with self.subTest(suite=suite), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'output'
+                subprocess.run(['bash', '-e', '-c', script], check=True, capture_output=True,
+                               env={**os.environ, 'SUITE': suite, 'GITHUB_OUTPUT': str(output)})
+                values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                self.assertEqual(json.loads(values['value']), {'include': []})
+                profiles = json.loads(values['sanitizers'])['include']
+                self.assertEqual(len(profiles), 1)
+                self.assertEqual(profiles[0]['file-env'], f'./ci/test/00_setup_env_native_{suite}.sh')
+                if suite == 'asan':
+                    self.assertEqual(profiles[0]['timeout'], 180)
+                    self.assertTrue(profiles[0]['enable-usdt'])
+
     def test_reusable_workflow_owns_the_sanitizer_runner(self):
         workflow = REUSABLE_WORKFLOW.read_text(encoding="utf-8")
         for input_name in ("ref", "name", "file-env", "timeout", "cache-save", "enable-usdt", "configure-aslr"):

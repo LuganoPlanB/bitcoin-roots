@@ -7,6 +7,7 @@
 #include <qt/splashscreen.h>
 
 #include <clientversion.h>
+#include <common/license_info.h>
 #include <common/system.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
@@ -18,13 +19,12 @@
 
 #include <functional>
 
-#include <Qt>
-#include <QtGlobal>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QFontInfo>
 #include <QPainter>
 #include <QScreen>
+
 
 namespace {
 const QColor SPLASH_TEXT_COLOR{0x03, 0x0b, 0x20};
@@ -64,7 +64,7 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
         static_cast<QGuiApplication*>(QCoreApplication::instance())->devicePixelRatio()};
     const QString title_text{CLIENT_NAME};
     const QString version_text{QString("Version %1").arg(QString::fromStdString(FormatFullVersion()))};
-    const QString copyright_text{QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str())};
+    const QString copyright_text{QString::fromUtf8(CopyrightHolders("\xc2\xA9").c_str())};
     const QString& title_add_text{networkStyle->getTitleAddText()};
 
     const QSize splash_size{qRound(480 * device_pixel_ratio), qRound(320 * device_pixel_ratio)};
@@ -175,8 +175,12 @@ static void ShowProgress(SplashScreen *splash, const std::string &title, int nPr
 void SplashScreen::subscribeToCoreSignals()
 {
     // Connect signals to client
-    m_handler_init_message = m_node->handleInitMessage(std::bind(InitMessage, this, std::placeholders::_1));
-    m_handler_show_progress = m_node->handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    m_handler_init_message = m_node->handleInitMessage([this](const std::string& message) {
+        InitMessage(this, message);
+    });
+    m_handler_show_progress = m_node->handleShowProgress([this](const std::string& title, int nProgress, bool resume_possible) {
+        ShowProgress(this, title, nProgress, resume_possible);
+    });
     m_handler_init_wallet = m_node->handleInitWallet([this]() { handleLoadWallet(); });
 }
 
@@ -185,7 +189,9 @@ void SplashScreen::handleLoadWallet()
 #ifdef ENABLE_WALLET
     if (!WalletModel::isWalletEnabled()) return;
     m_handler_load_wallet = m_node->walletLoader().handleLoadWallet([this](std::unique_ptr<interfaces::Wallet> wallet) {
-        m_connected_wallet_handlers.emplace_back(wallet->handleShowProgress(std::bind(ShowProgress, this, std::placeholders::_1, std::placeholders::_2, false)));
+        m_connected_wallet_handlers.emplace_back(wallet->handleShowProgress([this](const std::string& title, int nProgress) {
+            ShowProgress(this, title, nProgress, /*resume_possible=*/false);
+        }));
         m_connected_wallets.emplace_back(std::move(wallet));
     });
 #endif

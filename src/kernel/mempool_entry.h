@@ -13,8 +13,8 @@
 #include <primitives/transaction.h>
 #include <txgraph.h>
 #include <util/overflow.h>
+#include <util/time.h>
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -137,6 +137,8 @@ public:
     {
         m_modified_fee = SaturatingAdd(m_modified_fee, fee_diff);
     }
+
+    void SetModifiedFee(CAmount fee) const { m_modified_fee = fee; }
 
     // Update the LockPoints after a reorg
     void UpdateLockPoints(const LockPoints& lp) const

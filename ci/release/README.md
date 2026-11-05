@@ -16,6 +16,22 @@ manifest before creating a new draft. Public publication needs separate approval
 Unsafe or unassembled packages fail before upload or final preparation. No
 prior binary is substituted for a fresh build.
 
+The current candidate targets Core v32.1 and the future
+`v32.1-roots.1` name. Source/tag checks derive `roots/32.1` and `v32.1`
+from that name; an absent future name may be checked only offline or in an
+explicitly requested disposable rehearsal. Tag presence does not establish
+publication. Local fixtures are not five-platform hosted build evidence.
+
+The portable exporter uses exact Core ancestry, excludes `.github/**`, replays
+with `git am -3 --keep-cr`, and compares all product blobs, modes and symlinks
+with the candidate while retaining Core's hosting tree. Local verification
+commits must use the contributor's required signing key. Supply inherited Git
+`commit.gpgsign=true`, `user.signingkey=5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32`
+and `gpg.format=openpgp`, including in the disposable clone, and verify each
+new commit's exact `VALIDSIG`. A parent repository's local config alone is not
+inherited by clones. Git commit signing is separate from release-manifest
+signing. Keep optional read-only hosted rehearsals free of release secrets.
+
 ## Optional dependency notice tooling
 
 The following interface remains available for future coverage work. It is not
@@ -50,7 +66,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    python3 ci/release/repack.py intermediate.tar.gz assembled.tar.gz \
-     bitcoin-roots-31.1-roots.1 notice-inputs/index.json linux-x86_64
+     bitcoin-roots-32.1-roots.1 notice-inputs/index.json linux-x86_64
    ```
 
    The repacker adds canonical `COPYING` and `notices/` at the archive root,
@@ -65,7 +81,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    ci/release/prepare-release.sh assembled-downloads release-assets \
-     contrib/release/bitcoin-roots-release-key.asc v31.1-roots.1 5
+     contrib/release/bitcoin-roots-release-key.asc v32.1-roots.1 5
    ```
 
    This final gate derives each expected platform from its exact asset filename,

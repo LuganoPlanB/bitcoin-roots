@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -72,7 +72,15 @@ def create(args):
         # snapshot_packet validates every checksum, canonical COPYING and archive safety.
         signature = snapshot / 'SHA512SUMS.asc'
         shutil.copyfile(Path(args.original_assets) / signature.name, signature)
-        verify_signature(snapshot / 'SHA512SUMS', signature, args.public_key, args.fingerprint, temporary / 'verify-home')
+        # GnuPG's Unix sockets have a short platform path limit. Keep its home
+        # out of the nested packet snapshot, even when TMPDIR is workspace-owned.
+        with tempfile.TemporaryDirectory(prefix='roots-gpg-') as verification:
+            verification_home = Path(verification) / 'g'
+            try:
+                verify_signature(snapshot / 'SHA512SUMS', signature, args.public_key, args.fingerprint, verification_home)
+            finally:
+                subprocess.run(['gpgconf', '--homedir', str(verification_home), '--kill', 'gpg-agent'],
+                               check=False, capture_output=True)
         tag_object, core_version = draft.validate_source(args, snapshot / patch, temporary)
         # Refresh identities/inventory only after all slow local checks. Existing
         # drafts/public releases fail; an interrupted create is inspected by an operator.

@@ -213,6 +213,7 @@ void OptionTests::displayUnitPersistence()
             }
             QCOMPARE(process.exitStatus(), QProcess::NormalExit);
             const QByteArray diagnostic{process.readAllStandardOutput() + process.readAllStandardError()};
+            qInfo() << "Display-unit subprocess" << process.program() << process.arguments() << "exit" << process.exitCode();
             QVERIFY2(process.exitCode() == 0, diagnostic.constData());
         }
     }

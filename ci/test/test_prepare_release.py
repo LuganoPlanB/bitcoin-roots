@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -202,9 +202,8 @@ class PrepareReleaseTest(unittest.TestCase):
                                            SUDO_RECORD=str(work / "sudo-record"))
                         block = packaging_block("Package release artifacts")
                     else:
-                        deploy = work / "ci/scratch/build-fixture"
-                        deploy.mkdir(parents=True)
-                        with zipfile.ZipFile(deploy / "Bitcoin-Roots.zip", mode="w") as package:
+                        deploy = Path(environment['BASE_BUILD_DIR'])
+                        with zipfile.ZipFile(deploy / "bitcoin-macos-app.zip", mode="w") as package:
                             package.writestr("Bitcoin-Qt.app/Contents/MacOS/Bitcoin-Qt", b"binary fixture")
                         block = packaging_block("Stage release package")
                     subprocess.run(["bash", "-c", block], cwd=ROOT, env=environment, check=True)

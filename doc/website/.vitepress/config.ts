@@ -120,6 +120,7 @@ export default defineConfig({
       { text: "Documentation", link: "/documentation" },
       // Static patch documents bypass VitePress page-data routing.
       { text: "Patches", link: "/patches/", target: "_self" },
+      { text: "32.x source", link: "/doc/roots-v32-port-review" },
       { text: "Policy", link: "/doc/policy/README" },
       { text: "Contribute", link: "/CONTRIBUTING" },
     ],

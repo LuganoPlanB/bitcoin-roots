@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,6 +13,7 @@
 #include <univalue.h>
 #include <util/check.h>
 
+#include <util/string.h>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -63,7 +64,7 @@ FUZZ_TARGET(policy_args, .init = InitializePolicyArgs)
             if (parsed) {
                 // The rounded weight has an exact, canonical quarter-vbyte spelling.
                 const auto weight{*parsed};
-                const auto canonical{std::to_string(weight / 4) + "." + std::to_string(100 + 25 * (weight % 4)).substr(1)};
+                const auto canonical{util::ToString(weight / 4) + "." + util::ToString(100 + 25 * (weight % 4)).substr(1)};
                 const auto roundtrip{ParseDataCarrierCost(canonical)};
                 Assert(roundtrip && *roundtrip == weight);
             }
@@ -74,9 +75,9 @@ FUZZ_TARGET(policy_args, .init = InitializePolicyArgs)
         const auto [target, multiplier]{*dynamic};
         Assert(multiplier > 0);
         Assert(target >= 1 || (target <= -2 && target >= -1008) || target == 0);
-        const auto mode{target == 0 ? "off" : std::to_string(multiplier / 1000) + "." +
-            std::to_string(1000 + multiplier % 1000).substr(1) + "*" +
-            (target < 0 ? "target:" : "mempool:") + std::to_string(target < 0 ? -target : target)};
+        const auto mode{target == 0 ? "off" : util::ToString(multiplier / 1000) + "." +
+            util::ToString(1000 + multiplier % 1000).substr(1) + "*" +
+            (target < 0 ? "target:" : "mempool:") + util::ToString(target < 0 ? -target : target)};
         const auto roundtrip{ParseDustDynamicOpt(mode, 1008)};
         Assert(roundtrip && *roundtrip == *dynamic);
     }

@@ -12,9 +12,11 @@
 #include <test/util/common.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
+#include <test/data/bip341_wallet_vectors.json.h>
 #include <uint256.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <univalue.h>
 
 #include <string>
 #include <vector>
@@ -41,13 +43,17 @@ BOOST_FIXTURE_TEST_SUITE(key_tests, BasicTestingSetup)
 BOOST_AUTO_TEST_CASE(key_test1)
 {
     CKey key1  = DecodeSecret(strSecret1);
-    BOOST_CHECK(key1.IsValid() && !key1.IsCompressed());
+    BOOST_CHECK(key1.IsValid());
+    BOOST_CHECK(!key1.IsCompressed());
     CKey key2  = DecodeSecret(strSecret2);
-    BOOST_CHECK(key2.IsValid() && !key2.IsCompressed());
+    BOOST_CHECK(key2.IsValid());
+    BOOST_CHECK(!key2.IsCompressed());
     CKey key1C = DecodeSecret(strSecret1C);
-    BOOST_CHECK(key1C.IsValid() && key1C.IsCompressed());
+    BOOST_CHECK(key1C.IsValid());
+    BOOST_CHECK(key1C.IsCompressed());
     CKey key2C = DecodeSecret(strSecret2C);
-    BOOST_CHECK(key2C.IsValid() && key2C.IsCompressed());
+    BOOST_CHECK(key2C.IsValid());
+    BOOST_CHECK(key2C.IsCompressed());
     CKey bad_key = DecodeSecret(strAddressBad);
     BOOST_CHECK(!bad_key.IsValid());
 
@@ -311,6 +317,11 @@ BOOST_AUTO_TEST_CASE(bip340_test_vectors)
         BOOST_CHECK(kp_ok);
         BOOST_CHECK(pubkey.VerifySchnorr(msg256, sig64));
         BOOST_CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
+        const auto exported = keypair.GetKey();
+        BOOST_REQUIRE(exported);
+        BOOST_CHECK(*exported == key);
+        BOOST_REQUIRE(exported->SignSchnorr(msg256, sig64, nullptr, aux256));
+        BOOST_CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
 
         // Do 10 iterations where we sign with a random Merkle root to tweak,
         // and compare against the resulting tweaked keys, with random aux.
@@ -333,6 +344,46 @@ BOOST_AUTO_TEST_CASE(bip340_test_vectors)
             BOOST_CHECK(tweaked_key.VerifySchnorr(msg256, sig64));
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(keypair_secret_extraction)
+{
+    BOOST_CHECK(!KeyPair{}.GetKey());
+    UniValue vectors;
+    BOOST_REQUIRE(vectors.read(json_tests::bip341_wallet_vectors));
+    size_t count{0};
+    for (const auto& spending : vectors["keyPathSpending"].getValues()) {
+        for (const auto& input : spending["inputSpending"].getValues()) {
+            const auto secret = ParseHex(input["given"]["internalPrivkey"].get_str());
+            CKey internal;
+            internal.Set(secret.begin(), secret.end(), true);
+            uint256 root;
+            if (!input["given"]["merkleRoot"].isNull()) root = uint256{ParseHex(input["given"]["merkleRoot"].get_str())};
+            const auto untweaked = internal.ComputeKeyPair(nullptr).GetKey();
+            BOOST_REQUIRE(untweaked);
+            BOOST_CHECK(*untweaked == internal);
+            const auto exported = internal.ComputeKeyPair(&root).GetKey();
+            BOOST_REQUIRE(exported);
+            BOOST_CHECK(exported->IsCompressed());
+            BOOST_CHECK_EQUAL(HexStr(*exported), input["intermediary"]["tweakedPrivkey"].get_str());
+            BOOST_CHECK(HexStr(*exported) != HexStr(internal));
+            const auto expected = XOnlyPubKey{internal.GetPubKey()}.CreateTapTweak(root.IsNull() ? nullptr : &root);
+            BOOST_REQUIRE(expected);
+            BOOST_CHECK(XOnlyPubKey{exported->GetPubKey()} == expected->first);
+            BOOST_CHECK(bool(exported->GetPubKey()[0] & 1) == expected->second);
+            ++count;
+        }
+    }
+    BOOST_CHECK_EQUAL(count, 7U);
+
+    const CKey key = DecodeSecret(strSecret1C);
+    auto invalidated = key.ComputeKeyPair(nullptr);
+    const auto overflow = ParseHex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+    // Failure injection only: mutate this secure fixture through the supported secp API.
+    // The failed tweak clears its scalar; extraction must reject it and cleanse temporaries.
+    BOOST_CHECK(!secp256k1_keypair_xonly_tweak_add(secp256k1_context_static,
+        const_cast<secp256k1_keypair*>(invalidated.GetSecpKeypair()), overflow.data()));
+    BOOST_CHECK(!invalidated.GetKey());
 }
 
 BOOST_AUTO_TEST_CASE(key_ellswift)

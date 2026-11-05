@@ -79,16 +79,15 @@
 /* Define this symbol if you have posix_fallocate */
 #cmakedefine HAVE_POSIX_FALLOCATE 1
 
+/* Define this symbol if you have SetThreadDescription */
+#cmakedefine HAVE_SETTHREADDESCRIPTION 1
+
 /* Define this symbol if platform supports unix domain sockets */
 #cmakedefine HAVE_SOCKADDR_UN 1
 
-/* Define to 1 if close_range works with just unistd.h included. */
+/* Safe inherited descriptor closure for signer commands. */
 #cmakedefine01 HAVE_CLOSE_RANGE_GENERIC
-
-/* Define to 1 if close_range works only with Linux-specific includes. */
 #cmakedefine01 HAVE_CLOSE_RANGE_LINUX
-
-/* Define to 1 if the native closefrom API is available. */
 #cmakedefine01 HAVE_CLOSEFROM
 #cmakedefine01 HAVE_CLOSEFROM_RETURN_INT
 
@@ -101,7 +100,7 @@
 /* Define this symbol if the BSD sysctl(KERN_ARND) is available */
 #cmakedefine HAVE_SYSCTL_ARND 1
 
-/* Define to 1 if std::system or ::wsystem is available. */
+/* Define to 1 if std::system is available. */
 #cmakedefine HAVE_SYSTEM 1
 
 /* Define to the address where bug reports for this package should be sent. */
@@ -124,8 +123,5 @@
 
 /* Define if QR support should be compiled in */
 #cmakedefine USE_QRCODE 1
-
-/* Define to enable Windows GUI taskbar progress. */
-#cmakedefine BITCOIN_QT_WIN_TASKBAR 1
 
 #endif //BITCOIN_CONFIG_H

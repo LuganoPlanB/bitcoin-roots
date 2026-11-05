@@ -43,11 +43,7 @@ protected:
 
         auto address = model->index(row, AddressTableModel::Address, parent);
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         const auto pattern = filterRegularExpression();
-#else
-        const auto pattern = filterRegExp();
-#endif
         return (model->data(address).toString().contains(pattern) ||
                 model->data(label).toString().contains(pattern));
     }

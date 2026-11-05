@@ -33,6 +33,15 @@ test("missing and empty states remain explanatory without JavaScript", () => {
     assert.doesNotMatch(html, /Download original patch|Download verification/);
 });
 
+test("32.x source navigation never creates an unpublished release entry or download", () => {
+    const historical = release("v31.1-roots.6", "2026-10-20");
+    const html = releaseIndex([historical], local);
+    assert.match(html, /v32\.1-roots\.1 candidate is unpublished/);
+    assert.match(html, /href="\/bitcoin-roots\/doc\/roots-v32-port-review"/);
+    assert.match(html, /href="\/bitcoin-roots\/patches\/v31\.1-roots\.6\/"/);
+    assert.doesNotMatch(html, /releases\/download\/v32|patches\/v32/);
+});
+
 test("overview retains distinct repeated paths, commit order, honest totals and escaped metadata", () => {
     const commit = (ordinal) => ({ id: `commit-${ordinal}`, ordinal, subject: `<script>Subject ${ordinal}</script>`, author: "Author",
         files: [{ ordinal: 1, path: 'src/<img onerror="x">.cpp', state: "text" }, { ordinal: 2, path: "README.md", state: "metadata-only" }] });

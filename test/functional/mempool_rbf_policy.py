@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test that getmempoolinfo reports the configured replacement policy.
@@ -44,16 +44,22 @@ class MempoolRBFPolicyTest(BitcoinTestFramework):
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
+        assert "fullrbf" not in self.nodes[0].getmempoolinfo()
+        probe = self.wallet.send_self_transfer(from_node=self.nodes[0])
+        assert "bip125-replaceable" not in self.nodes[0].getmempoolentry(probe["txid"])
+        self.generate(self.nodes[0], 1)
+        self.wallet.rescan_utxos()
 
         previous_warning = ""
         for extra_args, fullrbf, nonsignaling_replaceable, signaling_replaceable, truc_replaceable in POLICIES:
             self.log.info(f"Check replacement policy with {extra_args or 'default options'}")
-            self.restart_node(0, extra_args=extra_args, expected_stderr=previous_warning)
+            self.restart_node(0, extra_args=[*extra_args, "-deprecatedrpc=fullrbf", "-deprecatedrpc=bip125"], expected_stderr=previous_warning)
             previous_warning = (
-                "Warning: False mempoolreplacement option contradicts true mempoolfullrbf; disallowing all RBF"
+                "Warning: False mempoolreplacement option contradicts true mempoolfullrbf; disallowing input-conflict RBF"
                 if "-mempoolreplacement=0" in extra_args and "-mempoolfullrbf=1" in extra_args else ""
             )
             assert_equal(self.nodes[0].getmempoolinfo()["fullrbf"], fullrbf)
+            assert "input-conflict replacements" in self.nodes[0].help("getmempoolinfo")
             for version, nonsignaling in ((2, nonsignaling_replaceable), (3, truc_replaceable)):
                 self.check_replacement(version=version, sequence=SEQUENCE_FINAL, replaceable=nonsignaling)
                 self.check_replacement(version=version, sequence=MAX_BIP125_RBF_SEQUENCE, replaceable=signaling_replaceable)
@@ -66,6 +72,9 @@ class MempoolRBFPolicyTest(BitcoinTestFramework):
         original = self.wallet.create_self_transfer(utxo_to_spend=utxo, version=version, sequence=sequence)
         replacement = self.wallet.create_self_transfer(utxo_to_spend=utxo, version=version, sequence=sequence, fee_rate=Decimal("0.01"))
         node.sendrawtransaction(original["hex"])
+        # The deprecated field describes signaling, independently of configured
+        # acceptance. Full RBF and v3 exemptions do not change BIP125 signaling.
+        assert_equal(node.getmempoolentry(original["txid"])["bip125-replaceable"], sequence <= MAX_BIP125_RBF_SEQUENCE)
         if replaceable:
             node.sendrawtransaction(replacement["hex"])
             mempool = node.getrawmempool()

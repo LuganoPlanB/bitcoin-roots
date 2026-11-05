@@ -6,13 +6,14 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <util/fs_helpers.h>
-
 #include <random.h>
 #include <sync.h>
 #include <tinyformat.h>
+#include <util/byte_units.h>
 #include <util/check.h>
 #include <util/fs.h>
 #include <util/log.h>
+#include <util/overflow.h>
 #include <util/syserror.h>
 
 #include <cerrno>
@@ -23,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -30,6 +32,7 @@
 #ifndef WIN32
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/types.h>
 #include <unistd.h>
 #else
 #include <io.h>
@@ -92,7 +95,7 @@ void ReleaseDirectoryLocks()
 
 bool CheckDiskSpace(const fs::path& dir, uint64_t additional_bytes)
 {
-    constexpr uint64_t min_disk_space = 52428800; // 50 MiB
+    constexpr uint64_t min_disk_space{50_MiB};
 
     uint64_t free_bytes_available = fs::space(dir).available;
     return free_bytes_available >= min_disk_space + additional_bytes;
@@ -147,33 +150,30 @@ void DirectoryCommit(const fs::path& dirname)
 #endif
 }
 
-bool TruncateFile(FILE* file, unsigned int length)
+bool TruncateFile(FILE* file, uint64_t length)
 {
 #if defined(WIN32)
-    return _chsize(_fileno(file), length) == 0;
+    return _chsize_s(_fileno(file), length) == 0;
 #else
     return ftruncate(fileno(file), length) == 0;
 #endif
 }
 
-/**
- * this function tries to raise the file descriptor limit to the requested number.
- * It returns the actual file descriptor limit (which may be more or less than nMinFD)
- */
-int RaiseFileDescriptorLimit(int nMinFD)
+int RaiseFileDescriptorLimit(int min_fd)
 {
-    Assert(nMinFD >= 0);
+    Assert(min_fd >= 0);
 #if defined(WIN32)
     return 2048;
 #else
     struct rlimit limitFD;
     if (getrlimit(RLIMIT_NOFILE, &limitFD) != -1) {
         // If the current soft limit is already higher, don't raise it
-        if (limitFD.rlim_cur != RLIM_INFINITY && std::cmp_less(limitFD.rlim_cur, nMinFD)) {
+        if (limitFD.rlim_cur != RLIM_INFINITY && std::cmp_less(limitFD.rlim_cur, min_fd)) {
             const auto current_limit{limitFD.rlim_cur};
-            limitFD.rlim_cur = std::in_range<rlim_t>(nMinFD) ? static_cast<rlim_t>(nMinFD) : limitFD.rlim_max;
+            static_assert(std::in_range<rlim_t>(std::numeric_limits<int>::max()));
+            limitFD.rlim_cur = static_cast<rlim_t>(min_fd);
             // Don't raise soft limit beyond hard limit
-            if (limitFD.rlim_max != RLIM_INFINITY && limitFD.rlim_cur > limitFD.rlim_max) {
+            if ((limitFD.rlim_max != RLIM_INFINITY) && (limitFD.rlim_cur > limitFD.rlim_max)) {
                 limitFD.rlim_cur = limitFD.rlim_max;
             }
             if (current_limit != limitFD.rlim_cur) {
@@ -192,7 +192,7 @@ int RaiseFileDescriptorLimit(int nMinFD)
         }
         return static_cast<int>(limitFD.rlim_cur);
     }
-    return nMinFD; // getrlimit failed, assume it's fine
+    return min_fd; // getrlimit failed, assume it's fine
 #endif
 }
 
@@ -200,16 +200,18 @@ int RaiseFileDescriptorLimit(int nMinFD)
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
  * It is advisory and must preserve existing bytes in the requested range.
  */
-void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
+void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length)
 {
+    // v32 offsets are wider than the released helper's unsigned-int offsets.
+    // An unrepresentable end must not wrap into a different live file range.
+    const auto end{CheckedAdd(offset, uint64_t{length})};
+    if (length == 0 || !end || !std::in_range<int64_t>(*end)) return;
 #if defined(WIN32)
     // Windows-specific version
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     LARGE_INTEGER nFileSize;
-    int64_t nEndPos = (int64_t)offset + length;
-    if (GetFileSizeEx(hFile, &nFileSize) && nFileSize.QuadPart < nEndPos) {
-        nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
-        nFileSize.u.HighPart = nEndPos >> 32;
+    if (GetFileSizeEx(hFile, &nFileSize) && std::cmp_less(nFileSize.QuadPart, *end)) {
+        nFileSize.QuadPart = static_cast<int64_t>(*end);
         if (SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN)) {
             SetEndOfFile(hFile);
         }
@@ -217,12 +219,14 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
 #else
 #if defined(HAVE_POSIX_FALLOCATE)
     // Version using posix_fallocate
-    if (0 == posix_fallocate(fileno(file), offset, length)) return;
+    if (std::in_range<off_t>(*end) && 0 == posix_fallocate(fileno(file), static_cast<off_t>(offset), length)) return;
 #endif
     // Fallback version
     // TODO: just write one byte per block
+    // Non-Windows FileSeek64 uses std::fseek, whose offset has type long.
+    if (!std::in_range<long>(*end)) return;
     uint8_t buf[65536];
-    if (fseek(file, offset, SEEK_SET)) {
+    if (FileSeek64(file, static_cast<int64_t>(offset), SEEK_SET)) {
         return;
     }
     clearerr(file);
@@ -230,20 +234,18 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
         unsigned int now = 65536;
         if (length < now)
             now = length;
-        const size_t rlen = fread(buf, 1, now, file);
+        const size_t rlen{fread(buf, 1, now, file)};
         if (rlen < now) {
             if (ferror(file)) {
-                // Don't clobber anything, just give up
                 clearerr(file);
                 return;
             }
             memset(&buf[rlen], 0, now - rlen);
         }
-        // Rewind after every read so allocation preserves existing bytes.
-        if (fseek(file, -static_cast<long>(rlen), SEEK_CUR)) return;
+        // Rewind every chunk, then sequence each write before the next read.
+        if (FileSeek64(file, -static_cast<int64_t>(rlen), SEEK_CUR)) return;
         if (fwrite(buf, 1, now, file) != now) return; // Advisory allocation may fail.
-        // An update stream needs a positioning operation between writing and reading.
-        if (fseek(file, 0, SEEK_CUR)) return;
+        if (FileSeek64(file, 0, SEEK_CUR)) return;
         length -= now;
     }
 #endif
@@ -327,6 +329,42 @@ std::optional<fs::perms> InterpretPermString(const std::string& s)
     }
 }
 
+bool IsSymlink(const fs::path& path)
+{
+#ifdef WIN32
+    const DWORD attrs{GetFileAttributesW(path.wstring().c_str())};
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        throw fs::filesystem_error("Unable to get file attributes", fs::PathToString(path), std::make_error_code(std::errc::invalid_argument));
+    }
+    return (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    return fs::is_symlink(path);
+#endif
+}
+
+bool IsDirWritable(const fs::path& dir_path)
+{
+    // Attempt to create a tmp file in the directory
+    if (!fs::is_directory(dir_path)) throw std::runtime_error(strprintf("Path %s is not a directory", fs::PathToString(dir_path)));
+    FastRandomContext rng;
+    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp_%d", rng.rand64()));
+
+    const char* mode;
+#ifdef __MINGW64__
+    mode = "w"; // Temporary workaround for https://github.com/bitcoin/bitcoin/issues/30210
+#else
+    mode = "wx";
+#endif
+
+    if (const auto created{fsbridge::fopen(tmp, mode)}) {
+        std::fclose(created);
+        std::error_code ec;
+        fs::remove(tmp, ec); // clean up, ignore errors
+        return true;
+    }
+    return false;
+}
+
 #ifdef __APPLE__
 FSType GetFilesystemType(const fs::path& path)
 {
@@ -338,32 +376,3 @@ FSType GetFilesystemType(const fs::path& path)
     return FSType::OTHER;
 }
 #endif
-
-bool IsDirWritable(const fs::path& dir_path)
-{
-    // Attempt to create a tmp file in the directory
-    if (!fs::is_directory(dir_path)) throw std::runtime_error(strprintf("Path %s is not a directory", fs::PathToString(dir_path)));
-    FastRandomContext rng;
-    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp_%d", rng.rand64()));
-
-    if (const auto created{fsbridge::fopen(tmp, "wbx")}) {
-        std::fclose(created);
-        std::error_code ec;
-        fs::remove(tmp, ec); // clean up, ignore errors
-        return true;
-    }
-    return false;
-}
-
-bool IsSymlink(const fs::path& path)
-{
-#ifdef WIN32
-    DWORD file_attrs = GetFileAttributesW(path.wstring().c_str());
-    if (file_attrs == INVALID_FILE_ATTRIBUTES) {
-        throw fs::filesystem_error("Unable to get file attributes", fs::PathToString(path), std::make_error_code(std::errc::invalid_argument));
-    }
-    return (file_attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-#else
-    return fs::is_symlink(path);
-#endif
-}

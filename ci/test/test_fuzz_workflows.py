@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -22,6 +22,14 @@ def job(workflow, name):
 
 
 class FuzzWorkflowTest(unittest.TestCase):
+    def test_nightly_retains_diagnostics_for_success_and_failure(self):
+        for workflow in (NIGHTLY_WORKFLOW, ROOT / '.github/workflows/reusable-sanitizer.yml'):
+            uploads = re.findall(r'- name: Preserve [^\n]+\n        if: ([^\n]+)\n        uses: actions/upload-artifact@v4', workflow.read_text())
+            self.assertTrue(uploads)
+            for condition in uploads:
+                self.assertIn('!cancelled()', condition)
+                self.assertIn("env.ROOTS_ARTIFACTS_DIR != ''", condition)
+
     def test_failure_upload_uses_the_explicit_container_artifact_path(self):
         configure = (ROOT / '.github/actions/configure-environment/action.yml').read_text()
         self.assertIn('ROOTS_ARTIFACTS_DIR=${{ runner.temp }}/roots-failures', configure)
@@ -55,6 +63,16 @@ class FuzzWorkflowTest(unittest.TestCase):
         required_result = job(CI_WORKFLOW, "required-result")
         self.assertIn("nightly-fuzz", required_result)
         self.assertIn("check_selected \"$NIGHTLY_FUZZ_SELECTED\" \"$NIGHTLY_FUZZ\" nightly-fuzz", required_result)
+
+    def test_macos_fuzz_waits_for_smoke_and_retains_explicit_selection(self):
+        macos_fuzz = job(NIGHTLY_WORKFLOW, "macos-fuzz")
+        self.assertIn('needs: [gate, macos-smoke]', macos_fuzz)
+        # A status function overrides implicit success() when smoke is skipped,
+        # while cancellation must still prevent a new expensive job starting.
+        self.assertIn('!cancelled()', macos_fuzz)
+        self.assertNotIn('always()', macos_fuzz)
+        for suite in ['', 'all', 'fuzz', 'macos-fuzz']:
+            self.assertIn(f"inputs.suite == '{suite}'", macos_fuzz)
 
 
 if __name__ == "__main__":

@@ -6,12 +6,13 @@
 #define BITCOIN_STATS_STATS_H
 
 #include <sync.h>
+#include <util/btcsignals.h>
 
 #include <atomic>
-#include <stdlib.h>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
-#include <boost/signals2/signal.hpp>
 
 struct CStatsMempoolSample {
     uint32_t m_time_delta;    //use 32bit time delta to save memory
@@ -56,7 +57,7 @@ public:
     static CStats* DefaultStats(); //shared instance
 
     /* signals */
-    boost::signals2::signal<void(void)> MempoolStatsDidChange; //mempool stats update signal
+    btcsignals::signal<void()> MempoolStatsDidChange; //mempool stats update signal
 
     /* add a mempool stats sample */
     void addMempoolSample(int64_t txcount, int64_t dynUsage, int64_t currentMinRelayFee);

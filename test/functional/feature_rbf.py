@@ -27,8 +27,10 @@ MAX_REPLACEMENT_LIMIT = 100
 class ReplaceByFeeTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.extra_args = [["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000"]] * self.num_nodes
         self.uses_wallet = None
+        self.extra_args = [["-deprecatedrpc=fullrbf", "-deprecatedrpc=bip125"], []]
+        for args in self.extra_args:
+            args += ["-minrelaytxfee=0.000001", "-maxscriptsize=1000000", "-datacarriersize=1000000"]
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])

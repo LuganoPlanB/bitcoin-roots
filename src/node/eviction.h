@@ -17,8 +17,8 @@ typedef int64_t NodeId;
 
 struct NodeEvictionCandidate {
     NodeId id;
-    std::chrono::seconds m_connected;
-    std::chrono::microseconds m_min_ping_time;
+    NodeClock::time_point m_connected;
+    NodeClock::duration m_min_ping_time;
     std::chrono::seconds m_last_block_time;
     std::chrono::seconds m_last_tx_time;
     bool fRelevantServices;
@@ -38,10 +38,9 @@ struct NodeEvictionCandidate {
  * fixed numbers of desirable peers per various criteria, followed by (mostly)
  * ratios of desirable or disadvantaged peers. If any eviction candidates
  * remain, the selection logic chooses a peer to evict.
- * @param[in]   force   Attempt to evict a random peer if no candidates
- *                      are available among inbound no-ban connections.
- *                      (see CConman::AttemptToEvictConnection())
- *                      Default: false
+ * @param[in] force Allow a random eligible inbound fallback when scoring
+ *                  protections remove every candidate. No-ban and outbound
+ *                  connections remain protected. Default: false.
  */
 [[nodiscard]] std::optional<NodeId> SelectNodeToEvict(std::vector<NodeEvictionCandidate>&& vEvictionCandidates, bool force = false);
 

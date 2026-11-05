@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Native cluster policy controls, script claims and reorg exceptions."""
 
 from decimal import Decimal
 
-from test_framework.messages import CTxOut
+from test_framework.messages import COIN, SEQUENCE_FINAL, CTxOut
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
@@ -22,6 +22,63 @@ class GraphPolicyTest(BitcoinTestFramework):
         result["tx"].vout[0].scriptPubKey = destination.get_output_script()
         wallet.sign_tx(result["tx"])
         return result["tx"]
+
+    def test_reuse_replacement_modes(self, funding, other, destination):
+        node = self.nodes[0]
+        for mode in ("0", "optin"):
+            self.log.info("Independent-input script reuse obeys exact replacement economics under %s", mode)
+            self.restart_node(0, extra_args=["-spkreuse=conflict", f"-mempoolreplacement={mode}",
+                                             "-incrementalrelayfee=0.000001", "-checkmempool=1"])
+            assert_equal(node.getrawmempool(), [])
+
+            def make_reuse_tx(wallet, utxo, fee):
+                tx = wallet.create_self_transfer(utxo_to_spend=utxo, fee=Decimal(fee) / COIN,
+                                                 version=2, sequence=SEQUENCE_FINAL)["tx"]
+                tx.vout[0].scriptPubKey = destination.get_output_script()
+                wallet.sign_tx(tx)
+                assert_equal(int(utxo["value"] * COIN) - sum(output.nValue for output in tx.vout), fee)
+                assert all(txin.nSequence == SEQUENCE_FINAL for txin in tx.vin)
+                return tx
+
+            original_utxo = funding.get_utxo()
+            original = make_reuse_tx(funding, original_utxo, 1000)
+            original_id = node.sendrawtransaction(original.serialize().hex())
+            original_entry = node.getmempoolentry(original_id)
+            assert_equal(original_entry["fees"]["modified"], Decimal(1000) / COIN)
+            direct = make_reuse_tx(funding, original_utxo, 2000)
+            assert_equal(node.testmempoolaccept([direct.serialize().hex()])[0]["reject-reason"], "txn-mempool-conflict")
+            assert_raises_rpc_error(-26, "txn-mempool-conflict", node.sendrawtransaction, direct.serialize().hex())
+            assert_equal(node.getrawmempool(), [original_id])
+            independent_utxo = other.get_utxo()
+            probe = make_reuse_tx(other, independent_utxo, 1000)
+            assert original.vin[0].prevout != probe.vin[0].prevout
+            assert_equal(probe.get_vsize(), original_entry["vsize_adjusted"])
+            rate = int(node.getmempoolinfo()["incrementalrelayfee"] * COIN)
+            assert_equal(rate, 100)
+            # Independent integer ceiling; no production fee-policy calculator.
+            increment = (rate * probe.get_vsize() + 999) // 1000
+            self.log.info("reuse mode=%s: original1000sat, vsize%d, incremental%d sat/kvB; reject%d/accept%d sat",
+                          mode, probe.get_vsize(), rate, 1000 + increment - 1, 1000 + increment)
+            low = make_reuse_tx(other, independent_utxo, 1000 + increment - 1)
+            rejected = node.testmempoolaccept([low.serialize().hex()])[0]
+            assert_equal(rejected["allowed"], False)
+            assert_equal(rejected["reject-reason"], "insufficient fee")
+            assert "not enough additional fees to relay" in rejected["reject-details"]
+            assert_raises_rpc_error(-26, "insufficient fee", node.sendrawtransaction, low.serialize().hex())
+            assert_equal(node.getrawmempool(), [original_id])
+            assert_equal(node.getmempoolentry(original_id)["fees"], original_entry["fees"])
+
+            high = make_reuse_tx(other, independent_utxo, 1000 + increment)
+            assert_equal(high.get_vsize(), probe.get_vsize())
+            assert_equal(node.testmempoolaccept([high.serialize().hex()])[0]["allowed"], True)
+            replacement_id = node.sendrawtransaction(high.serialize().hex())
+            assert_equal(node.getrawmempool(), [replacement_id])
+            assert original_id != replacement_id
+            assert_equal(node.getmempoolentry(replacement_id)["fees"]["base"], Decimal(1000 + increment) / COIN)
+            assert_equal(node.getmempoolentry(replacement_id)["fees"]["modified"], Decimal(1000 + increment) / COIN)
+            self.generate(funding, 1)
+            funding.rescan_utxos()
+            other.rescan_utxos()
 
     def run_test(self):
         node = self.nodes[0]
@@ -69,6 +126,7 @@ class GraphPolicyTest(BitcoinTestFramework):
                 self.generate(funding, 1)
                 funding.rescan_utxos()
 
+        self.test_reuse_replacement_modes(funding, other, destination)
         self.restart_node(0, extra_args=["-spkreuse=conflict", "-checkmempool=1"])
         change = funding.create_self_transfer()
         assert_equal(node.testmempoolaccept([change["hex"]])[0]["reject-reason"], "txn-spk-reused-change")

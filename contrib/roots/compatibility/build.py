@@ -41,7 +41,7 @@ def extract_source(archive, directory, error):
                 raise error("unsupported source archive entry")
 
 
-def build_source(source, directory, timeout, jobs, command, error, record):
+def build_source(source, directory, timeout, jobs, command, error, record, retain_logs=False):
     directory = Path(directory)
     directory.mkdir()
     archive = directory / "source.tar"
@@ -62,7 +62,13 @@ def build_source(source, directory, timeout, jobs, command, error, record):
         if remaining <= 0:
             raise error("pinned-source build timed out")
         try:
-            output = command(args, timeout=remaining)
+            if retain_logs:
+                log = directory / ("command-%02d.log" % len(evidence["commands"]))
+                output = command(args, timeout=remaining, log_path=log)
+                step["log"] = {"path": str(log), "sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
+                               "bytes": log.stat().st_size}
+            else:
+                output = command(args, timeout=remaining)
             step["status"] = "passed"
             # Fixed flags and no secrets are used for these commands. Retain only
             # bounded tails, not a whole build log in the run report.
@@ -71,6 +77,9 @@ def build_source(source, directory, timeout, jobs, command, error, record):
             step["status"] = "failed"
             step["error"] = str(failure) if isinstance(failure, error) else type(failure).__name__
             step["diagnostic_tail"] = getattr(failure, "diagnostic_tail", "")
+            if retain_logs and log.exists():
+                step["log"] = {"path": str(log), "sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
+                               "bytes": log.stat().st_size}
             raise
         return output
 

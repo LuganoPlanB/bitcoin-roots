@@ -22,8 +22,7 @@ function(add_libmultiprocess subdir)
         ERROR_QUIET
         OUTPUT_STRIP_TRAILING_WHITESPACE
       )
-      # CapnProto's imported targets are scoped to the vendored subdirectory.
-      # Read its configured include path without changing that dependency.
+      # CapnProto imported targets are scoped to the vendored subdirectory.
       get_directory_property(_capnp_include_dir DIRECTORY "${subdir}" DEFINITION CAPNP_INCLUDE_DIRECTORY)
       if(_homebrew_status EQUAL 0 AND
          IS_DIRECTORY "${_capnp_include_dir}/capnp" AND
@@ -35,8 +34,7 @@ function(add_libmultiprocess subdir)
         file(REAL_PATH "${_homebrew_prefix}/include/capnp" _linked_capnp)
         file(REAL_PATH "${_homebrew_prefix}/include/kj" _linked_kj)
         if(_configured_capnp STREQUAL _linked_capnp AND _configured_kj STREQUAL _linked_kj)
-          # CMake drops implicit include paths from generated -isystem flags.
-          # Keep the matching Homebrew alias system for IPC and its consumers.
+          # Retain system classification even for an implicit compiler path.
           foreach(_target multiprocess mputil mpgen)
             target_compile_options(${_target} PUBLIC
               "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"

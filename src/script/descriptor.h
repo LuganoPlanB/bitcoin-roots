@@ -6,14 +6,34 @@
 #define BITCOIN_SCRIPT_DESCRIPTOR_H
 
 #include <outputtype.h>
-#include <script/script.h>
-#include <script/sign.h>
-#include <script/signingprovider.h>
+#include <pubkey.h>
+#include <uint256.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
+class CScript;
+class SigningProvider;
+struct FlatSigningProvider;
+
 using ExtPubKeyMap = std::unordered_map<uint32_t, CExtPubKey>;
+
+/** Public provenance from an original musig() expression at a known descriptor index.
+ * Participants retain their full identities and multiplicity; path is only post-aggregation derivation.
+ */
+struct DescriptorMuSig2KeyInfo {
+    std::vector<CPubKey> participants;
+    CPubKey aggregate;
+    CPubKey derived;
+    std::vector<uint32_t> path;
+};
 
 /** Cache for single descriptor's derived extended pubkeys */
 class DescriptorCache {
@@ -108,7 +128,12 @@ struct Descriptor {
     /** Convert the descriptor back to a string, undoing parsing. */
     virtual std::string ToString(bool compat_format=false) const = 0;
 
-    /** Whether this descriptor will return one scriptPubKey or multiple (aka is or is not combo) */
+    /** Convert the descriptor to the canonical string.
+     * The canonical string is the same as the public string but always uses h as the hardened indicator
+     */
+    virtual std::string ToCanonicalString() const = 0;
+
+    /** Whether this descriptor will return at most one scriptPubKey or multiple (aka is or is not combo) */
     virtual bool IsSingleType() const = 0;
 
     /** Whether the given provider has all private keys required by this descriptor.
@@ -129,6 +154,9 @@ struct Descriptor {
 
     /** Convert the descriptor to a normalized string. Normalized descriptors have the xpub at the last hardened step. This fails if the provided provider does not have the private keys to derive that xpub. */
     virtual bool ToNormalizedString(const SigningProvider& provider, std::string& out, const DescriptorCache* cache = nullptr) const = 0;
+
+    /** Whether the descriptor can be used to produce its address(es) without needing a cache or private keys. */
+    virtual bool CanSelfExpand() const = 0;
 
     /** Expand a descriptor at a specified position.
      *
@@ -157,6 +185,22 @@ struct Descriptor {
      */
     virtual void ExpandPrivate(int pos, const SigningProvider& provider, FlatSigningProvider& out) const = 0;
 
+    /** Expand available private keys, returning false if a held root fails to derive.
+     * Missing cosigner roots are allowed. Output must be discarded on failure.
+     */
+    virtual bool ExpandPrivateChecked(int pos, const SigningProvider& provider, FlatSigningProvider& out) const = 0;
+
+    /** Collect private derivation input public keys, including structured MuSig2 participants.
+     * These are not concrete output candidates and must never be exported without membership proof.
+     */
+    virtual void GetPrivateKeyRoots(std::set<CPubKey>& roots) const = 0;
+
+    /** Check every publicly expandable key against its original expression at the cached index,
+     * and collect/recompute original MuSig2 provenance. Hardened peers do not suppress other checks.
+     * No private keys or nonce/session state are used. Discard output on failure.
+     */
+    virtual bool GetMuSig2KeyInfo(int pos, const DescriptorCache& cache, std::vector<DescriptorMuSig2KeyInfo>& out) const = 0;
+
     /** Identify derived keys whose descriptor roots are available, without retrieving private keys.
      * Uses cached public expansion and only queries provider.HaveKey(). Aggregate
      * key expressions identify their participants, not a synthetic aggregate secret.
@@ -184,6 +228,9 @@ struct Descriptor {
      * @param[out] ext_pubs Any extended public keys
      */
     virtual void GetPubKeys(std::set<CPubKey>& pubkeys, std::set<CExtPubKey>& ext_pubs) const = 0;
+
+    /** Whether this descriptor produces any scripts with the Expand functions */
+    virtual bool HasScripts() const = 0;
 
     /** Semantic/safety warnings (includes subdescriptors). */
     virtual std::vector<std::string> Warnings() const = 0;
@@ -229,9 +276,15 @@ std::string GetDescriptorChecksum(const std::string& descriptor);
  */
 std::unique_ptr<Descriptor> InferDescriptor(const CScript& script, const SigningProvider& provider);
 
-/** Unique identifier that may not change over time, unless explicitly marked as not backwards compatible.
-*   This is not part of BIP 380, not guaranteed to be interoperable and should not be exposed to the user.
+//! Infer recognized tapscript semantics; this does not verify the Taproot commitment.
+std::unique_ptr<Descriptor> InferTaprootScript(const CScript& script, const SigningProvider& provider);
+
+/** Hash of the COMPAT string representation of the descriptor that is not supposed to change over time.
+ * Due to the hash's usage in previous versions, the COMPAT string is computed with some quirks.
+ *
+ * The hash is the sha256 of the public descriptor using apostrophes as the hardened indicator, except inside of
+ * Miniscript expressions, where the public serialization is used as provided.
 */
-uint256 DescriptorID(const Descriptor& desc);
+uint256 CompatDescriptorHash(const Descriptor& desc);
 
 #endif // BITCOIN_SCRIPT_DESCRIPTOR_H

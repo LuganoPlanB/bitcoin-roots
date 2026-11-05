@@ -42,8 +42,17 @@ class RootsTemplateTest(BitcoinTestFramework):
         # Both caps apply together; an unconstraining one cannot override the other.
         check_template(common + [f"-blockmaxsize={1000 + size}", "-blockmaxweight=4000000"], False)
         check_template(common + ["-blockmaxsize=4000000", f"-blockmaxweight={8000 + weight}"], False)
-        # A reserve exceeding the weight limit normalizes to an empty template.
-        check_template(common + ["-blockmaxweight=8000", "-blockreservedweight=9000"], False)
+        # Native v32 rejects incompatible reserve/maximum options at startup.
+        self.stop_node(0)
+        node.assert_start_raises_init_error(
+            extra_args=common + ["-blockmaxweight=8000", "-blockreservedweight=9000"],
+            expected_msg="Error: -blockreservedweight (9000) exceeds -blockmaxweight (8000)",
+        )
+        self.start_node(0, extra_args=common)
+        for reserved in [2000, 8000, 3999000]:
+            for delta, included in [(0, False), (1, True)]:
+                check_template(common + [f"-blockreservedweight={reserved}",
+                                        f"-blockmaxweight={reserved + weight + delta}"], included)
         check_template(common + ["-blockmaxsize=0", "-blockprioritysize=9223372036854775807"], False)
         # The local size cap never changes block-connection consensus validity.
         before = node.getblockcount()

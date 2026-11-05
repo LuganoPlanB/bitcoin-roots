@@ -11,8 +11,6 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
-    get_rpc_proxy,
-    rpc_url,
 )
 
 class DisconnectBanTest(BitcoinTestFramework):
@@ -134,30 +132,25 @@ class DisconnectBanTest(BitcoinTestFramework):
         self.log.info("disconnectnode: fail to disconnect when calling with invalid subnet containing NUL")
         # Process arguments cannot carry NUL bytes, so use JSON-RPC for this input even with --usecli.
         node = self.nodes[0]
-        rpc = get_rpc_proxy(
-            rpc_url(node.datadir_path, node.index, self.chain, node.rpchost),
-            node.index,
-            timeout=node.rpc_timeout,
-            coveragedir=node.coverage_dir,
-        )
+        rpc = node.create_new_rpc_connection(mode="AUTHPROXY")
         assert_raises_rpc_error(-8, "Invalid subnet", rpc.disconnectnode, address="1.2.3.0/24\0")
 
         self.log.info("disconnectnode: successfully disconnect node by address")
         address1 = self.nodes[0].getpeerinfo()[0]['addr']
         self.nodes[0].disconnectnode(address=address1)
         self.wait_until(lambda: len(self.nodes[1].getpeerinfo()) == 1, timeout=10)
-        assert not [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1]
+        assert address1 not in [node['addr'] for node in self.nodes[0].getpeerinfo()]
 
         self.log.info("disconnectnode: successfully reconnect node")
         self.connect_nodes(0, 1)  # reconnect the node
         assert_equal(len(self.nodes[0].getpeerinfo()), 2)
-        assert [node for node in self.nodes[0].getpeerinfo() if node['addr'] == address1]
+        assert address1 in [node['addr'] for node in self.nodes[0].getpeerinfo()]
 
         self.log.info("disconnectnode: successfully disconnect node by node id")
         id1 = self.nodes[0].getpeerinfo()[0]['id']
         self.nodes[0].disconnectnode(nodeid=id1)
         self.wait_until(lambda: len(self.nodes[1].getpeerinfo()) == 1, timeout=10)
-        assert not [node for node in self.nodes[0].getpeerinfo() if node['id'] == id1]
+        assert id1 not in [node['id'] for node in self.nodes[0].getpeerinfo()]
 
         self.log.info("disconnectnode: validate and disconnect all peers in a subnet")
         assert_raises_rpc_error(-8, "Invalid subnet", self.nodes[0].disconnectnode, address="127.0.0.1/999")

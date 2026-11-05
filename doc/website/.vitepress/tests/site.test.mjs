@@ -87,6 +87,7 @@ test("website-owned navigation only targets published pages", async () => {
     "/principles",
     "/privacy",
     "/wallet-privacy",
+    "/patches/",
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
   const websiteFiles = [
@@ -151,6 +152,20 @@ test("primary navigation includes the two editorial routes", async () => {
   }
 });
 
+test("32.x navigation separates source availability from public release assets", async () => {
+  const [config, gettingStarted] = await Promise.all([
+    readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8"),
+    readFile(resolve(siteRoot, "content/getting-started.md"), "utf8"),
+  ]);
+  assert.match(config, /text: "32.x source", link: "\/doc\/roots-v32-port-review"/);
+  assert.match(gettingStarted, /Core v32\.1 port and v32\.1-roots\.1 source/);
+  assert.match(gettingStarted, /Source availability does not establish release publication/);
+  assert.match(gettingStarted, /excludes\s+unpublished drafts/);
+  assert.doesNotMatch(gettingStarted, /releases\/download\/v32/);
+  await access(resolve(siteRoot, "content/doc/roots-v32-port-review.md"));
+  await access(resolve(siteRoot, "content/doc/roots-build-portability.md"));
+});
+
 test("wallet privacy copy states capabilities and boundaries", async () => {
   const [home, page] = await Promise.all([
     readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
@@ -158,7 +173,7 @@ test("wallet privacy copy states capabilities and boundaries", async () => {
   ]);
   const source = `${home}\n${page}`;
 
-  assert.match(source, /v29\.4-roots\.3 candidate/);
+  assert.doesNotMatch(home, /v29\.4-roots\.3 candidate/);
   assert.match(source, /private-key sweep/);
   assert.match(source, /privacy-aware coin control/);
   assert.match(source, /cancel/i);
@@ -169,6 +184,25 @@ test("wallet privacy copy states capabilities and boundaries", async () => {
   assert.match(source, /do not provide an anonymity guarantee/i);
   assert.match(source, /wallet privacy manual/i);
   assert.match(source, /release notes/i);
+});
+
+test("current wallet guidance retains the startup-only key-disclosure gate", async () => {
+  const [page, manual, features] = await Promise.all([
+    readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8"),
+    readFile(resolve(repositoryRoot, "doc/wallet-privacy.md"), "utf8"),
+    readFile(resolve(repositoryRoot, "doc/roots-features.md"), "utf8"),
+  ]);
+  for (const copy of [page, manual, features]) {
+    for (const method of ["exportaddresskey", "listdescriptors", "gethdkeys", "derivehdkey"]) {
+      assert.ok(copy.includes(method), `Missing ${method} guidance`);
+    }
+    assert.match(copy, /disabled\s+by default/);
+    assert.match(copy, /--allow-dangerous-rpc/);
+    assert.match(copy, /cannot (?:be enabled|enable)/);
+    assert.match(copy, /unlock/);
+  }
+  assert.match(page, /Historical sweep and coin-control guidance/);
+  assert.match(page, /blob\/v29\.4-roots\.3\/doc\/wallet-privacy\.md/);
 });
 
 test("the contribution guide separates patch maintenance from Core ports", async () => {

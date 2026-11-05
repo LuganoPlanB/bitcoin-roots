@@ -39,9 +39,7 @@ function(add_boost_if_needed)
       ERROR_QUIET
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    # An earlier search path can select Homebrew's linked headers instead of
-    # the Cellar path exported by Boost's config. Classify that spelling as
-    # system too, but only when it resolves to the same Boost installation.
+    # Classify the linked spelling only when it resolves to the selected Boost.
     if(_homebrew_status EQUAL 0 AND IS_DIRECTORY "${_homebrew_prefix}/include/boost")
       file(REAL_PATH "${_homebrew_prefix}/include/boost" _linked_boost_headers)
       get_target_property(_boost_include_dirs Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
@@ -50,9 +48,7 @@ function(add_boost_if_needed)
           file(REAL_PATH "${_boost_include_dir}/boost" _configured_boost_headers)
           if(_linked_boost_headers STREQUAL _configured_boost_headers)
             target_include_directories(Boost::headers SYSTEM INTERFACE "${_homebrew_prefix}/include")
-            # CMake filters implicit include directories from generated include
-            # flags. Retain the system classification even when this alias is
-            # an implicit compiler search path.
+            # CMake filters implicit include directories from generated flags.
             target_compile_options(Boost::headers INTERFACE
               "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-isystem \"${_homebrew_prefix}/include\">"
             )
@@ -62,17 +58,6 @@ function(add_boost_if_needed)
         endif()
       endforeach()
     endif()
-  endif()
-  # Workaround for a bug in NetBSD pkgsrc.
-  # See https://gnats.netbsd.org/59856.
-  if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-    get_filename_component(_boost_include_dir "${boost_headers_DIR}/../../../include/" ABSOLUTE)
-    if(_boost_include_dir MATCHES "^/usr/pkg/")
-      set_target_properties(Boost::headers PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES ${_boost_include_dir}
-      )
-    endif()
-    unset(_boost_include_dir)
   endif()
   set_target_properties(Boost::headers PROPERTIES IMPORTED_GLOBAL TRUE)
   target_compile_definitions(Boost::headers INTERFACE

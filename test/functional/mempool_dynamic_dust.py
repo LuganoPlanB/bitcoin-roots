@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Dynamic dust startup, publication, immutable deficits, retry and shutdown."""
 
 from decimal import Decimal
-import shutil
 
 from test_framework.messages import COIN, CTxOut
 from test_framework.test_framework import BitcoinTestFramework
@@ -31,6 +30,19 @@ class DynamicDustTest(BitcoinTestFramework):
             assert_equal(node.testmempoolaccept([tx.serialize().hex()])[0]["allowed"], True)
             node.mockscheduler(901)
 
+        # Changing startup settings publishes the new floor without retaining a
+        # previous process's rate. No warmed block-policy estimate exists yet.
+        for floor, allowed in (("0.00001000", True), ("0.00006000", False)):
+            self.restart_node(0, extra_args=["-dustdynamic=target:2", f"-dustrelayfee={floor}"])
+            wallet = MiniWallet(node)
+            probe = self.probe(wallet, value=500)
+            result = node.testmempoolaccept([probe.serialize().hex()])[0]
+            assert_equal(result["allowed"], allowed)
+            if not allowed:
+                assert_equal(result["reject-reason"], "dust-nonanchor")
+            node.mockscheduler(901)
+            assert_equal(node.testmempoolaccept([probe.serialize().hex()])[0]["allowed"], allowed)
+
         self.restart_node(0, extra_args=["-dustdynamic=target:2", "-blocksonly=1"])
         node.mockscheduler(901)
         self.restart_node(0, extra_args=["-dustdynamic=1*mempool:1", "-acceptnonstdtxn=1", "-checkmempool=1"])
@@ -54,8 +66,8 @@ class DynamicDustTest(BitcoinTestFramework):
         second = self.probe(wallet, value=100)
         second_id = node.sendrawtransaction(second.serialize().hex())
         assert_equal(node.getmempoolentry(second_id)["fees"]["modified"], Decimal(100000 - 10900) / COIN)
-        # Priority/residual templates retain immutable deficits after publication,
-        # but their fee fields and coinbase reward use actual fees.
+        # Native templates retain immutable deficits after publication, while
+        # their fee fields and coinbase reward use actual fees.
         template = node.getblocktemplate({"rules": ["segwit"]})
         fees = {entry["txid"]: entry["fee"] for entry in template["transactions"]}
         assert_equal(fees[first_id], 100000)
@@ -68,6 +80,17 @@ class DynamicDustTest(BitcoinTestFramework):
         assert first_id in [entry["txid"] for entry in mined["tx"]]
         assert second_id in [entry["txid"] for entry in mined["tx"]]
         assert_equal(sum(output["value"] for output in mined["tx"][0]["vout"]), expected_reward)
+        mined_hash = node.getbestblockhash()
+        node.invalidateblock(mined_hash)
+        # Confirmation clears operator prioritisation, as in native Core.
+        # Reorg admission captures one deficit at the currently published rate;
+        # it neither reuses the original floor deficit nor subtracts twice.
+        for txid in (first_id, second_id):
+            fees = node.getmempoolentry(txid)["fees"]
+            assert_equal(fees["base"], Decimal(100000) / COIN)
+            assert_equal(fees["modified"], Decimal(100000 - 10900) / COIN)
+        node.reconsiderblock(mined_hash)
+        assert_equal(node.getrawmempool(), [])
         with node.assert_debug_log(["Updating dust feerate to 3.000 sat/vB"]):
             node.mockscheduler(901)
         wallet.rescan_utxos()
@@ -78,7 +101,7 @@ class DynamicDustTest(BitcoinTestFramework):
         # Exercise the existing production retry branch: its first mempool is
         # destroyed before any dynamic-dust task is registered.
         self.stop_node(0)
-        shutil.rmtree(node.blocks_path / "index")
+        self.cleanup_folder(node.blocks_path / "index")
         offset = node.debug_log_path.stat().st_size
         self.start_node(0, extra_args=["-dustdynamic=mempool:1", "-test=reindex_after_failure_noninteractive_yes"])
         current = node.debug_log_path.read_text()[offset:]

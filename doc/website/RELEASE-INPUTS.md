@@ -72,6 +72,21 @@ discovery always refreshes the full inventory.
 
 ## Publication refresh and recovery
 
+Before publication, integrate the accepted product source with the retained
+website and tooling on a reviewed, signed main integration branch. Keep the
+release's immutable source/tag identity distinct from the integration commit:
+moving `main` does not rebuild packages or change which source they contain.
+Check the current wallet/RPC guidance, source links, historical URLs, website
+tests and static build before separately authorized main promotion. A main push
+refreshes source documentation, but unpublished drafts remain excluded from the
+public release catalogue and patch navigator.
+
+The release itself still needs its required permanent tag, signed manifest and
+independent final packet verification under their separate authorizations. An
+existing manually prepared draft must be reconciled with the signed release
+workflow; its new-draft creator refuses existing drafts. A website refresh is
+not a way to bypass those release gates or publish a draft.
+
 After publishing and independently verifying a release, a maintainer can request
 an immediate website refresh from trusted `main`:
 
@@ -86,6 +101,14 @@ dispatch authority. This is the documentation workflow, separate from
 `release.yml` and its immutable binary-release handoff. A website retry never
 rebuilds binaries, moves tags, uploads or replaces release assets. Do not rerun
 a published tag's release workflow to refresh the site.
+
+After the Pages run, independently inspect `deployment.json`: `siteRevision`
+must identify the accepted main integration, and the inventory fingerprint and
+counts must include the newly public release. Open its release/commit/file
+navigation and download the linked patch/checksums to compare with the verified
+public release bytes. An unavailable patch or a successful workflow that skipped
+deployment is not evidence that the new patch is browsable. Preserve the old
+release routes and verify source documentation links as well.
 
 `deploy-docs.yml` also checks the complete public inventory at minute 17 every
 six hours in UTC, and on main pushes. Expected automatic catch-up is within six

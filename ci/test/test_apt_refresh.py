@@ -22,6 +22,12 @@ REFRESH_CALLERS = [
 
 
 class AptRefreshTest(unittest.TestCase):
+    def test_sourcing_retains_the_callers_utf8_locale(self):
+        result = subprocess.run(['bash', '-c', f'source "{APT_HELPER}"; printf "%s" "$LC_ALL"'],
+                                env=os.environ | {'LC_ALL': 'C.UTF-8'}, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, 'C.UTF-8')
+
     def test_refresh_callers_use_the_shared_strict_helper(self):
         helper = APT_HELPER.read_text(encoding="utf-8")
         self.assertIn('APT::Update::Error-Mode=any update', helper)

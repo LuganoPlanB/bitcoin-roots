@@ -1,8 +1,14 @@
-// Copyright (c) 2026 The Bitcoin Roots developers
+// Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/util/roots_policy_oracles.h>
+#include <node/mempool_args.h>
+#include <coins.h>
+#include <policy/policy.h>
+#include <primitives/transaction.h>
+#include <script/script.h>
+#include <util/string.h>
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/test/unit_test.hpp>
@@ -10,6 +16,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <vector>
 
 BOOST_AUTO_TEST_SUITE(roots_policy_oracle_tests)
 
@@ -53,6 +60,45 @@ BOOST_AUTO_TEST_CASE(decimal_reference_grammar_and_bytes)
         const bool digit{byte >= '0' && byte <= '9'};
         BOOST_CHECK_EQUAL(roots_test::ValidInteger(value, maximum), digit);
         BOOST_CHECK_EQUAL(roots_test::ValidInteger("1" + value, maximum), digit);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(carrier_decimal_quarter_oracle)
+{
+    // Decimal hundredths are constructed independently of ParseFixedPoint.
+    // Find the least integral weight whose rational cost covers the request.
+    using Wide = boost::multiprecision::cpp_int;
+    for (uint64_t cents{0}; cents <= 10000; ++cents) {
+        const std::string value{util::ToString(cents / 100) + "." + util::ToString(100 + cents % 100).substr(1)};
+        const auto parsed{ParseDataCarrierCost(value)};
+        BOOST_REQUIRE(parsed);
+        const Wide covered{Wide{*parsed} * 25};
+        BOOST_CHECK(covered >= cents);
+        if (*parsed > 0) BOOST_CHECK(covered - 25 < cents);
+    }
+    for (const uint64_t cents : {uint64_t{107374182374}, uint64_t{107374182375}, uint64_t{107374182376}}) {
+        const auto value{util::ToString(cents / 100) + "." + util::ToString(100 + cents % 100).substr(1)};
+        const auto parsed{ParseDataCarrierCost(value)};
+        const bool representable{Wide{cents} <= Wide{UINT32_MAX} * 25};
+        BOOST_REQUIRE_EQUAL(bool(parsed), representable);
+        if (parsed) BOOST_CHECK(Wide{*parsed} * 25 >= cents && Wide{*parsed - 1} * 25 < cents);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_carrier_weight_oracle)
+{
+    using Wide = boost::multiprecision::cpp_int;
+    CCoinsViewCache view{&CoinsViewEmpty::Get()};
+    for (const unsigned int bytes : {0U, 1U, 75U, 76U, 255U, 520U, 1650U}) {
+        CMutableTransaction tx;
+        tx.vout.emplace_back(0, CScript() << OP_RETURN << std::vector<unsigned char>(bytes, 0x42));
+        const CTransaction transaction{tx};
+        for (const unsigned int rate : {0U, 1U, 4U, 5U, 100U, UINT32_MAX}) {
+            const Wide charged{rate > 4 ? Wide{rate - 4} * tx.vout[0].scriptPubKey.size() : Wide{0}};
+            const Wide maximum{INT32_MAX};
+            const int32_t expected{static_cast<int32_t>(charged > maximum ? maximum : charged)};
+            BOOST_CHECK_EQUAL(CalculateExtraTxWeight(transaction, view, rate), expected);
+        }
     }
 }
 

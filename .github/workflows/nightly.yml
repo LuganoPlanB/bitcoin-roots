@@ -1,4 +1,4 @@
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 
 name: Nightly assurance
@@ -13,7 +13,7 @@ on:
         required: false
         default: all
         type: choice
-        options: [all, sanitizers, fuzz, platforms, tsan, msan, tidy, i686, previous-releases, extended-functional, macos-fuzz, windows-fuzz, arm32, kernel, macos-smoke, windows-smoke]
+        options: [all, sanitizers, fuzz, platforms, tsan, msan, asan, tidy, i686, previous-releases, extended-functional, system-libraries, macos-fuzz, windows-fuzz, arm32, kernel, macos-smoke, windows-smoke]
   workflow_call:
     inputs:
       ref:
@@ -54,6 +54,25 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Check finder with minimum supported CMake
+        if: inputs.suite == 'all' || inputs.suite == 'previous-releases' || inputs.suite == ''
+        run: |
+          set -Eeuo pipefail
+          echo "LLVM DNS on the runner"
+          timeout 15 getent ahosts apt.llvm.org || true
+          docker run --rm --volume "${GITHUB_WORKSPACE}:/source:ro" mirror.gcr.io/ubuntu:22.04 bash -c '
+            set -Eeuo pipefail
+            echo "LLVM DNS in the container"
+            timeout 15 getent ahosts apt.llvm.org || true
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get -o Acquire::Retries=3 update -qq
+            apt-get -o Acquire::Retries=3 install --no-install-recommends -y cmake g++-12 python3 make
+            cmake --version
+            python3 /source/test/cmake/test_leveldb.py --cmake /usr/bin/cmake --compiler /usr/bin/g++-12 --generator "Unix Makefiles" --modules /source/cmake/module
+          '
+      - name: Verify LLVM APT before scheduling dependent suites
+        if: inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'sanitizers' || inputs.suite == 'tsan' || inputs.suite == 'msan' || inputs.suite == 'asan' || inputs.suite == 'tidy' || inputs.suite == 'fuzz'
+        run: python3 ci/llvm-apt-route.py --github-env "$GITHUB_ENV"
       - name: Retrieve current and immediately preceding scheduled runs
         if: github.event_name == 'schedule'
         uses: actions/github-script@v8
@@ -101,17 +120,19 @@ jobs:
           SUITE: ${{ inputs.suite || 'all' }}
         run: |
           set -Eeuo pipefail
-          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}'
+          all='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360},{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240},{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300},{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360},{"name":"system LevelDB and secp256k1","file-env":"./ci/test/00_setup_env_native_system_libraries.sh","timeout":240}]}'
           sanitizers='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true},{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true},{"name":"ASan wallet, GUI and USDT","file-env":"./ci/test/00_setup_env_native_asan.sh","timeout":180,"configure-aslr":false,"enable-usdt":true}]}'
           case "${SUITE}" in
             all) value="${all}"; sanitizer_value="${sanitizers}" ;;
             tsan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"ThreadSanitizer","file-env":"./ci/test/00_setup_env_native_tsan.sh","timeout":240,"configure-aslr":true}]}' ;;
             msan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"MemorySanitizer","file-env":"./ci/test/00_setup_env_native_msan.sh","timeout":240,"configure-aslr":true}]}' ;;
+            asan) value='{"include":[]}'; sanitizer_value='{"include":[{"name":"ASan wallet, GUI and USDT","file-env":"./ci/test/00_setup_env_native_asan.sh","timeout":180,"configure-aslr":false,"enable-usdt":true}]}' ;;
             sanitizers) value='{"include":[]}'; sanitizer_value="${sanitizers}" ;;
             tidy) value='{"include":[{"name":"clang-tidy and dependency boundaries","file-env":"./ci/test/00_setup_env_native_tidy.sh","timeout":360}]}' ;;
             i686|platforms) value='{"include":[{"name":"i686 Debug","file-env":"./ci/test/00_setup_env_i686_no_ipc.sh","timeout":240}]}' ;;
             previous-releases) value='{"include":[{"name":"previous-release extended compatibility","file-env":"./ci/test/00_setup_env_native_previous_releases.sh","timeout":300}]}' ;;
             extended-functional) value='{"include":[{"name":"extended functional tests","file-env":"./ci/test/00_setup_env_native_extended_functional.sh","timeout":360}]}' ;;
+            system-libraries) value='{"include":[{"name":"system LevelDB and secp256k1","file-env":"./ci/test/00_setup_env_native_system_libraries.sh","timeout":240}]}' ;;
             fuzz|macos-fuzz|windows-fuzz|arm32|kernel|macos-smoke|windows-smoke) value='{"include":[]}' ;;
             *) echo "Unsupported suite: ${SUITE}" >&2; exit 1 ;;
           esac
@@ -131,6 +152,7 @@ jobs:
     env:
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ${{ matrix.file-env }}
+      ROOTS_JOB_TIMEOUT_MINUTES: ${{ matrix.timeout }}
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -159,15 +181,13 @@ jobs:
         uses: ./.github/actions/configure-docker
       - name: Run assurance suite
         run: ./ci/test_run_all.sh
-      - name: Preserve failed assurance output
-        if: failure()
+      - name: Preserve assurance diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: nightly-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
 
   sanitizers:
@@ -197,6 +217,7 @@ jobs:
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ./ci/test/00_setup_env_native_fuzz.sh
       ROOTS_CI_CADENCE: nightly
+      ROOTS_JOB_TIMEOUT_MINUTES: 240
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -225,21 +246,21 @@ jobs:
         uses: ./.github/actions/configure-docker
       - name: Run full fuzz corpus
         run: ./ci/test_run_all.sh
-      - name: Preserve failed assurance output
-        if: failure()
+      - name: Preserve assurance diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: nightly-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
 
   macos-fuzz:
     name: macOS native full fuzz corpus
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz')
+    # Release our ARM smoke runner before requesting another scarce ARM runner.
+    # The explicit status check also permits fuzz-only runs when smoke is skipped.
+    needs: [gate, macos-smoke]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz') }}
     runs-on: macos-15
     timeout-minutes: 360
     env:
@@ -247,7 +268,10 @@ jobs:
       BASE_ROOT_DIR: ${{ github.workspace }}
       FILE_ENV: ./ci/test/00_setup_env_mac_native_fuzz.sh
       HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      ROOTS_JOB_TIMEOUT_MINUTES: 360
     steps:
+      - name: Configure temporary paths
+        run: printf 'ROOTS_ARTIFACTS_DIR=%s/roots-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Checkout selected revision
         uses: actions/checkout@v6
         with:
@@ -258,7 +282,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           brew install --quiet python@3 || brew link --overwrite python@3
-          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost miniupnpc zeromq qt@6 qrencode capnp
       - name: Set compiler cache directory
         run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
       - name: Restore compiler cache
@@ -272,15 +296,13 @@ jobs:
           save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
       - name: Run full fuzz corpus
         run: ./ci/test_run_all.sh
-      - name: Preserve failed assurance output
-        if: failure()
+      - name: Preserve assurance diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: nightly-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
 
   windows-fuzz:
@@ -293,6 +315,9 @@ jobs:
       PYTHONUTF8: 1
       TEST_RUNNER_TIMEOUT_FACTOR: 40
     steps:
+      - name: Configure temporary paths
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "ROOTS_ARTIFACTS_DIR=$env:RUNNER_TEMP/roots-failures"
       - name: Checkout selected revision
         uses: actions/checkout@v6
         with:
@@ -337,11 +362,11 @@ jobs:
       - name: Generate build system
         shell: pwsh
         run: |
-          cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="wallet" -DBUILD_GUI=OFF -DWITH_ZMQ=OFF -DBUILD_FOR_FUZZING=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          py -3 ci/test/roots-regressions.py command --timeout 18000 --artifacts "$env:RUNNER_TEMP/roots-failures/configure" -- cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="wallet" -DBUILD_GUI=OFF -DWITH_ZMQ=OFF -DBUILD_FOR_FUZZING=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
       - name: Build fuzz targets
         working-directory: build
         shell: pwsh
-        run: cmake --build . --config Release --parallel
+        run: py -3 ../ci/test/roots-regressions.py command --timeout 18000 --artifacts "$env:RUNNER_TEMP/roots-failures/build" -- cmake --build . --config Release --parallel 2
       - name: Clone fuzz corpora
         shell: pwsh
         run: |
@@ -354,7 +379,7 @@ jobs:
         shell: cmd
         env:
           BITCOINFUZZ: ${{ github.workspace }}\build\bin\Release\fuzz.exe
-        run: py -3 test\fuzz\test_runner.py --par %NUMBER_OF_PROCESSORS% --loglevel DEBUG %RUNNER_TEMP%\qa-assets\fuzz_corpora
+        run: py -3 ..\ci\test\roots-regressions.py command --timeout 18000 --artifacts "%RUNNER_TEMP%\roots-failures\fuzz" -- py -3 test\fuzz\test_runner.py --par 2 --loglevel DEBUG "%RUNNER_TEMP%\qa-assets\fuzz_corpora"
       - name: Save vcpkg binary cache
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -368,16 +393,17 @@ jobs:
           path: C:/vcpkg/downloads/tools
           key: ${{ github.job }}-vcpkg-tools
 
-      - name: Preserve failed platform output
-        if: failure()
+      - name: Preserve platform diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: platform-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ github.workspace }}/build/Testing/Temporary/
-            ${{ github.workspace }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
+            ${{ runner.temp }}/roots-failures/
+            ${{ github.workspace }}/build/**/crash-*
+            ${{ github.workspace }}/build/**/timeout-*
+            ${{ github.workspace }}/build/**/oom-*
           if-no-files-found: warn
   arm32:
     name: 32-bit ARM unit tests
@@ -415,15 +441,13 @@ jobs:
         uses: ./.github/actions/configure-docker
       - name: Run ARM32 unit tests
         run: ./ci/test_run_all.sh
-      - name: Preserve failed assurance output
-        if: failure()
+      - name: Preserve assurance diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: nightly-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
 
 
@@ -435,7 +459,7 @@ jobs:
     timeout-minutes: 120
     env:
       DANGER_CI_ON_HOST_FOLDERS: 1
-      FILE_ENV: ./ci/test/00_setup_env_native_nowallet_libbitcoinkernel.sh
+      FILE_ENV: ./ci/test/00_setup_env_native_nowallet.sh
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v6
@@ -463,15 +487,13 @@ jobs:
         uses: ./.github/actions/configure-docker
       - name: Run kernel library and chainstate coverage
         run: ./ci/test_run_all.sh
-      - name: Preserve failed assurance output
-        if: failure()
+      - name: Preserve assurance diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: nightly-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ env.ROOTS_ARTIFACTS_DIR }}/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
           if-no-files-found: warn
 
 
@@ -482,6 +504,9 @@ jobs:
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
     steps:
+      - name: Configure temporary paths
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "ROOTS_ARTIFACTS_DIR=$env:RUNNER_TEMP/roots-failures"
       - name: Checkout selected revision
         uses: actions/checkout@v6
         with:
@@ -523,20 +548,21 @@ jobs:
       - name: Configure, build, and smoke test
         shell: pwsh
         run: |
-          cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DVCPKG_MANIFEST_FEATURES=miniupnpc -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
-          cmake --build build --config Release --parallel
-          ctest --test-dir build -C Release --output-on-failure
+          py -3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$env:RUNNER_TEMP/roots-failures/configure" -- cmake -B build --preset vs2026-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DVCPKG_MANIFEST_FEATURES=miniupnpc -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DBUILD_TX=ON -DBUILD_UTIL=ON -DBUILD_WALLET_TOOL=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          py -3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$env:RUNNER_TEMP/roots-failures/build" -- cmake --build build --config Release --parallel 2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          py -3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$env:RUNNER_TEMP/roots-failures/test" -- ctest --test-dir build -C Release --output-on-failure
 
-      - name: Preserve failed platform output
-        if: failure()
+      - name: Preserve platform diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: platform-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ github.workspace }}/build/Testing/Temporary/
-            ${{ github.workspace }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
+            ${{ runner.temp }}/roots-failures/
+            ${{ github.workspace }}/build/CMakeFiles/CMakeConfigureLog.yaml
           if-no-files-found: warn
   macos-smoke:
     name: macOS ${{ matrix.expected-arch }} native production-like smoke
@@ -553,6 +579,8 @@ jobs:
           - runner: macos-15
             expected-arch: arm64
     steps:
+      - name: Configure temporary paths
+        run: printf 'ROOTS_ARTIFACTS_DIR=%s/roots-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Checkout selected revision
         uses: actions/checkout@v6
         with:
@@ -574,7 +602,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           brew install --quiet python@3 || brew link --overwrite python@3
-          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost libevent miniupnpc zeromq qt@6 qrencode capnp
+          brew install --quiet coreutils ninja pkgconf gnu-getopt ccache boost miniupnpc zeromq qt@6 qrencode capnp
       - name: Set compiler cache directory
         run: echo "CCACHE_DIR=${RUNNER_TEMP}/ccache_dir" >> "$GITHUB_ENV"
       - name: Restore compiler cache
@@ -589,18 +617,17 @@ jobs:
       - name: Configure, build, and smoke test
         run: |
           set -Eeuo pipefail
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
-          cmake --build build --parallel
-          ctest --test-dir build --output-on-failure
+          python3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$RUNNER_TEMP/roots-failures/configure" -- cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON -DWITH_QRENCODE=ON -DBUILD_TESTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DWITH_ZMQ=ON -DWITH_MINIUPNPC=ON
+          python3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$RUNNER_TEMP/roots-failures/build" -- cmake --build build --parallel 2
+          python3 ci/test/roots-regressions.py command --timeout 9900 --artifacts "$RUNNER_TEMP/roots-failures/test" -- ctest --test-dir build --output-on-failure
 
-      - name: Preserve failed platform output
-        if: failure()
+      - name: Preserve platform diagnostics
+        if: ${{ !cancelled() && env.ROOTS_ARTIFACTS_DIR != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: platform-failures-${{ github.job }}-${{ strategy.job-index }}
+          name: platform-diagnostics-${{ github.job }}-${{ strategy.job-index }}
           path: |
             ${{ github.workspace }}/build/Testing/Temporary/
-            ${{ github.workspace }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/ci/scratch/test_runner/
-            ${{ runner.temp }}/build/Testing/Temporary/
+            ${{ runner.temp }}/roots-failures/
+            ${{ github.workspace }}/build/CMakeFiles/CMakeConfigureLog.yaml
           if-no-files-found: warn

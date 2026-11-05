@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -126,7 +126,7 @@ def depends_notices(depends, host, destination):
 
 
 def brew_notices(destination, bundle=None):
-    requested = ['qt@6', 'boost', 'libevent', 'zeromq', 'qrencode', 'miniupnpc', 'capnp']
+    requested = ['qt@6', 'boost', 'zeromq', 'qrencode', 'miniupnpc', 'capnp']
     dependencies = run('brew', 'deps', '--installed', '--union', *requested).splitlines()
     names = sorted(set(requested + dependencies))
     formulae = [formula for name in names for formula in json.loads(run('brew', 'info', '--json=v2', name))['formulae']]

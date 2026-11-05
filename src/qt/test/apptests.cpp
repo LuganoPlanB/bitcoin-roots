@@ -4,9 +4,12 @@
 
 #include <qt/test/apptests.h>
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <chainparams.h>
 #include <key.h>
 #include <logging.h>
+#include <netmessagemaker.h>
 #include <qt/bitcoin.h>
 #include <qt/bitcoingui.h>
 #include <qt/networkstyle.h>
@@ -16,12 +19,15 @@
 #include <qt/rpcconsole.h>
 #include <qt/peertablemodel.h>
 #include <QLabel>
+#include <QFontInfo>
 #include <QTableView>
 #include <QSortFilterProxyModel>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <interfaces/node.h>
+#include <util/sock.h>
 #include <univalue.h>
+#include <tinyformat.h>
 #include <QDebug>
 #include <QDir>
 #include <QTabWidget>
@@ -29,7 +35,9 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QItemSelectionModel>
+#include <QScreen>
 #include <future>
+#include <array>
 #include <thread>
 
 #include <QAction>
@@ -121,6 +129,133 @@ void TestPeerRefreshState(RPCConsole* console)
     QCOMPARE(relay_txs->text(), QStringLiteral("N/A"));
 }
 
+// Exercise the actual VERSION -> PeerManager -> node interface -> table ->
+// detail path. Distinct advertised heights must survive selection and refresh;
+// a busy state lock must clear the selected peer's previous value.
+void TestPeerStartingHeight(RPCConsole* console, interfaces::Node& node)
+{
+    auto* table{console->findChild<QTableView*>("peerWidget")};
+    auto* height{console->findChild<QLabel*>("peerHeight")};
+    QVERIFY(table && height);
+    auto* proxy{qobject_cast<QSortFilterProxyModel*>(table->model())};
+    QVERIFY(proxy);
+    auto* model{qobject_cast<PeerTableModel*>(proxy->sourceModel())};
+    QVERIFY(model);
+    model->stopAutoRefresh();
+    QCOMPARE(model->rowCount(), 0);
+
+    std::vector<std::unique_ptr<Sock>> remotes;
+    const auto ready = [&] {
+        model->refresh();
+        if (model->rowCount() != static_cast<int>(remotes.size())) return false;
+        for (int row = 0; row < model->rowCount(); ++row) {
+            const auto* stats{model->index(row, 0).data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()};
+            if (stats->nodeStats.nVersion != PROTOCOL_VERSION || !stats->fNodeStateStatsAvailable) return false;
+        }
+        return true;
+    };
+    const std::array<int32_t, 3> advertised{845123, 0, -1};
+    for (const int32_t starting_height : advertised) {
+        const auto handle{static_cast<SOCKET>(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))};
+        QVERIFY(handle != INVALID_SOCKET);
+        Sock listener{handle};
+        QVERIFY(listener.SetNonBlocking());
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        QVERIFY(listener.Bind(reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+        QVERIFY(listener.Listen(1) == 0);
+        socklen_t length{sizeof(address)};
+        QVERIFY(listener.GetSockName(reinterpret_cast<sockaddr*>(&address), &length) == 0);
+        UniValue params{UniValue::VARR};
+        params.push_back(strprintf("127.0.0.1:%u", ntohs(address.sin_port)));
+        params.push_back("onetry");
+        params.push_back(false); // Deliberately use the native V1 transport.
+        node.executeRpc("addnode", params, "");
+        std::unique_ptr<Sock> remote;
+        QTRY_VERIFY_WITH_TIMEOUT(remote || (remote = listener.Accept(nullptr, nullptr)), 10000);
+        QVERIFY(remote->SetNonBlocking());
+        V1Transport transport{NodeId{0}};
+        auto version{NetMsg::Make(NetMsgType::VERSION, PROTOCOL_VERSION,
+                                 uint64_t{NODE_NETWORK | NODE_WITNESS}, int64_t{},
+                                 uint64_t{}, CNetAddr::V1(CService{}),
+                                 uint64_t{}, CNetAddr::V1(CService{}), uint64_t{1},
+                                 std::string{"/QtStartingHeightTest/"}, starting_height, true)};
+        std::array messages{std::move(version), NetMsg::Make(NetMsgType::VERACK)};
+        for (auto& message : messages) {
+            QVERIFY(transport.SetMessageToSend(message));
+            while (true) {
+                const auto& [bytes, more, type]{transport.GetBytesToSend(false)};
+                if (bytes.empty()) break;
+                QCOMPARE(remote->Send(bytes.data(), bytes.size(), MSG_NOSIGNAL), static_cast<ssize_t>(bytes.size()));
+                transport.MarkBytesSent(bytes.size());
+            }
+        }
+        remotes.push_back(std::move(remote));
+        QTRY_VERIFY_WITH_TIMEOUT(ready(), 10000);
+    }
+    auto* tabs{console->findChild<QTabWidget*>("tabWidget")};
+    QVERIFY(tabs);
+    tabs->setCurrentIndex(3);
+    table->sortByColumn(PeerTableModel::NetNodeId, Qt::AscendingOrder);
+    for (int row = 0; row < static_cast<int>(advertised.size()); ++row) {
+        table->selectRow(row);
+        const auto* stats{table->selectionModel()->selectedRows().first().data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()};
+        QVERIFY(stats->fNodeStateStatsAvailable);
+        QCOMPARE(stats->nodeStateStats.m_starting_height, advertised[row]);
+        QCOMPARE(height->text(), advertised[row] >= 0 ? QString::number(advertised[row]) : QStringLiteral("Unknown"));
+    }
+    table->selectRow(0);
+    const QPersistentModelIndex selected{table->selectionModel()->selectedRows().first()};
+    QTRY_VERIFY_WITH_TIMEOUT(ready(), 10000);
+    QCOMPARE(selected.data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()->nodeStateStats.m_starting_height, advertised[0]);
+    QCOMPARE(height->text(), QStringLiteral("845123"));
+    table->sortByColumn(PeerTableModel::NetNodeId, Qt::DescendingOrder);
+    QTRY_VERIFY_WITH_TIMEOUT(ready(), 10000);
+    QCOMPARE(table->selectionModel()->selectedRows().first().data(), selected.data());
+    QCOMPARE(height->text(), QStringLiteral("845123"));
+    const auto capture_dir{qEnvironmentVariable("ROOTS_PEER_CAPTURE_DIR")};
+    if (!capture_dir.isEmpty()) {
+        const auto size{qEnvironmentVariable("ROOTS_PEER_CAPTURE_SIZE", "1280x800").split('x')};
+        QCOMPARE(size.size(), 2);
+        console->resize(size[0].toInt(), size[1].toInt());
+        console->show();
+        console->findChild<QSplitter*>("splitter")->setSizes({console->width() / 4, 3 * console->width() / 4});
+        QTest::qWait(100);
+        console->findChild<QScrollArea*>("scrollArea")->ensureWidgetVisible(height);
+        QVERIFY(QDir().mkpath(capture_dir));
+        QVERIFY(console->grab().save(capture_dir + "/starting-height.png"));
+    }
+
+    std::promise<void> locked, release;
+    auto released{release.get_future()};
+    std::thread blocker{[&] {
+        LOCK(cs_main);
+        locked.set_value();
+        released.wait_for(10s);
+    }};
+    const bool lock_acquired{locked.get_future().wait_for(5s) == std::future_status::ready};
+    model->refresh();
+    const bool unavailable{!selected.data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()->fNodeStateStatsAvailable};
+    const QString unavailable_height{height->text()};
+    release.set_value();
+    blocker.join();
+    QVERIFY(lock_acquired);
+    QVERIFY(unavailable);
+    QCOMPARE(unavailable_height, QStringLiteral("Unknown"));
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), height->text() == QStringLiteral("845123")), 10000);
+    QVERIFY(QMetaObject::invokeMethod(console, "resetPeerStateStats"));
+    QCOMPARE(height->text(), QStringLiteral("Unknown"));
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), height->text() == QStringLiteral("845123")), 10000);
+
+    // Closing every fixture connection removes the selection and detail pane.
+    remotes.clear();
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->rowCount() == 0), 10000);
+    QVERIFY(table->selectionModel()->selectedRows().isEmpty());
+    QVERIFY(console->findChild<QWidget*>("peersTabRightPanel")->isHidden());
+    qInfo() << "Starting Block regression: VERSION sentinel, zero, unknown, selection, current-row refresh, unavailable, reset and disconnect passed";
+}
+
 // Optional runtime evidence profile. Peers are real regtest nodes supplied by
 // the caller; unavailable state is obtained through the production try-lock.
 void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
@@ -143,7 +278,16 @@ void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
         node.executeRpc("addnode", params, "");
     }
     QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->rowCount() == endpoints.size()), 10000);
-    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), model->index(0, 0).data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()->nodeStats.nVersion > 0), 10000);
+    const auto ready = [&] {
+        model->refresh();
+        if (model->rowCount() != endpoints.size()) return false;
+        for (int row = 0; row < model->rowCount(); ++row) {
+            const auto* stats{model->index(row, 0).data(PeerTableModel::StatsRole).value<CNodeCombinedStats*>()};
+            if (stats->nodeStats.nVersion == 0 || !stats->fNodeStateStatsAvailable) return false;
+        }
+        return true;
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(ready(), 10000);
     const auto size{qEnvironmentVariable("ROOTS_PEER_CAPTURE_SIZE", "1280x800").split('x')};
     QCOMPARE(size.size(), 2);
     console->resize(size[0].toInt(), size[1].toInt());
@@ -151,7 +295,12 @@ void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
     console->show();
     QTest::qWait(100);
     QCOMPARE(console->size(), QSize(size[0].toInt(), size[1].toInt()));
-    qInfo() << "Live peer capture:" << console->size() << "font points" << table->font().pointSizeF() << "device pixel ratio" << console->devicePixelRatioF();
+    qInfo() << "Live peer capture:" << console->size() << "font points" << table->font().pointSizeF()
+            << "font family" << QFontInfo{table->font()}.family()
+            << "platform" << QGuiApplication::platformName() << "Qt" << qVersion()
+            << "device pixel ratio" << console->devicePixelRatioF()
+            << "logical DPI" << console->screen()->logicalDotsPerInch()
+            << "physical DPI" << console->screen()->physicalDotsPerInch();
     const auto capture_dir{qEnvironmentVariable("ROOTS_PEER_CAPTURE_DIR")};
     const auto capture = [&](const QString& name) {
         if (capture_dir.isEmpty()) return true;
@@ -168,19 +317,23 @@ void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
     QVERIFY(console->findChild<QLabel*>("peerSubversion")->text() != QStringLiteral("N/A"));
     // Exercise the native resizable splitter so unavailable values are legible
     // at 150% font scale as well as in the full-width table capture.
-    console->findChild<QSplitter*>("splitter")->setSizes({console->width() / 2, console->width() / 2});
+    console->findChild<QSplitter*>("splitter")->setSizes({console->width() / 4, 3 * console->width() / 4});
     QTest::qWait(100); // Let the shown detail pane receive its layout geometry.
     QVERIFY(console->findChild<QWidget*>("peersTabRightPanel")->isVisible());
     QVERIFY(capture("detail"));
+    auto* detail_scroll{console->findChild<QScrollArea*>("scrollArea")};
+    detail_scroll->horizontalScrollBar()->setValue(detail_scroll->horizontalScrollBar()->maximum());
+    QVERIFY(capture("detail-right"));
+    detail_scroll->horizontalScrollBar()->setValue(0);
 
     std::promise<void> locked, release;
     auto released = release.get_future();
     std::thread blocker{[&] {
         LOCK(cs_main);
         locked.set_value();
-        released.wait();
+        released.wait_for(10s);
     }};
-    locked.get_future().wait();
+    const bool lock_acquired{locked.get_future().wait_for(5s) == std::future_status::ready};
     model->refresh();
     const auto previous_row{table->selectionModel()->selectedRows().first().row()};
     table->selectRow(previous_row == 0 ? 1 : 0);
@@ -196,12 +349,12 @@ void TestLivePeerView(RPCConsole* console, interfaces::Node& node)
     scroll->verticalScrollBar()->setValue(0);
     release.set_value();
     blocker.join();
+    QVERIFY(lock_acquired);
     QVERIFY(unavailable);
     QVERIFY(cleared);
     QVERIFY(captured);
     QVERIFY(captured_bottom);
-    model->refresh();
-    QVERIFY(console->findChild<QLabel*>("peerServices")->text() != QStringLiteral("N/A"));
+    QTRY_VERIFY_WITH_TIMEOUT((model->refresh(), console->findChild<QLabel*>("peerServices")->text() != QStringLiteral("N/A")), 10000);
     // Removing the selected peer must not leave its detail pane visible.
     UniValue params{UniValue::VARR};
     params.push_back("");
@@ -247,25 +400,12 @@ void TestRootsResources()
 //! Entry point for BitcoinApplication tests.
 void AppTests::appTests()
 {
-#ifdef Q_OS_MACOS
-    if (QApplication::platformName() == "minimal") {
-        // Disable for mac on "minimal" platform to avoid crashes inside the Qt
-        // framework when it tries to look up unimplemented cocoa functions,
-        // and fails to handle returned nulls
-        // (https://bugreports.qt.io/browse/QTBUG-49686).
-        qWarning() << "Skipping AppTests on mac build with 'minimal' platform set due to Qt bugs. To run AppTests, invoke "
-                      "with 'QT_QPA_PLATFORM=cocoa test_bitcoin-qt' on mac, or else use a linux or windows build.";
-        return;
-    }
-#endif
-
+    const QFont original_font{m_app.font()};
+    const double font_scale{qEnvironmentVariable("ROOTS_PEER_FONT_SCALE", "1.0").toDouble()};
+    QFont font{original_font};
+    font.setPointSizeF(original_font.pointSizeF() * font_scale);
+    m_app.setFont(font);
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
-    const auto font_scale{qEnvironmentVariable("ROOTS_PEER_FONT_SCALE", "1.0").toDouble()};
-    if (font_scale != 1.0) {
-        auto font = m_app.font();
-        font.setPointSizeF(font.pointSizeF() * font_scale);
-        m_app.setFont(font);
-    }
     m_app.parameterSetup();
     QVERIFY(m_app.createOptionsModel(/*resetSettings=*/true));
     QScopedPointer<const NetworkStyle> style(NetworkStyle::instantiate(Params().GetChainType()));
@@ -281,6 +421,7 @@ void AppTests::appTests()
 
     // Reset global state to avoid interfering with later tests.
     LogInstance().DisconnectTestLogger();
+    m_app.setFont(original_font);
 }
 
 //! Entry point for BitcoinGUI tests.
@@ -301,6 +442,7 @@ void AppTests::consoleTests(RPCConsole* console)
     TestRootsResources();
     TestRpcCommand(console);
     TestPeerRefreshState(console);
+    TestPeerStartingHeight(console, m_app.node());
     TestLivePeerView(console, m_app.node());
 }
 

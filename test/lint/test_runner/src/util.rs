@@ -66,7 +66,7 @@ pub fn get_subtrees() -> Vec<&'static str> {
         "src/crc32c",
         "src/crypto/ctaes",
         "src/ipc/libmultiprocess",
-        //"src/leveldb", No longer a subtree in this release branch, due to direct cherry-picks
+        "src/leveldb",
         "src/minisketch",
         "src/secp256k1",
     ]
@@ -78,7 +78,7 @@ pub fn get_pathspecs_default_excludes() -> Vec<String> {
         .iter()
         .chain(&[
             "doc/release-notes/release-notes-*", // archived notes
-            "doc/website/content", // VitePress documentation mirror
+            "doc/website/content",               // VitePress documentation mirror
         ])
         .map(|s| format!(":(exclude){s}"))
         .collect()

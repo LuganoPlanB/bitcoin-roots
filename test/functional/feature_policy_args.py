@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 The Bitcoin Roots developers
+# Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Check Roots policy grammar at startup and preserve configuration precedence."""
@@ -132,8 +132,8 @@ class PolicyArgsTest(BitcoinTestFramework):
         check_start(["-bytespersigop=20junk", "-datacarriersize=83junk", "-datacarrier=1junk", "-permitbaremultisig=2", "-mempoolfullrbf=1junk"])
         check_start(config="bytespersigop=20junk\ndatacarriersize=83junk\ndatacarrier=1junk\npermitbaremultisig=2\nmempoolfullrbf=1junk\n")
 
-        # Valid dynamic-mode runtime behavior is covered by mempool_dynamic_dust.
-        # This parser test checks malformed effective input at startup.
+        # Full non-off lifecycle coverage lives in mempool_dynamic_dust.py;
+        # this case isolates malformed grammar and its contextual diagnostic.
         config_path.write_text(base_config, encoding="utf-8")
         node.assert_start_raises_init_error(extra_args=["-dustdynamic=target:2junk"], expected_msg="Invalid mode for dustdynamic: failed to parse target block count", match=ErrorMatch.PARTIAL_REGEX)
         rejected_startups += 1
@@ -167,6 +167,15 @@ class PolicyArgsTest(BitcoinTestFramework):
         rejected_startups += 1
         rw_path.unlink()
 
+        self.log.info("Policy diagnostics do not expose unrelated configuration secrets")
+        config_path.write_text(base_config + "rpcpassword=roots-policy-redaction-sentinel\n", encoding="utf-8")
+        node.assert_start_raises_init_error(
+            extra_args=["-maxscriptsize=junk"],
+            expected_msg="Error: Invalid -maxscriptsize value: 'junk' (expected an integer from 0 to 4294967295)",
+            match=ErrorMatch.FULL_TEXT,
+        )
+        rejected_startups += 1
+        config_path.write_text(base_config, encoding="utf-8")
         self.log.info("Policy startup cases: %d passed starts, %d expected diagnostic rejections", passed_startups, rejected_startups)
 
 

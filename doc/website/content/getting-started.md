@@ -11,6 +11,13 @@ interface, which can be optionally built.
 
 Choose the guide for the system where you plan to run your node:
 
+This source tree tracks the Core v32.1 port and v32.1-roots.1 source. Read the
+[32.x port review](/doc/roots-v32-port-review) and
+[current build requirements](/doc/roots-build-portability) before building.
+Source availability does not establish release publication. Published downloads
+and patches are listed in the [release patch browser](/patches/), which excludes
+unpublished drafts. Use that catalogue to check which versions have public assets.
+
 - [Linux and other Unix-like systems](/doc/build-unix)
 - [macOS](/doc/build-osx)
 - [Windows](/doc/build-windows)

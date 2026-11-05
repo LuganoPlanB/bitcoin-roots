@@ -27,7 +27,7 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 # Project / Package metadata
 #=============================
 set(CLIENT_NAME "Bitcoin Roots")
-set(CLIENT_VERSION_MAJOR 31)
+set(CLIENT_VERSION_MAJOR 32)
 set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
@@ -57,25 +57,36 @@ project(BitcoinCore
   LANGUAGES NONE
 )
 
-# Keep the user-visible Roots release name separate from the numeric protocol
-# version. Release builders supply CLIENT_VERSION_TAG even when Git metadata
-# is unavailable; a clean Git tag still takes precedence in build info.
 set(CLIENT_VERSION_STRING "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
+if(CLIENT_VERSION_BUILD GREATER 0)
+  string(APPEND CLIENT_VERSION_STRING ".${CLIENT_VERSION_BUILD}")
+endif()
 if(CLIENT_VERSION_RC GREATER 0)
   string(APPEND CLIENT_VERSION_STRING "rc${CLIENT_VERSION_RC}")
 endif()
+
+# Release archives may omit Git metadata. Keep their explicit Roots tag tied
+# to this exact Core version without changing numeric/protocol identifiers.
 if(DEFINED CLIENT_VERSION_TAG)
-  string(REPLACE "." "\\." client_version_tag_base_pattern "${CLIENT_VERSION_STRING}")
+  set(client_version_tag_base "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}")
+  if(CLIENT_VERSION_BUILD GREATER 0)
+    string(APPEND client_version_tag_base ".${CLIENT_VERSION_BUILD}")
+  endif()
+  if(CLIENT_VERSION_RC GREATER 0)
+    string(APPEND client_version_tag_base "rc${CLIENT_VERSION_RC}")
+  endif()
+  string(REPLACE "." "\\." client_version_tag_base_pattern "${client_version_tag_base}")
   if(NOT CLIENT_VERSION_TAG MATCHES "^v${client_version_tag_base_pattern}-roots\\.[1-9][0-9]*$")
-    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${CLIENT_VERSION_STRING}.")
+    message(FATAL_ERROR "CLIENT_VERSION_TAG must be a Roots release tag for ${client_version_tag_base}.")
   endif()
   string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
 else()
-  string(APPEND CLIENT_VERSION_STRING "-roots.2")
+  # Product version for this unpublished candidate; publication is separate.
+  string(APPEND CLIENT_VERSION_STRING "-roots.1")
 endif()
 
-set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
+set(COPYRIGHT_HOLDERS "Plan-B Foundation")
+set(COPYRIGHT_HOLDERS_FINAL "Plan-B Foundation")
 set(CLIENT_BUGREPORT "https://github.com/luganoplanb/bitcoin-roots/issues")
 
 #=============================
@@ -92,6 +103,7 @@ if(CMAKE_VERSION VERSION_LESS 4.2 AND CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NO
   set(CMAKE_INSTALL_NAME_TOOL "${CMAKE_COMMAND} -E true")
 endif()
 enable_language(CXX)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -119,116 +131,41 @@ option(BUILD_CLI "Build bitcoin-cli executable." ON)
 option(BUILD_TESTS "Build test_bitcoin and other unit test executables." ON)
 option(BUILD_TX "Build bitcoin-tx executable." ${BUILD_TESTS})
 option(BUILD_UTIL "Build bitcoin-util executable." ${BUILD_TESTS})
+cmake_dependent_option(BUILD_GUI_TESTS "Build test_bitcoin-qt executable." ON "BUILD_GUI;BUILD_TESTS" OFF)
 
 option(BUILD_UTIL_CHAINSTATE "Build experimental bitcoin-chainstate executable." OFF)
 option(BUILD_KERNEL_LIB "Build experimental bitcoinkernel library." ${BUILD_UTIL_CHAINSTATE})
 cmake_dependent_option(BUILD_KERNEL_TEST "Build tests for the experimental bitcoinkernel library." ON "BUILD_KERNEL_LIB" OFF)
 
+option(ENABLE_WALLET "Enable wallet." ON)
+cmake_dependent_option(BUILD_WALLET_TOOL "Build bitcoin-wallet tool." ${BUILD_TESTS} "ENABLE_WALLET" OFF)
+
+option(ENABLE_EXTERNAL_SIGNER "Enable external signer support." ON)
 option(WITH_SYSTEM_LEVELDB "Build with system LevelDB instead of the embedded fork." OFF)
 mark_as_advanced(WITH_SYSTEM_LEVELDB)
 set(EMBEDDED_LEVELDB TRUE)
 if(WITH_SYSTEM_LEVELDB)
   set(EMBEDDED_LEVELDB FALSE)
-  find_package(LevelDB MODULE REQUIRED)
 endif()
-
 option(WITH_SYSTEM_LIBSECP256K1 "Build with system libsecp256k1 instead of the embedded copy." OFF)
 mark_as_advanced(WITH_SYSTEM_LIBSECP256K1)
-if(WITH_SYSTEM_LIBSECP256K1)
-  include(CheckSystemSecp256k1)
-endif()
-
-option(ENABLE_WALLET "Enable wallet." ON)
-if(ENABLE_WALLET)
-  if(VCPKG_TARGET_TRIPLET)
-    # Use of the `unofficial::` namespace is a vcpkg package manager convention.
-    find_package(unofficial-sqlite3 CONFIG REQUIRED)
-    add_library(SQLite3::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
-  else()
-    find_package(SQLite3 3.7.17 REQUIRED)
-    if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
-      add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
-    endif()
-  endif()
-endif()
-cmake_dependent_option(BUILD_WALLET_TOOL "Build bitcoin-wallet tool." ${BUILD_TESTS} "ENABLE_WALLET" OFF)
-
-option(REDUCE_EXPORTS "Attempt to reduce exported symbols in the resulting executables." OFF)
-option(CMAKE_COMPILE_WARNING_AS_ERROR "Treat compiler warnings as errors." OFF)
-option(WITH_CCACHE "Attempt to use ccache for compiling." ON)
-
-option(WITH_ZMQ "Enable ZMQ notifications." OFF)
-if(WITH_ZMQ)
-  find_package(ZeroMQ 4.0.0 MODULE REQUIRED)
-endif()
-
 option(WITH_MINIUPNPC "Discover MiniUPnPc for deferred Roots UPnP integration." OFF)
-if(WITH_MINIUPNPC)
-  find_package(MiniUPnPc MODULE REQUIRED)
-endif()
-
-option(WITH_EMBEDDED_ASMAP "Embed default ASMap data." ON)
-
-option(WITH_USDT "Enable tracepoints for Userspace, Statically Defined Tracing." OFF)
-if(WITH_USDT)
-  find_package(USDT MODULE REQUIRED)
-endif()
-
-option(ENABLE_EXTERNAL_SIGNER "Enable external signer support." ON)
-
-cmake_dependent_option(WITH_QRENCODE "Enable QR code support." ON "BUILD_GUI" OFF)
-if(WITH_QRENCODE)
-  find_package(QRencode MODULE REQUIRED)
-  set(USE_QRCODE TRUE)
-endif()
-
-cmake_dependent_option(WITH_TASKBAR_PROGRESS "Enable GUI taskbar progress." ON "CMAKE_SYSTEM_NAME STREQUAL \"Windows\" AND BUILD_GUI" OFF)
-set(BITCOIN_QT_WIN_TASKBAR ${WITH_TASKBAR_PROGRESS})
-
-cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI" OFF)
-
+option(WITH_ZMQ "Enable ZMQ notifications." OFF)
 cmake_dependent_option(ENABLE_IPC "Build multiprocess bitcoin-node and bitcoin-gui executables in addition to monolithic bitcoind and bitcoin-qt executables." ON "NOT WIN32" OFF)
 cmake_dependent_option(WITH_EXTERNAL_LIBMULTIPROCESS "Build with external libmultiprocess library instead of with local git subtree when ENABLE_IPC is enabled. This is not normally recommended, but can be useful for developing libmultiprocess itself." OFF "ENABLE_IPC" OFF)
-if(ENABLE_IPC AND WITH_EXTERNAL_LIBMULTIPROCESS)
-  find_package(Libmultiprocess REQUIRED COMPONENTS Lib)
-  find_package(LibmultiprocessNative REQUIRED COMPONENTS Bin
-    NAMES Libmultiprocess
-  )
-endif()
+option(WITH_EMBEDDED_ASMAP "Embed default ASMap data." ON)
+option(WITH_USDT "Enable tracepoints for Userspace, Statically Defined Tracing." OFF)
 
-cmake_dependent_option(BUILD_GUI_TESTS "Build test_bitcoin-qt executable." ON "BUILD_GUI;BUILD_TESTS" OFF)
-set(WITH_QT_VERSION "6" CACHE STRING "Qt major version to use for GUI builds (5 or 6).")
-set_property(CACHE WITH_QT_VERSION PROPERTY STRINGS 5 6)
-if(NOT WITH_QT_VERSION MATCHES "^[56]$")
-  message(FATAL_ERROR "WITH_QT_VERSION must be 5 or 6.")
-endif()
-if(BUILD_GUI)
-  set(qt_components Core Gui Widgets LinguistTools)
-  if(ENABLE_WALLET)
-    list(APPEND qt_components Network)
-  endif()
-  if(WITH_DBUS)
-    list(APPEND qt_components DBus)
-    set(USE_DBUS TRUE)
-  endif()
-  if(BUILD_GUI_TESTS)
-    list(APPEND qt_components Test)
-  endif()
-  if(WITH_QT_VERSION STREQUAL "5")
-    set(qt_min_version 5.11.3)
-  else()
-    set(qt_min_version 6.2)
-  endif()
-  find_package(Qt ${qt_min_version} MODULE REQUIRED
-    COMPONENTS ${qt_components}
-  )
-  unset(qt_min_version)
-  unset(qt_components)
-endif()
+cmake_dependent_option(WITH_QRENCODE "Enable QR code support." ON "BUILD_GUI" OFF)
+cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAME MATCHES \"(Windows|Darwin)\" AND BUILD_GUI" OFF)
 
 option(BUILD_BENCH "Build bench_bitcoin executable." OFF)
 option(BUILD_FUZZ_BINARY "Build fuzz binary." OFF)
 option(BUILD_FOR_FUZZING "Build for fuzzing. Enabling this will disable all other targets and override BUILD_FUZZ_BINARY." OFF)
+
+option(REDUCE_EXPORTS "Attempt to reduce exported symbols in the resulting executables." OFF)
+option(CMAKE_COMPILE_WARNING_AS_ERROR "Treat compiler warnings as errors." OFF)
+option(WITH_CCACHE "Attempt to use ccache for compiling." ON)
 
 option(INSTALL_MAN "Install man pages." ON)
 
@@ -242,11 +179,13 @@ string(APPEND CMAKE_CXX_COMPILE_OBJECT " ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}")
 string(APPEND CMAKE_CXX_CREATE_SHARED_LIBRARY " ${APPEND_LDFLAGS}")
 string(APPEND CMAKE_CXX_LINK_EXECUTABLE " ${APPEND_LDFLAGS}")
 
-set(configure_warnings)
+# Check required C++ toolchain features early.
+include(CheckCXXFeatures)
+check_cxx_features()
 
-include(CheckLinkerSupportsPIE)
-check_linker_supports_pie(configure_warnings)
-
+#=============================
+# Core interface library
+#=============================
 # The core_interface library aims to encapsulate common build flags.
 # It is a usage requirement for all targets except for secp256k1, which
 # gets its flags by other means.
@@ -258,6 +197,15 @@ target_link_libraries(core_interface INTERFACE
   $<$<CONFIG:Debug>:core_interface_debug>
 )
 
+#=============================
+# Option interaction
+#=============================
+# Compute the final state of build options.
+# This must be done after all options have been initially set,
+# as some options (e.g., BUILD_FOR_FUZZING) may override or adjust others.
+# It must also come before any dependency checks to ensure that the set
+# of dependencies checked is consistent with the final option values,
+# that is, that all required, and only the required, dependencies are tested.
 if(BUILD_FOR_FUZZING)
   message(WARNING "BUILD_FOR_FUZZING=ON will disable all other targets and force BUILD_FUZZ_BINARY=ON.")
   set(BUILD_BITCOIN_BIN OFF)
@@ -276,12 +224,98 @@ if(BUILD_FOR_FUZZING)
   set(BUILD_TESTS OFF)
   set(BUILD_GUI_TESTS OFF)
   set(BUILD_BENCH OFF)
-  set(ENABLE_IPC OFF)
   set(BUILD_FUZZ_BINARY ON)
 
   target_compile_definitions(core_interface INTERFACE
     FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
   )
+endif()
+
+#=============================
+# Check and set PIC/PIE
+#=============================
+set(configure_warnings)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+include(CheckLinkerSupportsPIE)
+# Set CMAKE_POSITION_INDEPENDENT_CODE early so it applies to all
+# subsequent checks, including dependency packages and tool flags.
+check_linker_supports_pie(configure_warnings)
+endif()
+
+#=============================
+# Find dependencies
+#=============================
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+target_link_libraries(core_interface INTERFACE
+  Threads::Threads
+)
+endif()
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+include(AddBoostIfNeeded)
+add_boost_if_needed()
+endif()
+
+if(WITH_SYSTEM_LEVELDB)
+  find_package(LevelDB MODULE REQUIRED)
+endif()
+if(WITH_SYSTEM_LIBSECP256K1)
+  include(CheckSystemSecp256k1)
+endif()
+if(WITH_MINIUPNPC)
+  find_package(MiniUPnPc MODULE REQUIRED)
+endif()
+
+if(ENABLE_WALLET)
+  if(VCPKG_TARGET_TRIPLET)
+    # Use of the `unofficial::` namespace is a vcpkg package manager convention.
+    find_package(unofficial-sqlite3 CONFIG REQUIRED)
+    add_library(SQLite3::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
+  else()
+    find_package(SQLite3 3.7.17 REQUIRED)
+    if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+      add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+    endif()
+  endif()
+endif()
+
+if(WITH_ZMQ)
+  find_package(ZeroMQ 4.0.0 MODULE REQUIRED)
+endif()
+
+if(ENABLE_IPC AND WITH_EXTERNAL_LIBMULTIPROCESS)
+  find_package(Libmultiprocess REQUIRED COMPONENTS Lib)
+  find_package(LibmultiprocessNative REQUIRED COMPONENTS Bin
+    NAMES Libmultiprocess
+  )
+endif()
+
+if(WITH_USDT)
+  find_package(USDT MODULE REQUIRED)
+endif()
+
+if(BUILD_GUI)
+  set(qt_components Core Gui Widgets LinguistTools)
+  if(ENABLE_WALLET)
+    list(APPEND qt_components Network)
+  endif()
+  if(WITH_DBUS)
+    list(APPEND qt_components DBus)
+    set(USE_DBUS TRUE)
+  endif()
+  if(BUILD_GUI_TESTS)
+    list(APPEND qt_components Test)
+  endif()
+  find_package(Qt 6.2 MODULE REQUIRED
+    COMPONENTS ${qt_components}
+  )
+  unset(qt_components)
+  if(WITH_QRENCODE)
+    find_package(QRencode MODULE REQUIRED)
+    set(USE_QRCODE TRUE)
+  endif()
 endif()
 
 include(TryAppendCXXFlags)
@@ -338,10 +372,6 @@ if(WIN32)
       /Zc:__cplusplus
       /sdl
     )
-    target_link_options(core_interface INTERFACE
-      # We embed our own manifests.
-      /MANIFEST:NO
-    )
     # Improve parallelism in MSBuild.
     # See: https://devblogs.microsoft.com/cppblog/improved-parallelism-in-msbuild/.
     list(APPEND CMAKE_VS_GLOBALS "UseMultiToolTask=true")
@@ -393,12 +423,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     try_append_linker_flag("-Wl,-headerpad_max_install_names" TARGET core_interface)
   endif()
 endif()
-
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-target_link_libraries(core_interface INTERFACE
-  Threads::Threads
-)
 
 # Define sanitize_interface with -fsanitize flags intended to apply to all
 # libraries and executables.
@@ -469,13 +493,6 @@ if(BUILD_FUZZ_BINARY)
   target_link_libraries(fuzzer_interface INTERFACE ${FUZZ_LIBS})
 endif()
 
-include(AddBoostIfNeeded)
-add_boost_if_needed()
-
-if(BUILD_DAEMON OR BUILD_GUI OR BUILD_CLI OR BUILD_TESTS OR BUILD_BENCH OR BUILD_FUZZ_BINARY)
-  find_package(Libevent 2.1.8 MODULE REQUIRED)
-endif()
-
 include(cmake/introspection.cmake)
 
 include(cmake/ccache.cmake)
@@ -492,12 +509,12 @@ if(MSVC)
   try_append_cxx_flags("/wd4805" TARGET warn_interface SKIP_LINK)
   target_compile_definitions(warn_interface INTERFACE
     _CRT_SECURE_NO_WARNINGS
-    _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
   )
 else()
   try_append_cxx_flags("-Wall" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wextra" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wgnu" TARGET warn_interface SKIP_LINK)
+  try_append_cxx_flags("-Wcovered-switch-default" TARGET warn_interface SKIP_LINK)
   # Some compilers will ignore -Wformat-security without -Wformat, so just combine the two here.
   try_append_cxx_flags("-Wformat -Wformat-security" TARGET warn_interface SKIP_LINK)
   try_append_cxx_flags("-Wvla" TARGET warn_interface SKIP_LINK)
@@ -532,7 +549,6 @@ else()
 endif()
 
 configure_file(cmake/script/Coverage.cmake Coverage.cmake USE_SOURCE_PERMISSIONS COPYONLY)
-configure_file(cmake/script/CoverageFuzz.cmake CoverageFuzz.cmake USE_SOURCE_PERMISSIONS COPYONLY)
 configure_file(cmake/script/CoverageInclude.cmake.in CoverageInclude.cmake USE_SOURCE_PERMISSIONS @ONLY)
 configure_file(cmake/script/cov_tool_wrapper.sh.in cov_tool_wrapper.sh.in USE_SOURCE_PERMISSIONS COPYONLY)
 configure_file(contrib/filter-lcov.py filter-lcov.py USE_SOURCE_PERMISSIONS COPYONLY)
@@ -621,6 +637,7 @@ endif()
 
 if(REDUCE_EXPORTS)
   set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+  set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
   try_append_linker_flag("-Wl,--exclude-libs,ALL" TARGET core_interface)
   try_append_linker_flag("-Wl,-no_exported_symbols" VAR CMAKE_EXE_LINKER_FLAGS)
 endif()
@@ -714,13 +731,10 @@ message("  IPC ................................. ${ipc_status}")
 message("  Embedded ASMap ...................... ${WITH_EMBEDDED_ASMAP}")
 message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
-message("  Windows taskbar (GUI) ............... ${WITH_TASKBAR_PROGRESS}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
-message("  Qt major version (GUI) .............. ${WITH_QT_VERSION}")
 message("  System LevelDB ...................... ${WITH_SYSTEM_LEVELDB}")
 message("  System libsecp256k1 .................. ${WITH_SYSTEM_LIBSECP256K1}")
 message("  MiniUPnPc dependency ................ ${WITH_MINIUPNPC} (UPnP runtime deferred)")
-message("  Deferred Roots behavior ............. see doc/roots-features.md")
 message("Tests:")
 message("  test_bitcoin ........................ ${BUILD_TESTS}")
 message("  test_bitcoin-qt ..................... ${BUILD_GUI_TESTS}")

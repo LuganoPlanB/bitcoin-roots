@@ -27,7 +27,8 @@ class MempoolCompatibilityTest(BitcoinTestFramework):
         self.skip_if_no_previous_releases()
 
     def setup_network(self):
-        self.add_nodes(self.num_nodes, versions=[
+        # Allow the legacy P2PK fixture on the Roots node for this serialization test.
+        self.add_nodes(self.num_nodes, extra_args=[[], ["-permitbarepubkey=1"]], versions=[
             200100,  # Last release without unbroadcast serialization and without XOR
             None,
         ])
@@ -60,7 +61,7 @@ class MempoolCompatibilityTest(BitcoinTestFramework):
         old_node_mempool.rename(new_node_mempool)
 
         self.log.info("Start new node and verify mempool contains the tx")
-        self.start_node(1, extra_args=["-persistmempoolv1=1"])
+        self.start_node(1, extra_args=["-persistmempoolv1=1", "-permitbarepubkey=1"])
         assert old_tx_hash in new_node.getrawmempool()
 
         self.log.info("Add unbroadcasted tx to mempool on new node and shutdown")

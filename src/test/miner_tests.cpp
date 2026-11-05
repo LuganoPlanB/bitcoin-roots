@@ -3,47 +3,66 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <addresstype.h>
+#include <chain.h>
 #include <coins.h>
-#include <common/system.h>
+#include <consensus/amount.h>
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
 #include <interfaces/mining.h>
+#include <interfaces/types.h>
+#include <kernel/chainparams.h>
 #include <node/miner.h>
+#include <node/mining_args.h>
+#include <node/mining_types.h>
+#include <policy/feerate.h>
 #include <policy/policy.h>
-#include <test/util/random.h>
+#include <pow.h>
+#include <primitives/block.h>
+#include <primitives/transaction.h>
+#include <random.h>
+#include <script/script.h>
+#include <serialize.h>
+#include <sync.h>
+#include <test/util/common.h>
+#include <test/util/setup_common.h>
 #include <test/util/transaction_utils.h>
+#include <test/util/time.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
 #include <util/feefrac.h>
 #include <util/strencodings.h>
-#include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <versionbits.h>
-#include <pow.h>
-
-#include <test/util/common.h>
-#include <test/util/setup_common.h>
-
-#include <memory>
-#include <vector>
 
 #include <boost/test/unit_test.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 using namespace util::hex_literals;
 using interfaces::BlockTemplate;
 using interfaces::Mining;
 using node::BlockAssembler;
+using node::BlockCreateOptions;
 
 namespace miner_tests {
 struct MinerTestingSetup : public TestingSetup {
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void TestSigOpsAdjustedWeightChunkLimit(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool TestSequenceLocks(const CTransaction& tx, CTxMemPool& tx_mempool) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         CCoinsViewMemPool view_mempool{&m_node.chainman->ActiveChainstate().CoinsTip(), tx_mempool};
@@ -116,11 +135,11 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
 {
     CTxMemPool& tx_mempool{MakeMempool()};
     auto mining{MakeMining()};
-    BlockAssembler::Options options;
-    options.nBlockPrioritySize = 0;
-    options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-    options.coinbase_output_script = scriptPubKey;
-    options.include_dummy_extranonce = true;
+    BlockCreateOptions options{
+        .block_max_weight = MAX_BLOCK_WEIGHT,
+        .block_priority_size = 0,
+        .coinbase_output_script = scriptPubKey,
+    };
 
     LOCK(tx_mempool.cs);
     BOOST_CHECK(tx_mempool.size() == 0);
@@ -170,6 +189,27 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     const auto high_fee_tx{entry.Fee(50000).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx)};
     TryAddToMempool(tx_mempool, high_fee_tx);
 
+    // Test getTransactionsByTxID()
+    const std::vector<Txid> tx_id_list{
+        hashParentTx,
+        Txid::FromUint256(uint256::ZERO) // non-existing tx
+    };
+    auto raw_txs = mining->getTransactionsByTxID(tx_id_list);
+    BOOST_REQUIRE_EQUAL(raw_txs.size(), tx_id_list.size());
+    BOOST_CHECK(raw_txs[0]);
+    BOOST_CHECK(raw_txs[0]->GetHash() == hashParentTx);
+    BOOST_CHECK(!raw_txs[1]);
+    // Test getTransactionsByWitnessID()
+    // tx has no witness, so just cast to Wtxid
+    const std::vector<Wtxid> wtx_id_list{
+        Wtxid::FromUint256(hashParentTx.ToUint256()),
+        Wtxid::FromUint256(uint256::ZERO)
+    };
+    raw_txs = mining->getTransactionsByWitnessID(wtx_id_list);
+    BOOST_REQUIRE_EQUAL(raw_txs.size(), tx_id_list.size());
+    BOOST_CHECK(raw_txs[0]);
+    BOOST_CHECK(raw_txs[0]->GetHash() == hashParentTx);
+    BOOST_CHECK(!raw_txs[1]);
     block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
@@ -179,7 +219,12 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     BOOST_CHECK(block.vtx[3]->GetHash() == hashMediumFeeTx);
 
     // Test the inclusion of package feerates in the block template and ensure they are sequential.
-    const auto block_package_feerates = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock()->m_package_feerates;
+    // Can't use the Mining interface because it needs access to m_package_feerates.
+    const auto block_package_feerates = BlockAssembler{
+        m_node.chainman->ActiveChainstate(),
+        &tx_mempool,
+        MergeMiningOptions(options, m_node.mining_args),
+    }.CreateNewBlock()->m_package_feerates;
     BOOST_CHECK(block_package_feerates.size() == 2);
 
     // parent_tx and high_fee_tx are added to the block as a package.
@@ -279,6 +324,22 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     BOOST_CHECK(block.vtx[8]->GetHash() == hashLowFeeTx2);
 }
 
+// One sigop-dense tx spending `input`: num_outputs bare CHECKMULTISIG outputs,
+// i.e. 20 * num_outputs legacy sigops (OP_NOP forces the inaccurate max-20 count).
+static CMutableTransaction CreateBigSigOpsTx(const COutPoint& input, unsigned int num_outputs)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout = input;
+    tx.vin[0].scriptSig = CScript() << OP_1;
+    tx.vout.resize(num_outputs);
+    for (auto& out : tx.vout) {
+        out.nValue = 0;
+        out.scriptPubKey = CScript() << OP_0 << OP_0 << OP_0 << OP_NOP << OP_CHECKMULTISIG << OP_1;
+    }
+    return tx;
+}
+
 std::vector<CTransactionRef> CreateBigSigOpsCluster(const CTransactionRef& first_tx)
 {
     std::vector<CTransactionRef> ret;
@@ -305,24 +366,41 @@ std::vector<CTransactionRef> CreateBigSigOpsCluster(const CTransactionRef& first
     // Tx2-51 has 400 sigops: 1 input, 20 CHECKMULTISIG outputs
     // Total: 1000 CHECKMULTISIG + 1
     for (unsigned int i = 0; i < 50; ++i) {
-        auto tx2 = tx;
-        tx2.vin.resize(1);
-        tx2.vin[0].prevout.hash = parent_tx->GetHash();
-        tx2.vin[0].prevout.n = i;
-        tx2.vin[0].scriptSig = CScript() << OP_1;
-        tx2.vout.resize(20);
-        tx2.vout[0].nValue = parent_tx->vout[i].nValue - CENT;
-        for (auto &out : tx2.vout) {
-            out.nValue = 0;
-            out.scriptPubKey = CScript() << OP_0 << OP_0 << OP_0 << OP_NOP << OP_CHECKMULTISIG << OP_1;
-        }
-        ret.push_back(MakeTransactionRef(tx2));
+        ret.push_back(MakeTransactionRef(CreateBigSigOpsTx(COutPoint{parent_tx->GetHash(), i}, /*num_outputs=*/20)));
     }
     return ret;
 }
 
+void MinerTestingSetup::TestSigOpsAdjustedWeightChunkLimit(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
+{
+    auto mining{MakeMining()};
+    BOOST_REQUIRE(mining);
+
+    CTxMemPool& tx_mempool{MakeMempool()};
+    LOCK(tx_mempool.cs);
+    TestMemPoolEntryHelper entry;
+
+    const auto tx{CreateBigSigOpsTx(COutPoint{txFirst[0]->GetHash(), 0}, /*num_outputs=*/50)};
+    const auto sigop_entry{entry.Fee(COIN).SpendsCoinbase(true).SigOpsCost(GetLegacySigOpCount(CTransaction(tx)) * WITNESS_SCALE_FACTOR).FromTx(tx)};
+    BOOST_REQUIRE(sigop_entry.GetAdjustedWeight() > sigop_entry.GetTxWeight());
+    BOOST_REQUIRE(sigop_entry.GetSigOpCost() < MAX_BLOCK_SIGOPS_COST);
+    TryAddToMempool(tx_mempool, sigop_entry);
+
+    BlockCreateOptions options{
+        // +1 because TestChunkBlockLimits rejects on >= (exact fit doesn't count).
+        .block_max_weight = DEFAULT_BLOCK_RESERVED_WEIGHT + sigop_entry.GetTxWeight() + 1,
+        .block_priority_size = 0,
+        .coinbase_output_script = scriptPubKey,
+    };
+    const CBlock block{mining->createNewBlock(options, /*cooldown=*/false)->getBlock()};
+    BOOST_CHECK_EQUAL(block.vtx.size(), 2U);
+    BOOST_CHECK(block.vtx[1]->GetHash() == tx.GetHash());
+}
+
 void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight)
 {
+    FakeNodeClock clock{};
+
     Txid hash;
     CMutableTransaction tx;
     TestMemPoolEntryHelper entry;
@@ -337,11 +415,11 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
-    BlockAssembler::Options options;
-    options.nBlockPrioritySize = 0;
-    options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-    options.coinbase_output_script = scriptPubKey;
-    options.include_dummy_extranonce = true;
+    BlockCreateOptions options{
+        .block_max_weight = MAX_BLOCK_WEIGHT,
+        .block_priority_size = 0,
+        .coinbase_output_script = scriptPubKey,
+    };
 
     {
         CTxMemPool& tx_mempool{MakeMempool()};
@@ -548,7 +626,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     LOCK(tx_mempool.cs);
 
     // non-final txs in mempool
-    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
+    clock.set(std::chrono::seconds{m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1});
     const int flags{LOCKTIME_VERIFY_SEQUENCE};
     // height map
     std::vector<int> prevheights;
@@ -653,7 +731,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
     }
     m_node.chainman->ActiveChain().Tip()->nHeight++;
-    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
+    clock.set(std::chrono::seconds{m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1});
 
     block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
@@ -666,11 +744,11 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
-    BlockAssembler::Options options;
-    options.nBlockPrioritySize = 0;
-    options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-    options.coinbase_output_script = scriptPubKey;
-    options.include_dummy_extranonce = true;
+    BlockCreateOptions options{
+        .block_max_weight = MAX_BLOCK_WEIGHT,
+        .block_priority_size = 0,
+        .coinbase_output_script = scriptPubKey,
+    };
 
     CTxMemPool& tx_mempool{MakeMempool()};
     LOCK(tx_mempool.cs);
@@ -753,10 +831,9 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
 void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
 {
     CTxMemPool& tx_mempool{MakeMempool()};
-    BlockAssembler::Options options;
+    BlockCreateOptions options;
     options.coinbase_output_script = scriptPubKey;
-    options.include_dummy_extranonce = true;
-    options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
+    options.block_max_weight = MAX_BLOCK_WEIGHT;
 
     LOCK(tx_mempool.cs);
     TestMemPoolEntryHelper entry;
@@ -775,7 +852,7 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
     const Txid child_txid = tx.GetHash();
     TryAddToMempool(tx_mempool, entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
 
-    options.nBlockPrioritySize = DEFAULT_BLOCK_RESERVED_SIZE + GetSerializeSize(TX_WITH_WITNESS(tx_mempool.mapTx.find(parent_txid)->GetTx()));
+    options.block_priority_size = DEFAULT_BLOCK_RESERVED_SIZE + GetSerializeSize(TX_WITH_WITNESS(tx_mempool.mapTx.find(parent_txid)->GetTx()));
     const auto block_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
     BOOST_REQUIRE(block_template);
     const CBlock& block{block_template->block};
@@ -793,14 +870,14 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
 
     // With the priority phase disabled, ordinary package selection must still
     // include the parent and stop subsidising its zero-fee child afterwards.
-    options.nBlockPrioritySize = 0;
+    options.block_priority_size = 0;
     const auto no_priority_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
     BOOST_REQUIRE(no_priority_template);
     BOOST_REQUIRE_EQUAL(no_priority_template->block.vtx.size(), 2U);
     BOOST_CHECK(no_priority_template->block.vtx[1]->GetHash() == parent_txid);
 
     // A zero mining fee floor may still select the child.
-    options.blockMinFeeRate = CFeeRate{0};
+    options.block_min_fee_rate = CFeeRate{0};
     const auto zero_floor_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
     BOOST_REQUIRE(zero_floor_template);
     BOOST_REQUIRE_EQUAL(zero_floor_template->block.vtx.size(), 3U);
@@ -814,7 +891,7 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
     // ancestors, which must each be subtracted exactly once.
     for (const size_t parent_count : {1U, 2U}) {
         BOOST_TEST_CONTEXT("priority-selected parents: " << parent_count) {
-            options.blockMinFeeRate = CFeeRate{1000};
+            options.block_min_fee_rate = CFeeRate{1000};
             std::vector<CTransactionRef> parents;
             size_t priority_tx_size{0};
             for (size_t i{0}; i < parent_count; ++i) {
@@ -833,20 +910,20 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
                 child.vin.emplace_back(COutPoint{parent->GetHash(), 0}, CScript() << OP_1);
             }
             child.vout.emplace_back(parent_count * 50 * COIN, CScript{});
-            const CAmount child_fee = options.blockMinFeeRate.GetFee(GetVirtualTransactionSize(CTransaction{child}));
+            const CAmount child_fee = options.block_min_fee_rate->GetFee(GetVirtualTransactionSize(CTransaction{child}));
             child.vout[0].nValue -= child_fee;
             const auto child_ref = MakeTransactionRef(child);
             TryAddToMempool(tx_mempool, entry.Fee(child_fee).SpendsCoinbase(false).FromTx(child_ref));
 
             // Without priority selection the entire package is below the floor.
-            options.nBlockPrioritySize = 0;
+            options.block_priority_size = 0;
             const auto below_floor_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_REQUIRE(below_floor_template);
             BOOST_CHECK_EQUAL(below_floor_template->block.vtx.size(), 1U);
 
             // The assembler reserves 1000 bytes before adding transactions;
             // end the priority phase immediately after including the parents.
-            options.nBlockPrioritySize = DEFAULT_BLOCK_RESERVED_SIZE + priority_tx_size;
+            options.block_priority_size = DEFAULT_BLOCK_RESERVED_SIZE + priority_tx_size;
             const auto priority_template = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_REQUIRE(priority_template);
             BOOST_REQUIRE_EQUAL(priority_template->block.vtx.size(), parent_count + 2);
@@ -854,28 +931,28 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
             BOOST_CHECK_EQUAL(priority_template->vTxFees.back(), child_fee);
             // Equality is excluded by Roots' conservative resource boundary.
             const auto weight = *BlockAssembler::m_last_block_weight;
-            options.nBlockMaxWeight = weight;
+            options.block_max_weight = weight;
             const auto capped = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_CHECK_EQUAL(capped->block.vtx.size(), parent_count + 1);
-            options.nBlockMaxWeight = weight + 1;
+            options.block_max_weight = weight + 1;
             const auto fits = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_CHECK_EQUAL(fits->block.vtx.size(), parent_count + 2);
-            options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-            options.nBlockMaxSize = DEFAULT_BLOCK_RESERVED_SIZE + priority_tx_size + GetSerializeSize(TX_WITH_WITNESS(*child_ref));
+            options.block_max_weight = MAX_BLOCK_WEIGHT;
+            options.block_max_size = DEFAULT_BLOCK_RESERVED_SIZE + priority_tx_size + GetSerializeSize(TX_WITH_WITNESS(*child_ref));
             const auto size_capped = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_CHECK_EQUAL(size_capped->block.vtx.size(), parent_count + 1);
-            ++options.nBlockMaxSize;
+            ++*options.block_max_size;
             const auto size_fits = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
             BOOST_CHECK_EQUAL(size_fits->block.vtx.size(), parent_count + 2);
-            options.nBlockMaxSize = MAX_BLOCK_SERIALIZED_SIZE;
+            options.block_max_size = MAX_BLOCK_SERIALIZED_SIZE;
             for (const auto& parent : parents) tx_mempool.removeRecursive(*parent, MemPoolRemovalReason::REPLACED);
         }
     }
 
     // A child can outrank its parent using a second, older confirmed input.
     // It must wait, then be revisited exactly once after its parent is selected.
-    options.nBlockPrioritySize = DEFAULT_BLOCK_PRIORITY_SIZE;
-    options.blockMinFeeRate = CFeeRate{1'000'000};
+    options.block_priority_size = DEFAULT_BLOCK_PRIORITY_SIZE;
+    options.block_min_fee_rate = CFeeRate{1'000'000};
     CMutableTransaction waiting_parent;
     waiting_parent.vin.emplace_back(COutPoint{txFirst[1]->GetHash(), 0}, CScript() << OP_1);
     waiting_parent.vout.emplace_back(50 * COIN, CScript{});
@@ -898,7 +975,7 @@ void MinerTestingSetup::TestPriorityPhaseStaleAncestors(const CScript& scriptPub
         BOOST_CHECK_EQUAL(tx_mempool.size(), pool_size);
         BOOST_CHECK_EQUAL(tx_mempool.GetTotalFee(), pool_fee);
     }
-    options.nBlockPrioritySize = 0;
+    options.block_priority_size = 0;
     const auto disabled = BlockAssembler{m_node.chainman->ActiveChainstate(), &tx_mempool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(disabled->block.vtx.size(), 1U);
 }
@@ -907,9 +984,9 @@ BOOST_AUTO_TEST_CASE(priority_tie_policy)
 {
     CTxMemPool& pool = MakeMempool();
     LOCK2(cs_main, pool.cs);
-    BlockAssembler::Options options;
+    BlockCreateOptions options;
     options.test_block_validity = false;
-    options.blockMinFeeRate = CFeeRate{1'000'000'000};
+    options.block_min_fee_rate = CFeeRate{1'000'000'000};
     TestMemPoolEntryHelper entry;
     CMutableTransaction high;
     high.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
@@ -931,7 +1008,7 @@ BOOST_AUTO_TEST_CASE(priority_tie_policy)
     const auto hash_tie = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_REQUIRE_EQUAL(hash_tie->block.vtx.size(), 2U);
     BOOST_CHECK(hash_tie->block.vtx[1]->GetHash() == std::max(high_ref->GetHash(), low_ref->GetHash()));
-    options.nBlockPrioritySize = 0;
+    options.block_priority_size = 0;
     const auto disabled = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(disabled->block.vtx.size(), 1U);
 }
@@ -940,9 +1017,9 @@ BOOST_AUTO_TEST_CASE(residual_policy_accounting)
 {
     CTxMemPool& pool = MakeMempool();
     LOCK2(cs_main, pool.cs);
-    BlockAssembler::Options options;
+    BlockCreateOptions options;
     options.test_block_validity = false;
-    options.blockMinFeeRate = CFeeRate{1000};
+    options.block_min_fee_rate = CFeeRate{1000};
     CMutableTransaction parent;
     parent.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
     parent.vout.emplace_back(COIN, CScript{});
@@ -978,68 +1055,108 @@ BOOST_AUTO_TEST_CASE(residual_policy_accounting)
     const auto below = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(below->block.vtx.size(), 2U);
     BOOST_REQUIRE(pool.PrioritiseTransaction(child_ref->GetHash(), 1));
-    options.nBlockMaxWeight = DEFAULT_BLOCK_RESERVED_WEIGHT + GetTransactionWeight(*parent_ref) + adjusted_weight;
+    options.block_max_weight = DEFAULT_BLOCK_RESERVED_WEIGHT + GetTransactionWeight(*parent_ref) + GetTransactionWeight(*child_ref);
     const auto capped = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(capped->block.vtx.size(), 2U);
-    ++options.nBlockMaxWeight;
+    ++*options.block_max_weight;
     const auto fits = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(fits->block.vtx.size(), 3U);
-    options.nBlockPrioritySize = 0;
+    options.block_priority_size = 0;
     const auto disabled = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
     BOOST_CHECK_EQUAL(disabled->block.vtx.size(), 1U);
 }
 
-BOOST_AUTO_TEST_CASE(template_option_normalization)
+
+BOOST_AUTO_TEST_CASE(template_options_and_reserves)
 {
     ArgsManager args;
-    BlockAssembler::Options options;
-    node::ApplyArgsManOptions(args, options);
-    BOOST_CHECK_EQUAL(options.nBlockMaxWeight, 1'200'000U);
-    BOOST_CHECK_EQUAL(options.nBlockMaxSize, MAX_BLOCK_SERIALIZED_SIZE);
-    BOOST_CHECK_EQUAL(options.nBlockPrioritySize, 100'000U);
-    BOOST_CHECK_EQUAL(options.blockMinFeeRate.GetFeePerK(), 1000);
+    auto read = node::ReadMiningArgs(args);
+    BOOST_REQUIRE(read);
+    auto options = node::FlattenMiningOptions(*read);
+    BOOST_CHECK_EQUAL(*options.block_max_weight, 1'200'000U);
+    BOOST_CHECK_EQUAL(*options.block_max_size, MAX_BLOCK_SERIALIZED_SIZE);
+    BOOST_CHECK_EQUAL(*options.block_priority_size, 100'000U);
+    BOOST_CHECK_EQUAL(options.block_min_fee_rate->GetFeePerK(), 1000);
     args.ForceSetArg("-blockmaxsize", "120000");
-    node::ApplyArgsManOptions(args, options);
-    BOOST_CHECK_EQUAL(options.nBlockMaxWeight, MAX_BLOCK_WEIGHT);
-    BOOST_CHECK_EQUAL(options.nBlockMaxSize, 120'000U);
+    auto size_only = node::ReadMiningArgs(args);
+    BOOST_REQUIRE(size_only);
+    options = node::FlattenMiningOptions(*size_only);
+    BOOST_CHECK_EQUAL(*options.block_max_weight, MAX_BLOCK_WEIGHT);
+    BOOST_CHECK_EQUAL(*options.block_max_size, 120'000U);
     args.ForceSetArg("-blockmaxweight", "600000");
     args.ForceSetArg("-blockprioritysize", "0");
-    args.ForceSetArg("-blockreservedweight", "9000");
-    args.ForceSetArg("-blockmintxfee", "0.00002000");
-    node::ApplyArgsManOptions(args, options);
-    BOOST_CHECK_EQUAL(options.nBlockMaxWeight, 600'000U);
-    BOOST_CHECK_EQUAL(options.nBlockMaxSize, 120'000U);
-    BOOST_CHECK_EQUAL(options.nBlockPrioritySize, 0U);
-    BOOST_REQUIRE(options.block_reserved_weight);
-    BOOST_CHECK_EQUAL(*options.block_reserved_weight, 9000U);
-    BOOST_CHECK_EQUAL(options.blockMinFeeRate.GetFeePerK(), 2000);
-    ArgsManager weight_only;
-    weight_only.ForceSetArg("-blockmaxweight", "700000");
-    options = {};
-    node::ApplyArgsManOptions(weight_only, options);
-    BOOST_CHECK_EQUAL(options.nBlockMaxWeight, 700'000U);
-    BOOST_CHECK_EQUAL(options.nBlockMaxSize, MAX_BLOCK_SERIALIZED_SIZE);
+    auto size_and_weight = node::ReadMiningArgs(args);
+    BOOST_REQUIRE(size_and_weight);
+    options = node::FlattenMiningOptions(*size_and_weight);
+    BOOST_CHECK_EQUAL(*options.block_max_weight, 600'000U);
+    BOOST_CHECK_EQUAL(*options.block_priority_size, 0U);
+    auto merged = node::MergeMiningOptions({.block_max_size = 0, .block_priority_size = 0}, options);
+    merged = node::FlattenMiningOptions(merged);
+    BOOST_CHECK_EQUAL(*merged.block_max_size, 1000U);
+    BOOST_CHECK_EQUAL(*merged.block_priority_size, 0U);
+
+    CTxMemPool& pool{MakeMempool()};
+    LOCK2(cs_main, pool.cs);
+    CMutableTransaction tx;
+    tx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+    tx.vout.emplace_back(COIN, CScript{});
+    const auto ref{MakeTransactionRef(tx)};
+    TryAddToMempool(pool, TestMemPoolEntryHelper{}.Fee(1000).SigOpsCost(4).FromTx(ref));
+    // Both selection paths use actual weight and sigops, with strict equality
+    // excluded. Reserve changes never mutate the admitted graph.
+    for (uint64_t priority : {0U, 100000U}) {
+        for (uint64_t reserved : {2000U, 8000U, 3999000U}) {
+            options = {};
+            options.test_block_validity = false; // Synthetic prevout, no UTXO.
+            options.block_priority_size = priority;
+            options.block_reserved_weight = reserved;
+            options.block_max_weight = reserved + GetTransactionWeight(*ref);
+            auto capped = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
+            BOOST_CHECK_EQUAL(capped->block.vtx.size(), 1U);
+            ++*options.block_max_weight;
+            for (size_t sigops : {0U, 400U, 79995U, 79996U, 80000U}) {
+                options.coinbase_output_max_additional_sigops = sigops;
+                auto result = BlockAssembler{m_node.chainman->ActiveChainstate(), &pool, options}.CreateNewBlock();
+                BOOST_CHECK_EQUAL(result->block.vtx.size(), sigops + 4 < MAX_BLOCK_SIGOPS_COST ? 2U : 1U);
+            }
+        }
+    }
+    options.coinbase_output_max_additional_sigops = MAX_BLOCK_SIGOPS_COST + 1;
+    BOOST_CHECK(!node::CheckMiningOptions(options, false));
+    options.coinbase_output_max_additional_sigops = 0;
+    options.block_reserved_weight = MINIMUM_BLOCK_RESERVED_WEIGHT - 1;
+    BOOST_CHECK(!node::CheckMiningOptions(options, false));
+    options.block_reserved_weight = MAX_BLOCK_WEIGHT + 1;
+    BOOST_CHECK(!node::CheckMiningOptions(options, false));
+    options.block_reserved_weight = 8000;
+    options.block_max_weight = 7999;
+    BOOST_CHECK(!node::CheckMiningOptions(options, false));
 }
 
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
-    m_node.args->ForceSetArg("-blockprioritysize", "0");
-    m_node.args->ForceSetArg("-blockmaxweight", "4000000");
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
     // Note that by default, these tests run with size accounting enabled.
     CScript scriptPubKey = CScript() << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"_hex << OP_CHECKSIG;
-    BlockAssembler::Options options;
-    options.nBlockPrioritySize = 0;
-    options.nBlockMaxWeight = MAX_BLOCK_WEIGHT;
-    options.coinbase_output_script = scriptPubKey;
-    options.include_dummy_extranonce = true;
+    BlockCreateOptions options{
+        .block_max_weight = MAX_BLOCK_WEIGHT,
+        .block_priority_size = 0,
+        .coinbase_output_script = scriptPubKey,
+    };
 
     // Create and check a simple template
     std::unique_ptr<BlockTemplate> block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
+
+    BlockCreateOptions invalid_options{options};
+    invalid_options.block_max_weight = DEFAULT_BLOCK_RESERVED_WEIGHT - 1;
+    BOOST_CHECK_EXCEPTION(mining->createNewBlock(invalid_options, /*cooldown=*/false),
+                          std::runtime_error,
+                          HasReason("block_reserved_weight (8000) exceeds block_max_weight (7999)"));
+
     {
         CBlock block{block_template->getBlock()};
         {
@@ -1111,14 +1228,29 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             block.hashMerkleRoot = BlockMerkleRoot(block);
             block.nNonce = bi.nonce;
         }
-        std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(block);
-        // Alternate calls between Chainman's ProcessNewBlock and submitSolution
-        // via the Mining interface. The former is used by net_processing as well
-        // as the submitblock RPC.
+        // Alternate calls between submitBlock and submitSolution via the
+        // Mining interface.
+        std::string reason{"stale reason"};
+        std::string debug{"stale debug"};
         if (current_height % 2 == 0) {
-            BOOST_REQUIRE(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
+            BOOST_REQUIRE(mining->submitBlock(block, reason, debug));
+            BOOST_REQUIRE_EQUAL(reason, "");
+            BOOST_REQUIRE_EQUAL(debug, "");
+
+            reason = "stale reason";
+            debug = "stale debug";
+            BOOST_REQUIRE(!mining->submitBlock(block, reason, debug));
+            BOOST_REQUIRE_EQUAL(reason, "duplicate");
+            BOOST_REQUIRE_EQUAL(debug, "");
         } else {
-            BOOST_REQUIRE(block_template->submitSolution(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase)));
+            reason = "stale reason";
+            debug = "stale debug";
+            BOOST_REQUIRE(block_template->submitSolution(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase), reason, debug));
+            BOOST_REQUIRE_EQUAL(reason, "");
+            BOOST_REQUIRE_EQUAL(debug, "");
+            BOOST_CHECK_THROW(block_template->submitSolutionOld7(block.nVersion, block.nTime, block.nNonce,
+                                                                 MakeTransactionRef(txCoinbase)),
+                              std::runtime_error);
         }
         {
             LOCK(cs_main);
@@ -1141,15 +1273,15 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     TestBasicMining(scriptPubKey, txFirst, baseheight);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
-    SetMockTime(0);
 
     TestPackageSelection(scriptPubKey, txFirst);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
-    SetMockTime(0);
 
     TestPrioritisedMining(scriptPubKey, txFirst);
     TestPriorityPhaseStaleAncestors(scriptPubKey, txFirst);
+
+    TestSigOpsAdjustedWeightChunkLimit(scriptPubKey, txFirst);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
