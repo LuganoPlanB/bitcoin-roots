@@ -148,7 +148,7 @@ test("static acceptance rejects broken deep links, unexplained routes and extern
     await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /page count mismatch/);
 });
 
-test("temporary publication renders complete original-tag navigation with provenance on every page", async (t) => {
+test("published version appears throughout original-reference navigation without temporary notices", async (t) => {
     const fixture = await inputs(t);
     const item = fixture.catalogue.releases[0];
     item.tag = 'untagged-3450aebe1f5e3a73703b';
@@ -171,8 +171,9 @@ test("temporary publication renders complete original-tag navigation with proven
     assert.equal(output.unsupportedReleases.length, 1);
     for (const route of ['', `${item.tag}/`, `${item.tag}/commit-1/`, `${item.tag}/commit-1/file-1/`, `${item.tag}/commit-1/file-1/side-by-side/`]) {
         const html = await readFile(join(fixture.outputDir, route, 'index.html'), 'utf8');
-        assert.match(html, /Temporary GitHub tag/);
-        assert.match(html, /No SHA512SUMS.asc signature was published/);
+        assert.match(html, /v32\.1-roots\.1/);
+        assert.doesNotMatch(html, /temporary|No SHA512SUMS.asc signature was published/i);
+        assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /untagged-3450aebe1f5e3a73703b/);
         assert.doesNotMatch(html, /releases\/download\/v32\.1|patches\/v32\.1|<script>other/);
     }
 });

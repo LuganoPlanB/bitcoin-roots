@@ -33,28 +33,27 @@ test("missing and empty states remain explanatory without JavaScript", () => {
     assert.doesNotMatch(html, /Download original patch|Download verification/);
 });
 
-test("32.x source navigation never creates an unpublished release entry or download", () => {
+test("release index never creates an unpublished release entry or download", () => {
     const historical = release("v31.1-roots.6", "2026-10-20");
     const html = releaseIndex([historical], local);
-    assert.match(html, /Source availability does not establish release publication/);
-    assert.match(html, /href="\/bitcoin-roots\/doc\/roots-v32-port-review"/);
     assert.match(html, /href="\/bitcoin-roots\/patches\/v31\.1-roots\.6\/"/);
     assert.doesNotMatch(html, /releases\/download\/v32|patches\/v32/);
 });
 
-test("temporary publication is grouped by asset version with explicit provenance, without invented tag URLs", () => {
+test("published asset version labels releases consistently without changing original URLs", () => {
     const item = { ...release('untagged-3450aebe1f5e3a73703b', '2026-11-05'), temporaryTag: true, versionTag: 'v32.1-roots.1',
         patch: { size: 1234, url: 'https://github.com/LuganoPlanB/bitcoin-roots/releases/download/untagged-3450aebe1f5e3a73703b/bitcoin-roots-32.1-roots.1.patch' } };
     const index = releaseIndex([item], local, [{ tag: '<script>other</script>', reason: 'Unsupported tag' }]);
     assert.match(index, /Bitcoin Core 32/);
-    assert.match(index, /v32\.1-roots\.1 \(temporary tag\)/);
+    assert.match(index, /<h2 id="patch-latest">v32\.1-roots\.1<\/h2>/);
+    assert.doesNotMatch(index, /temporary|32.x source/i);
     assert.match(index, /Other public release tags/);
     assert.match(index, /&lt;script&gt;other/);
     assert.doesNotMatch(index, /<script>|patches\/v32\.1-roots\.1/);
     const html = releaseOverview(item, { commits: [], fileCount: 0 }, local);
-    assert.match(html, /Temporary GitHub tag/);
-    assert.match(html, /from patch filename/);
-    assert.match(html, /No SHA512SUMS.asc signature was published/);
+    assert.match(html, /<h1>v32\.1-roots\.1<\/h1>/);
+    assert.match(html, /aria-current="page">v32\.1-roots\.1<\/span>/);
+    assert.doesNotMatch(html, /temporary|from patch filename|No SHA512SUMS.asc/i);
     assert.match(html, /untagged-3450aebe1f5e3a73703b\/bitcoin-roots-32\.1-roots\.1.patch/);
 });
 

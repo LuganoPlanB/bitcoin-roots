@@ -8,7 +8,7 @@ import { defaultInputDir } from "./prepare-releases.mjs";
 import { parsePatchSeries } from "./patch-series.mjs";
 import { renderFilePages, renderLimits, rendererSettings } from "./patch-renderer.mjs";
 import { patchCacheKey, restorePatchCache, storePatchCache } from "./patch-cache.mjs";
-import { escapeHtml as e, fileNavigation, link, patchDocument, sourceLink, temporaryTagNotice, validateBase } from "./patch-page.mjs";
+import { escapeHtml as e, fileNavigation, link, patchDocument, sourceLink, releaseLabel, validateBase } from "./patch-page.mjs";
 import { orderedReleases, releaseIndex, releaseOverview } from "./patch-overview.mjs";
 
 const require = createRequire(import.meta.url);
@@ -88,7 +88,7 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
         await page("", "Release patches", releaseIndex(catalogue.releases, local, catalogue.unsupportedReleases), true);
         for (const release of orderedReleases(catalogue.releases)) {
             const releaseRoute = `${release.tag}/`;
-            const releaseTitle = `${release.tag} patch series`;
+            const releaseTitle = `${releaseLabel(release)} patch series`;
             if (release.patchState === "unavailable") {
                 await page(releaseRoute, releaseTitle, releaseOverview(release, null, local), true);
                 summary.releases.push({ tag: release.tag, state: "unavailable", commits: [], fileCount: 0 });
@@ -105,9 +105,9 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
                 const commitRoute = `${releaseRoute}commit-${commit.ordinal}/`;
                 const commitEntry = { id: commit.id, ordinal: commit.ordinal, originalCommit: commit.originalCommit,
                     subject: commit.subject, author: commit.author, date: commit.date, route: local(commitRoute), files: [] };
-                const commitHeader = `<p>${link(local(releaseRoute), release.tag)} · Commit ${commit.ordinal} of ${series.commits.length}</p>
+                const commitHeader = `<p>${link(local(releaseRoute), releaseLabel(release))} · Commit ${commit.ordinal} of ${series.commits.length}</p>
 <h1>${e(commit.subject)}</h1><p>${e(commit.author ?? "Author not supplied")}</p><p>${e(commit.date ?? "Date not supplied")}</p><p>Original commit: <code>${commit.originalCommit}</code></p>`;
-                await page(commitRoute, commit.subject, `${commitHeader}${temporaryTagNotice(release)}<p>${releaseLinks}</p><p>${commit.files.length} file changes${commit.files.length ? "" : " · No diff section in this mail; consult the original patch."}</p>
+                await page(commitRoute, commit.subject, `${commitHeader}<p>${releaseLinks}</p><p>${commit.files.length} file changes${commit.files.length ? "" : " · No diff section in this mail; consult the original patch."}</p>
 <ol>${commit.files.map((file) => `<li id="${file.id}">${link(local(`${commitRoute}file-${file.ordinal}/`), file.path ?? "Unsupported path")} · ${e(file.state)}</li>`).join("")}</ol>`, true);
                 for (const file of commit.files) {
                     const fileRoute = `${commitRoute}file-${file.ordinal}/`;
@@ -116,10 +116,10 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
                         path: file.path, state: rendered.state, reason: rendered.reason ?? null,
                         route: local(fileRoute), pageCount: rendered.pages.length || 1 };
                     commitEntry.files.push(fileEntry);
-                    const fileHeader = `<p>${link(local(releaseRoute), release.tag)} · ${link(local(commitRoute), `Commit ${commit.ordinal}: ${commit.subject}`)}</p>
+                    const fileHeader = `<p>${link(local(releaseRoute), releaseLabel(release))} · ${link(local(commitRoute), `Commit ${commit.ordinal}: ${commit.subject}`)}</p>
 <h1 class="patch-file-heading" id="${file.id}">${e(file.path ?? "Unsupported file path")}</h1>
 <p>Before: <code>${e(file.oldPath ?? "/dev/null")}</code> · After: <code>${e(file.newPath ?? "/dev/null")}</code></p>
-${file.metadata.length ? `<details><summary>File metadata</summary><pre>${e(file.metadata.join("\n"))}</pre></details>` : ""}${temporaryTagNotice(release)}<p>${releaseLinks}</p>`;
+${file.metadata.length ? `<details><summary>File metadata</summary><pre>${e(file.metadata.join("\n"))}</pre></details>` : ""}<p>${releaseLinks}</p>`;
                     if (!rendered.pages.length) {
                         const reasons = { binary: "Binary change. Text diff display is unavailable; the original patch includes the binary data.",
                             "metadata-only": "Metadata-only change. No text hunk is present; file modes, rename/copy information or empty-file metadata are shown above." };

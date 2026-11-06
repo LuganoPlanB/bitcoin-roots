@@ -48,10 +48,12 @@ Release identity and patch version are separate. A published GitHub temporary
 tag of the form `untagged-<20 lowercase hexadecimal characters>` can be browsed
 when it has exactly one versioned Roots patch, `SHA512SUMS`, and GitHub SHA256
 digests for both. Preparation verifies the exact filename and both digest
-sources before rendering. Routes and downloads retain the actual temporary tag;
-the version and Core-line grouping come from the patch filename and are labelled
-as such. Every temporary-tag page discloses that this establishes neither a
-permanent Roots tag, verified ancestry nor an authenticated release signature.
+sources before rendering. Routes and downloads retain the actual GitHub reference;
+display names, breadcrumbs and Core-line grouping use the published patch version.
+Publication is presented consistently across the release index and deep pages,
+without temporary-status badges or notices. This display convention does not
+create a Git tag, establish ancestry or authenticate a release signature; the
+shared download-verification details report the checks actually performed.
 
 Other public tags, or temporary entries without a uniquely identifiable and
 verifiable patch, appear in `unsupportedReleases` with an explanation. They are
