@@ -136,6 +136,35 @@ test("static acceptance rejects broken deep links, unexplained routes and extern
     await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /page count mismatch/);
 });
 
+test("temporary publication renders complete original-tag navigation with provenance on every page", async (t) => {
+    const fixture = await inputs(t);
+    const item = fixture.catalogue.releases[0];
+    item.tag = 'untagged-3450aebe1f5e3a73703b';
+    item.versionTag = 'v32.1-roots.1';
+    item.temporaryTag = true;
+    item.url = `https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/${item.tag}`;
+    item.patch.name = 'bitcoin-roots-32.1-roots.1.patch';
+    item.patch.url = `https://github.com/LuganoPlanB/bitcoin-roots/releases/download/${item.tag}/${item.patch.name}`;
+    const patchBytes = await readFile(join(fixture.inputDir, 'assets', item.integrity.cacheFile));
+    item.patch.digest = `sha256:${createHash('sha256').update(patchBytes).digest('hex')}`;
+    item.checksum = { url: `https://github.com/LuganoPlanB/bitcoin-roots/releases/download/${item.tag}/SHA512SUMS`, digest: `sha256:${'a'.repeat(64)}` };
+    assert.throws(() => validateRenderCatalogue(fixture.catalogue), /Unverified temporary/);
+    item.integrity.platformDigest = 'verified';
+    fixture.catalogue.unsupportedReleases = [{ id: 999, tag: '<script>other</script>', publishedAt: item.publishedAt, reason: 'Unknown tag; no patch selected' }];
+    await writeFile(join(fixture.inputDir, 'catalogue.json'), JSON.stringify(fixture.catalogue));
+    const output = await renderPatchSite({ ...fixture, base: '/bitcoin-roots/' });
+    const checked = await checkPatchHtml({ outputDir: fixture.outputDir });
+    assert.equal(checked.fileChanges, 1);
+    assert.equal(output.releases[0].versionTag, 'v32.1-roots.1');
+    assert.equal(output.unsupportedReleases.length, 1);
+    for (const route of ['', `${item.tag}/`, `${item.tag}/commit-1/`, `${item.tag}/commit-1/file-1/`, `${item.tag}/commit-1/file-1/side-by-side/`]) {
+        const html = await readFile(join(fixture.outputDir, route, 'index.html'), 'utf8');
+        assert.match(html, /Temporary GitHub tag/);
+        assert.match(html, /No SHA512SUMS.asc signature was published/);
+        assert.doesNotMatch(html, /releases\/download\/v32\.1|patches\/v32\.1|<script>other/);
+    }
+});
+
 test("binary, metadata-only, unsupported and oversized changes publish explicit source-linked pages", async (t) => {
     const patch = mail("diff --git a/image b/image\nGIT binary patch\nliteral 0\nHcmV?d00001\n"
         + "diff --git a/empty b/empty\nnew file mode 100644\nindex 0000000..e69de29\n"
@@ -213,12 +242,15 @@ test("warm output cache is byte-identical and binds input digest, renderer/setti
     assert.equal(changed.cache, "miss");
     assert.notEqual(changed.cacheKey, key);
     const alternateSources = join(fixture.directory, "sources");
-    for (const path of ["scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs", "scripts/render-patches.mjs",
+    for (const path of ["scripts/release-catalogue.mjs", "scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs", "scripts/render-patches.mjs",
         "scripts/patch-cache.mjs", "scripts/patch-overview.mjs", "scripts/patch-browser.js", "scripts/patch-theme.js", ".vitepress/theme/patches.css", "package-lock.json"]) {
         await mkdir(join(alternateSources, path, ".."), { recursive: true });
         await copyFile(join(websiteRoot, path), join(alternateSources, path));
     }
     assert.equal(await patchCacheKey({ ...keyInputs, websiteRoot: alternateSources }), key);
+    await writeFile(join(alternateSources, "scripts/release-catalogue.mjs"), "changed version identity rules");
+    assert.notEqual(await patchCacheKey({ ...keyInputs, websiteRoot: alternateSources }), key);
+    await copyFile(join(websiteRoot, "scripts/release-catalogue.mjs"), join(alternateSources, "scripts/release-catalogue.mjs"));
     await writeFile(join(alternateSources, "scripts/patch-page.mjs"), "changed trusted template");
     assert.notEqual(await patchCacheKey({ ...keyInputs, websiteRoot: alternateSources }), key);
     await writeFile(join(fixture.inputDir, "assets", fixture.catalogue.releases[0].integrity.cacheFile), "bad original bytes");

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expectedPatchName, validateReleaseUrl } from "./release-catalogue.mjs";
+import { expectedPatchName, isTemporaryTag, validateReleaseTag, validateReleaseUrl, validateTag } from "./release-catalogue.mjs";
 
 // Current published patches are ~3.3 MB. Bounds leave room for growth while
 // preventing a remote asset from exhausting a static-build worker.
@@ -45,7 +45,14 @@ export async function downloadAsset(asset, { fetchImpl = fetch, maxBytes = asset
     // Only validated catalogue URLs may start a request, including direct callers.
     const match = /^https:\/\/github\.com\/LuganoPlanB\/bitcoin-roots\/releases\/download\/([^/]+)\/([^/]+)$/.exec(asset.url);
     requireValue(match, "Invalid asset destination");
-    requireValue([expectedPatchName(match[1]), "SHA512SUMS"].includes(match[2]), "Unexpected asset destination");
+    validateReleaseTag(match[1]);
+    if (isTemporaryTag(match[1])) {
+        const patch = /^bitcoin-roots-(.+)\.patch$/.exec(match[2]);
+        requireValue(match[2] === "SHA512SUMS" || patch, "Unexpected asset destination");
+        if (patch) validateTag(`v${patch[1]}`);
+    } else {
+        requireValue([expectedPatchName(match[1]), "SHA512SUMS"].includes(match[2]), "Unexpected asset destination");
+    }
     validateAsset(asset, match[1], match[2], maxBytes);
     for (let attempt = 1; attempt <= attempts; attempt++) {
         const controller = new AbortController();
@@ -193,7 +200,10 @@ export async function verifyCatalogueAssets(catalogue, { cacheDir, ...downloadOp
             releases.push({ ...release, integrity: null });
             continue;
         }
-        const filename = expectedPatchName(release.tag);
+        const filename = expectedPatchName(release);
+        if (isTemporaryTag(release.tag)) {
+            requireValue(release.patch.digest && release.checksum?.digest, "Temporary tag requires checksum and platform digests");
+        }
         let expected = null;
         if (release.checksum) {
             const checksum = await cachedAsset(release.checksum, { ...downloadOptions, cacheDir,

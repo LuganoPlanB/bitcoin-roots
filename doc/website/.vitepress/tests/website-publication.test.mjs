@@ -31,9 +31,30 @@ async function directories(t) {
 async function renderedCatalogue(verified, outputDir, base = revisions.base) {
     await mkdir(join(outputDir, "patches"), { recursive: true });
     await writeFile(join(outputDir, "patches/catalogue.json"), JSON.stringify({ base,
+        ...(verified.unsupportedReleases?.length ? { unsupportedReleases: verified.unsupportedReleases } : {}),
         releases: verified.releases.map((release) => ({ tag: release.tag, state: release.patchState,
             sha512: release.integrity?.sha512 ?? null })) }));
 }
+
+test("unsupported tag metadata is counted and displayed without blocking source publication", async (t) => {
+    const other = release({ id: 123, tag_name: 'not-a-roots-version', assets: [],
+        html_url: 'https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/not-a-roots-version' });
+    const original = await snapshot([release(), other]);
+    const receipt = publicationReceipt(original);
+    assert.equal(receipt.releaseCount, 2);
+    assert.equal(receipt.availableCount, 1);
+    assert.equal(receipt.unsupportedCount, 1);
+    assert.equal(needsPublication(await snapshot([release(), { ...other, name: 'Edited unsupported release' }]), receipt), true);
+    const dirs = await directories(t);
+    const verified = await preparePublication(original, { ...dirs, fetchImpl: async () => new Response(bytes) });
+    await renderedCatalogue(verified, dirs.outputDir);
+    await writePublicationReceipt(original, dirs);
+    assert.equal(JSON.parse(await readFile(join(dirs.outputDir, 'deployment.json'), 'utf8')).unsupportedCount, 1);
+    const rendered = JSON.parse(await readFile(join(dirs.outputDir, 'patches/catalogue.json'), 'utf8'));
+    delete rendered.unsupportedReleases;
+    await writeFile(join(dirs.outputDir, 'patches/catalogue.json'), JSON.stringify(rendered));
+    await assert.rejects(writePublicationReceipt(original, dirs), /Rendered catalogue differs/);
+});
 
 test("same complete inventory and revisions skip publication regardless of API ordering or cache presence", async () => {
     const entries = [release(), release({ id: 2, tag_name: "v29.3-roots.1", assets: [],
@@ -158,6 +179,8 @@ test("workflow serializes current-main discovery through deploy, gates expensive
     const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/deploy-docs.yml", import.meta.url)), "utf8");
     assert.match(workflow, /schedule:\s*\n\s*- cron: '17 \*\/6 \* \* \*'/);
     assert.match(workflow, /workflow_dispatch:/);
+    assert.match(workflow, /repository_dispatch:\s*\n\s*types: \[release-published\]/);
+    assert.doesNotMatch(workflow, /github\.event\.client_payload/);
     assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
     assert.doesNotMatch(workflow, /\n\s*(release|pull_request|pull_request_target):/);
     assert.match(workflow, /concurrency:\s*\n\s*group: pages\s*\n\s*cancel-in-progress: false/);

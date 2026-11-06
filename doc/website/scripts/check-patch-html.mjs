@@ -53,8 +53,9 @@ export async function checkPatchHtml({ outputDir, siteDir } = {}) {
         if (release) {
             const resource = `https://github.com/LuganoPlanB/bitcoin-roots/releases`;
             assert.ok(html.includes(`href="${resource}/tag/${release.tag}"`), `Missing release notes: ${path}`);
-            const download = `href="${resource}/download/${release.tag}/${expectedPatchName(release.tag)}"`;
+            const download = `href="${resource}/download/${release.tag}/${expectedPatchName(release)}"`;
             assert.equal(html.includes(download), release.state === "available", `Incorrect original-download access: ${path}`);
+            if (release.temporaryTag) assert.ok(html.includes("Temporary GitHub tag"), `Missing temporary-tag disclosure: ${path}`);
         }
         assert.ok(Buffer.byteLength(html) < (path.includes("/file-") ? renderLimits.documentBytes : renderLimits.overviewBytes), `HTML budget: ${path}`);
         assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:src|href)="https?:|modulepreload|prefetch/i, `External runtime or prefetch: ${path}`);

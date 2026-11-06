@@ -49,9 +49,12 @@ test("ambiguous patch, checksum, signature or release identities fail closed", (
   assert.throws(() => createCatalogue([release(), release("v29.4-roots.1", 2)]), /Duplicate release tag/);
 });
 
-test("invalid tags, paths, URLs and malformed metadata are rejected", () => {
+test("unsupported tags create no routes; unsafe known URLs and malformed metadata are rejected", () => {
   for (const tag of ["../x", "v29.4-roots.0", "v29.4-roots.1/evil", "v29.4-roots.1?x", "v29.4-roots.1%2f", "v29.4-roots.1\n"]) {
-    assert.throws(() => createCatalogue([release(tag)]), /tag/);
+    const result = createCatalogue([release(tag)]);
+    assert.equal(result.releases.length, 0);
+    assert.equal(result.unsupportedReleases.length, 1);
+    assert.equal(result.unsupportedReleases[0].tag, tag);
   }
   for (const html_url of ["http://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.1", "https://evil.example/", "javascript:alert(1)"]) {
     assert.throws(() => createCatalogue([release(undefined, 1, { html_url })]), /URL/);
@@ -63,6 +66,37 @@ test("invalid tags, paths, URLs and malformed metadata are rejected", () => {
   for (const extra of [{ size: -1 }, { updated_at: "bad" }, { digest: "sha256:bad" }, { browser_download_url: "https://evil.example/" }]) {
     assert.throws(() => createCatalogue([release(tag, 1, { assets: [asset(tag, undefined, extra)] })]));
   }
+});
+
+test("published temporary tags keep actual URLs and derive only an asset-declared version", () => {
+  const tag = 'untagged-3450aebe1f5e3a73703b';
+  const filename = 'bitcoin-roots-32.1-roots.1.patch';
+  const result = createCatalogue([release(tag, 432629489, { assets: [asset(tag, filename), asset(tag, 'SHA512SUMS', { id: 101 })] })]);
+  const entry = result.releases[0];
+  assert.equal(entry.tag, tag);
+  assert.equal(entry.temporaryTag, true);
+  assert.equal(entry.versionTag, 'v32.1-roots.1');
+  assert.equal(entry.route, `/patches/${tag}/`);
+  assert.equal(entry.patch.url, `https://github.com/LuganoPlanB/bitcoin-roots/releases/download/${tag}/${filename}`);
+  assert.equal(expectedPatchName(entry), filename);
+  assert.throws(() => expectedPatchName(tag), /tag/);
+  assert.equal(entry.signature, null);
+});
+
+test("unsupported or incomplete publication identities are visible without blocking known releases", () => {
+  const tag = 'untagged-3450aebe1f5e3a73703b';
+  const known = release('v31.1-roots.6', 1);
+  for (const incomplete of [release(tag, 2), release('unversioned', 2), release('../<script>', 2), release(`v${'9'.repeat(120)}.1-roots.1`, 2),
+    release(tag, 2, { assets: [asset(tag, 'bitcoin-roots-32.1-roots.1.patch')] }),
+    release(tag, 2, { assets: [asset(tag, 'bitcoin-roots-32.1-roots.1.patch'), asset(tag, 'bitcoin-roots-31.1-roots.1.patch', { id: 101 })] })]) {
+    const result = createCatalogue([known, incomplete, { draft: true }]);
+    assert.equal(result.releases.length, 1);
+    assert.equal(result.releases[0].tag, known.tag_name);
+    assert.equal(result.unsupportedReleases.length, 1);
+    assert.equal(result.unsupportedReleases[0].id, 2);
+    assert.equal(result.unsupportedReleases[0].patch, undefined);
+  }
+  assert.throws(() => createCatalogue([release(tag, 2, { assets: [asset(tag, 'bitcoin-roots-32.1-roots.1.patch', { browser_download_url: 'https://evil.example/patch' }), asset(tag, 'SHA512SUMS', { id: 101 })] })]), /URL/);
 });
 
 test("malformed pages, repeated pages, exhausted pagination and API errors cannot produce partial catalogues", async () => {

@@ -142,3 +142,35 @@ six asset checksums, archive safety/COPYING, immutable source/tag, patch replay 
 notes before visibility-only publication under separate authority. Repeat the
 consumer checks unauthenticated after publication. Interrupted creation needs
 operator inspection of the partial draft; reruns cannot replace it.
+
+## Complete the public release and Pages handoff
+
+The release source/tag, signed packet and website are separate verifiable
+outputs. Main integration must preserve the accepted product while carrying the
+current source documentation and website tooling; it does not change which
+commit produced the release packages.
+
+Under the appropriate separate authorizations, complete these steps in order:
+
+1. Validate the permanent Roots tag against its exact canonical source, build the
+   fresh five-platform packet, sign the manifest and independently check all eight
+   draft assets. Preserve reviewed notes and credits. Existing drafts or public
+   releases require explicit reconciliation; never bypass the creator's guard.
+2. Publish only after publication approval. Independently download the public
+   bytes without authentication and repeat manifest-signature/checksum,
+   archive/COPYING and source/tag/patch checks.
+3. Send `repository_dispatch` type `release-published` to this repository, or run
+   `deploy-docs.yml` explicitly from trusted main. Publisher automation using
+   `GITHUB_TOKEN` must make this explicit handoff too. These requests are website
+   refreshes; never rerun the binary-release workflow to update Pages.
+4. Wait for the Pages run, then inspect the public deployment receipt and the
+   release/commit/file navigation. Confirm the accepted main revision, complete
+   inventory and original patch/checksum destinations. A failed or skipped run
+   is not proof that the new release is browsable.
+
+The commands, authority boundaries and recovery checks are maintained in
+[Website release inputs](../../doc/website/RELEASE-INPUTS.md#publication-refresh-and-recovery).
+The scheduled inventory check is a recovery fallback, not the completion gate.
+Pages can describe an already-public temporary-tag release truthfully without
+creating a permanent tag or claiming missing signatures are verified. That
+compatibility does not waive the normal release procedure above.

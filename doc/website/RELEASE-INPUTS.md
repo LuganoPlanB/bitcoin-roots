@@ -44,6 +44,23 @@ and checksum bytes. No release is rebuilt, no patch is regenerated, and no tag,
 branch, or release asset is modified. Do not add these generated inputs to Git.
 Small synthetic fixtures in the unit tests keep regular tests offline.
 
+Release identity and patch version are separate. A published GitHub temporary
+tag of the form `untagged-<20 lowercase hexadecimal characters>` can be browsed
+when it has exactly one versioned Roots patch, `SHA512SUMS`, and GitHub SHA256
+digests for both. Preparation verifies the exact filename and both digest
+sources before rendering. Routes and downloads retain the actual temporary tag;
+the version and Core-line grouping come from the patch filename and are labelled
+as such. Every temporary-tag page discloses that this establishes neither a
+permanent Roots tag, verified ancestry nor an authenticated release signature.
+
+Other public tags, or temporary entries without a uniquely identifiable and
+verifiable patch, appear in `unsupportedReleases` with an explanation. They are
+counted in the deployment receipt and shown on the release index without patch
+downloads or generated routes. Unsupported naming must not block source
+documentation or hide other releases. Malformed API responses, ambiguous known
+asset identities, unsafe URLs, checksum mismatches and download failures still
+stop preparation; they are not relabelled as unsupported releases.
+
 Cache identities bind asset ID, name, destination, size, update timestamp and
 GitHub digest; objects also include their SHA512 content digest. Every reuse
 checks the bytes again. Metadata changes select a fresh cache entry; old entries
@@ -87,8 +104,24 @@ existing manually prepared draft must be reconciled with the signed release
 workflow; its new-draft creator refuses existing drafts. A website refresh is
 not a way to bypass those release gates or publish a draft.
 
-After publishing and independently verifying a release, a maintainer can request
-an immediate website refresh from trusted `main`:
+Publication is not operationally complete until the public consumer checks and
+the Pages handoff below succeed. After publishing and independently verifying a
+release, the publisher must request the trusted-main refresh:
+
+```sh
+gh api --method POST repos/LuganoPlanB/bitcoin-roots/dispatches \
+  -f event_type=release-published
+```
+
+Publisher automation should send the same `repository_dispatch` event after its
+public-byte verification. The event carries no executable payload or source ref;
+Pages resolves current trusted `main` and rediscovers the public inventory. It
+does not publish a release or modify its tags, signatures or assets. Dispatch
+requires the publisher's repository write authority. Unlike ordinary events
+created with `GITHUB_TOKEN`, explicit dispatch events can trigger workflows;
+see [GitHub's dispatch exceptions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Manual recovery can also dispatch the documentation workflow directly:
 
 ```sh
 gh workflow run deploy-docs.yml --repo LuganoPlanB/bitcoin-roots --ref main
@@ -109,6 +142,11 @@ navigation and download the linked patch/checksums to compare with the verified
 public release bytes. An unavailable patch or a successful workflow that skipped
 deployment is not evidence that the new patch is browsable. Preserve the old
 release routes and verify source documentation links as well.
+
+Observe the new run and perform the receipt/navigation checks below. A successful
+publish click alone is not evidence that the website is current. UI publishers
+must perform this handoff too; GitHub's release event is not used as a substitute
+because it is associated with a possibly old or website-free release tag.
 
 `deploy-docs.yml` also checks the complete public inventory at minute 17 every
 six hours in UTC, and on main pushes. Expected automatic catch-up is within six

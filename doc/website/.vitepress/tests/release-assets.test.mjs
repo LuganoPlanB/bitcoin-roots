@@ -47,6 +47,26 @@ test("legacy missing checksum and digest remain honest; absent patch is never fe
     assert.equal(absent.releases[0].integrity, null);
 });
 
+test("temporary-tag assets verify exact versioned bytes, while mismatches still fail closed", async (t) => {
+    const temporary = 'untagged-3450aebe1f5e3a73703b';
+    const filename = 'bitcoin-roots-32.1-roots.1.patch';
+    const manifest = Buffer.from(`${digest(bytes)}  ${filename}\n`);
+    const asset = (name, body) => metadata(name, body, { url: `https://github.com/LuganoPlanB/bitcoin-roots/releases/download/${temporary}/${name}` });
+    const release = { tag: temporary, temporaryTag: true, versionTag: 'v32.1-roots.1', patchState: 'available',
+        patch: asset(filename, bytes), checksum: asset('SHA512SUMS', manifest), signature: null };
+    const input = { schemaVersion: 1, releases: [release] };
+    const cacheDir = await cache(t);
+    const result = await verifyCatalogueAssets(input, { cacheDir, fetchImpl: fetchBytes(bytes, manifest) });
+    assert.equal(result.releases[0].integrity.checksum, 'verified');
+    assert.equal(result.releases[0].integrity.platformDigest, 'verified');
+    assert.equal(result.releases[0].integrity.signature, 'not-verified');
+    assert.deepEqual(await readFile(join(cacheDir, result.releases[0].integrity.cacheFile)), bytes);
+    await assert.rejects(verifyCatalogueAssets({ ...input, releases: [{ ...release, versionTag: 'v31.1-roots.1' }] }, { cacheDir, fetchImpl: fetchBytes(bytes, manifest) }), /name/);
+    await assert.rejects(verifyCatalogueAssets({ ...input, releases: [{ ...release, checksum: null }] }, { cacheDir }), /requires checksum/);
+    await assert.rejects(verifyCatalogueAssets({ ...input, releases: [{ ...release, patch: { ...release.patch, digest: `sha256:${'0'.repeat(64)}` } }] },
+        { cacheDir: await cache(t), fetchImpl: fetchBytes(bytes, manifest) }), /digest mismatch/);
+});
+
 test("SHA512 mismatch stops publication and never caches the invalid patch", async (t) => {
     const cacheDir = await cache(t);
     const wrong = sums(Buffer.from("other bytes"));

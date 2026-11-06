@@ -1,4 +1,4 @@
-import { validateTag } from "./release-catalogue.mjs";
+import { validateReleaseTag } from "./release-catalogue.mjs";
 
 const envelope = /^From ([a-f0-9]{40}|[a-f0-9]{64}) Mon Sep 17 00:00:00 2001$/;
 const diffStart = /^diff --/;
@@ -107,7 +107,7 @@ function readHeaders(lines, start) {
 }
 
 export function parsePatchSeries(input, tag) {
-    validateTag(tag);
+    validateReleaseTag(tag);
     const text = typeof input === "string" ? input : new TextDecoder("utf-8", { fatal: true }).decode(input);
     const lines = sourceLines(text);
     if (!lines.length || !envelope.test(lines[0].text)) throw new Error("Expected a Git format-patch mail series");

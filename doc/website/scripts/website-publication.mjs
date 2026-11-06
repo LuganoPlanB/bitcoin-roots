@@ -33,7 +33,7 @@ export async function publicationSnapshot({ siteRevision, themeRevision, base, a
         return batch;
     } });
     const inputs = { schemaVersion, repository, siteRevision, themeRevision, base, catalogue,
-        releaseMetadataDigest: digest(catalogue.releases.map((release) => metadata.get(release.id))) };
+        releaseMetadataDigest: digest([...catalogue.releases, ...(catalogue.unsupportedReleases ?? [])].map((release) => metadata.get(release.id))) };
     return { ...inputs, fingerprint: digest(inputs) };
 }
 
@@ -51,7 +51,8 @@ export function publicationReceipt(snapshot) {
     validateSnapshot(snapshot);
     return { schemaVersion, repository, fingerprint: snapshot.fingerprint,
         siteRevision: snapshot.siteRevision, themeRevision: snapshot.themeRevision, base: snapshot.base,
-        releaseCount: snapshot.catalogue.releases.length,
+        releaseCount: snapshot.catalogue.releases.length + (snapshot.catalogue.unsupportedReleases?.length ?? 0),
+        ...(snapshot.catalogue.unsupportedReleases?.length ? { unsupportedCount: snapshot.catalogue.unsupportedReleases.length } : {}),
         availableCount: snapshot.catalogue.releases.filter((release) => release.patch).length };
 }
 
@@ -123,7 +124,8 @@ export async function writePublicationReceipt(snapshot, { inputDir = defaultInpu
         sha512: release.integrity?.sha512 ?? null }));
     const renderedReleases = rendered.releases?.map((release) => ({ tag: release.tag, state: release.state,
         sha512: release.sha512 ?? null }));
-    if (rendered.base !== snapshot.base || digest(renderedReleases) !== digest(expectedReleases)) {
+    if (rendered.base !== snapshot.base || digest(renderedReleases) !== digest(expectedReleases)
+        || digest(rendered.unsupportedReleases ?? []) !== digest(verified.unsupportedReleases ?? [])) {
         throw new Error("Rendered catalogue differs from verified publication inputs");
     }
     await writeJson(join(outputDir, "deployment.json"), publicationReceipt(snapshot));
@@ -136,7 +138,7 @@ async function main() {
             themeRevision: process.env.THEME_REVISION, base: process.env.DOCS_BASE, siteUrl: process.env.PAGES_URL });
         if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,
             `changed=${changed}\nfingerprint=${snapshot.fingerprint}\n`);
-        console.log(`Public inventory: ${snapshot.catalogue.releases.length} releases; publication ${changed ? "required" : "unchanged"}.`);
+        console.log(`Public inventory: ${snapshot.catalogue.releases.length} supported releases, ${snapshot.catalogue.unsupportedReleases?.length ?? 0} other entries; publication ${changed ? "required" : "unchanged"}.`);
     } else if (["prepare", "receipt"].includes(command) && args.length === 0) {
         const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
         if (command === "prepare") {
