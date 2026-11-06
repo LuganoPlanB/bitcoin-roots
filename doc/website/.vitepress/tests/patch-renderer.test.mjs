@@ -10,6 +10,7 @@ import { renderPatchSite, rendererVersion, validateRenderCatalogue, websiteRoot 
 import { patchCacheKey } from "../../scripts/patch-cache.mjs";
 import { patchDocument, validateBase } from "../../scripts/patch-page.mjs";
 import { checkPatchHtml } from "../../scripts/check-patch-html.mjs";
+import { siteShell } from "./site-shell-fixture.mjs";
 
 const tag = "v29.4-roots.4";
 const mail = (diff, subject = "[PATCH] Fixture") => `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nFrom: <script>author</script>\nDate: 2026-10-01\nSubject: ${subject}\n\nMessage.\n---\n\n${diff}-- \n2.43.0\n`;
@@ -34,7 +35,7 @@ async function inputs(t, patch = mail(diff())) {
         { tag: "v29.3-roots.1", url: "https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.3-roots.1",
             prerelease: false, publishedAt: "2026-09-01T12:00:00Z", patchState: "unavailable", patch: null }] };
     await writeFile(join(inputDir, "catalogue.json"), JSON.stringify(catalogue));
-    return { directory, inputDir, catalogue, outputDir: join(directory, "output") };
+    return { directory, inputDir, catalogue, outputDir: join(directory, "output"), siteShell: siteShell() };
 }
 
 test("counted JSON adapter preserves source lines, numbers and no-newline marker location", () => {
@@ -89,7 +90,7 @@ test("HTML expansion splits pages further; long source lines get explicit comple
 test("complete standalone routes provide static navigation and download access at both base paths", async (t) => {
     const fixture = await inputs(t, mail(diff(Array.from({ length: 405 }, (_, i) => `+item-${i}`).join("\n") + "\n")));
     for (const base of ["/", "/bitcoin-roots/"]) {
-        const result = await renderPatchSite({ ...fixture, base, siteStyles: ["assets/style.abc.css"] });
+        const result = await renderPatchSite({ ...fixture, base, siteShell: siteShell(base), siteStyles: ["assets/style.abc.css"] });
         assert.equal(result.releases.length, 2);
         assert.equal(result.releases[0].fileCount, 1);
         const routes = ["", `${tag}/`, `${tag}/commit-1/`, `${tag}/commit-1/file-1/`, `${tag}/commit-1/file-1/page-2/`,
@@ -102,7 +103,7 @@ test("complete standalone routes provide static navigation and download access a
             const html = await readFile(join(fixture.outputDir, route, "index.html"), "utf8");
             assert.ok(html.includes(`<link rel="stylesheet" href="${base}assets/style.abc.css">`));
             assert.match(html, new RegExp(`<script src="${base}patches/patch-browser.js" defer></script>`));
-            assert.doesNotMatch(html, /<script(?! src=)|modulepreload|prefetch|javascript:/i);
+            assert.doesNotMatch(html, /<script(?! (?:src|type)=)|modulepreload|prefetch|javascript:/i);
             for (const href of html.matchAll(/href="([^"]+)"/g)) {
                 if (href[1].startsWith("#") || href[1].startsWith("https:")) continue;
                 assert.ok(href[1].startsWith(base), href[1]);
@@ -164,7 +165,7 @@ test("published version appears throughout original-reference navigation without
     item.integrity.platformDigest = 'verified';
     fixture.catalogue.unsupportedReleases = [{ id: 999, tag: '<script>other</script>', publishedAt: item.publishedAt, reason: 'Unknown tag; no patch selected' }];
     await writeFile(join(fixture.inputDir, 'catalogue.json'), JSON.stringify(fixture.catalogue));
-    const output = await renderPatchSite({ ...fixture, base: '/bitcoin-roots/' });
+    const output = await renderPatchSite({ ...fixture, base: '/bitcoin-roots/', siteShell: siteShell('/bitcoin-roots/') });
     const checked = await checkPatchHtml({ outputDir: fixture.outputDir });
     assert.equal(checked.fileChanges, 1);
     assert.equal(output.releases[0].versionTag, 'v32.1-roots.1');
@@ -240,7 +241,7 @@ test("warm output cache is byte-identical and binds input digest, renderer/setti
     assert.equal(second.cache, "hit");
     assert.equal(second.cacheKey, first.cacheKey);
     assert.deepEqual(await readFile(join(fixture.outputDir, `${tag}/commit-1/file-1/index.html`)), before);
-    const keyInputs = { websiteRoot, catalogue: fixture.catalogue, base: "/", siteStyles: [], limits: renderLimits, rendererVersion, rendererSettings };
+    const keyInputs = { websiteRoot, catalogue: fixture.catalogue, base: "/", siteStyles: [], siteShell: fixture.siteShell, limits: renderLimits, rendererVersion, rendererSettings };
     const key = await patchCacheKey(keyInputs);
     assert.equal(key, first.cacheKey);
     for (const changes of [
@@ -249,13 +250,14 @@ test("warm output cache is byte-identical and binds input digest, renderer/setti
         { limits: { ...renderLimits, linesPerPage: 100 } },
         { base: "/bitcoin-roots/" },
         { siteStyles: ["assets/style.new.css"] },
+        { siteShell: { ...fixture.siteShell, header: fixture.siteShell.header.replace("Principles", "Updated navigation") } },
         { catalogue: { ...fixture.catalogue, releases: fixture.catalogue.releases.map((r) => ({ ...r, prerelease: !r.prerelease })) } },
     ]) assert.notEqual(await patchCacheKey({ ...keyInputs, ...changes }), key);
     const changed = await renderPatchSite({ ...fixture, cacheDir, limits: { ...renderLimits, linesPerPage: 100 } });
     assert.equal(changed.cache, "miss");
     assert.notEqual(changed.cacheKey, key);
     const alternateSources = join(fixture.directory, "sources");
-    for (const path of ["scripts/release-catalogue.mjs", "scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs", "scripts/render-patches.mjs",
+    for (const path of ["scripts/release-catalogue.mjs", "scripts/patch-site-shell.mjs", "scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs", "scripts/render-patches.mjs",
         "scripts/patch-cache.mjs", "scripts/patch-overview.mjs", "scripts/patch-browser.js", "scripts/patch-theme.js", ".vitepress/theme/patches.css", "package-lock.json"]) {
         await mkdir(join(alternateSources, path, ".."), { recursive: true });
         await copyFile(join(websiteRoot, path), join(alternateSources, path));
@@ -278,7 +280,7 @@ test("corrupt, incomplete, path-tampered and symlink cache objects regenerate fr
     const page = join(entry, "pages", `${tag}/commit-1/file-1/index.html`);
     await writeFile(page, '<script>alert("cache corruption")</script>');
     assert.equal((await renderPatchSite({ ...fixture, cacheDir })).cache, "miss");
-    assert.doesNotMatch(await readFile(page, "utf8"), /<script(?! src=)/);
+    assert.doesNotMatch(await readFile(page, "utf8"), /<script(?! (?:src|type)=)/);
     await rm(page);
     assert.equal((await renderPatchSite({ ...fixture, cacheDir })).cache, "miss");
     const manifestPath = join(entry, "manifest.json");

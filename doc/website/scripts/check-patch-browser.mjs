@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderPatchSite } from "./render-patches.mjs";
+import { loadSiteShell } from "./patch-site-shell.mjs";
+import { releaseLabel } from "./patch-page.mjs";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
@@ -21,6 +23,7 @@ await mkdir(evidence, { recursive: true });
 const fixtureRoot = await mkdtemp(join(tmpdir(), "roots-browser-fixture-"));
 const base = catalogue.base;
 const local = (path) => `${base}${path}`;
+const sharedShell = await loadSiteShell(siteDir, base);
 const siteStyles = (await readdir(join(siteDir, "assets"))).filter((name) => /^style\.[A-Za-z0-9_-]+\.css$/.test(name)).sort().map((name) => `assets/${name}`);
 
 // Small synthetic inventory exercises future prerelease and empty states.
@@ -38,7 +41,7 @@ const fixtureRelease = { tag, publishedAt: "2026-10-01T00:00:00Z", prerelease: t
     integrity: { sha512, cacheFile, checksum: "missing", platformDigest: "missing", signature: "not-verified" } };
 for (const [name, releases] of [["prerelease", [fixtureRelease]], ["empty", []]]) {
     await writeFile(join(fixtureInputs, "catalogue.json"), JSON.stringify({ schemaVersion: 1, repository: "LuganoPlanB/bitcoin-roots", releases }));
-    await renderPatchSite({ inputDir: fixtureInputs, outputDir: join(fixtureRoot, name, "patches"), base: `/_fixture-${name}/`, siteStyles });
+    await renderPatchSite({ inputDir: fixtureInputs, outputDir: join(fixtureRoot, name, "patches"), base: `/_fixture-${name}/`, siteStyles, siteShell: { ...sharedShell, base: `/_fixture-${name}/` } });
 }
 
 const server = createServer(async (request, response) => {
@@ -90,7 +93,10 @@ try {
         await nav.getByRole("link", { name: "Patches", exact: true }).click();
         await page.waitForLoadState("networkidle");
         assert.equal(await page.locator("body.roots-patches").count(), 1);
-        assert.equal(await page.locator("#patch-latest").innerText(), newest.tag);
+        assert.equal(await page.locator("#patch-latest").innerText(), releaseLabel(newest));
+        assert.equal(await page.locator("header.VPNav").count(), 1);
+        assert.equal(await page.locator(".VPNavBarMenu a").count(), 9);
+        assert.equal(await page.locator(".patch-header").count(), 0);
         assert.equal(await page.locator(".patch-release-list > li").count(), catalogue.releases.length);
         assert.ok(!requests.some((url) => /catalogue\.json|\.patch(?:$|\?)|commit-\d|file-\d/.test(url)), "Initial shell/index loaded historical payload");
         assert.deepEqual(external, []);
@@ -194,7 +200,7 @@ try {
             return { text: node.textContent, lines: range.getClientRects().length, shrink: getComputedStyle(node).flexShrink };
         }));
         assert.ok(ordinals.every((ordinal) => ordinal.lines === 1 && ordinal.shrink === "0"), "Wrapped mobile commit ordinal");
-        assert.equal(await page.getByLabel("Appearance").inputValue(), theme);
+        assert.equal(await page.evaluate(() => document.documentElement.classList.contains("dark")), theme === "dark");
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
         await page.locator(".patch-commit summary").first().scrollIntoViewIfNeeded();
         await page.screenshot({ path: join(evidence, `ordinals-${theme}-${fontScale}.png`) });

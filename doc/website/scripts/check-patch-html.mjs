@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { renderLimits } from "./patch-renderer.mjs";
 import { validateBase } from "./patch-page.mjs";
 import { expectedPatchName } from "./release-catalogue.mjs";
+import { validateSiteShell } from "./patch-site-shell.mjs";
 
 async function htmlFiles(directory, prefix = "") {
     const result = [];
@@ -18,6 +19,8 @@ async function htmlFiles(directory, prefix = "") {
 
 export async function checkPatchHtml({ outputDir, siteDir } = {}) {
     const catalogue = JSON.parse(await readFile(join(outputDir, "catalogue.json"), "utf8"));
+    const siteShell = validateSiteShell(catalogue.siteShell);
+    const siteLinks = new Set([...`${siteShell.header}${siteShell.footer}`.matchAll(/\bhref="(https:\/\/[^\"]+)"/g)].map((match) => match[1]));
     const base = validateBase(catalogue.base);
     const prefix = `${base}patches/`;
     const actual = await htmlFiles(outputDir);
@@ -49,6 +52,8 @@ export async function checkPatchHtml({ outputDir, siteDir } = {}) {
         const html = await readFile(join(outputDir, path), "utf8");
         assert.ok(html.startsWith("<!doctype html>"), `Not a standalone document: ${path}`);
         assert.equal((html.match(/<h1\b/g) ?? []).length, 1, `Heading hierarchy: ${path}`);
+        assert.ok(html.includes(`<div id="patch-site-header" data-site-data="${base}${siteShell.data}">${siteShell.header}</div>`), `Shared website header mismatch: ${path}`);
+        assert.ok(html.includes(siteShell.footer) && html.includes(siteShell.skip), `Shared website shell mismatch: ${path}`);
         const release = catalogue.releases.find((release) => path.startsWith(`${release.tag}/`));
         if (release) {
             const resource = `https://github.com/LuganoPlanB/bitcoin-roots/releases`;
@@ -59,7 +64,7 @@ export async function checkPatchHtml({ outputDir, siteDir } = {}) {
         assert.ok(Buffer.byteLength(html) < (path.includes("/file-") ? renderLimits.documentBytes : renderLimits.overviewBytes), `HTML budget: ${path}`);
         assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:(?:src|href)="https?:|\brel="[^"]*\b(?:modulepreload|prefetch)\b)/i, `External runtime or prefetch: ${path}`);
         const scripts = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((match) => match[0]);
-        assert.deepEqual(scripts, [`<script src="${prefix}patch-theme.js"></script>`, `<script src="${prefix}patch-browser.js" defer></script>`], `Unexpected executable script: ${path}`);
+        assert.deepEqual(scripts, [`<script src="${prefix}patch-theme.js"></script>`, `<script type="module" src="${base}${siteShell.script}"></script>`, `<script src="${prefix}patch-browser.js" defer></script>`], `Unexpected executable script: ${path}`);
         for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
             const href = match[1];
             if (href.startsWith("#")) {
@@ -67,6 +72,7 @@ export async function checkPatchHtml({ outputDir, siteDir } = {}) {
                 continue;
             }
             if (/^https:\/\/github\.com\/LuganoPlanB\/bitcoin-roots\/releases(?:\/(?:tag|download)\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?$/.test(href)) continue;
+            if (siteLinks.has(href)) continue;
             assert.ok(href.startsWith(base) && !href.startsWith("//") && !href.includes(".."), `Invalid local destination: ${path} ${href}`);
             if (href.startsWith(prefix)) {
                 const destination = href.slice(prefix.length);

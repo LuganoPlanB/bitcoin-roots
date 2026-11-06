@@ -292,8 +292,16 @@ unified HTML; `side-by-side/` selects the alternative. `page-<n>/` links to late
 parts. All overviews, navigation and diff text exist in static HTML and work
 without JavaScript. Each page loads local shared site CSS, local diff2html CSS
 and section-only `patches.css`; neither a CDN nor runtime GitHub access is needed.
-These pages bypass Vue/Markdown compilation and global VitePress search. They
-contain no prefetch hints, patch body data bundles or client-side parser.
+Patch bodies bypass Vue/Markdown compilation and stay outside the Vue hydration
+tree and global search index. The header and footer come from the ordinary
+VitePress `patches/index.md` shell in the same build. A small header entry hydrates
+the actual VitePress navigation components, sharing the main menu, mobile menu,
+appearance controls and documentation search. It reads the site's documentation
+route map; it never loads patch bodies or patch catalogue data. Local patch
+navigation stays in the page content, below the main website header. Patch CSS
+is scoped to `.patch-content` so it cannot restyle the main header or search UI.
+The generated pages contain no patch prefetch hints, patch body data bundles or
+client-side parser. The cache identity binds the complete shared shell and assets.
 `patches/catalogue.json` contains navigation metadata only and is not loaded
 merely to visit the release index.
 
@@ -374,7 +382,8 @@ pages. The index groups releases by Bitcoin Core major version (descending), kee
 newest-publication-first ordering within each group, and highlights the newest
 available patch across all groups;
 missing releases and public prereleases remain explicit. Core-line labels come
-from the release tag, rather than implying independently verified ancestry.
+from the versioned release tag or published patch filename; grouping does not
+imply independently verified ancestry.
 Grouping changes only the index presentation. Preserve all existing release,
 commit, file, view and pagination URLs, ordinal IDs, exact Core-line filter
 values and query parameters. Do not renumber or reconstruct published patches.
@@ -389,11 +398,17 @@ and normal history navigation.
 
 `patch-theme.js` shares VitePress's `vitepress-theme-appearance` preference and
 applies explicit light/dark or system appearance before stylesheet paint.
-`patch-browser.js` adds filtering. Both scripts are small same-origin assets,
-are part of the renderer cache key, and load neither a parser nor GitHub data.
+After that initial palette is applied, the same VitePress appearance control as
+the rest of the site owns preference changes and system/storage synchronization.
+`patch-browser.js` adds filtering. These scripts and the shared header entry are
+same-origin assets bound by the renderer cache key; they load neither a patch
+parser nor GitHub data. Local search loads the normal documentation index and
+page excerpts only when used. Mobile navigation supports Escape/focus return
+and keeps keyboard focus within the expanded header.
 With JavaScript disabled, release, commit, file, view and pagination links plus
-native expandable commit lists still work. Appearance and filtering controls
-are shown only when their enhancement is available. Unified views are the
+native expandable commit lists still work. Filtering controls are shown only
+when their enhancement is available; the main header follows the ordinary
+website's interactive behavior. Unified views are the
 default; side-by-side views keep their horizontal scrolling inside the code
 area. File line numbers refer to before/after source files; visible signs and
 an explicit legend accompany the addition/removal colors.

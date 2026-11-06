@@ -1,5 +1,6 @@
 import { defineConfig } from "vitepress";
 import { documentationGroups } from "./generated/catalog.mjs";
+import { patchHeaderBuild } from "./patch-header-build.mjs";
 
 const docsBase = process.env.DOCS_BASE || "/";
 
@@ -103,7 +104,7 @@ export default defineConfig({
     ["meta", { name: "color-scheme", content: "light dark" }],
   ],
   vite: {
-    plugins: [legacyMarkdownPlaceholders()],
+    plugins: [legacyMarkdownPlaceholders(), patchHeaderBuild()],
     resolve: {
       // Keep linked Markdown modules anchored in this package so Vue and
       // VitePress runtime imports resolve from doc/website/node_modules.

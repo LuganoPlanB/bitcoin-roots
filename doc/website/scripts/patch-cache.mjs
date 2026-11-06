@@ -3,15 +3,15 @@ import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node
 import { join } from "node:path";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const sourceFiles = ["scripts/release-catalogue.mjs", "scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs",
+const sourceFiles = ["scripts/release-catalogue.mjs", "scripts/patch-site-shell.mjs", "scripts/patch-series.mjs", "scripts/patch-renderer.mjs", "scripts/patch-page.mjs",
     "scripts/patch-overview.mjs", "scripts/patch-browser.js", "scripts/patch-theme.js",
     "scripts/render-patches.mjs", "scripts/patch-cache.mjs", ".vitepress/theme/patches.css", "package-lock.json"];
 
-export async function patchCacheKey({ websiteRoot, catalogue, base, siteStyles, limits, rendererVersion, rendererSettings }) {
+export async function patchCacheKey({ websiteRoot, catalogue, base, siteStyles, siteShell, limits, rendererVersion, rendererSettings }) {
     const sources = await Promise.all(sourceFiles.map(async (path) => [path, digest(await readFile(join(websiteRoot, path)))]));
     // Catalogue includes original asset digests and release metadata; source
     // hashes bind parser, adapter, templates, CSS and exact dependency versions.
-    return digest(JSON.stringify({ schemaVersion: 1, catalogue, base, siteStyles, limits, rendererVersion, rendererSettings, sources }));
+    return digest(JSON.stringify({ schemaVersion: 1, catalogue, base, siteStyles, siteShell, limits, rendererVersion, rendererSettings, sources }));
 }
 
 function safePath(path) {

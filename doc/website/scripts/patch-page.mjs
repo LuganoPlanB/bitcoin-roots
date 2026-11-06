@@ -1,4 +1,5 @@
 import { releaseVersionTag } from "./release-catalogue.mjs";
+import { validateSiteShell } from "./patch-site-shell.mjs";
 
 export function escapeHtml(value) {
     return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -12,18 +13,23 @@ export function validateBase(base) {
 
 // Only the renderer's HTML and these trusted templates cross the HTML boundary.
 // Patch metadata is always escaped text; none of these pages enters a compiler.
-export function patchDocument({ title, body, base, siteStyles = [] }) {
+export function patchDocument({ title, body, base, siteStyles = [], siteShell }) {
     validateBase(base);
-    if (siteStyles.some((path) => !/^assets\/[A-Za-z0-9_.-]+\.css$/.test(path))) throw new Error("Invalid site stylesheet path");
-    return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>${escapeHtml(title)} · Bitcoin Roots</title>
+    validateSiteShell(siteShell);
+    if (siteShell.base !== base) throw new Error("Shared website shell base mismatch");
+    const styles = [...new Set([...siteStyles, ...siteShell.styles])];
+    if (styles.some((path) => !/^assets\/[A-Za-z0-9_.-]+\.css$/.test(path))) throw new Error("Invalid site stylesheet path");
+    return `<!doctype html>\n<html lang="${siteShell.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>${escapeHtml(title)} · Bitcoin Roots</title>
 <meta name="color-scheme" content="light dark">
 <script src="${base}patches/patch-theme.js"></script>
-${siteStyles.map((path) => `<link rel="stylesheet" href="${base}${path}">`).join("\n")}
+${styles.map((path) => `<link rel="stylesheet" href="${base}${path}">`).join("\n")}
 <link rel="stylesheet" href="${base}patches/diff2html.css"><link rel="stylesheet" href="${base}patches/patches.css">
+<script type="module" src="${base}${siteShell.script}"></script>
 <script src="${base}patches/patch-browser.js" defer></script>
-</head><body class="roots-patches"><a class="patch-skip" href="#patch-content">Skip to content</a>
-<header class="patch-header"><a href="${base}">Bitcoin Roots</a><div class="patch-header-controls"><nav aria-label="Website"><a href="${base}getting-started">Get started</a><a href="${base}documentation">Documentation</a><a href="${base}patches/" aria-current="page">Patches</a></nav><label class="patch-appearance" hidden>Appearance<select data-patch-appearance><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div></header>
-<main id="patch-content">${body}</main><footer>Bitcoin Roots · Plan ₿ Foundation · MIT License</footer></body></html>\n`;
+</head><body class="roots-patches">${siteShell.layout}${siteShell.skip}
+<div id="patch-site-header" data-site-data="${base}${siteShell.data}">${siteShell.header}</div>
+<main id="VPContent" class="patch-content" tabindex="-1"><div id="patch-content">${body}</div></main>
+${siteShell.footer}</div></body></html>\n`;
 }
 
 export const link = (href, label) => `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;

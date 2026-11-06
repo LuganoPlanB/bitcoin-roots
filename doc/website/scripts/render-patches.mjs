@@ -10,6 +10,7 @@ import { renderFilePages, renderLimits, rendererSettings } from "./patch-rendere
 import { patchCacheKey, restorePatchCache, storePatchCache } from "./patch-cache.mjs";
 import { escapeHtml as e, fileNavigation, link, patchDocument, sourceLink, releaseLabel, validateBase } from "./patch-page.mjs";
 import { orderedReleases, releaseIndex, releaseOverview } from "./patch-overview.mjs";
+import { loadSiteShell, validateSiteShell } from "./patch-site-shell.mjs";
 
 const require = createRequire(import.meta.url);
 export const rendererVersion = require("diff2html/package.json").version;
@@ -46,8 +47,10 @@ export function validateRenderCatalogue(catalogue) {
     return catalogue;
 }
 
-export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, cacheDir, base = "/", siteStyles = [], limits = renderLimits } = {}) {
+export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, cacheDir, base = "/", siteStyles = [], siteShell, limits = renderLimits } = {}) {
     validateBase(base);
+    validateSiteShell(siteShell);
+    if (siteShell.base !== base) throw new Error("Shared website shell base mismatch");
     if (typeof outputDir !== "string" || !outputDir || ![limits.documentBytes, limits.overviewBytes].every((value) => Number.isSafeInteger(value) && value > 0)) throw new Error("Invalid patch output settings");
     const catalogue = validateRenderCatalogue(JSON.parse(await readFile(join(inputDir, "catalogue.json"), "utf8")));
     // A warm output cache never substitutes for verifying the original inputs.
@@ -56,15 +59,15 @@ export async function renderPatchSite({ inputDir = defaultInputDir, outputDir, c
         if (bytes.length !== release.patch.size || createHash("sha512").update(bytes).digest("hex") !== release.integrity.sha512) throw new Error(`Rendering input integrity mismatch for ${release.tag}`);
         if (isTemporaryTag(release.tag) && `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== release.patch.digest) throw new Error("Temporary-tag platform digest mismatch");
     }
-    const key = await patchCacheKey({ websiteRoot, catalogue, base, siteStyles, limits, rendererVersion, rendererSettings });
+    const key = await patchCacheKey({ websiteRoot, catalogue, base, siteStyles, siteShell, limits, rendererVersion, rendererSettings });
     const temporary = `${outputDir}.tmp-${process.pid}`;
     await mkdir(temporary, { recursive: true });
-    const summary = { rendererVersion, base, pageCount: 0, htmlBytes: 0, largestPageBytes: 0, releases: [],
+    const summary = { rendererVersion, base, siteShell, pageCount: 0, htmlBytes: 0, largestPageBytes: 0, releases: [],
         ...(catalogue.unsupportedReleases?.length ? { unsupportedReleases: catalogue.unsupportedReleases } : {}) };
     const local = (route) => `${base}patches/${route}`;
     const page = async (route, title, body, overview = false) => {
         if (route && !/^(?:[a-zA-Z0-9_.-]+\/)+$/.test(route)) throw new Error("Unsafe generated patch route");
-        const document = patchDocument({ title, body, base, siteStyles });
+        const document = patchDocument({ title, body, base, siteStyles, siteShell });
         const bytes = Buffer.byteLength(document);
         if (bytes >= (overview ? limits.overviewBytes : limits.documentBytes)) throw new Error(`Generated patch page exceeds HTML budget (${route || "index"})`);
         const directory = join(temporary, route);
@@ -159,7 +162,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         const dist = join(websiteRoot, ".vitepress/dist");
         const assets = await readdir(join(dist, "assets"));
         const siteStyles = assets.filter((file) => /^style\.[A-Za-z0-9_-]+\.css$/.test(file)).sort().map((file) => `assets/${file}`);
-        const result = await renderPatchSite({ outputDir: join(dist, "patches"), cacheDir: join(websiteRoot, ".vitepress/patch-cache"), base: process.env.DOCS_BASE || "/", siteStyles });
+        const base = process.env.DOCS_BASE || "/";
+        const siteShell = await loadSiteShell(dist, base);
+        const result = await renderPatchSite({ outputDir: join(dist, "patches"), cacheDir: join(websiteRoot, ".vitepress/patch-cache"), base, siteStyles, siteShell });
         console.log(`Rendered ${result.releases.length} releases, ${result.pageCount} static pages; largest HTML ${result.largestPageBytes} bytes; cache ${result.cache}.`);
     } catch (error) {
         console.error(`Patch rendering failed: ${error.message}`);
