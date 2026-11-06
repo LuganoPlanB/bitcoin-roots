@@ -13,69 +13,78 @@ head:
 
 # Compare Bitcoin node implementations
 
-Bitcoin Core, Bitcoin Roots, and Bitcoin Knots share a common code lineage, but
-they differ in policy, configuration, release process, wallet tools, and, for
-some releases, consensus behaviour.
-
-This page does not rank the projects. It identifies differences that matter when
-choosing which software and network rules to run.
+Compare the latest published Bitcoin Roots and Bitcoin Core releases, with
+Roots-only operator features first. Bitcoin Knots remains a separately versioned
+comparison column.
 
 ## Versions reviewed
 
-- **Bitcoin Roots:** [v29.4-roots.3](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.3)
-- **Bitcoin Knots feature lineage:** [v29.3.knots20260507](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507)
-- **Bitcoin Core direct base:** [v29.4](https://github.com/bitcoin/bitcoin/releases/tag/v29.4)
-- **Current Knots consensus note:** [v29.4.1.knots20260508](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
-- **Date last verified:** 28 September 2026
+Latest published releases checked on **6 November 2026**:
 
-Bitcoin Roots v29.4-roots.2 starts directly from Bitcoin Core v29.4 and applies
-a reviewed Roots patch. The patch preserves selected behaviour whose historical
-lineage includes Bitcoin Knots v29.3.knots20260507; Knots is not an upstream
-dependency and its full feature set is not imported. The table compares the
-matched v29.4 Core base and the Knots lineage release for feature presence. It
-mentions Knots v29.4.1 separately where that later release changes consensus.
+- **Bitcoin Roots:** [v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+- **Bitcoin Core:** [v32.1](https://github.com/bitcoin/bitcoin/releases/tag/v32.1)
+- **Bitcoin Knots:** [v29.4.3.knots20260508](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.3.knots20260508)
+
+Bitcoin Roots v32.1-roots.1 starts directly from Bitcoin Core v32.1. Selected
+policy, wallet and operator features have historical Knots lineage; Knots is
+not the direct Roots base or a dependency. Each table column describes the
+release named in its heading, rather than mixing historical and current versions.
 
 ## Comparison
 
 <ComparisonTable />
 
-The table is a feature inventory, not a claim that similarly named controls have
-identical defaults or implementation details. “Included” means the reviewed
-version exposes the described capability. For exact defaults and accepted
-values, use that version's built-in help. It lists every operator-facing
-Knots-lineage capability maintained in the released Roots feature catalog;
-internal wallet, build, and platform hardening is grouped rather than presented
-as dozens of indistinguishable implementation rows.
+“Roots-only” means the described interface or workflow is present in the reviewed
+Roots release and absent from both other reviewed releases. Additional controls
+shared with Knots follow, then the consensus, resource and wallet comparisons.
+Shared names do not imply identical defaults or behavior; consult each version's
+built-in help for accepted settings. The [Roots feature catalogue](/doc/roots-features)
+and [effective-policy contract](/doc/feature-contracts/effective-policy) describe
+the current Roots boundaries.
 
 ### Wallet scope
 
-All three reviewed code lines include wallet-side coin selection and the Qt coin
-control dialog. Bitcoin Roots v29.4-roots.2 additionally makes the effective
-per-send RBF choice explicit and initializes it from the wallet default.
+Private-key sweeping and advanced privacy-aware coin control are shipped in
+v32.1-roots.1. Sweeping uses a transient WIF key, scans supported confirmed
+P2PKH/P2WPKH outputs, and defaults to a non-broadcast preview. It does not scan
+Taproot outputs. Advanced coin control exposes wallet facts and clears stale
+selections; these manual tools do not add CoinJoin, payjoin or an anonymity score.
 
-Private-key sweeping and the advanced privacy-aware coin-control view are
-deliberately **not** included in the published v29.4-roots.2 release. They are
-implemented and tested in the published v29.4-roots.3 release, with wallet-owned
-data and transaction contracts and Qt presenting the choices and consequences.
-Review the [wallet privacy tools](/wallet-privacy) before using a build that
-contains them.
+Address-specific key export is a separate workflow. `exportaddresskey`,
+`listdescriptors`, `gethdkeys` and `derivehdkey` require the explicit startup
+command-line option `--allow-dangerous-rpc`; normal wallet authorization and
+unlock requirements still apply. Read the [current wallet manual](/doc/wallet-privacy)
+for supported scripts, permissions and key-disclosure consequences.
+
+### Current-version differences
+
+Core v32.1 already provides monotonic uptime and the native v32 wallet, mempool,
+resource and build foundations inherited by Roots. These are shared features.
+Conversely, `getmempoolstats` is not available in Roots v32.1-roots.1, and the
+old `-maxorphantx` count option is absent from both v32.1 columns. The table
+keeps these differences explicit instead of carrying forward v29 claims.
 
 ### Sources
 
-The table was checked against these primary sources:
+The comparison uses these primary release and source references:
 
-- [Bitcoin Roots v29.4-roots.2 release](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2),
-  [feature catalog](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.2/doc/roots-features.md),
-  and [source tree](https://github.com/LuganoPlanB/bitcoin-roots/tree/v29.4-roots.2)
-- [Bitcoin Core v29.4 release](https://github.com/bitcoin/bitcoin/releases/tag/v29.4)
-  and [source tree](https://github.com/bitcoin/bitcoin/tree/v29.4)
-- [Bitcoin Knots v29.3.knots20260507 release](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507)
-  and [source tree](https://github.com/bitcoinknots/bitcoin/tree/v29.3.knots20260507)
-- [Bitcoin Roots initial lineage commit](https://github.com/LuganoPlanB/bitcoin-roots/commit/07580114c35e870e242621316ec8cd051a938787)
-  and [its direct parent version metadata](https://github.com/LuganoPlanB/bitcoin-roots/blob/99ee26e9df0e63a5d1e0ab6bd46b1862ce67648b/CMakeLists.txt)
-- [Bitcoin Knots v29.4.1.knots20260508 release](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508)
-  and [source tree](https://github.com/bitcoinknots/bitcoin/tree/v29.4.1.knots20260508)
-- [BIP-110 specification](https://github.com/bitcoin/bips/blob/master/bip-0110.mediawiki)
+- **Roots:** [v32.1-roots.1 release](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b),
+  [released source](https://github.com/LuganoPlanB/bitcoin-roots/tree/f0393f2688656ba544b40fe508db909152201c18),
+  [feature catalogue](https://github.com/LuganoPlanB/bitcoin-roots/blob/f0393f2688656ba544b40fe508db909152201c18/doc/roots-features.md),
+  [effective-policy schema](https://github.com/LuganoPlanB/bitcoin-roots/blob/f0393f2688656ba544b40fe508db909152201c18/doc/feature-contracts/effective-policy.md)
+  and [wallet manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/f0393f2688656ba544b40fe508db909152201c18/doc/wallet-privacy.md).
+- **Core:** [official downloads](https://bitcoincore.org/en/download/),
+  [v32.1 release](https://github.com/bitcoin/bitcoin/releases/tag/v32.1),
+  [released source](https://github.com/bitcoin/bitcoin/tree/f0de87f040621468b956f01f526a43a010310501),
+  [policy options](https://github.com/bitcoin/bitcoin/blob/v32.1/src/init.cpp),
+  [Qt send dialog](https://github.com/bitcoin/bitcoin/blob/v32.1/src/qt/sendcoinsdialog.cpp)
+  and [GUI dependency requirements](https://github.com/bitcoin/bitcoin/blob/v32.1/doc/dependencies.md).
+- **Knots:** [official downloads](https://bitcoinknots.org/),
+  [v29.4.3 release notes](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.3.knots20260508),
+  [released source](https://github.com/bitcoinknots/bitcoin/tree/a7c4617524c334f542484bfef3919b9f12573840),
+  [policy options](https://github.com/bitcoinknots/bitcoin/blob/a7c4617524c334f542484bfef3919b9f12573840/src/init.cpp),
+  [coin-control view](https://github.com/bitcoinknots/bitcoin/blob/a7c4617524c334f542484bfef3919b9f12573840/src/qt/forms/coincontroldialog.ui)
+  and [Qt version selection](https://github.com/bitcoinknots/bitcoin/blob/a7c4617524c334f542484bfef3919b9f12573840/CMakeLists.txt).
 
 ## Which project may fit?
 
@@ -88,15 +97,17 @@ differences.
 ### Bitcoin Roots
 
 Intended for operators who want Bitcoin Core-compatible consensus together with
-selected conservative policy, privacy, resource, and operational controls
-inherited from the Bitcoin Knots lineage.
+the advanced wallet tools, explicit key-disclosure permissions and effective-policy
+reporting shown above, alongside selected conservative Knots-lineage policy and
+operator controls.
 
 ### Bitcoin Knots
 
 An alternative implementation with additional policy and configuration choices.
-Version <code>v29.4.1.knots20260508</code> is not consensus-compatible with
-Bitcoin Core <code>v29.4</code>. Operators should examine the consensus rules of
-the specific release before upgrading or deploying it.
+The reviewed <code>v29.4.3.knots20260508</code> release includes BLAKE2b
+proof-of-work, RDTS and extended coinbase-maturity rules, and does not follow
+Bitcoin Core v32.1 consensus. Review its linked release notes before choosing
+the network rules to run.
 
 ## Frequently asked questions
 

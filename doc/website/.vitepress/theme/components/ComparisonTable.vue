@@ -1,31 +1,31 @@
 <script setup lang="ts">
 const sections = [
   {
-    title: "Project and consensus",
+    title: "Roots-only features",
     rows: [
       {
-        feature: "Role and lineage",
-        roots: "Bitcoin Core v29.4 plus a reviewable Roots patch carrying selected Knots-lineage behavior",
-        knots: "A separate Bitcoin Core-derived implementation with a broader feature set",
-        core: "The upstream reference implementation and the direct Roots base",
+        feature: "Advanced privacy-aware coin control",
+        roots: "Included: wallet-reported effective value, reuse, grouping, locks and spendability; stale selections are cleared",
+        knots: "Standard coin-control dialog; no Roots advanced wallet-facts view",
+        core: "Standard coin-control dialog; no Roots advanced wallet-facts view",
       },
       {
-        feature: "Bitcoin Core-compatible consensus",
-        roots: "Yes. Required for every Roots release.",
-        knots: "Yes in the reviewed 29.3 lineage; no in v29.4.1.knots20260508",
-        core: "Yes. Reference behavior.",
+        feature: "Address-specific spending-key export (exportaddresskey RPC)",
+        roots: "Included for the selected local-key wallet, including supported multisig, Miniscript, Taproot and MuSig2 keys",
+        knots: "No exportaddresskey RPC",
+        core: "No exportaddresskey RPC",
       },
       {
-        feature: "RDTS / BIP-110 enforcement",
-        roots: "Excluded",
-        knots: "Not enforced by the reviewed 29.3 lineage; enforced by v29.4.1",
-        core: "Not included",
+        feature: "Explicit startup gate for key-disclosure RPCs (--allow-dangerous-rpc)",
+        roots: "exportaddresskey, listdescriptors, gethdkeys and derivehdkey are disabled by default; only an explicit command-line opt-in enables them",
+        knots: "No equivalent startup gate; normal wallet authorization still applies",
+        core: "No equivalent startup gate; normal wallet authorization still applies",
       },
       {
-        feature: "Project-specific consensus changes",
-        roots: "Excluded",
-        knots: "Present in v29.4.1, including BLAKE2b proof-of-work and a temporary 800 kWU limit",
-        core: "Not included",
+        feature: "Effective local-policy reporting (getmempoolinfo.policy)",
+        roots: "Included: initialized admission settings, units and enforcement gates, alongside native v32 mempool fields",
+        knots: "Mempool information RPC; no Roots policy object",
+        core: "Native v32 mempool information; no Roots policy object",
       },
     ],
   },
@@ -34,7 +34,7 @@ const sections = [
     rows: [
       {
         feature: "Embedded-data relay controls (-datacarrier, -datacarriersize)",
-        roots: "Included",
+        roots: "Included; defaults to an 83-byte aggregate budget, recognized input/witness counting and one OP_RETURN output",
         knots: "Included",
         core: "Included",
       },
@@ -42,25 +42,25 @@ const sections = [
         feature: "Configurable embedded-data cost (-datacarriercost)",
         roots: "Included from the Knots lineage",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
       },
       {
         feature: "Extended replacement policy modes (-mempoolreplacement)",
         roots: "Included from the Knots lineage",
         knots: "Included",
-        core: "Standard Core replacement policy; no equivalent mode selector",
+        core: "Native full-RBF policy; no -mempoolreplacement mode selector",
       },
       {
         feature: "Coin-age and maturity relay filters (-minrelaycoinblocks, -minrelaymaturity)",
         roots: "Included from the Knots lineage",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
       },
       {
         feature: "Sub-dust effective-fee penalty (-subdustfeepenalty)",
         roots: "Included from the Knots lineage",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
       },
       {
         feature: "Bare multisig policy toggle (-permitbaremultisig)",
@@ -78,7 +78,36 @@ const sections = [
         feature: "Coin-age priority mining reserve (-blockprioritysize)",
         roots: "Included from the Knots lineage",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
+      },
+    ],
+  },
+  {
+    title: "Project and consensus",
+    rows: [
+      {
+        feature: "Role and lineage",
+        roots: "Bitcoin Core v32.1 plus a reviewable Roots patch carrying selected Knots-lineage behavior",
+        knots: "A separate Core-derived implementation on its own 29.x release line",
+        core: "The current upstream reference implementation and the direct v32.1 Roots base",
+      },
+      {
+        feature: "Bitcoin Core-compatible consensus",
+        roots: "Yes. Required for every Roots release.",
+        knots: "No. The reviewed v29.4.3 release carries additional consensus rules",
+        core: "Yes. Reference behavior.",
+      },
+      {
+        feature: "RDTS / BIP-110 enforcement",
+        roots: "Excluded",
+        knots: "Included in the reviewed v29.4.3 release",
+        core: "Not included",
+      },
+      {
+        feature: "Project-specific consensus changes",
+        roots: "Excluded",
+        knots: "Includes BLAKE2b proof-of-work, RDTS and extended coinbase maturity; see the release notes",
+        core: "Not included",
       },
     ],
   },
@@ -93,15 +122,15 @@ const sections = [
       },
       {
         feature: "Compact-block reconstruction memory bound (-blockreconstructionextratxnsize)",
-        roots: "Included from the Knots lineage",
+        roots: "Included: 10 decimal MB of charged transaction storage by default, alongside the count bound",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
       },
       {
-        feature: "Orphan-transaction cap (-maxorphantx)",
-        roots: "Included",
-        knots: "Included",
-        core: "Included",
+        feature: "Orphan-transaction resource limits",
+        roots: "Native v32 orphanage bounds; no -maxorphantx count option",
+        knots: "Configurable transaction-count cap (-maxorphantx)",
+        core: "Native v32 orphanage bounds; no -maxorphantx count option",
       },
       {
         feature: "Upload target and peer permissions (-maxuploadtarget, -whitebind, -whitelist)",
@@ -111,25 +140,25 @@ const sections = [
       },
       {
         feature: "Collected mempool samples (getmempoolstats RPC)",
-        roots: "Included from the Knots lineage",
+        roots: "Not available in v32.1-roots.1",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "No getmempoolstats RPC",
       },
       {
         feature: "Monotonic process-uptime reporting",
-        roots: "Included from the Knots lineage",
+        roots: "Included through the native Core v32.1 base",
         knots: "Included",
-        core: "The uptime RPC exists; v29.4 does not use the retained monotonic uptime source",
+        core: "Included natively in v32.1",
       },
       {
-        feature: "RAM detection, memory-pressure response, and advisory I/O priority",
-        roots: "Selected safeguards retained from the Knots lineage",
-        knots: "Included",
-        core: "No equivalent combined facility in v29.4",
+        feature: "RAM, cache and index defaults",
+        roots: "Native Core v32.1 defaults are preserved",
+        knots: "Knots 29.x defaults and resource controls",
+        core: "Native v32.1 resource defaults",
       },
       {
         feature: "GUI peer-health view",
-        roots: "Bounded live peer table and details; expanded and hardened in v29.4-roots.2",
+        roots: "Bounded live peer table and current-connection details, with stale state cleared",
         knots: "Included, with additional Knots monitoring surfaces",
         core: "Standard peer table and details",
       },
@@ -148,25 +177,19 @@ const sections = [
         feature: "Per-send Replace-By-Fee choice",
         roots: "Included; follows the wallet default and confirms the transaction's effective signaling",
         knots: "Included in the send dialog",
-        core: "Included in the send dialog; checked by default in v29.4",
+        core: "No per-send RBF checkbox in the v32.1 Qt send dialog",
       },
       {
-        feature: "Selected wallet database and signing hardening",
-        roots: "Selected Knots-lineage fixes retained without changing wallet formats",
-        knots: "Broader Knots wallet maintenance",
-        core: "Core v29.4 wallet behavior",
+        feature: "Wallet storage",
+        roots: "Descriptor wallets using SQLite",
+        knots: "Descriptor wallets; legacy-wallet support depends on the build",
+        core: "Descriptor wallets using SQLite",
       },
       {
         feature: "Private-key sweeping",
-        roots: "Excluded from v29.4-roots.2; future work only",
+        roots: "Included as sweepprivkeys RPC and a Qt dialog, with a non-broadcast preview and explicit final broadcast",
         knots: "Included as sweepprivkeys RPC and a GUI dialog",
-        core: "Not included in v29.4",
-      },
-      {
-        feature: "Advanced privacy-aware coin control",
-        roots: "Not shipped. Planned work spans wallet-side data and transaction contracts plus the Qt workflow.",
-        knots: "Basic coin control plus Knots-specific wallet and GUI behavior; not the planned Roots contract",
-        core: "Basic wallet coin selection and GUI coin control",
+        core: "Not included in v32.1",
       },
       {
         feature: "QR receive-request image export",
@@ -178,13 +201,13 @@ const sections = [
         feature: "Windows taskbar synchronization progress",
         roots: "Included when the Windows GUI build enables taskbar progress",
         knots: "Included",
-        core: "Not included in v29.4",
+        core: "Not included in v32.1",
       },
       {
         feature: "Selected build and dependency portability",
-        roots: "Qt 5 or Qt 6 selection plus retained QR, external-signer, Tor, and platform integration support",
-        knots: "Included in the broader Knots build matrix",
-        core: "Core v29.4 build and optional dependency support",
+        roots: "Qt 6.2 or newer; native v32 HTTP, IPC and external-signer interfaces",
+        knots: "Qt 5.11.3 or Qt 6.2 or newer, selected at build time",
+        core: "Qt 6.2 or newer; native HTTP, IPC and external-signer interfaces",
       },
     ],
   },
@@ -204,13 +227,13 @@ const sections = [
         <tr>
           <th scope="col">Feature</th>
           <th scope="col">
-            <a href="https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v29.4-roots.2">Bitcoin Roots</a>
+            <a href="https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b">Bitcoin Roots<br /><small>v32.1-roots.1</small></a>
           </th>
           <th scope="col">
-            <a href="https://github.com/bitcoinknots/bitcoin/releases/tag/v29.3.knots20260507">Bitcoin Knots</a>
+            <a href="https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.3.knots20260508">Bitcoin Knots<br /><small>v29.4.3.knots20260508</small></a>
           </th>
           <th scope="col">
-            <a href="https://github.com/bitcoin/bitcoin/releases/tag/v29.4">Bitcoin Core</a>
+            <a href="https://github.com/bitcoin/bitcoin/releases/tag/v32.1">Bitcoin Core<br /><small>v32.1</small></a>
           </th>
         </tr>
       </thead>
