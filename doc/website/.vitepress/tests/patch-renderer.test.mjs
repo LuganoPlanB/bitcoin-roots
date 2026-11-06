@@ -121,6 +121,18 @@ test("complete standalone routes provide static navigation and download access a
     }
 });
 
+test("static acceptance distinguishes source text from executable or prefetch markup", async (t) => {
+    const fixture = await inputs(t, mail(diff('+prefetching modulepreload\n+<link rel="prefetch" href="https://example.com/source">\n')));
+    await renderPatchSite(fixture);
+    await checkPatchHtml({ outputDir: fixture.outputDir });
+    const path = join(fixture.outputDir, "index.html");
+    const html = await readFile(path, "utf8");
+    for (const relation of ["prefetch", "modulepreload", "stylesheet prefetch"]) {
+        await writeFile(path, html.replace('</head>', `<link rel="${relation}" href="/patches/patch-browser.js"></head>`));
+        await assert.rejects(checkPatchHtml({ outputDir: fixture.outputDir }), /External runtime or prefetch/);
+    }
+});
+
 test("static acceptance rejects broken deep links, unexplained routes and external runtime scripts", async (t) => {
     const fixture = await inputs(t);
     await renderPatchSite(fixture);

@@ -58,7 +58,7 @@ export async function checkPatchHtml({ outputDir, siteDir } = {}) {
             if (release.temporaryTag) assert.ok(html.includes("Temporary GitHub tag"), `Missing temporary-tag disclosure: ${path}`);
         }
         assert.ok(Buffer.byteLength(html) < (path.includes("/file-") ? renderLimits.documentBytes : renderLimits.overviewBytes), `HTML budget: ${path}`);
-        assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:src|href)="https?:|modulepreload|prefetch/i, `External runtime or prefetch: ${path}`);
+        assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:(?:src|href)="https?:|\brel="[^"]*\b(?:modulepreload|prefetch)\b)/i, `External runtime or prefetch: ${path}`);
         const scripts = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((match) => match[0]);
         assert.deepEqual(scripts, [`<script src="${prefix}patch-theme.js"></script>`, `<script src="${prefix}patch-browser.js" defer></script>`], `Unexpected executable script: ${path}`);
         for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
