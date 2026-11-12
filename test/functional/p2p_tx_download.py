@@ -216,6 +216,7 @@ class TxDownloadTest(BitcoinTestFramework):
         peer_fallback.wait_until(lambda: peer_fallback.tx_getdata_count >= 1, timeout=1)
 
     def test_preferred_inv(self, connection_type: ConnectionType):
+        assert self.extra_args is not None
         if connection_type == ConnectionType.WHITELIST:
             self.log.info('Check invs from preferred (whitelisted) peers are downloaded immediately')
             self.restart_node(0, extra_args=self.extra_args[0] + ['-whitelist=noban@127.0.0.1'])

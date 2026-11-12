@@ -23,6 +23,7 @@ TEST_FRAMEWORK_MODULES = [
     "crypto.ellswift",
     "extendedkey",
     "key",
+    "legacy_export",
     "messages",
     "crypto.muhash",
     "crypto.poly1305",

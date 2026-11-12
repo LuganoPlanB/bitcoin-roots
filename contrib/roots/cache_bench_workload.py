@@ -14,8 +14,7 @@ import sys
 import threading
 import time
 
-FRAMEWORK = Path(os.environ.get("ROOTS_BENCH_FRAMEWORK", Path(__file__).resolve().parents[2])).resolve()
-sys.path.insert(0, str(FRAMEWORK / "test/functional"))
+sys.path.insert(0, str((FRAMEWORK := Path(os.environ.get("ROOTS_BENCH_FRAMEWORK", Path(__file__).resolve().parents[2])).resolve()) / "test/functional"))
 
 from cache_bench import CASES, VARIANTS, case_name, check_environment, parse_metric, select_profile, write_json
 from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS, add_witness_commitment, create_block
