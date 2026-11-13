@@ -15,6 +15,7 @@ target_sources(test_bitcoin
     group_outputs_tests.cpp
     init_tests.cpp
     ismine_tests.cpp
+    legacy_wallet_export_tests.cpp
     psbt_wallet_tests.cpp
     scriptpubkeyman_tests.cpp
     spend_tests.cpp
@@ -26,3 +27,9 @@ target_sources(test_bitcoin
     walletload_tests.cpp
 )
 target_link_libraries(test_bitcoin bitcoin_wallet)
+
+target_json_data_sources(test_bitcoin data/legacy_export.json)
+# The consuming executable belongs to the parent directory. Attach this
+# directory's generation rule explicitly before its compilation starts.
+add_custom_target(legacy_export_test_data DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/data/legacy_export.json.h)
+add_dependencies(test_bitcoin legacy_export_test_data)
