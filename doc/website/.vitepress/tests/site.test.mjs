@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Plan-B Foundation
+
 import assert from "node:assert/strict";
 import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -158,7 +160,7 @@ test("32.x navigation separates source availability from public release assets",
     readFile(resolve(siteRoot, "content/getting-started.md"), "utf8"),
   ]);
   assert.match(config, /text: "32.x source", link: "\/doc\/roots-v32-port-review"/);
-  assert.match(gettingStarted, /Core v32\.1 port and v32\.1-roots\.1 source/);
+  assert.match(gettingStarted, /Core v32\.1 port and v32\.1-roots\.2 source/);
   assert.match(gettingStarted, /Source availability does not establish release publication/);
   assert.match(gettingStarted, /excludes\s+unpublished drafts/);
   assert.doesNotMatch(gettingStarted, /releases\/download\/v32/);

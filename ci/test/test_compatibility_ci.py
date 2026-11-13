@@ -1,4 +1,5 @@
 # Copyright (c) 2026-present The Bitcoin Roots developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 
 """CI gates test invalid evidence, not product consensus equivalence."""
@@ -470,16 +471,26 @@ class CompatibilityCITest(unittest.TestCase):
         for fault in ("missing", "duplicate", "producer", "raw", "transaction", "tip", "binary", "state", "cleanup", "unverified"):
             bad = copy.deepcopy(report)
             exchange = bad["exchanges"][0]
-            if fault == "missing": bad["exchanges"].pop()
-            elif fault == "duplicate": bad["exchanges"][1] = copy.deepcopy(exchange)
-            elif fault == "producer": exchange["production_rpc"] = "python block constructor"
-            elif fault == "raw": exchange["raw_block"] = "00" + exchange["raw_block"][2:]
-            elif fault == "transaction": exchange["transaction"]["raw"] = "ff" * 90
-            elif fault == "tip": exchange["receiver_tip_before_submit"] = exchange["producer_tip_before_submit"]
-            elif fault == "binary": exchange["producer_binary_sha256"] = "0" * 64
-            elif fault == "state": exchange["after"]["core"]["height"] += 1
-            elif fault == "cleanup": bad["nodes"]["roots"]["cleanup"]["returncode"] = -9
-            elif fault == "unverified": bad["nodes"]["core"]["binary"]["provenance"]["status"] = "unverified"
+            if fault == "missing":
+                bad["exchanges"].pop()
+            elif fault == "duplicate":
+                bad["exchanges"][1] = copy.deepcopy(exchange)
+            elif fault == "producer":
+                exchange["production_rpc"] = "python block constructor"
+            elif fault == "raw":
+                exchange["raw_block"] = "00" + exchange["raw_block"][2:]
+            elif fault == "transaction":
+                exchange["transaction"]["raw"] = "ff" * 90
+            elif fault == "tip":
+                exchange["receiver_tip_before_submit"] = exchange["producer_tip_before_submit"]
+            elif fault == "binary":
+                exchange["producer_binary_sha256"] = "0" * 64
+            elif fault == "state":
+                exchange["after"]["core"]["height"] += 1
+            elif fault == "cleanup":
+                bad["nodes"]["roots"]["cleanup"]["returncode"] = -9
+            elif fault == "unverified":
+                bad["nodes"]["core"]["binary"]["provenance"]["status"] = "unverified"
             with self.subTest(fault=fault), self.assertRaises(ci.GateError):
                 validate(bad)
 
