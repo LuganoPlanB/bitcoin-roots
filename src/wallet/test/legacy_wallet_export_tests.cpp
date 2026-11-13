@@ -8,10 +8,12 @@
 #include <crypto/common.h>
 #include <hash.h>
 #include <key_io.h>
+#include <logging.h>
 #include <test/util/setup_common.h>
 #include <util/bip32.h>
 #include <util/readwritefile.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <test/wallet/data/legacy_export.json.h>
 
 #include <univalue.h>
@@ -20,20 +22,57 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cerrno>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
 #include <limits>
+#include <list>
+#include <new>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <addresstype.h>
+
+#include <fcntl.h>
 
 #ifndef WIN32
+#include <csignal>
+#include <poll.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <linux/stat.h>
+#include <sys/syscall.h>
+#endif
+#else
+#include <windows.h>
+#include <aclapi.h>
+#include <io.h>
 #endif
 
 namespace wallet {
+#if defined(WIN32) || defined(__linux__)
+struct LegacyExportOutputTestAccess {
+#ifdef WIN32
+    static bool IsPhysicalVolumeRoot(HANDLE directory)
+    {
+        return LegacyExportOutput::IsPhysicalWindowsVolumeRoot(directory);
+    }
+#endif
+#ifdef __linux__
+    using MountFacts = LegacyExportOutput::LinuxMountFacts;
+    static MountFacts Inspect(int directory) { return LegacyExportOutput::InspectLinuxMount(directory); }
+    static bool SameMount(const MountFacts& source, const MountFacts& output) { return LegacyExportOutput::SameLinuxMount(source, output); }
+#endif
+};
+#endif
 namespace {
 // Same synthetic BDB envelope as test_framework/legacy_export.py::bdb_bytes.
 // This builds only a four-page SUBDB/main tree, without a BDB library/engine.
@@ -360,9 +399,953 @@ void RejectCoverage(const LegacyWalletInventory& inventory, const LegacyRecovere
         BOOST_CHECK(std::string_view{error.what()} == message);
     }
 }
+#ifdef WIN32
+class OutputTestSecurity
+{
+    HANDLE m_token{nullptr};
+    std::vector<DWORD> m_storage;
+    std::vector<DWORD> m_acl;
+    SECURITY_DESCRIPTOR m_descriptor{};
+
+public:
+    OutputTestSecurity()
+    {
+        BOOST_REQUIRE(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &m_token));
+        DWORD size{0};
+        GetTokenInformation(m_token, TokenUser, nullptr, 0, &size);
+        BOOST_REQUIRE(size >= sizeof(TOKEN_USER));
+        m_storage.resize((size + sizeof(DWORD) - 1) / sizeof(DWORD));
+        BOOST_REQUIRE(GetTokenInformation(m_token, TokenUser, m_storage.data(), size, &size));
+        const auto owner{Owner()};
+        m_acl.resize((sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE) + GetLengthSid(owner) + sizeof(DWORD) - 1) / sizeof(DWORD));
+        auto* acl{reinterpret_cast<PACL>(m_acl.data())};
+        BOOST_REQUIRE(InitializeAcl(acl, static_cast<DWORD>(m_acl.size() * sizeof(DWORD)), ACL_REVISION));
+        BOOST_REQUIRE(AddAccessAllowedAce(acl, ACL_REVISION, FILE_ALL_ACCESS, owner));
+        BOOST_REQUIRE(InitializeSecurityDescriptor(&m_descriptor, SECURITY_DESCRIPTOR_REVISION));
+        BOOST_REQUIRE(SetSecurityDescriptorOwner(&m_descriptor, owner, FALSE));
+        BOOST_REQUIRE(SetSecurityDescriptorDacl(&m_descriptor, TRUE, acl, FALSE));
+        BOOST_REQUIRE(SetSecurityDescriptorControl(&m_descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED));
+    }
+    ~OutputTestSecurity() { if (m_token) CloseHandle(m_token); }
+    PSID Owner() const { return reinterpret_cast<const TOKEN_USER*>(m_storage.data())->User.Sid; }
+    SECURITY_DESCRIPTOR* Descriptor() { return &m_descriptor; }
+};
+
+void CheckPrivateOutputTestAcl(const fs::path& path)
+{
+    OutputTestSecurity expected;
+    const HANDLE handle{CreateFileW(path.c_str(), READ_CONTROL | FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
+    BOOST_REQUIRE(handle != INVALID_HANDLE_VALUE);
+    PSID owner{nullptr};
+    PACL acl{nullptr};
+    PSECURITY_DESCRIPTOR descriptor{nullptr};
+    const DWORD result{GetSecurityInfo(handle, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                                       &owner, nullptr, &acl, nullptr, &descriptor)};
+    const BOOL closed{CloseHandle(handle)};
+    BOOST_REQUIRE_EQUAL(result, ERROR_SUCCESS);
+    // Own the returned descriptor even if an assertion aborts the test.
+    const std::unique_ptr<void, decltype(&LocalFree)> security{descriptor, LocalFree};
+    BOOST_REQUIRE(closed);
+    BOOST_REQUIRE(owner && EqualSid(owner, expected.Owner()));
+    BOOST_REQUIRE(acl != nullptr);
+    SECURITY_DESCRIPTOR_CONTROL control{};
+    DWORD revision{0};
+    BOOST_REQUIRE(GetSecurityDescriptorControl(descriptor, &control, &revision));
+    BOOST_CHECK(control & SE_DACL_PROTECTED);
+    ACL_SIZE_INFORMATION info{};
+    BOOST_REQUIRE(GetAclInformation(acl, &info, sizeof(info), AclSizeInformation));
+    BOOST_REQUIRE_EQUAL(info.AceCount, 1U);
+    void* raw{nullptr};
+    BOOST_REQUIRE(GetAce(acl, 0, &raw));
+    auto* ace{static_cast<ACCESS_ALLOWED_ACE*>(raw)};
+    BOOST_CHECK_EQUAL(ace->Header.AceType, ACCESS_ALLOWED_ACE_TYPE);
+    BOOST_CHECK_EQUAL(ace->Header.AceFlags, 0);
+    BOOST_CHECK_EQUAL(ace->Mask, FILE_ALL_ACCESS);
+    BOOST_CHECK(EqualSid(&ace->SidStart, expected.Owner()));
+}
+#endif
+
+struct OutputFixture {
+    const fs::path offline;
+    const fs::path directory;
+    const fs::path destination;
+    std::unique_ptr<LegacyWalletSource> source;
+
+    explicit OutputFixture(const fs::path& root)
+        : offline(root / "offline"), directory(root / "exports"), destination(directory / "wallet.keys")
+    {
+        fs::create_directories(offline);
+#ifndef WIN32
+        fs::create_directories(directory);
+        fs::permissions(directory, fs::perms::owner_all);
+#else
+        OutputTestSecurity private_directory;
+        SECURITY_ATTRIBUTES attributes{sizeof(attributes), private_directory.Descriptor(), FALSE};
+        BOOST_REQUIRE(CreateDirectoryW(directory.c_str(), &attributes));
+#endif
+        if (!WriteBinaryFile(offline / "wallet.dat", LegacyFile(true))) throw std::runtime_error("Cannot create test fixture");
+        source = std::make_unique<LegacyWalletSource>(offline);
+    }
+};
+
+#ifndef WIN32
+class OutputUmask
+{
+    const mode_t m_previous;
+public:
+    explicit OutputUmask(mode_t mask) : m_previous(umask(mask)) {}
+    ~OutputUmask() { umask(m_previous); }
+};
+#endif
+
+std::string RecordFile(std::span<const LegacyWalletRecord> records, uint32_t page_size = 4096, bool big = false)
+{
+    StorageFixture storage{page_size, big};
+    uint32_t page{static_cast<uint32_t>(storage.bytes.size() / page_size)};
+    const auto pack = [&](const SerializeData& data) {
+        const std::string_view view{reinterpret_cast<const char*>(data.data()), data.size()};
+        if (data.size() <= page_size / 4) return storage.Inline(view);
+        const uint32_t first{page};
+        for (size_t offset{0}; offset < data.size();) {
+            const auto count{std::min<size_t>(page_size - 26, data.size() - offset)};
+            storage.OverflowPage(page, view.substr(offset, count), offset + count == data.size() ? 0 : page + 1);
+            ++page;
+            offset += count;
+        }
+        return storage.Overflow(first, data.size());
+    };
+    std::vector<std::string> items;
+    for (const auto& record : records) {
+        items.push_back(pack(record.key));
+        items.push_back(pack(record.value));
+    }
+    storage.Items(3, items);
+    return storage.bytes;
+}
+
+struct ReadableExport {
+    std::map<std::string, std::vector<UniValue>> metadata;
+    std::vector<std::string> payloads;
+    std::string active_root;
+};
+
+ReadableExport ReadExport(const std::string& bytes, const std::string& network)
+{
+    BOOST_REQUIRE(bytes.ends_with("# End of dump\n# roots-export-complete: 1\n"));
+    BOOST_REQUIRE(bytes.starts_with("# Bitcoin Roots offline legacy key export\n# roots-dumpwallet-version: 1\n# roots-network: " + network + "\n"));
+    const std::map<std::string, std::vector<std::string>> fields{
+        {"wallet", {"type","network","format","page_size","byte_order","source_bytes","file_version","min_version","flags","unknown_tolerable_flags","default_pubkey","state","counts"}},
+        {"hdchain", {"type","version","seed_id","external_counter","internal_counter"}},
+        {"key", {"type","pubkey","key_id","has_private_key","source_families","encrypted_in_source","classification","reserve","created_at","metadata","wkey","derivation"}},
+        {"seed", {"type","seed_id","pubkey","active","has_secret","xprv","evidence"}},
+        {"pool", {"type","index","stream_version","pubkey","time","internal","internal_present","pre_split","pre_split_present"}},
+        {"script", {"type","script_id","script_hex","kinds","watch_enabled","created_at","metadata"}},
+        {"address", {"type","address","label","purpose","pubkeys"}},
+        {"encryption", {"type","id","method","iterations","salt","verified_with_private_key","used_for_pubkeys"}},
+        {"omitted", {"type","family","records"}},
+    };
+    const std::vector<std::string> groups{"wallet","hdchain","key","seed","pool","script","address","encryption","omitted"};
+    ReadableExport result;
+    std::istringstream input{bytes};
+    std::string line;
+    int group{0};
+    size_t line_number{0};
+    while (std::getline(input, line)) {
+        ++line_number;
+        if (line_number <= 3) continue;
+        if (line.starts_with("# roots-meta-v1 ")) {
+            UniValue object;
+            BOOST_REQUIRE(object.read(std::string_view{line}.substr(16)));
+            const auto type{object["type"].get_str()};
+            BOOST_REQUIRE(fields.contains(type));
+            BOOST_CHECK(object.getKeys() == fields.at(type));
+            const int next{static_cast<int>(std::find(groups.begin(), groups.end(), type) - groups.begin())};
+            BOOST_REQUIRE_GE(next, group);
+            if (line_number == 4) BOOST_REQUIRE_EQUAL(type, "wallet");
+            group = next;
+            result.metadata[type].push_back(std::move(object));
+        } else if (line.starts_with("# extended private masterkey: ")) {
+            BOOST_REQUIRE_EQUAL(line_number, 5U);
+            result.active_root = line.substr(30);
+        } else if (line == "# End of dump" || line == "# roots-export-complete: 1") {
+        } else {
+            BOOST_REQUIRE(!line.empty() && line[0] != '#');
+            BOOST_REQUIRE_EQUAL(group, 0);
+            result.payloads.push_back(line);
+        }
+    }
+    BOOST_REQUIRE_EQUAL(result.metadata.at("wallet").size(), 1U);
+    return result;
+}
+
+std::pair<LegacyExportResult, std::string> ExportRecords(OutputFixture& fixture, std::span<const LegacyWalletRecord> records,
+                                                        const std::string& name = "wallet.keys", uint32_t page_size = 4096, bool big = false)
+{
+    fixture.source.reset();
+    BOOST_REQUIRE(WriteBinaryFile(fixture.offline / "wallet.dat", RecordFile(records, page_size, big)));
+    fixture.source = std::make_unique<LegacyWalletSource>(fixture.offline);
+    const auto destination{fixture.directory / fs::PathFromString(name)};
+    auto result{WriteLegacyWalletExport(*fixture.source, SecureString{"test"}, destination)};
+    const auto bytes{ReadBinaryFile(destination)};
+    BOOST_REQUIRE(bytes.first);
+    fixture.source->VerifyUnchanged();
+    return {std::move(result), bytes.second};
+}
+
+struct FailureMaterial {
+    SecureString passphrase{"offline-cancellation-passphrase-7d42"};
+    std::string label{"private-label-cb93%\n# roots-export-complete: 1"};
+    std::vector<LegacyWalletRecord> records;
+    std::vector<std::string> forbidden;
+
+    FailureMaterial()
+    {
+        const auto fixtures{Fixtures()};
+        for (const auto& fixture : fixtures["fixtures"].getValues()) {
+            if (fixture["name"].get_str() == "encrypted_hd") records = FixtureRecords(fixture);
+        }
+        BOOST_REQUIRE(!records.empty());
+        const auto inventory{DecodeLegacyWalletRecords(records)};
+        const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{"test"})};
+        LegacyWalletInventory encrypted;
+        std::vector<CKey> keys;
+        for (const auto& [pubkey, key] : secrets.keys) keys.push_back(key);
+        AddRecoverySlot(encrypted, 37, passphrase, 0x79, keys);
+        std::erase_if(records, [](const auto& record) {
+            SpanReader reader{record.key};
+            std::string family;
+            reader >> family;
+            return family == "mkey" || family == "ckey";
+        });
+        records.push_back({Encode(std::string{"mkey"}, uint32_t{37}), Encode(encrypted.master_keys.at(37))});
+        for (const auto& [pubkey, key] : encrypted.keys) {
+            records.push_back({Encode(std::string{"ckey"}, pubkey), Encode(*key.ciphertext)});
+        }
+        const auto extra{RecoveryTestKey(91)};
+        const auto pubkey{extra.GetPubKey()};
+        records.push_back({Encode(std::string{"wkey"}, pubkey), Encode(int32_t{10300}, extra.GetPrivKey(), int64_t{4}, int64_t{8}, label)});
+        records.push_back({Encode(std::string{"name"}, EncodeDestination(PKHash(pubkey))), Encode(label)});
+        records.push_back({Encode(std::string{"pool"}, int64_t{777}), Encode(int32_t{169900}, int64_t{9}, pubkey, false, false)});
+        const CScript script{CScript{} << OP_TRUE};
+        records.push_back({Encode(std::string{"cscript"}, Hash160(script)), Encode(script)});
+        records.push_back({Encode(std::string{"tx"}), Encode(label)});
+
+        const auto complete{DecodeLegacyWalletRecords(records)};
+        const auto recovered{RecoverLegacyWalletSecrets(complete, passphrase)};
+        const auto coverage{ValidateLegacyWalletCoverage(complete, recovered)};
+        forbidden.emplace_back(passphrase.data(), passphrase.size());
+        forbidden.push_back(label);
+        forbidden.push_back("private-label-cb93");
+        // Include the known synthetic plaintext mkey as well as its stored
+        // ciphertext below. Never print either needle into test diagnostics.
+        forbidden.emplace_back(32, static_cast<char>(0x79));
+        forbidden.push_back(HexStr(std::vector<unsigned char>(32, 0x79)));
+        for (const auto& [pubkey, key] : recovered.keys) {
+            forbidden.emplace_back(reinterpret_cast<const char*>(key.begin()), key.size());
+            forbidden.push_back(HexStr(std::span{key.begin(), key.size()}));
+        }
+        for (const auto& [pubkey, key] : coverage.keys) forbidden.emplace_back(key.wif.data(), key.wif.size());
+        for (const auto& [id, seed] : coverage.roots.seeds) {
+            if (!seed.extended_private_key.empty()) forbidden.emplace_back(seed.extended_private_key.data(), seed.extended_private_key.size());
+        }
+        for (const auto& [id, master] : complete.master_keys) {
+            forbidden.emplace_back(reinterpret_cast<const char*>(master.vchCryptedKey.data()), master.vchCryptedKey.size());
+            forbidden.push_back(HexStr(master.vchCryptedKey));
+        }
+        for (const auto& record : records) {
+            for (const auto& bytes : {record.key, record.value}) {
+                if (bytes.size() < 8) continue;
+                forbidden.emplace_back(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                forbidden.push_back(HexStr(bytes));
+            }
+        }
+    }
+
+    void Prepare(OutputFixture& fixture) const
+    {
+        fixture.source.reset();
+        BOOST_REQUIRE(WriteBinaryFile(fixture.offline / "wallet.dat", RecordFile(records)));
+        fixture.source = std::make_unique<LegacyWalletSource>(fixture.offline);
+    }
+};
+
+// Real descriptor redirection, rather than replacing a product logging call.
+// No assertions print captured bytes or forbidden values, even on a failure.
+class ExportDiagnosticCapture
+{
+    fs::path m_root;
+    std::string m_name;
+    FILE* m_out{nullptr};
+    FILE* m_err{nullptr};
+    int m_stdout{-1};
+    int m_stderr{-1};
+    std::string m_debug;
+    std::optional<std::list<std::function<void(const std::string&)>>::iterator> m_connection;
+#ifdef WIN32
+    static int Descriptor(FILE* file) { return _fileno(file); }
+    static int Duplicate(int descriptor) { return _dup(descriptor); }
+    static int Redirect(int from, int to) { return _dup2(from, to); }
+    static void Close(int descriptor) { _close(descriptor); }
+#else
+    static int Descriptor(FILE* file) { return fileno(file); }
+    static int Duplicate(int descriptor) { return dup(descriptor); }
+    static int Redirect(int from, int to) { return dup2(from, to); }
+    static void Close(int descriptor) { close(descriptor); }
+#endif
+    void Restore() noexcept
+    {
+        std::fflush(stdout);
+        std::fflush(stderr);
+        if (m_connection) { LogInstance().DeleteCallback(*m_connection); m_connection.reset(); }
+        if (m_stdout != -1) { Redirect(m_stdout, Descriptor(stdout)); Close(m_stdout); m_stdout = -1; }
+        if (m_stderr != -1) { Redirect(m_stderr, Descriptor(stderr)); Close(m_stderr); m_stderr = -1; }
+        if (m_out) { std::fclose(m_out); m_out = nullptr; }
+        if (m_err) { std::fclose(m_err); m_err = nullptr; }
+    }
+
+public:
+    ExportDiagnosticCapture(const fs::path& root, std::string name) : m_root(root), m_name(std::move(name)) {}
+    ~ExportDiagnosticCapture() { Restore(); }
+
+    void Start()
+    {
+        fs::create_directories(m_root);
+        m_out = fsbridge::fopen(m_root / "stdout", "w+b");
+        m_err = fsbridge::fopen(m_root / "stderr", "w+b");
+        if (!m_out || !m_err) throw std::runtime_error("Cannot open diagnostic capture");
+        std::cout.flush();
+        std::cerr.flush();
+        m_stdout = Duplicate(Descriptor(stdout));
+        m_stderr = Duplicate(Descriptor(stderr));
+        if (m_stdout == -1 || m_stderr == -1 || Redirect(Descriptor(m_out), Descriptor(stdout)) == -1 ||
+            Redirect(Descriptor(m_err), Descriptor(stderr)) == -1) throw std::runtime_error("Cannot redirect diagnostic capture");
+        m_connection = LogInstance().PushBackCallback([this](const std::string& text) { m_debug += text; });
+        std::fputs("capture-ready\n", stdout);
+        std::fputs("capture-ready\n", stderr);
+        LogInfo("capture-ready");
+    }
+
+    void Check(const FailureMaterial& material)
+    {
+        Restore();
+        BOOST_REQUIRE(WriteBinaryFile(m_root / "debug", m_debug));
+        for (const auto* channel : {"stdout", "stderr", "debug"}) {
+            const auto bytes{ReadBinaryFile(m_root / channel)};
+            BOOST_REQUIRE(bytes.first);
+            BOOST_CHECK(bytes.second.find("capture-ready") != std::string::npos);
+            for (const auto& secret : material.forbidden) {
+                BOOST_CHECK(!secret.empty() && bytes.second.find(secret) == std::string::npos);
+            }
+            if (const auto* archive{std::getenv("LEGACY_EXPORT_DIAGNOSTIC_DIR")}) {
+                BOOST_REQUIRE(fs::copy_file(m_root / channel, fs::PathFromString(archive) / fs::PathFromString(m_name + "-" + channel), fs::copy_options::none));
+            }
+        }
+    }
+};
+
+struct ExportCancelled : std::runtime_error {
+    ExportCancelled() : std::runtime_error("Legacy export cancelled") {}
+};
+
+void CaptureExportError(const std::exception& error)
+{
+    std::fputs(error.what(), stderr);
+    std::fputc('\n', stderr);
+}
+
+void InjectExportFailure(unsigned kind)
+{
+    if (kind == 0) throw std::runtime_error("Injected export failure");
+    if (kind == 1) throw ExportCancelled{};
+    throw std::bad_alloc{};
+}
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(legacy_wallet_export_tests, BasicTestingSetup)
+
+#ifdef __linux__
+BOOST_AUTO_TEST_CASE(output_linux_mount_proof_fails_closed)
+{
+    using Access = LegacyExportOutputTestAccess;
+    Access::MountFacts source;
+    source.status = 0;
+    source.mask = std::numeric_limits<uint32_t>::max();
+    source.mode = S_IFDIR | 0700;
+    source.device_major = source.expected_major = 8;
+    source.device_minor = source.expected_minor = 1;
+    source.inode = source.expected_inode = 42;
+    source.mount_id = 100;
+#if defined(SYS_statx) && defined(STATX_MNT_ID)
+    source.mask = STATX_TYPE | STATX_INO | STATX_MNT_ID;
+    auto output{source};
+    output.inode = output.expected_inode = 43;
+    BOOST_CHECK(Access::SameMount(source, output));
+    // Subtree and whole-filesystem bind aliases can share st_dev/root facts.
+    // Both have a distinct mounted view; no table-root or device-only shortcut.
+    for (const uint64_t alias_id : {101ULL, 102ULL, 100ULL + (1ULL << 32)}) {
+        auto alias{output};
+        alias.mount_id = alias_id;
+        BOOST_CHECK(!Access::SameMount(source, alias));
+        BOOST_CHECK(!Access::SameMount(alias, source));
+    }
+    for (const uint32_t missing : {STATX_TYPE, STATX_INO, STATX_MNT_ID}) {
+        auto absent{output};
+        absent.mask &= ~missing;
+        BOOST_CHECK(!Access::SameMount(source, absent));
+        BOOST_CHECK(!Access::SameMount(absent, output));
+    }
+    for (int error : {-1, EINVAL, ENOSYS, EPERM}) {
+        auto failed{output};
+        failed.status = error;
+        BOOST_CHECK(!Access::SameMount(source, failed));
+    }
+    for (unsigned defect{0}; defect < 5; ++defect) {
+        auto malformed{output};
+        if (defect == 0) malformed.mount_id = 0;
+        if (defect == 1) malformed.inode ^= 1;
+        if (defect == 2) malformed.device_major ^= 1;
+        if (defect == 3) malformed.device_minor ^= 1;
+        if (defect == 4) malformed.mode = S_IFREG | 0600;
+        BOOST_CHECK(!Access::SameMount(source, malformed));
+    }
+    // Fixed-width facts have no parser or narrowed mount ID conversion.
+    source.mount_id = output.mount_id = std::numeric_limits<uint64_t>::max();
+    BOOST_CHECK(Access::SameMount(source, output));
+    --output.mount_id;
+    BOOST_CHECK(!Access::SameMount(source, output));
+#else
+    BOOST_CHECK(!Access::SameMount(source, source));
+    BOOST_TEST_MESSAGE("Linux statx mount capability unavailable at compilation; proof rejects even populated facts");
+#endif
+}
+
+BOOST_AUTO_TEST_CASE(output_linux_native_mount_capability)
+{
+    OutputFixture fixture{m_path_root};
+    struct Directory {
+        int descriptor;
+        explicit Directory(const fs::path& path) : descriptor(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)) {}
+        ~Directory() { if (descriptor != -1) close(descriptor); }
+    } source{fixture.offline}, output{fixture.directory};
+    BOOST_REQUIRE_NE(source.descriptor, -1);
+    BOOST_REQUIRE_NE(output.descriptor, -1);
+    using Access = LegacyExportOutputTestAccess;
+    const auto source_facts{Access::Inspect(source.descriptor)};
+    const auto output_facts{Access::Inspect(output.descriptor)};
+#if defined(SYS_statx) && defined(STATX_MNT_ID)
+    BOOST_REQUIRE(Access::SameMount(source_facts, output_facts));
+    BOOST_CHECK(!Access::SameMount(Access::Inspect(-1), output_facts));
+    WriteLegacyWalletExport(*fixture.source, SecureString{}, fixture.destination);
+    BOOST_CHECK(fs::exists(fixture.destination));
+    BOOST_TEST_MESSAGE("Linux retained handles: statx identity+mask+same-mounted-view proof succeeded; IDs are invocation-local");
+#else
+    BOOST_CHECK(!Access::SameMount(source_facts, output_facts));
+    BOOST_CHECK_THROW(WriteLegacyWalletExport(*fixture.source, SecureString{}, fixture.destination), std::runtime_error);
+    BOOST_CHECK(Entries(fixture.directory).empty());
+    BOOST_TEST_MESSAGE("Linux statx mount capability unavailable at compilation; export fails before temporary creation");
+#endif
+}
+#endif
+
+BOOST_AUTO_TEST_CASE(failure_processing_and_output_checkpoints)
+{
+    SelectParams(ChainType::MAIN);
+    const FailureMaterial material;
+    OutputFixture fixture{m_path_root};
+    material.Prepare(fixture);
+    std::set<LegacyExportStage> stages;
+    WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, {}, [&](auto stage) { stages.insert(stage); });
+    BOOST_REQUIRE(fs::remove(fixture.destination));
+    BOOST_REQUIRE_EQUAL(stages.size(), 17U);
+    ExportDiagnosticCapture capture{m_path_root / "capture", "checkpoints"};
+    capture.Start();
+    size_t processing_failures{0}, output_failures{0};
+    for (unsigned kind{0}; kind < 3; ++kind) {
+        for (const auto target : stages) {
+            bool injected{false};
+            try {
+                WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, {}, [&](auto stage) {
+                    if (stage == target) { injected = true; InjectExportFailure(kind); }
+                });
+                BOOST_FAIL("Processing failure did not abort");
+            } catch (const std::exception& error) {
+                CaptureExportError(error);
+                ++processing_failures;
+            }
+            BOOST_CHECK(injected);
+            BOOST_CHECK(Entries(fixture.directory).empty());
+        }
+        for (const auto target : {LegacyOutputStage::CREATED, LegacyOutputStage::WRITE, LegacyOutputStage::FLUSH,
+                                  LegacyOutputStage::SYNC, LegacyOutputStage::CLOSE, LegacyOutputStage::PUBLISH}) {
+            bool injected{false};
+            try {
+                WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, [&](auto stage) {
+                    if (stage == target) { injected = true; InjectExportFailure(kind); }
+                });
+                BOOST_FAIL("Output failure did not abort");
+            } catch (const std::exception& error) {
+                CaptureExportError(error);
+                ++output_failures;
+            }
+            BOOST_CHECK(injected);
+            BOOST_CHECK(Entries(fixture.directory).empty());
+        }
+    }
+    // The success path must also keep all diagnostics non-secret.
+    const auto result{WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination)};
+    BOOST_CHECK_EQUAL(result.state, "private");
+    BOOST_CHECK_EQUAL(processing_failures, 51U);
+    BOOST_CHECK_EQUAL(output_failures, 18U);
+    capture.Check(material);
+    fixture.source->VerifyUnchanged();
+    BOOST_TEST_MESSAGE("failure-matrix processing=51 output=18; all handled failures removed owned output");
+}
+
+BOOST_AUTO_TEST_CASE(failure_each_stream_write_cleans_output)
+{
+    SelectParams(ChainType::MAIN);
+    const FailureMaterial material;
+    OutputFixture fixture{m_path_root};
+    material.Prepare(fixture);
+    size_t writes{0};
+    WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, [&](auto stage) { writes += stage == LegacyOutputStage::WRITE; });
+    BOOST_REQUIRE(fs::remove(fixture.destination));
+    BOOST_REQUIRE(writes > 100);
+    ExportDiagnosticCapture capture{m_path_root / "capture", "stream-writes"};
+    capture.Start();
+    for (size_t target{1}; target <= writes; ++target) {
+        size_t observed{0};
+        bool injected{false};
+        try {
+            WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, [&](auto stage) {
+                if (stage == LegacyOutputStage::WRITE && ++observed == target) { injected = true; InjectExportFailure(target % 3); }
+            });
+            BOOST_FAIL("Stream write failure did not abort");
+        } catch (const std::exception& error) { CaptureExportError(error); }
+        BOOST_CHECK(injected);
+        BOOST_CHECK_EQUAL(observed, target);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+    }
+    capture.Check(material);
+    fixture.source->VerifyUnchanged();
+    BOOST_TEST_MESSAGE("failure-stream-writes=" << writes << "; all positions including live xprv serialization unwound");
+}
+
+BOOST_AUTO_TEST_CASE(failure_real_processing_errors_and_diagnostics)
+{
+    SelectParams(ChainType::MAIN);
+    const FailureMaterial material;
+    OutputFixture fixture{m_path_root};
+    material.Prepare(fixture);
+    ExportDiagnosticCapture capture{m_path_root / "capture", "real-errors"};
+    capture.Start();
+    const auto reject = [&](const auto& action) {
+        bool rejected{false};
+        try { action(); } catch (const std::exception& error) { rejected = true; CaptureExportError(error); }
+        BOOST_CHECK(rejected);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+    };
+    reject([&] { LegacyWalletSource invalid{m_path_root / fs::PathFromString(material.label + std::string(300, 'x'))}; });
+    reject([&] { WriteLegacyWalletExport(*fixture.source, SecureString{"incorrect-passphrase"}, fixture.destination); });
+    auto records{material.records};
+    records.push_back({Encode(material.label), Encode(material.label)}); // Unknown family must not echo its name.
+    fixture.source.reset();
+    BOOST_REQUIRE(WriteBinaryFile(fixture.offline / "wallet.dat", RecordFile(records)));
+    fixture.source = std::make_unique<LegacyWalletSource>(fixture.offline);
+    reject([&] { WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination); });
+    material.Prepare(fixture);
+    reject([&] {
+        WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, {}, [&](auto stage) {
+            if (stage == LegacyExportStage::RENDERED) {
+                // In-place mutation: same opened object, content check must fail.
+                auto bytes{ReadBinaryFile(fixture.offline / "wallet.dat").second};
+                bytes.back() ^= 1;
+                if (!WriteBinaryFile(fixture.offline / "wallet.dat", bytes)) throw std::runtime_error("Cannot mutate synthetic source");
+            }
+        });
+    });
+    fixture.source.reset();
+    BOOST_REQUIRE(WriteBinaryFile(fixture.offline / "wallet.dat", std::string(4096, 'x')));
+    reject([&] { LegacyWalletSource invalid{fixture.offline}; });
+    capture.Check(material);
+}
+
+#ifndef WIN32
+BOOST_AUTO_TEST_CASE(failure_abrupt_termination_keeps_private_temporary)
+{
+    SelectParams(ChainType::MAIN);
+    const FailureMaterial material;
+    OutputFixture fixture{m_path_root};
+    material.Prepare(fixture);
+    int ready[2];
+    BOOST_REQUIRE_EQUAL(pipe(ready), 0);
+    const pid_t child{fork()};
+    BOOST_REQUIRE_NE(child, -1);
+    if (child == 0) {
+        close(ready[0]);
+        try {
+            WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination, {}, [&](auto stage) {
+                if (stage != LegacyExportStage::RENDERED) return;
+                const char signal{'r'};
+                if (write(ready[1], &signal, 1) != 1) _exit(2);
+                for (;;) pause(); // Parent kills only after this exact pre-commit checkpoint.
+            });
+        } catch (...) { _exit(3); }
+        _exit(4);
+    }
+    close(ready[1]);
+    struct ChildOwner {
+        pid_t pid;
+        ~ChildOwner() { if (pid > 0) { kill(pid, SIGKILL); while (waitpid(pid, nullptr, 0) == -1 && errno == EINTR) {} } }
+    } owner{child};
+    pollfd notification{ready[0], POLLIN, 0};
+    const auto notified{poll(&notification, 1, 5000)};
+    char signal{0};
+    const auto received{notified == 1 ? read(ready[0], &signal, 1) : -1};
+    close(ready[0]);
+    BOOST_REQUIRE_EQUAL(notified, 1);
+    BOOST_REQUIRE_EQUAL(received, 1);
+    BOOST_REQUIRE_EQUAL(signal, 'r');
+    BOOST_REQUIRE_EQUAL(kill(child, SIGKILL), 0);
+    int status{0};
+    BOOST_REQUIRE_EQUAL(waitpid(child, &status, 0), child);
+    owner.pid = -1;
+    BOOST_REQUIRE(WIFSIGNALED(status));
+    BOOST_CHECK_EQUAL(WTERMSIG(status), SIGKILL);
+    BOOST_REQUIRE(!fs::exists(fixture.destination));
+    const auto entries{Entries(fixture.directory)};
+    BOOST_REQUIRE_EQUAL(entries.size(), 1U);
+    const auto temporary{*entries.begin()};
+    struct stat st{};
+    BOOST_REQUIRE_EQUAL(lstat(temporary.c_str(), &st), 0);
+    BOOST_CHECK(S_ISREG(st.st_mode));
+    BOOST_CHECK_EQUAL(st.st_mode & 0777, 0600);
+    BOOST_CHECK_EQUAL(st.st_uid, geteuid());
+    BOOST_CHECK_EQUAL(st.st_nlink, 1);
+    const auto residue{ReadBinaryFile(temporary)};
+    BOOST_REQUIRE(residue.first);
+    BOOST_CHECK(residue.second.ends_with("# roots-export-complete: 1\n"));
+    // A new invocation reads only its source. It neither consumes nor removes
+    // the private residual, even when that residual has a complete envelope.
+    WriteLegacyWalletExport(*fixture.source, material.passphrase, fixture.destination);
+    BOOST_CHECK(ReadBinaryFile(temporary).second == residue.second);
+    BOOST_CHECK_EQUAL(Entries(fixture.directory).size(), 2U);
+    BOOST_REQUIRE(fs::remove(temporary)); // Explicit disposal of our synthetic residual only.
+    fixture.source->VerifyUnchanged();
+    BOOST_TEST_MESSAGE("failure-crash SIGKILL after rendered-before-publish; private0600 residual retained, never consumed by next export");
+}
+#endif
+
+BOOST_AUTO_TEST_CASE(format_frozen_corpus_all_networks)
+{
+    const auto fixtures{Fixtures()};
+    size_t exported{0};
+    for (const auto chain : {ChainType::MAIN, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
+        SelectParams(chain);
+        const auto network{ChainTypeToString(chain)};
+        for (const auto& fact : fixtures["fixtures"].getValues()) {
+            const auto name{fact["name"].get_str()};
+            OutputFixture fixture{m_path_root / fs::PathFromString(network + "-" + name)};
+            const auto records{FixtureRecords(fact)};
+            const auto [result, bytes]{ExportRecords(fixture, records)};
+            const auto read{ReadExport(bytes, network)};
+            const auto& wallet{read.metadata.at("wallet").front()};
+            BOOST_CHECK_EQUAL(result.counts.records, records.size());
+            BOOST_CHECK_EQUAL(result.counts.private_keys, fact["wifs"].size());
+            BOOST_CHECK_EQUAL(result.counts.identified_seeds, fact["seeds"].size());
+            BOOST_CHECK_EQUAL(wallet["counts"]["private_keys"].getInt<uint64_t>(), result.counts.private_keys);
+            BOOST_CHECK_EQUAL(wallet["source_bytes"].getInt<uint64_t>(), fs::file_size(fixture.offline / "wallet.dat"));
+            BOOST_CHECK_EQUAL(wallet["page_size"].getInt<int>(), 4096);
+            BOOST_CHECK_EQUAL(wallet["byte_order"].get_str(), "little");
+            std::set<CPubKey> payload_keys;
+            std::set<std::string> payload_scripts;
+            for (const auto& line : read.payloads) {
+                const auto token{line.substr(0, line.find(' '))};
+                const auto key{DecodeSecret(token)};
+                if (key.IsValid()) payload_keys.insert(key.GetPubKey());
+                else { BOOST_REQUIRE(IsHex(token)); payload_scripts.insert(token); }
+            }
+            BOOST_CHECK_EQUAL(payload_keys.size(), fact["wifs"].size());
+            for (const auto& expected : fact["wifs"].getValues()) {
+                BOOST_CHECK(payload_keys.contains(PublicKey(expected["pubkey"].get_str())));
+                BOOST_CHECK(bytes.find(expected[chain == ChainType::MAIN ? "main" : "test"].get_str()) != std::string::npos);
+            }
+            size_t roots{0};
+            if (read.metadata.contains("seed")) {
+                for (const auto& seed : read.metadata.at("seed")) {
+                    if (seed["xprv"].isNull()) continue;
+                    const auto root{DecodeExtKey(seed["xprv"].get_str())};
+                    BOOST_REQUIRE(root.key.IsValid());
+                    ++roots;
+                    if (seed["active"].get_bool()) BOOST_CHECK_EQUAL(read.active_root, seed["xprv"].get_str());
+                }
+            }
+            BOOST_CHECK_EQUAL(roots, result.counts.roots);
+            BOOST_CHECK_EQUAL(result.state, wallet["state"].get_str());
+            const auto repeat{WriteLegacyWalletExport(*fixture.source, SecureString{"test"}, fixture.directory / "repeat.keys")};
+            BOOST_CHECK_EQUAL(ReadBinaryFile(repeat.destination).second, bytes);
+            if (const auto* archive{std::getenv("LEGACY_EXPORT_ORACLE_DIR")}) {
+                const auto destination{fs::PathFromString(archive) / fs::PathFromString(network + "-" + name + ".keys")};
+                BOOST_REQUIRE(fs::copy_file(result.destination, destination, fs::copy_options::none));
+            }
+            ++exported;
+        }
+    }
+    BOOST_CHECK_EQUAL(exported, 50U);
+    SelectParams(ChainType::MAIN);
+}
+
+BOOST_AUTO_TEST_CASE(format_actual_source_geometry)
+{
+    SelectParams(ChainType::MAIN);
+    for (const uint32_t size : {512U,1024U,2048U,4096U,8192U,16384U,32768U,65536U}) {
+        for (const bool big : {false, true}) {
+            OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(size) + (big ? "big" : "little"))};
+            const auto [result, bytes]{ExportRecords(fixture, {}, "wallet.keys", size, big)};
+            const auto read{ReadExport(bytes, "main")};
+            const auto& wallet{read.metadata.at("wallet").front()};
+            BOOST_CHECK_EQUAL(wallet["page_size"].getInt<uint32_t>(), size);
+            BOOST_CHECK_EQUAL(wallet["byte_order"].get_str(), big ? "big" : "little");
+            BOOST_CHECK_EQUAL(wallet["source_bytes"].getInt<uint64_t>(), fs::file_size(fixture.offline / "wallet.dat"));
+            BOOST_CHECK_EQUAL(result.state, "empty");
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_labels_associations_and_injection)
+{
+    SelectParams(ChainType::MAIN);
+    const auto private_key{RecoveryTestKey(1)};
+    const auto pubkey{private_key.GetPubKey()};
+    const auto p2pkh{EncodeDestination(PKHash(pubkey))};
+    const auto witness{WitnessV0KeyHash(pubkey)};
+    auto bech32{EncodeDestination(witness)};
+    std::transform(bech32.begin(), bech32.end(), bech32.begin(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z' ? ch - 32 : ch; });
+    const auto wrapped{EncodeDestination(ScriptHash(GetScriptForDestination(witness)))};
+    std::string label;
+    for (unsigned value{0}; value < 256; ++value) label.push_back(static_cast<char>(value));
+    std::vector<LegacyWalletRecord> records{
+        {Encode(std::string{"key"}, pubkey), Encode(private_key.GetPrivKey())},
+        {Encode(std::string{"name"}, p2pkh), Encode(label)},
+        {Encode(std::string{"name"}, wrapped), Encode(std::string{"second\n# roots-export-complete: 1"})},
+        {Encode(std::string{"purpose"}, bech32), Encode(std::string{"receive"})},
+        {Encode(std::string{"name"}, std::string{"bad\0\xff",5}), Encode(std::string{"raw\nlabel"})},
+    };
+    OutputFixture fixture{m_path_root};
+    const auto [result, bytes]{ExportRecords(fixture, records)};
+    const auto read{ReadExport(bytes, "main")};
+    BOOST_REQUIRE_EQUAL(read.payloads.size(), 1U);
+    const auto& payload{read.payloads.front()};
+    BOOST_CHECK(payload.find("1970-01-01T00:00:01Z label=%00%01") != std::string::npos);
+    BOOST_CHECK(payload.find("%25") != std::string::npos);
+    BOOST_CHECK(payload.find("%ff") != std::string::npos);
+    BOOST_CHECK_EQUAL(read.metadata.at("address").size(), 4U);
+    size_t matched{0};
+    for (const auto& address : read.metadata.at("address")) {
+        matched += !address["pubkeys"].empty();
+        if (address["label"].isNull()) BOOST_CHECK_EQUAL(address["purpose"]["value"].get_str(), "receive");
+        if (address["label"].isObject() && address["label"]["encoding"].get_str() == "hex") {
+            BOOST_CHECK_EQUAL(address["label"]["value"].get_str(), HexStr(MakeUCharSpan(label)));
+        }
+    }
+    BOOST_CHECK_EQUAL(matched, 3U);
+    BOOST_CHECK_EQUAL(result.counts.addresses, 4U);
+    BOOST_CHECK(read.metadata.at("key").front()["created_at"].isNull());
+    BOOST_CHECK_EQUAL(read.metadata.at("key").front()["classification"].get_str(), "unclassified");
+    if (const auto* archive{std::getenv("LEGACY_EXPORT_ORACLE_DIR")}) {
+        BOOST_REQUIRE(fs::copy_file(result.destination, fs::PathFromString(archive) / "main-all-label-bytes.keys", fs::copy_options::none));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_utf8_and_timestamp_provenance)
+{
+    SelectParams(ChainType::MAIN);
+    const auto key{RecoveryTestKey(7)};
+    const auto pubkey{key.GetPubKey()};
+    CKeyMetadata metadata;
+    metadata.nVersion = 12;
+    metadata.nCreateTime = -9;
+    metadata.hdKeypath = std::string{"opaque\xff\n",8};
+    metadata.key_origin.fingerprint = {1,2,3,4};
+    metadata.key_origin.path = {0xffffffffU, 0};
+    metadata.has_key_origin = false;
+    std::vector<LegacyWalletRecord> records{
+        {Encode(std::string{"wkey"}, pubkey), Encode(int32_t{180100}, key.GetPrivKey(), int64_t{253402300799}, std::numeric_limits<int64_t>::min(), std::string{"\0\xff",2})},
+        {Encode(std::string{"keymeta"}, pubkey), Encode(metadata)},
+    };
+    const std::vector<std::string> valid{"", std::string{"\0\n\r\t\"",5}, "\xc2\xa0", "\xf4\x8f\xbf\xbf"};
+    const std::vector<std::string> invalid{"\x80", "\xc0\xaf", "\xed\xa0\x80", "\xf4\x90\x80\x80", "\xe2\x82", "\xff"};
+    for (size_t index{0}; index < valid.size() + invalid.size(); ++index) {
+        const auto& value{index < valid.size() ? valid[index] : invalid[index - valid.size()]};
+        records.push_back({Encode(std::string{"purpose"}, util::ToString(index)), Encode(value)});
+    }
+    OutputFixture fixture{m_path_root};
+    const auto [result, bytes]{ExportRecords(fixture, records)};
+    const auto read{ReadExport(bytes, "main")};
+    const auto& exported{read.metadata.at("key").front()};
+    BOOST_CHECK_EQUAL(exported["created_at"].get_str(), "253402300799");
+    BOOST_CHECK_EQUAL(exported["metadata"]["created"].get_str(), "-9");
+    BOOST_CHECK_EQUAL(exported["metadata"]["hd_path"]["encoding"].get_str(), "hex");
+    BOOST_CHECK_EQUAL(exported["metadata"]["origin"]["fingerprint"].get_str(), "01020304");
+    BOOST_CHECK_EQUAL(exported["metadata"]["origin"]["path"][0].getInt<uint32_t>(), 0xffffffffU);
+    BOOST_CHECK(!exported["metadata"]["origin"]["has_origin"].get_bool());
+    BOOST_CHECK_EQUAL(exported["wkey"]["expires"].get_str(), "-9223372036854775808");
+    BOOST_CHECK(read.payloads.front().find("9999-12-31T23:59:59Z unclassified=1") != std::string::npos);
+    for (const auto& address : read.metadata.at("address")) {
+        const auto parsed{ToIntegral<size_t>(address["address"]["value"].get_str())};
+        BOOST_REQUIRE(parsed);
+        const auto index{*parsed};
+        const auto& purpose{address["purpose"]};
+        BOOST_CHECK_EQUAL(purpose["encoding"].get_str(), index < valid.size() ? "utf8" : "hex");
+        BOOST_CHECK_EQUAL(purpose["value"].get_str(), index < valid.size() ? valid[index] : HexStr(MakeUCharSpan(invalid[index - valid.size()])));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_empty_redeem_watch_and_omitted_facts)
+{
+    SelectParams(ChainType::MAIN);
+    const CScript empty;
+    const CScript redeem{CScript{} << OP_RETURN << std::vector<unsigned char>{0x01}};
+    const CScript watched{CScript{} << OP_TRUE};
+    CKeyMetadata metadata;
+    metadata.nVersion = 1;
+    metadata.nCreateTime = -1;
+    std::vector<LegacyWalletRecord> records{
+        {Encode(std::string{"cscript"}, Hash160(empty)), Encode(empty)},
+        {Encode(std::string{"watchmeta"}, empty), Encode(metadata)},
+        {Encode(std::string{"cscript"}, Hash160(redeem)), Encode(redeem)},
+        {Encode(std::string{"watchs"}, redeem), Encode(uint8_t{'0'})},
+        {Encode(std::string{"watchs"}, watched), Encode(uint8_t{'1'})},
+        {Encode(std::string{"flags"}), Encode(uint64_t{0x00000003fffffff8ULL})},
+        {Encode(std::string{"version"}), Encode(int32_t{10300})},
+        {Encode(std::string{"minversion"}), Encode(int32_t{130000})},
+    };
+    for (const auto family : {"tx","wtxvariant","acentry","acc","bestblock","bestblock_nomerkle","orderposnext","destdata","lockedutxo","setting","settings"}) {
+        records.push_back({Encode(std::string{family}, uint8_t{1}), Encode(std::string{"omitted bytes must not be output"})});
+    }
+    OutputFixture fixture{m_path_root};
+    const auto [result, bytes]{ExportRecords(fixture, records)};
+    const auto read{ReadExport(bytes, "main")};
+    BOOST_CHECK_EQUAL(result.state, "watch_only");
+    BOOST_CHECK_EQUAL(result.counts.private_keys, 0U);
+    BOOST_CHECK_EQUAL(result.counts.roots, 0U);
+    BOOST_CHECK_EQUAL(result.counts.scripts, 3U);
+    BOOST_CHECK_EQUAL(result.counts.omitted_records, 11U);
+    BOOST_REQUIRE_EQUAL(read.payloads.size(), 1U);
+    BOOST_CHECK(read.payloads.front().starts_with(HexStr(redeem) + " 1970-01-01T00:00:01Z script=1"));
+    BOOST_CHECK(bytes.find("omitted bytes must not be output") == std::string::npos);
+    bool found_empty{false};
+    for (const auto& script : read.metadata.at("script")) {
+        if (script["script_id"].get_str() != HexStr(CScriptID(empty))) continue;
+        found_empty = true;
+        BOOST_CHECK_EQUAL(script["script_hex"].get_str(), "");
+        BOOST_CHECK(script["created_at"].isNull());
+        BOOST_CHECK_EQUAL(script["metadata"]["created"].get_str(), "-1");
+        BOOST_CHECK_EQUAL(script["kinds"].size(), 2U);
+        BOOST_CHECK_EQUAL(script["kinds"][0].get_str(), "redeem");
+        BOOST_CHECK_EQUAL(script["kinds"][1].get_str(), "watch_metadata");
+        BOOST_CHECK(script["watch_enabled"].isNull());
+    }
+    BOOST_REQUIRE(found_empty);
+    const auto& wallet{read.metadata.at("wallet").front()};
+    BOOST_CHECK_EQUAL(wallet["flags"].get_str(), "00000003fffffff8");
+    BOOST_CHECK_EQUAL(wallet["unknown_tolerable_flags"].get_str(), "00000000fffffff8");
+    BOOST_CHECK_EQUAL(wallet["file_version"].getInt<int>(), 10300);
+    BOOST_CHECK_EQUAL(read.metadata.at("omitted").size(), 11U);
+    if (const auto* archive{std::getenv("LEGACY_EXPORT_ORACLE_DIR")}) {
+        BOOST_REQUIRE(fs::copy_file(result.destination, fs::PathFromString(archive) / "main-empty-redeem.keys", fs::copy_options::none));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_known_empty_label_reserve_and_time_order)
+{
+    SelectParams(ChainType::MAIN);
+    std::vector<LegacyWalletRecord> records;
+    for (unsigned char value{1}; value <= 4; ++value) {
+        const auto key{RecoveryTestKey(value)};
+        const auto pubkey{key.GetPubKey()};
+        records.push_back({Encode(std::string{"key"}, pubkey), Encode(key.GetPrivKey())});
+        CKeyMetadata metadata;
+        metadata.nVersion = 1;
+        metadata.nCreateTime = value == 4 ? 10 : value == 3 ? 253402300800 : value == 2 ? -1 : 0;
+        records.push_back({Encode(std::string{"keymeta"}, pubkey), Encode(metadata)});
+        if (value == 4) records.push_back({Encode(std::string{"wkey"}, pubkey), Encode(int32_t{180100}, key.GetPrivKey(), int64_t{5}, int64_t{0}, std::string{})});
+        if (value == 2) {
+            records.push_back({Encode(std::string{"pool"}, int64_t{-1}), Encode(int32_t{130000}, int64_t{1231006505}, pubkey)});
+            records.push_back({Encode(std::string{"name"}, EncodeDestination(PKHash(pubkey))), Encode(std::string{})});
+        }
+    }
+    const auto public_only{RecoveryTestKey(9).GetPubKey()};
+    records.push_back({Encode(std::string{"defaultkey"}), Encode(public_only)});
+    OutputFixture fixture{m_path_root};
+    const auto [result, bytes]{ExportRecords(fixture, records)};
+    const auto read{ReadExport(bytes, "main")};
+    BOOST_REQUIRE_EQUAL(read.payloads.size(), 4U);
+    BOOST_CHECK(read.payloads.back().find("1970-01-01T00:00:05Z unclassified=1") != std::string::npos);
+    std::vector<CPubKey> unknown;
+    for (size_t i{0}; i < 3; ++i) {
+        const auto& line{read.payloads[i]};
+        BOOST_CHECK(line.find("1970-01-01T00:00:01Z") != std::string::npos);
+        unknown.push_back(DecodeSecret(line.substr(0, line.find(' '))).GetPubKey());
+    }
+    BOOST_CHECK(std::is_sorted(unknown.begin(), unknown.end()));
+    bool reserved_empty{false};
+    for (const auto& line : read.payloads) {
+        if (line.starts_with(EncodeSecret(RecoveryTestKey(2)) + " ")) {
+            reserved_empty = true;
+            BOOST_CHECK(line.find(" label= # addr=") != std::string::npos);
+        }
+    }
+    BOOST_REQUIRE(reserved_empty);
+    BOOST_CHECK_EQUAL(result.counts.private_keys, 4U);
+    BOOST_CHECK_EQUAL(result.counts.public_key_identities, 5U);
+    BOOST_CHECK_EQUAL(read.metadata.at("wallet").front()["default_pubkey"].get_str(), HexStr(public_only));
+    BOOST_CHECK_EQUAL(read.metadata.at("key").size(), 5U);
+}
+
+BOOST_AUTO_TEST_CASE(format_public_only_unresolved_seed_and_disabled_watch)
+{
+    SelectParams(ChainType::MAIN);
+    const auto pubkey{RecoveryTestKey(8).GetPubKey()};
+    const auto missing_seed{RecoveryTestKey(9).GetPubKey().GetID()};
+    CKeyMetadata metadata;
+    metadata.nVersion = 10;
+    metadata.nCreateTime = 0;
+    metadata.hd_seed_id = missing_seed;
+    metadata.hdKeypath = "m/0'/0'/1'";
+    CHDChain chain;
+    chain.seed_id = missing_seed;
+    chain.nExternalChainCounter = 42;
+    const CScript disabled{CScript{} << OP_RETURN};
+    const auto frozen{Fixtures()};
+    auto records{FixtureRecords(frozen["fixtures"][9])}; // Unused mkey slot.
+    records.push_back({Encode(std::string{"keymeta"}, pubkey), Encode(metadata)});
+    records.push_back({Encode(std::string{"hdchain"}), Encode(chain)});
+    records.push_back({Encode(std::string{"watchs"}, disabled), Encode(uint8_t{'0'})});
+    OutputFixture fixture{m_path_root};
+    const auto [result, bytes]{ExportRecords(fixture, records)};
+    const auto read{ReadExport(bytes, "main")};
+    BOOST_CHECK_EQUAL(result.state, "metadata_only");
+    BOOST_CHECK_EQUAL(result.counts.private_keys, 0U);
+    BOOST_CHECK_EQUAL(result.counts.roots, 0U);
+    BOOST_CHECK_EQUAL(result.counts.identified_seeds, 1U);
+    BOOST_CHECK_EQUAL(result.counts.unverified_derivations, 1U);
+    BOOST_CHECK(read.payloads.empty());
+    BOOST_CHECK(read.active_root.empty());
+    const auto& seed{read.metadata.at("seed").front()};
+    BOOST_CHECK_EQUAL(seed["seed_id"].get_str(), HexStr(missing_seed));
+    BOOST_CHECK(seed["pubkey"].isNull());
+    BOOST_CHECK(seed["active"].get_bool());
+    BOOST_CHECK(!seed["has_secret"].get_bool());
+    BOOST_CHECK(seed["xprv"].isNull());
+    BOOST_CHECK(!read.metadata.at("encryption").front()["verified_with_private_key"].get_bool());
+    BOOST_CHECK(read.metadata.at("encryption").front()["used_for_pubkeys"].empty());
+    BOOST_CHECK(!read.metadata.at("script").front()["watch_enabled"].get_bool());
+    BOOST_CHECK_EQUAL(read.metadata.at("script").front()["kinds"][0].get_str(), "watch_only");
+    BOOST_CHECK(!read.metadata.at("key").front()["has_private_key"].get_bool());
+}
 
 BOOST_AUTO_TEST_CASE(coverage_complete_independent_wif_sets)
 {
@@ -889,6 +1872,468 @@ BOOST_AUTO_TEST_CASE(recovery_kdf_work_bound, *boost::unit_test::timeout(60))
     BOOST_CHECK(recovered.keys.empty());
     for (const auto& [id, keys] : recovered.master_key_usage) BOOST_CHECK(keys.empty());
 }
+
+BOOST_AUTO_TEST_CASE(output_private_at_creation_and_commit)
+{
+    OutputFixture fixture{m_path_root};
+#ifndef WIN32
+    OutputUmask mask{0};
+#endif
+    bool inspected{false};
+    LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+        if (stage != LegacyOutputStage::CREATED) return;
+        const auto entries{Entries(fixture.directory)};
+        BOOST_REQUIRE_EQUAL(entries.size(), 1U);
+        const auto temporary{*entries.begin()};
+        BOOST_CHECK(temporary != fixture.destination);
+#ifndef WIN32
+        struct stat st{};
+        BOOST_REQUIRE_EQUAL(lstat(temporary.c_str(), &st), 0);
+        BOOST_CHECK_EQUAL(st.st_mode & 0777, 0600);
+        BOOST_CHECK_EQUAL(st.st_uid, geteuid());
+        BOOST_CHECK_EQUAL(st.st_nlink, 1);
+#else
+        CheckPrivateOutputTestAcl(temporary);
+#endif
+        BOOST_CHECK(!fs::exists(fixture.destination));
+        inspected = true;
+    }};
+    BOOST_REQUIRE(inspected);
+    output.Write(std::string_view{}); // null data() must not reach fwrite.
+    output.Write("validated ");
+    output.Write("synthetic payload\n");
+    BOOST_CHECK(!fs::exists(fixture.destination));
+    output.Publish();
+    BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "validated synthetic payload\n");
+    BOOST_CHECK(Entries(fixture.directory) == std::set<fs::path>{fixture.destination});
+    BOOST_CHECK_THROW(output.Write("late"), std::runtime_error);
+    BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+    BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "validated synthetic payload\n");
+}
+
+#ifdef WIN32
+BOOST_AUTO_TEST_CASE(output_windows_physical_volume_root_gate)
+{
+    OutputFixture fixture{m_path_root};
+    const auto root{fs::absolute(fixture.directory).root_path()};
+    const HANDLE volume{CreateFileW(root.c_str(), FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr)};
+    BOOST_REQUIRE(volume != INVALID_HANDLE_VALUE);
+    const bool physical_root{LegacyExportOutputTestAccess::IsPhysicalVolumeRoot(volume)};
+    BOOST_REQUIRE(CloseHandle(volume));
+    // Native qualification uses an actual volume-root drive for its scratch.
+    BOOST_CHECK(physical_root);
+    const HANDLE subdirectory{CreateFileW(fixture.directory.c_str(), FILE_READ_ATTRIBUTES,
+                                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr)};
+    BOOST_REQUIRE(subdirectory != INVALID_HANDLE_VALUE);
+    const bool directory_is_root{LegacyExportOutputTestAccess::IsPhysicalVolumeRoot(subdirectory)};
+    BOOST_REQUIRE(CloseHandle(subdirectory));
+    BOOST_CHECK(!directory_is_root);
+    BOOST_CHECK(!LegacyExportOutputTestAccess::IsPhysicalVolumeRoot(INVALID_HANDLE_VALUE));
+    BOOST_CHECK(Entries(fixture.directory).empty());
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_rejects_existing_paths_and_aliases)
+{
+    OutputFixture fixture{m_path_root};
+    const auto existing{fixture.directory / "existing"};
+    BOOST_REQUIRE(WriteBinaryFile(existing, "existing user bytes"));
+    const auto subdirectory{fixture.directory / "directory"};
+    fs::create_directory(subdirectory);
+    const auto link{fixture.directory / "hardlink"};
+    fs::create_hard_link(fixture.offline / "wallet.dat", link);
+    const auto symlink{fixture.directory / "symlink"};
+    fs::create_symlink(existing, symlink);
+    const auto dangling{fixture.directory / "dangling"};
+    fs::create_symlink(fixture.directory / "missing", dangling);
+    const auto entries{Entries(fixture.directory)};
+    for (const auto& path : {existing, subdirectory, link, symlink, dangling, fixture.offline / "wallet.dat"}) {
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, path}), std::runtime_error);
+        BOOST_CHECK(Entries(fixture.directory) == entries);
+        BOOST_CHECK_EQUAL(ReadBinaryFile(existing).second, "existing user bytes");
+        fixture.source->VerifyUnchanged();
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_rejects_devices_streams_and_source_tree)
+{
+    OutputFixture fixture{m_path_root};
+    fs::create_directory(fixture.offline / "sub");
+    const auto alias{m_path_root / "parent-link"};
+    fs::create_directory_symlink(fixture.directory, alias);
+    const auto source_alias{m_path_root / "source-link"};
+    fs::create_directory_symlink(fixture.offline, source_alias);
+    const std::vector<fs::path> rejected{
+        {}, "-", fixture.directory / "NUL", fixture.directory / "con.txt", fixture.directory / "COM1",
+        fixture.directory / "LPT9.txt", fixture.directory / "export:stream", fixture.directory / "trailing.",
+        fixture.directory / "trailing ", fixture.directory / "missing" / "out",
+        fixture.offline / "new.keys", fixture.offline / "sub" / "new.keys", alias / "new.keys",
+        source_alias / "sub" / "new.keys",
+    };
+    for (const auto& path : rejected) {
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, path}), std::runtime_error);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_publication_races_do_not_replace)
+{
+    for (int kind{0}; kind < 5; ++kind) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(kind))};
+        {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage != LegacyOutputStage::PUBLISH) return;
+                switch (kind) {
+                case 0: BOOST_REQUIRE(WriteBinaryFile(fixture.destination, "race winner")); break;
+                case 1: fs::create_directory(fixture.destination); break;
+                case 2: fs::create_hard_link(fixture.offline / "wallet.dat", fixture.destination); break;
+                case 3: fs::create_symlink(fixture.offline / "wallet.dat", fixture.destination); break;
+                case 4: fs::create_symlink(fixture.directory / "missing", fixture.destination); break;
+                }
+            }};
+            output.Write("validated synthetic output");
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+        }
+        BOOST_CHECK(Entries(fixture.directory) == std::set<fs::path>{fixture.destination});
+        if (kind == 0) BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "race winner");
+        fixture.source->VerifyUnchanged();
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_sharing_pins_parent_and_owned_temp)
+{
+    OutputFixture fixture{m_path_root};
+    bool inspected{false};
+    {
+        LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+            if (stage != LegacyOutputStage::CREATED) return;
+            const auto temporary{*Entries(fixture.directory).begin()};
+            CheckPrivateOutputTestAcl(temporary);
+            BOOST_CHECK(!MoveFileW(fixture.directory.c_str(), (m_path_root / "moved").c_str()));
+            BOOST_CHECK(!MoveFileW(temporary.c_str(), (fixture.directory / "moved-temp").c_str()));
+            BOOST_CHECK(!DeleteFileW(temporary.c_str()));
+            inspected = true;
+        }};
+        output.Write("validated synthetic output");
+        output.Publish();
+    }
+    BOOST_REQUIRE(inspected);
+    BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "validated synthetic output");
+    CheckPrivateOutputTestAcl(fixture.destination);
+    const auto moved{m_path_root / "moved"};
+    BOOST_REQUIRE(MoveFileW(fixture.directory.c_str(), moved.c_str()));
+    BOOST_REQUIRE(MoveFileW(moved.c_str(), fixture.directory.c_str()));
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_stage_failures_clean_owned_temp)
+{
+    for (const auto failure : {LegacyOutputStage::CREATED, LegacyOutputStage::WRITE, LegacyOutputStage::FLUSH,
+                               LegacyOutputStage::SYNC, LegacyOutputStage::CLOSE, LegacyOutputStage::PUBLISH}) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(static_cast<int>(failure)))};
+        bool injected{false};
+        BOOST_CHECK_THROW(([&] {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage == failure) { injected = true; throw std::runtime_error("injected output failure"); }
+            }};
+            output.Write("validated synthetic output");
+            output.Publish();
+        }()), std::runtime_error);
+        BOOST_REQUIRE(injected);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+        fixture.source->VerifyUnchanged();
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_windows_parent_acl_and_inherited_reader)
+{
+    OutputFixture fixture{m_path_root};
+    OutputTestSecurity private_acl;
+    DWORD sid_size{SECURITY_MAX_SID_SIZE};
+    std::vector<DWORD> world_storage((sid_size + sizeof(DWORD) - 1) / sizeof(DWORD));
+    PSID world{world_storage.data()};
+    BOOST_REQUIRE(CreateWellKnownSid(WinWorldSid, nullptr, world, &sid_size));
+    for (const bool writable : {true, false}) {
+        std::vector<DWORD> storage((sizeof(ACL) + 2 * sizeof(ACCESS_ALLOWED_ACE) + GetLengthSid(private_acl.Owner()) + sid_size + sizeof(DWORD) - 1) / sizeof(DWORD));
+        auto* acl{reinterpret_cast<PACL>(storage.data())};
+        BOOST_REQUIRE(InitializeAcl(acl, static_cast<DWORD>(storage.size() * sizeof(DWORD)), ACL_REVISION));
+        BOOST_REQUIRE(AddAccessAllowedAce(acl, ACL_REVISION, FILE_ALL_ACCESS, private_acl.Owner()));
+        BOOST_REQUIRE(AddAccessAllowedAceEx(acl, ACL_REVISION, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
+                                            writable ? FILE_ALL_ACCESS : FILE_GENERIC_READ, world));
+        BOOST_REQUIRE_EQUAL(SetNamedSecurityInfoW(const_cast<wchar_t*>(fixture.directory.c_str()), SE_FILE_OBJECT,
+                                                  DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                                  nullptr, nullptr, acl, nullptr), ERROR_SUCCESS);
+        if (writable) {
+            BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, fixture.destination}), std::runtime_error);
+            BOOST_CHECK(Entries(fixture.directory).empty());
+        } else {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage == LegacyOutputStage::CREATED) CheckPrivateOutputTestAcl(*Entries(fixture.directory).begin());
+            }};
+            output.Write(std::string_view{});
+            output.Write("validated synthetic output");
+            output.Publish();
+        }
+    }
+    CheckPrivateOutputTestAcl(fixture.destination);
+    BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "validated synthetic output");
+}
+#else
+BOOST_AUTO_TEST_CASE(output_rejects_existing_destinations)
+{
+    OutputFixture fixture{m_path_root};
+    const auto original{ReadBinaryFile(fixture.offline / "wallet.dat").second};
+    const auto existing{fixture.directory / "existing"};
+    BOOST_REQUIRE(WriteBinaryFile(existing, "existing user bytes"));
+    const auto directory{fixture.directory / "directory"};
+    fs::create_directory(directory);
+    const auto symlink{fixture.directory / "symlink"};
+    fs::create_symlink(existing, symlink);
+    const auto dangling{fixture.directory / "dangling"};
+    fs::create_symlink(fixture.directory / "absent", dangling);
+    const auto hardlink{fixture.directory / "hardlink"};
+    fs::create_hard_link(fixture.offline / "wallet.dat", hardlink);
+    const auto fifo{fixture.directory / "fifo"};
+    BOOST_REQUIRE_EQUAL(mkfifo(fifo.c_str(), 0600), 0);
+    const auto entries{Entries(fixture.directory)};
+    for (const auto& path : {existing, directory, symlink, dangling, hardlink, fifo, fs::path{"/dev/null"}}) {
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, path}), std::runtime_error);
+        BOOST_CHECK(Entries(fixture.directory) == entries);
+        BOOST_CHECK_EQUAL(ReadBinaryFile(existing).second, "existing user bytes");
+        BOOST_CHECK(ReadBinaryFile(hardlink).second == original);
+    }
+    BOOST_CHECK(ReadBinaryFile(fixture.offline / "wallet.dat").second == original);
+}
+
+BOOST_AUTO_TEST_CASE(output_rejects_paths_and_source_tree)
+{
+    OutputFixture fixture{m_path_root};
+    fs::create_directories(fixture.offline / "sub" / "deep");
+    fs::create_directory_symlink(fixture.offline, m_path_root / "source-alias");
+    fs::create_directory_symlink(fixture.directory, m_path_root / "parent-link");
+    const std::vector<fs::path> rejected{
+        {}, "-", fixture.directory / ".", fixture.directory / "..", fixture.directory / "",
+        fixture.directory / "missing" / "output", fixture.offline / "new.keys",
+        fixture.offline / "sub" / "deep" / "new.keys", m_path_root / "source-alias" / "sub" / "new.keys",
+        m_path_root / "parent-link" / "output", fs::PathFromString(std::string{"bad\0name", 8}),
+    };
+    const auto entries{Entries(fixture.directory)};
+    for (const auto& path : rejected) {
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, path}), std::runtime_error);
+        BOOST_CHECK(Entries(fixture.directory) == entries);
+    }
+    BOOST_CHECK(Entries(fixture.offline / "sub" / "deep").empty());
+}
+
+BOOST_AUTO_TEST_CASE(output_rejects_untrusted_and_readonly_parents)
+{
+    OutputFixture fixture{m_path_root};
+    RestorePermissions restore{fixture.directory};
+    for (const auto permissions : {fs::perms::all, fs::perms::owner_all | fs::perms::group_write,
+                                   fs::perms::owner_read | fs::perms::owner_exec}) {
+        fs::permissions(fixture.directory, permissions);
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, fixture.destination}), std::runtime_error);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_destination_races_never_replace)
+{
+    for (int kind{0}; kind < 5; ++kind) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(kind))};
+        const auto original{ReadBinaryFile(fixture.offline / "wallet.dat").second};
+        {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage != LegacyOutputStage::PUBLISH) return;
+                switch (kind) {
+                case 0: BOOST_REQUIRE(WriteBinaryFile(fixture.destination, "race winner")); break;
+                case 1: fs::create_symlink(fixture.offline / "wallet.dat", fixture.destination); break;
+                case 2: fs::create_symlink(fixture.directory / "absent", fixture.destination); break;
+                case 3: fs::create_directory(fixture.destination); break;
+                case 4: fs::create_hard_link(fixture.offline / "wallet.dat", fixture.destination); break;
+                }
+            }};
+            output.Write("validated synthetic output");
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+        }
+        BOOST_CHECK(Entries(fixture.directory) == std::set<fs::path>{fixture.destination});
+        if (kind == 0) BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "race winner");
+        BOOST_CHECK(ReadBinaryFile(fixture.offline / "wallet.dat").second == original);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_parent_identity_race_is_anchored)
+{
+    OutputFixture fixture{m_path_root};
+    const auto held{m_path_root / "held"};
+    {
+        LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+            if (stage != LegacyOutputStage::CREATED) return;
+            fs::rename(fixture.directory, held);
+            fs::create_directory(fixture.directory);
+            BOOST_REQUIRE(WriteBinaryFile(fixture.destination, "replacement directory file"));
+        }};
+        output.Write("still anchored to held directory");
+        BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+    }
+    BOOST_CHECK(Entries(held).empty());
+    BOOST_CHECK(Entries(fixture.directory) == std::set<fs::path>{fixture.destination});
+    BOOST_CHECK_EQUAL(ReadBinaryFile(fixture.destination).second, "replacement directory file");
+}
+
+BOOST_AUTO_TEST_CASE(output_reparenting_through_ancestor_alias_fails)
+{
+    OutputFixture fixture{m_path_root};
+    const auto outside{m_path_root / "outside"};
+    fs::create_directory(outside);
+    fs::rename(fixture.directory, outside / "exports");
+    const auto alias{m_path_root / "alias"};
+    fs::create_directory_symlink(outside, alias);
+    const auto destination{alias / "exports" / "wallet.keys"};
+    bool reparented{false};
+    {
+        LegacyExportOutput output{*fixture.source, destination, [&](LegacyOutputStage stage) {
+            if (stage != LegacyOutputStage::PUBLISH) return;
+            fs::rename(outside / "exports", fixture.offline / "exports");
+            fs::remove(alias);
+            fs::create_directory_symlink(fixture.offline, alias);
+            reparented = true;
+        }};
+        output.Write("validated synthetic output");
+        // The final parent still has the pinned identity at the same path,
+        // but its actual ancestry now lies inside the offline source tree.
+        BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+    }
+    BOOST_REQUIRE(reparented);
+    BOOST_CHECK(Entries(fixture.offline / "exports").empty());
+    BOOST_CHECK(!fs::exists(destination));
+}
+
+BOOST_AUTO_TEST_CASE(output_temporary_identity_and_link_races)
+{
+    for (int kind{0}; kind < 3; ++kind) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(kind))};
+        fs::path temporary;
+        const auto held{fixture.directory / "owned-moved"};
+        const auto alias{fixture.directory / "extra-link"};
+        {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage != LegacyOutputStage::CREATED) return;
+                temporary = *Entries(fixture.directory).begin();
+                if (kind == 2) {
+                    fs::create_hard_link(temporary, alias);
+                } else {
+                    fs::rename(temporary, held);
+                    if (kind == 0) BOOST_REQUIRE(WriteBinaryFile(temporary, "unowned replacement"));
+                    else fs::create_symlink(fixture.offline / "wallet.dat", temporary);
+                }
+            }};
+            BOOST_CHECK_THROW(output.Write("must not publish"), std::runtime_error);
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+        }
+        BOOST_CHECK(!fs::exists(fixture.destination));
+        if (kind == 0) BOOST_CHECK_EQUAL(ReadBinaryFile(temporary).second, "unowned replacement");
+        if (kind == 1) BOOST_CHECK(fs::is_symlink(temporary));
+        if (kind == 2) BOOST_CHECK(!fs::exists(temporary));
+        // Deliberate same-user namespace tampering is outside parent trust;
+        // never chase moved files or delete replacements to hide that attack.
+        if (kind == 2) fs::remove(alias); else fs::remove(held);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(output_stage_failures_clean_owned_temporary)
+{
+    for (const auto failure : {LegacyOutputStage::CREATED, LegacyOutputStage::WRITE, LegacyOutputStage::FLUSH,
+                               LegacyOutputStage::SYNC, LegacyOutputStage::CLOSE, LegacyOutputStage::PUBLISH}) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(static_cast<int>(failure)))};
+        bool injected{false};
+        BOOST_CHECK_THROW(([&] {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage == failure) { injected = true; throw std::runtime_error("injected output failure"); }
+            }};
+            output.Write("validated synthetic output");
+            output.Publish();
+        }()), std::runtime_error);
+        BOOST_REQUIRE(injected);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+        fixture.source->VerifyUnchanged();
+    }
+    OutputFixture fixture{m_path_root / "changed-source"};
+    {
+        LegacyExportOutput output{*fixture.source, fixture.destination};
+        output.Write("validated synthetic output");
+        BOOST_REQUIRE(WriteBinaryFile(fixture.offline / "wallet.dat", LegacyFile()));
+        BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+    }
+    BOOST_CHECK(Entries(fixture.directory).empty());
+}
+
+BOOST_AUTO_TEST_CASE(output_actual_file_size_limit_failure)
+{
+    OutputFixture fixture{m_path_root};
+    // A real native short-write/ENOSPC-like failure, isolated from the runner.
+    const pid_t child{fork()};
+    BOOST_REQUIRE_NE(child, -1);
+    if (child == 0) {
+        std::signal(SIGXFSZ, SIG_IGN);
+        struct rlimit limit{1, 1};
+        if (setrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(2);
+        int result{3};
+        try {
+            LegacyExportOutput output{*fixture.source, fixture.destination};
+            output.Write("larger than the file size limit");
+        } catch (const std::runtime_error&) { result = Entries(fixture.directory).empty() ? 0 : 4; }
+        _exit(result);
+    }
+    int status{0};
+    BOOST_REQUIRE_EQUAL(waitpid(child, &status, 0), child);
+    BOOST_REQUIRE(WIFEXITED(status));
+    BOOST_CHECK_EQUAL(WEXITSTATUS(status), 0);
+    BOOST_CHECK(Entries(fixture.directory).empty());
+}
+
+#ifdef __linux__
+BOOST_AUTO_TEST_CASE(output_native_sync_and_close_errors)
+{
+    for (const auto failure : {LegacyOutputStage::SYNC, LegacyOutputStage::CLOSE}) {
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(static_cast<int>(failure)))};
+        bool injected{false};
+        {
+            LegacyExportOutput output{*fixture.source, fixture.destination, [&](LegacyOutputStage stage) {
+                if (stage != failure) return;
+                const auto temporary{*Entries(fixture.directory).begin()};
+                int descriptor{-1};
+                for (const auto& entry : fs::directory_iterator("/proc/self/fd")) {
+                    std::error_code error;
+                    if (fs::read_symlink(entry.path(), error) == temporary && !error) {
+                        const auto parsed{ToIntegral<int>(fs::PathToString(entry.path().filename()))};
+                        BOOST_REQUIRE(parsed);
+                        descriptor = *parsed;
+                        break;
+                    }
+                }
+                BOOST_REQUIRE_NE(descriptor, -1);
+                // No exception from the hook: the real fsync/fclose must
+                // observe EBADF and take its checked production error path.
+                BOOST_REQUIRE_EQUAL(close(descriptor), 0);
+                injected = true;
+            }};
+            output.Write("validated synthetic output");
+            BOOST_CHECK_EXCEPTION(output.Publish(), std::runtime_error, [&](const auto& error) {
+                return std::string_view{error.what()} == (failure == LegacyOutputStage::SYNC ?
+                           "Cannot synchronize legacy output" : "Cannot close legacy output");
+            });
+            BOOST_CHECK_THROW(output.Publish(), std::runtime_error);
+        }
+        BOOST_REQUIRE(injected);
+        BOOST_CHECK(Entries(fixture.directory).empty());
+    }
+}
+#endif
+#endif
 
 BOOST_AUTO_TEST_CASE(source_paths_and_preservation)
 {

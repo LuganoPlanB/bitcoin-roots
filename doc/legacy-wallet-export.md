@@ -118,7 +118,7 @@ not evidence that a key was imported or used for change.
 | `hdchain` | One exact v1 or v2 record: version, external counter, seed ID, and internal counter only in v2. Preserve stored counters; do not reconstruct or increment them. |
 | `keymeta` | Exact metadata versions 1, 10 or 12. v1 has version/time; v10 adds byte path/seed ID; v12 adds four-byte origin fingerprint, uint32 path vector and has-origin bool. Preserve raw fields and unknown times. Other versions fail rather than inferring their production from donor `>=` conditions. |
 | `pool` | int64 index and stream-version/time/pubkey, followed by zero, one or two bool bytes (internal, pre-split). Preserve field presence; absent bools default false. Each present bool must be 0 or 1. No keypool refill/consumption. |
-| `cscript` | Require script hash160 key to match the serialized script; validate push-data boundaries. Export redeem-script payload and metadata. Do not require the script to be standard or independently spendable. |
+| `cscript` | Require script hash160 key to match the serialized script; validate push-data boundaries. Export redeem-script payload and metadata. A valid empty script is retained only in typed metadata because the legacy importer cannot recognize an empty HEX token. Do not require the script to be standard or independently spendable. |
 | `watchs` | Script key and exactly ASCII `0` or `1`; preserve disabled/enabled state. Emit watch metadata, not a redeem-script payload merely because a watch script exists. |
 | `watchmeta` | Script key plus the same supported metadata schema; preserve even without a matching watchs/cscript record. Validate script push-data boundaries. |
 | `name`, `purpose` | Preserve address and value bytes, including empty/control/non-UTF8 values, in typed address metadata. Only valid destinations matching an exported public key under the selected chain contribute legacy-line labels. Other addresses/labels remain present without an invented public-key association. |
@@ -238,7 +238,10 @@ signed timestamp separately. Pool times are not substituted for missing key
 birth times. Unknown uses `1970-01-01T00:00:01Z` in payloads, and null in
 metadata; never use now. Redeem-script lines are `HEX SP TIME SP script=1 SP # SP
 addr=P2SH_ADDRESS`, using script metadata time or the same epoch fallback.
-Watch-only scripts without cscript appear only in typed metadata. The one-second
+Watch-only scripts without cscript appear only in typed metadata. An empty
+cscript also appears only in typed metadata, with `script_hex=""`, its redeem
+kind, hash/time associations and script count preserved; it has no legacy
+payload line. No nonempty substitute is emitted. The one-second
 epoch fallback is deliberate: v29.5 importwallet ignores a zero script timestamp
 when choosing its scan start, whereas one requests a scan before the first
 Bitcoin block. This differs from the donor's unknown-script `0` output and is
@@ -376,6 +379,17 @@ exclusively with private permissions (POSIX0600 or an owner-restricted native
 ACL), checking the result immediately. Never create output beside the source
 as a side effect of opening it.
 
+On Linux, source and destination parents must be in the same mounted view.
+The exporter retains both directory handles and requires matching `statx`
+mount IDs, returned type/inode masks and identities matching `fstat`, initially
+and again before publication. Missing capability or different mount IDs fails
+closed, even for an otherwise writable destination on another filesystem or
+bind mount. This conservative restriction requires Linux `STATX_MNT_ID` support
+(introduced in Linux 5.8); it avoids treating a subtree or whole-filesystem bind
+alias as proof that output is outside the source tree. It does not alter the
+read-only database reader or migration. Mounted alias scenarios still require
+native qualification; no Linux mount-ID proof is claimed for macOS or Windows.
+
 Validate/decrypt the full required inventory before final publication. Check all
 write, flush, file-sync and close results before an atomic native no-replace
 move to the final name. Publication is the final fallible commit step; a
@@ -387,6 +401,23 @@ no final export. Never unlink an existing user file. Do not promise directory
 power-loss durability or secure erasure. A crash can leave a private temporary
 file containing secrets; retain the original backup independently.
 
+Ordinary exceptions and cooperative cancellation unwind invocation-owned output
+and controlled encoded-secret buffers before returning failure. Cancellation is
+observed between bounded processing operations, not inside a running KDF or
+cryptographic primitive. Deletion removes a directory entry; it does not erase
+filesystem journals, snapshots, backups, SSD remapping or previously written
+blocks. Cleanup requires the filesystem to remain accessible and permit removal;
+an unhandled termination, SIGKILL or power loss cannot run cleanup. A surviving
+private temporary file is never selected or imported automatically.
+
+Secure allocators cleanse their owned allocations on release, and the renderer
+cleanses its controlled ordinary xprv value without creating serialized JSON or
+stream scratch containing it. This is not total memory erasure: caller-owned
+passphrases, ordinary metadata strings and their intermediate allocations,
+primitive stack/register copies, allocator behavior, swap and crash dumps
+remain outside that guarantee. Keep host storage, swap and dump
+policy appropriate for unencrypted spending material.
+
 Exit0 means the complete file was published. Success stdout contains only the
 destination, state and non-secret counts; warn about unencrypted spending
 material when private_keys is positive. Other outcomes use the tool's ordinary
@@ -397,7 +428,9 @@ unknown families/flags, limits, detected source changes, aliases, races and
 write/permission failures cannot be reported as partial recovery success.
 
 Old Core importwallet ignores comments, including all roots-meta-v1 objects and
-root comments. Its WIF/script payload import does not restore exact labels on
+root comments. It cannot recognize an empty script payload token, so an empty
+redeem script retained in metadata requires separate reconstruction. Its
+WIF/script payload import does not restore exact labels on
 every destination, original paths/origins, inactive/active root relationships,
 watch-only metadata, keypool state, expiry, settings or history. The neutral
 token also does not restore the original key classification. Unknown-time

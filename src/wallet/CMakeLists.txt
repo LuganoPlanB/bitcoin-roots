@@ -16,6 +16,8 @@ add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
   fees.cpp
   interfaces.cpp
   legacy_export.cpp
+  legacy_export_output.cpp
+  legacy_export_format.cpp
   load.cpp
   migrate.cpp
   receive.cpp
@@ -43,5 +45,6 @@ target_link_libraries(bitcoin_wallet
     SQLite3::SQLite3
     univalue
     Boost::headers
+    $<$<PLATFORM_ID:Windows>:advapi32>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )

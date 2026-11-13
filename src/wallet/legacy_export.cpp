@@ -6,12 +6,14 @@
 #include <wallet/legacy_export.h>
 
 #include <hash.h>
+#include <crypto/common.h>
 #include <key_io.h>
 #include <streams.h>
 #include <util/bip32.h>
 #include <wallet/migrate.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
@@ -106,7 +108,7 @@ struct SourceState {
 
 // Keep the initial handle alive to pin the source identity until publication.
 // Reopen for each content check, avoiding stale stdio read-ahead buffers.
-SourceState InspectSource(const fs::path& path, AutoFile& file, FILE* handle)
+SourceState InspectSource(const fs::path& path, AutoFile& file, FILE* handle) try
 {
     const auto identity{Identity(handle)};
     CheckedSourcePath(path, identity);
@@ -131,6 +133,9 @@ SourceState InspectSource(const fs::path& path, AutoFile& file, FILE* handle)
         throw std::runtime_error("Legacy export source changed; use an offline clean backup");
     }
     return {identity, size, mtime, hash};
+} catch (const fs::filesystem_error&) {
+    // filesystem_error::what() may contain a caller-supplied pathname.
+    throw std::runtime_error("Cannot inspect legacy export source filesystem state");
 }
 } // namespace
 
@@ -140,6 +145,7 @@ struct LegacyWalletSource::Impl {
     AutoFile file;
     const SourceState state;
     std::vector<LegacyWalletRecord> records;
+    LegacySourceInfo info{};
 
     explicit Impl(const fs::path& source)
         : path(source), handle(OpenSource(path)), file(handle), state(Inspect()) {}
@@ -151,7 +157,7 @@ struct LegacyWalletSource::Impl {
     }
 };
 
-LegacyWalletSource::LegacyWalletSource(const fs::path& path)
+LegacyWalletSource::LegacyWalletSource(const fs::path& path) try
 {
     // Check the type before any open, so FIFOs/devices cannot block a read.
     const auto type{fs::status(path).type()};
@@ -162,6 +168,14 @@ LegacyWalletSource::LegacyWalletSource(const fs::path& path)
         throw std::runtime_error("Legacy export requires a supported BDB wallet");
     }
     BerkeleyRODatabase database(CheckedSourcePath(source, m_impl->state.identity), /*open=*/true, BerkeleyROLimits{});
+    // The reader has validated MetaPage's magic/byte order/page size. Retain
+    // those actual header facts for the export envelope, without a new parser.
+    std::array<std::byte, 24> header{};
+    m_impl->file.seek(0, SEEK_SET);
+    m_impl->file.read(header);
+    const auto* bytes{reinterpret_cast<const unsigned char*>(header.data())};
+    const bool big{ReadBE32(bytes + 12) == 0x00053162};
+    m_impl->info = {big ? ReadBE32(bytes + 20) : ReadLE32(bytes + 20), big, m_impl->state.size};
     BerkeleyROCursor cursor(database);
     while (true) {
         DataStream key, value;
@@ -171,13 +185,25 @@ LegacyWalletSource::LegacyWalletSource(const fs::path& path)
         m_impl->records.push_back({SerializeData{key.begin(), key.end()}, SerializeData{value.begin(), value.end()}});
     }
     VerifyUnchanged();
+} catch (const fs::filesystem_error&) {
+    throw std::runtime_error("Cannot resolve legacy export source filesystem path");
 }
 
 LegacyWalletSource::~LegacyWalletSource() = default;
 
+const fs::path& LegacyWalletSource::SourcePath() const
+{
+    return m_impl->path;
+}
+
 std::span<const LegacyWalletRecord> LegacyWalletSource::Records() const
 {
     return m_impl->records;
+}
+
+LegacySourceInfo LegacyWalletSource::Info() const
+{
+    return m_impl->info;
 }
 
 void LegacyWalletSource::VerifyUnchanged() const

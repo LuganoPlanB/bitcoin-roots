@@ -63,6 +63,7 @@
 
 #include <array>
 #include <cassert>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -87,6 +88,9 @@ static void runtest(std::string filename, const std::string& jdata)
 
     if (wantPass) {
         assert(testResult == true);
+        std::string streamed;
+        val.writeTo([&](std::string_view part) { streamed.append(part); });
+        assert(streamed == val.write(0, 0));
     } else {
         assert(testResult == false);
     }
@@ -186,6 +190,40 @@ void no_nul_test()
     assert(val.read({buf + 3, 7}));
 }
 
+void streaming_test()
+{
+    std::string bytes;
+    for (unsigned value{0}; value < 256; ++value) bytes.push_back(static_cast<char>(value));
+    UniValue nested{UniValue::VOBJ};
+    nested.pushKVEnd(bytes, bytes);
+    UniValue array{UniValue::VARR};
+    for (const auto text : {"null", "true", "false", "123", "-1.25e4", "\"\"", "[]", "{}"}) {
+        UniValue value;
+        assert(value.read(text));
+        std::string streamed;
+        value.writeTo([&](std::string_view part) { streamed.append(part); });
+        assert(streamed == value.write(0, 0));
+        array.push_back(std::move(value));
+    }
+    nested.pushKVEnd("array", std::move(array));
+    std::string streamed;
+    nested.writeTo([&](std::string_view part) { streamed.append(part); });
+    assert(streamed == nested.write(0, 0));
+    bool threw{false};
+    size_t delivered{0};
+    try {
+        nested.writeTo([&](std::string_view part) {
+            delivered += part.size();
+            if (delivered > 10) throw std::runtime_error("test sink failure");
+        });
+    } catch (const std::runtime_error& error) {
+        assert(std::string_view{error.what()} == "test sink failure");
+        threw = true;
+    }
+    assert(threw);
+    assert(streamed == nested.write(0, 0));
+}
+
 int main(int argc, char* argv[])
 {
     for (const auto& [file, json] : tests) {
@@ -194,6 +232,7 @@ int main(int argc, char* argv[])
 
     unescape_unicode_test();
     no_nul_test();
+    streaming_test();
 
     return 0;
 }

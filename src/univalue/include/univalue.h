@@ -9,6 +9,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -98,6 +99,14 @@ public:
 
     std::string write(unsigned int prettyIndent = 0,
                       unsigned int indentLevel = 0) const;
+
+    /** Write compact JSON synchronously, matching write(0, 0), without text
+     * scratch buffers. The sink must not retain the borrowed views or mutate
+     * this value (including children) during the call. Sink exceptions propagate;
+     * already delivered bytes cannot be rolled back. This does not cleanse
+     * stored values or sink-owned buffers.
+     */
+    void writeTo(const std::function<void(std::string_view)>& sink) const;
 
     /// Parse JSON; set value to null on failure.
     [[nodiscard]] bool read(std::string_view json);

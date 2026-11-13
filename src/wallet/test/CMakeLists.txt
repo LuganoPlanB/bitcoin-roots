@@ -26,7 +26,7 @@ target_sources(test_bitcoin
     walletdb_tests.cpp
     walletload_tests.cpp
 )
-target_link_libraries(test_bitcoin bitcoin_wallet)
+target_link_libraries(test_bitcoin bitcoin_wallet $<$<PLATFORM_ID:Windows>:advapi32>)
 
 target_json_data_sources(test_bitcoin data/legacy_export.json)
 # The consuming executable belongs to the parent directory. Attach this
