@@ -467,12 +467,112 @@ importer is provided by this feature.
 | encrypted HD | 4 / 1 | Seed, both chains and unrelated key validated independently |
 | watch-only / empty / mkey-only | 0 / 0 | Public/empty inventory with no authority claim |
 
-These are generator/oracle expectations. No row currently means a working
-dumpwallet command, an authentic historic release-produced complete wallet,
-successful historical application execution, restoration/signing proof, or a
-universal supported release range. Release-specific whole-wallet claims remain
-blocked on authentic fixture/oracle execution. No downloaded reference binary
-is required by the mandatory fast fixtures.
+The mandatory `tool_wallet_legacy_export.py` matrix exercises all ten synthetic
+families through the offline command at all eight supported BDB page sizes in
+both byte orders, plus two chained-overflow script cases (162 cases). It checks
+complete WIF, active/inactive root and script inventories, original metadata
+versions 1/10/12, old/split/pre-split pool fields, wkey metadata and source
+preservation. Expected roots use the independent Python BIP32 implementation;
+metadata expectations read the original serialized records independently of the
+C++ exporter. Changing the BDB geometry must preserve every non-wallet metadata
+and payload byte. The native exporter suite separately exercises the frozen
+record corpus and deliberate rejections.
+
+These synthetic/source comparisons establish specific format cases, not a
+universal supported release range or proof that a named release emitted each
+complete wallet. The extended `tool_wallet_legacy_export_compatibility.py` test
+requires exact v29.5 and v0.18.1 binaries for release-produced wallet comparisons;
+an unavailable or skipped reference test does not establish that coverage.
+On the executed x86_64 Linux reference profile, both releases produced plaintext
+mixed and encrypted seed-rotation wallets; v29.5 additionally produced watch-only
+and empty wallets (six cases). Each original wallet was unloaded cleanly, copied
+offline and captured as complete raw records before export. Complete WIF sets
+and active roots matched the corresponding release's dumpwallet. Every inactive
+root was derived independently from the donor's seed WIF. Both plaintext and
+encrypted mixed cases retained the unrelated imported key and multisig script.
+This is evidence for those cases at those exact versions, not for every wallet
+created by those releases. The binary archives were accepted by official HTTPS
+origin and exact published SHA256; OpenPGP signer authentication and reproducible
+build equivalence remain unknown. The downloader currently pins these additional
+reference archives for x86_64 Linux only; other native platforms need their own
+approved artifacts and execution.
+
+One intentional script difference is checked explicitly. Core's live keystore
+adds a P2WPKH wrapper for every compressed key through
+`ImplicitlyLearnRelatedKeyScripts`, including scripts never stored on disk
+(v29.5 `src/script/signingprovider.cpp`, v0.18.1 `src/keystore.cpp`). Its dumpwallet
+therefore includes these in-memory entries. This offline command exports stored
+`cscript` records. The reference test requires exact equality with the stored
+script set and requires the donor's complete set to equal that set plus the
+independently derived wrappers; it does not discard arbitrary donor differences.
+The versioned metadata envelope, all identified inactive roots, conservative
+unknown-time fallback, neutral unclassified token and absence of live-chain
+headers are the other deliberate differences described above.
+No downloaded reference binary is required by the mandatory fast fixtures.
+Restoration/signing authority is a separate test boundary.
+
+The extended `tool_wallet_legacy_export_recovery.py` exercises that boundary
+with the same exact v29.5/v0.18.1 references. Independent Python parsing of the
+exported WIFs and root, BIP32 receive/change derivation and public-key checks
+precede signing. A mixed encrypted fixture contains an unrelated imported key
+and a 2-of-2 multisig requiring that key and a derived receive key. Material
+derived from the root at the recorded paths cannot complete the imported-key
+or multisig spend; the exported individual WIF supplies the missing authority.
+The test checks three message signatures and four spend templates against the
+reference script verifier. Four clean wallet imports (full file and payload
+alone in each release) reproduce the complete WIF inventory and independently
+sign those same four templates: 20 script verification checks in total, not
+20 distinct transactions or script policies.
+
+The test also separates history discovery from saved history. A funding
+transaction precedes the final chain tip by almost a day. Unknown-time payloads
+use the conservative one-second epoch; both reference importers scan all 104
+test blocks and find that transaction. Controls with recent payload timestamps
+scan only the last block and miss it. The export itself contains no transaction
+history; discovery requires the reference node's independently supplied blocks.
+Full and payload-only imports both omit original HD paths, origins, active-seed
+and keypool relationships, confirming that Core ignores the comment metadata.
+Separate public reconstruction of watch-only script metadata remains unable
+to sign. These checks establish the tested legacy P2PKH/2-of-2 P2SH capabilities;
+they are not a general metadata importer, a guarantee for arbitrary scripts or
+evidence of a mainnet balance.
+
+The native Linux failure checks identify 57 end-to-end groups: ten successes
+from read-only source directories with Unicode/space-containing paths, 16
+negative input cases repeated with writable and read-only source directories,
+one unreadable-source case, eleven destination alias/permission cases, and
+three terminal-gated source/destination races. The negative matrix includes
+malformed key records/checksums/pool flags/scripts, unknown families/incompatible flags,
+wrong credentials, missing seeds, corrupt encrypted keys with valid checksums,
+dirty BDB input and unsupported outer/inner BDB encryption. Debug/console
+options are enabled for the table; per-case diagnostics are captured and checked
+against synthetic key/root/label/credential canaries. Content, identity, mode,
+size, mtime and sibling snapshots must remain unchanged; atime is excluded
+because both exporter and verification reads can update it. Existing files
+remain intact and handled failures leave no invocation-owned temporary output.
+
+The controlled CLI races observe the passphrase gate, inject their change,
+release the gate and await bounded process completion; source and destination
+states must then equal the injected states. Separately, the existing native
+`output_destination_races_never_replace` test inserts each of five destination
+types at the actual publication stage: regular file, source symlink, dangling
+symlink, directory and source hardlink. It exercises the native no-replace move
+and preserves every competing entry. These executed Linux checks do not qualify
+native Windows/macOS permissions or mounted-media scenarios.
+
+Fuzz development and execution are deferred for this delivery; fuzz coverage is
+unverified. An experimental harness attempt stopped at the fuzz framework's
+global-randomness guard. Its harness setup was corrected and built successfully,
+but no replay or subsequent campaign verified that repair. The experimental
+target is excluded from this delivery; its source, corpus and failed-run evidence
+are preserved separately. This attempt does not establish a production sanitizer
+defect or successful fuzz coverage.
+
+The focused exporter unit and functional cases were also executed with Clang 19
+AddressSanitizer and UndefinedBehaviorSanitizer on x86_64 Linux. That evidence
+covers the tested code and cases only. Native macOS and Windows permission/input
+checks and mounted-media qualification remain unverified prerequisites; the
+Linux checks above do not establish those platforms' behavior.
 
 Primary source is Bitcoin Core v29.5
 `16ca532c8212d691daed14940da0f71f84f7b3fc`, src/wallet/rpc/backup.cpp's

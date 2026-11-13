@@ -5,6 +5,7 @@
 """Exercise the standalone legacy exporter with synthetic BDB wallets only."""
 
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -14,11 +15,13 @@ import struct
 import subprocess
 import time
 from contextlib import contextmanager
+from dataclasses import replace
 
 from test_framework.address import byte_to_base58
 from test_framework.extendedkey import ExtendedPrivateKey
-from test_framework.legacy_export import bdb_bytes, encrypted_key, FixtureKey, fixtures, record_key
-from test_framework.messages import ser_string
+from test_framework.legacy_export import bdb_bytes, encrypted_key, FixtureKey, fixtures, pool_key, record_key
+from test_framework.messages import deser_compact_size, deser_string, hash256, ser_string
+from test_framework.script import hash160
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
@@ -161,6 +164,125 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
             self.assert_failure(self.invocation(source, destination) + ['dumpwallet'], category)
             assert not destination.exists()
         self.assert_failure(self.invocation(self.root / 'absent', self.output / 'absent.keys') + ['dumpwallet'], 'source')
+
+    def test_historical_storage_matrix(self):
+        self.log.info('Compare exact synthetic historical inventories across 160 BDB geometries and two overflow cases')
+
+        def byte_value(value):
+            try:
+                return {'encoding': 'utf8', 'value': value.decode('utf8')}
+            except UnicodeDecodeError:
+                return {'encoding': 'hex', 'value': value.hex()}
+
+        def read_metadata(value):
+            # Independent wire reader: donor CKeyMetadata versions 1/10/12.
+            stream = BytesIO(value)
+            version, created = struct.unpack('<iq', stream.read(12))
+            path = seed_id = origin = None
+            if version >= 10:
+                path = byte_value(deser_string(stream))
+                seed = stream.read(20)
+                seed_id = seed.hex() if any(seed) else None
+            if version >= 12:
+                fingerprint = stream.read(4).hex()
+                indexes = [struct.unpack('<I', stream.read(4))[0] for _ in range(deser_compact_size(stream))]
+                origin = {'has_origin': bool(stream.read(1)[0]), 'fingerprint': fingerprint, 'path': indexes}
+            assert_equal(stream.read(), b'')
+            return {'version': version, 'created': str(created), 'hd_path': path, 'hd_seed_id': seed_id, 'origin': origin}
+
+        def check(fixture, records, destination, size, order):
+            source = self.inputs / 'historical-matrix.dat'
+            source.write_bytes(bdb_bytes(records, page_size=size, byteorder=order))
+            before = self.source_snapshot(self.inputs)
+            options = ['-stdinwalletpassphrase'] if fixture.passphrase is not None else []
+            result = self.tool(self.invocation(source, destination) + options + ['dumpwallet'],
+                               data=fixture.passphrase + b'\n' if fixture.passphrase is not None else b'')
+            assert_equal(result.returncode, 0)
+            assert_equal(result.stderr, b'')
+            assert_equal(self.source_snapshot(self.inputs), before)
+            lines = destination.read_text(encoding='utf8').splitlines()
+            payload = [line.split() for line in lines if line and not line.startswith('#')]
+            objects = [json.loads(line[16:]) for line in lines if line.startswith('# roots-meta-v1 ')]
+            wallet = objects[0]
+            assert_equal((wallet['page_size'], wallet['byte_order'], wallet['source_bytes']), (size, order, source.stat().st_size))
+            keys = {obj['pubkey']: obj for obj in objects if obj['type'] == 'key'}
+            seeds = [obj for obj in objects if obj['type'] == 'seed']
+            scripts = {obj['script_hex'] for obj in objects if obj['type'] == 'script'}
+            assert_equal({line[0] for line in payload if line[2] != 'script=1'}, {key.wif for key in fixture.keys})
+            assert_equal({pub for pub, obj in keys.items() if obj['has_private_key']}, {key.pubkey.hex() for key in fixture.keys})
+            expected_roots = {(seed.key_id.hex(), seed.pubkey.hex(), active,
+                               ExtendedPrivateKey.from_seed(seed.secret).to_string(mainnet=False)) for seed, active in fixture.seeds}
+            assert_equal({(obj['seed_id'], obj['pubkey'], obj['active'], obj['xprv']) for obj in seeds}, expected_roots)
+            assert_equal({obj['has_secret'] for obj in seeds}, {True} if seeds else set())
+            assert_equal(scripts, {script.hex() for script in fixture.scripts})
+            active = [root for _, _, is_active, root in expected_roots if is_active]
+            assert_equal([line[30:] for line in lines if line.startswith('# extended private masterkey: ')], active)
+            redeem = set()
+            for raw_key, value in records:
+                key_stream = BytesIO(raw_key)
+                family = deser_string(key_stream)
+                if family in (b'keymeta', b'watchmeta'):
+                    identity = deser_string(key_stream)
+                    obj = keys[identity.hex()] if family == b'keymeta' else next(obj for obj in objects if obj['type'] == 'script' and obj['script_hex'] == identity.hex())
+                    assert_equal(obj['metadata'], read_metadata(value))
+                elif family == b'hdchain':
+                    version, external = struct.unpack('<iI', value[:8])
+                    obj = next(obj for obj in objects if obj['type'] == 'hdchain')
+                    assert_equal(obj, {'type': 'hdchain', 'version': version, 'seed_id': value[8:28].hex(),
+                                       'external_counter': external, 'internal_counter': struct.unpack('<I', value[28:])[0] if version == 2 else None})
+                elif family == b'pool':
+                    index = struct.unpack('<q', key_stream.read())[0]
+                    stream = BytesIO(value)
+                    version, timestamp = struct.unpack('<iq', stream.read(12))
+                    pubkey = deser_string(stream).hex()
+                    flags = stream.read()
+                    obj = next(obj for obj in objects if obj['type'] == 'pool' and obj['index'] == str(index))
+                    assert_equal(obj, {'type': 'pool', 'index': str(index), 'stream_version': version, 'pubkey': pubkey,
+                                       'time': str(timestamp), 'internal': bool(flags[0]) if flags else False,
+                                       'internal_present': bool(flags), 'pre_split': bool(flags[1]) if len(flags) > 1 else False,
+                                       'pre_split_present': len(flags) > 1})
+                elif family == b'wkey':
+                    pubkey = deser_string(key_stream).hex()
+                    stream = BytesIO(value)
+                    version = struct.unpack('<i', stream.read(4))[0]
+                    deser_string(stream)
+                    created, expires = struct.unpack('<qq', stream.read(16))
+                    assert_equal(keys[pubkey]['wkey'], {'stream_version': version, 'created': str(created),
+                                                      'expires': str(expires), 'comment': byte_value(deser_string(stream))})
+                elif family == b'cscript':
+                    script = deser_string(BytesIO(value))
+                    assert_equal(key_stream.read(), hash160(script))
+                    if script:
+                        redeem.add(script.hex())
+            assert_equal({line[0] for line in payload if line[2] == 'script=1'}, redeem)
+            assert_equal(wallet['counts']['records'], len(records))
+            assert_equal(wallet['counts']['private_keys'], len(fixture.keys))
+            assert_equal(wallet['counts']['roots'], len(fixture.seeds))
+            # All metadata and payload bytes must be invariant under geometry.
+            return [line for line in lines[3:] if not line.startswith('# roots-meta-v1 {"type":"wallet"')]
+
+        executed = 0
+        for fixture in fixtures():
+            baseline = None
+            for size in (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536):
+                for order in ('little', 'big'):
+                    destination = self.output / f'matrix-{fixture.name}-{size}-{order}.keys'
+                    lines = check(fixture, fixture.records, destination, size, order)
+                    if baseline is None:
+                        baseline = lines
+                    else:
+                        assert_equal(lines, baseline)
+                    executed += 1
+        # Exercise a real multi-page script, not padding in an unused page.
+        fixture = next(f for f in fixtures() if f.name == 'plain_mixed')
+        script = b'\x61' * 12000
+        records = fixture.records + ((record_key('cscript', hash160(script)), ser_string(script)),)
+        fixture = replace(fixture, scripts=fixture.scripts + (script,))
+        for order in ('little', 'big'):
+            check(fixture, records, self.output / f'matrix-overflow-{order}.keys', 512, order)
+            executed += 1
+        assert_equal(executed, 162)
+        self.log.info('Historical synthetic matrix: 162 passed; exact keys, roots, scripts, metadata and unchanged sources')
 
     def encrypted_source(self, vector, name=None, iterations=25000):
         key = FixtureKey((1).to_bytes(32, 'big'))
@@ -442,12 +564,27 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
 
     @staticmethod
     def source_snapshot(directory):
+        # Content/mode/mtime/siblings matter here. atime can change from both
+        # exporter reads and these verification reads and is excluded.
         result = {}
         for path in [directory] + sorted(directory.rglob('*')):
             info = path.lstat()
             digest = hashlib.sha256(path.read_bytes()).hexdigest() if stat.S_ISREG(info.st_mode) else None
             result[str(path.relative_to(directory))] = (info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, digest)
         return result
+
+    def capture_failure_diagnostics(self, case, stdout, stderr):
+        artifacts = []
+        streams = [('stdout', stdout), ('stderr', stderr)]
+        streams += [('debug-' + str(index), path.read_bytes()) for index, path in enumerate(sorted(self.datadir.rglob('*.log')))]
+        for channel, data in streams:
+            path = self.failure_diagnostics / f'{case}.{channel}'
+            path.write_bytes(data)
+            path.chmod(0o600)
+            artifacts.append({'path': str(path.relative_to(self.root)), 'bytes': len(data),
+                              'sha256': hashlib.sha256(data).hexdigest()})
+        assert all(canary not in data for _, data in streams for canary in self.secret_canaries), 'Synthetic secret appeared in diagnostics'
+        return artifacts
 
     def expected_status(self, destination, metadata):
         fields = [('Records', 'records'), ('Private keys', 'private_keys'), ('Public key identities', 'public_key_identities'),
@@ -462,7 +599,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
 
     def test_offline_status_and_preservation(self):
         self.log.info('Run the real CLI on readonly synthetic source trees with zero configured nodes and empty datadir')
-        readonly = self.root / 'readonly-sources'
+        readonly = self.root / 'read only sources ü 空'
         readonly.mkdir(mode=0o700)
         examples = list(fixtures())
         for fixture in examples:
@@ -480,7 +617,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         assert_equal(list(self.datadir.iterdir()), [])
         try:
             for fixture in examples:
-                destination = self.output / f'offline-{fixture.name}.keys'
+                destination = self.output / f'offline ü 空-{fixture.name}.keys'
                 options = ['-stdinwalletpassphrase'] if fixture.passphrase is not None else []
                 result = self.tool(self.invocation(readonly / fixture.name, destination) + options + ['dumpwallet'],
                                    data=fixture.passphrase + b'\n' if fixture.passphrase is not None else b'')
@@ -502,6 +639,9 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
                     assert secret not in result.stdout + result.stderr, 'Root in status'
                 assert_equal(self.source_snapshot(readonly), before)
                 assert_equal(list(self.datadir.iterdir()), [])  # No blocks/chainstate/RPC config/node setup.
+                self.failure_results.append({'category': 'readonly_success', 'case': fixture.name,
+                    'exit': result.returncode, 'unicode_spaces': True,
+                    'diagnostics': self.capture_failure_diagnostics('readonly-' + fixture.name, result.stdout, result.stderr)})
         finally:
             readonly.chmod(0o700)
             for path in readonly.rglob('*'):
@@ -509,16 +649,41 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
 
     def test_failure_preservation(self):
         self.log.info('Fail closed for source/format/record/destination errors; preserve source and existing output')
-        directory = self.inputs / 'failure-source'
+        directory = self.inputs / 'failure source ü 空'
         directory.mkdir(mode=0o700)
         fixture = next(f for f in fixtures() if f.name == 'plain_mixed')
         source = directory / 'wallet.dat'
         source.write_bytes(bdb_bytes(fixture.records))
-        invalid = self.inputs / 'invalid-cases'
+        invalid = self.inputs / 'invalid cases ü 空'
         invalid.mkdir(mode=0o700)
-        for name, data in [('short', b'x' * 4095), ('sqlite', b'SQLite format 3\x00' + b'\x00' * 8192),
-                           ('family', bdb_bytes([(record_key('SYNTHETIC_PRIVATE_RECORD_CANARY'), b'SYNTHETIC_PRIVATE_VALUE_CANARY')])),
-                           ('flags', bdb_bytes([(record_key('flags'), struct.pack('<Q', 1 << 34))]))]:
+        cases = [('short', b'x' * 4095), ('sqlite', b'SQLite format 3\x00' + b'\x00' * 8192),
+                 ('family', bdb_bytes(fixture.records + ((record_key('SYNTHETIC_PRIVATE_RECORD_CANARY'), b'SYNTHETIC_PRIVATE_VALUE_CANARY'),))),
+                 ('flags', bdb_bytes(fixture.records + ((record_key('flags'), struct.pack('<Q', 1 << 34)),)))]
+        key_record = next(record for record in fixture.records if record[0].startswith(record_key('key')))
+        def replace_value(records, key, value):
+            return tuple((old_key, value if old_key == key else old_value) for old_key, old_value in records)
+        cases.append(('truncated-key', bdb_bytes(replace_value(fixture.records, key_record[0], b'\xfd'))))
+        corrupt = bytearray(key_record[1])
+        corrupt[-1] ^= 1
+        cases.append(('key-checksum', bdb_bytes(replace_value(fixture.records, key_record[0], bytes(corrupt)))))
+        pool = pool_key(fixture.keys[0], 99, 18)
+        cases.append(('pool-bool', bdb_bytes(fixture.records + ((pool[0], pool[1][:-1] + b'\x02'),))))
+        malformed_script = b'\x4c\xff'
+        cases.append(('script-push', bdb_bytes(fixture.records + ((record_key('cscript', hash160(malformed_script)), ser_string(malformed_script)),))))
+        for page, name in [(0, 'outer-encryption'), (2, 'inner-encryption')]:
+            data = bytearray(bdb_bytes(fixture.records))
+            data[page * 4096 + 24] = 1  # MetaPage::encrypt_algo, not a wallet mkey.
+            cases.append((name, bytes(data)))
+        encrypted = next(item for item in fixtures() if item.name == 'encrypted_hd')
+        ckey = next(record for record in encrypted.records if record[0].startswith(record_key('ckey')))
+        ciphertext = bytearray(ckey[1][1:49])
+        ciphertext[0] ^= 1
+        # Keep its checksum valid so this reaches decryption/public-key proof.
+        value = ser_string(bytes(ciphertext)) + hash256(bytes(ciphertext))
+        cases.append(('corrupt-encrypted-key', bdb_bytes(replace_value(encrypted.records, ckey[0], value))))
+        cases.append(('wrong-passphrase', bdb_bytes(encrypted.records)))
+        stdin_by_name = {'corrupt-encrypted-key': b'test\n', 'wrong-passphrase': b'SYNTHETIC_WRONG_CREDENTIAL_CANARY\n'}
+        for name, data in cases:
             (invalid / name).write_bytes(data)
         dirty = bytearray(bdb_bytes(fixture.records))
         struct.pack_into('<I', dirty, 0, 1)
@@ -528,17 +693,62 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         if os.name == 'posix':
             (invalid / 'symlink').symlink_to(source)
             os.mkfifo(invalid / 'fifo')
-        before = self.source_snapshot(self.inputs)
-        for path in sorted(invalid.iterdir()):
-            destination = self.output / f'failure-{path.name}.keys'
+        paths = sorted(invalid.iterdir())
+        try:
+            for readonly in (False, True):
+                if os.name == 'posix':
+                    for path in paths:
+                        if not path.is_symlink():
+                            path.chmod(0o400 if readonly else 0o600)
+                    invalid.chmod(0o500 if readonly else 0o700)
+                before = self.source_snapshot(self.inputs)
+                source_snapshot = json.dumps(before, sort_keys=True).encode()
+                (self.failure_diagnostics / f'source-{readonly}.json').write_bytes(source_snapshot)
+                for path in paths:
+                    destination = self.output / f'failure ü 空-{readonly}-{path.name}.keys'
+                    outputs_before = self.source_snapshot(self.output)
+                    data = stdin_by_name.get(path.name, b'')
+                    options = ['-stdinwalletpassphrase'] if data else []
+                    result = self.tool(self.invocation(path, destination) + options + ['-debug=1', '-printtoconsole=1', 'dumpwallet'], data=data)
+                    assert_equal(result.returncode, 1)
+                    assert b'clean offline copy' in result.stderr and b'original backup' in result.stderr
+                    diagnostics = self.capture_failure_diagnostics(f'negative-{readonly}-{path.name}', result.stdout, result.stderr)
+                    after = self.source_snapshot(self.inputs)
+                    outputs_after = self.source_snapshot(self.output)
+                    assert_equal(after, before)
+                    assert_equal(outputs_after, outputs_before)
+                    assert not destination.exists()
+                    assert not list(self.output.glob('.roots-export-*'))
+                    self.failure_results.append({'category': 'negative_matrix', 'case': path.name,
+                        'readonly': readonly, 'exit': result.returncode, 'debug_console': True,
+                        'canary_needles': len(self.secret_canaries), 'stdout_bytes': len(result.stdout), 'stderr_bytes': len(result.stderr),
+                        'source_before_sha256': hashlib.sha256(source_snapshot).hexdigest(),
+                        'source_after_sha256': hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest(),
+                        'output_before_sha256': hashlib.sha256(json.dumps(outputs_before, sort_keys=True).encode()).hexdigest(),
+                        'output_after_sha256': hashlib.sha256(json.dumps(outputs_after, sort_keys=True).encode()).hexdigest(),
+                        'source_unchanged': True, 'output_unchanged': True, 'temporary_remaining': 0, 'diagnostics': diagnostics})
+        finally:
+            invalid.chmod(0o700)
+            for path in paths:
+                if not path.is_symlink():
+                    path.chmod(0o600)
+        if os.name == 'posix' and os.geteuid() != 0:
+            before = self.source_snapshot(self.inputs)
             outputs_before = self.source_snapshot(self.output)
-            result = self.tool(self.invocation(path, destination) + ['dumpwallet'])
-            assert_equal(result.returncode, 1)
-            assert_equal(result.stdout, b'')
-            assert b'clean offline copy' in result.stderr and b'original backup' in result.stderr
-            assert b'SYNTHETIC_PRIVATE_' not in result.stderr, 'Raw record in diagnostic'
+            saved_mode = stat.S_IMODE(source.stat().st_mode)
+            source.chmod(0)
+            try:
+                destination = self.output / 'unreadable-source.keys'
+                result = self.tool(self.invocation(source, destination) + ['-debug=1', '-printtoconsole=1', 'dumpwallet'])
+                assert_equal(result.returncode, 1)
+                diagnostics = self.capture_failure_diagnostics('source-permission', result.stdout, result.stderr)
+                assert not destination.exists()
+                assert not list(self.output.glob('.roots-export-*'))
+            finally:
+                source.chmod(saved_mode)
             assert_equal(self.source_snapshot(self.inputs), before)
             assert_equal(self.source_snapshot(self.output), outputs_before)
+            self.failure_results.append({'category': 'source_permission', 'exit': result.returncode, 'source_unchanged': True, 'diagnostics': diagnostics})
         existing = self.output / 'existing-user-file'
         existing.write_bytes(b'UNCHANGED USER FILE')
         existing_dir = self.output / 'existing-directory'
@@ -563,15 +773,22 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
             readonly_parent.mkdir(mode=0o500)
             if os.geteuid() != 0:
                 destinations.append(readonly_parent / 'readonly.keys')
+        before = self.source_snapshot(self.inputs)
         for destination in destinations:
             outputs_before = self.source_snapshot(self.output)
+            present_before = os.path.lexists(destination)
             result = self.tool(self.invocation(source, destination) + ['dumpwallet'])
             assert_equal(result.returncode, 1)
             assert_equal(result.stdout, b'')
             assert b'Error:' in result.stderr
             assert_equal(self.source_snapshot(self.output), outputs_before)
+            assert_equal(self.source_snapshot(self.inputs), before)
+            assert_equal(os.path.lexists(destination), present_before)
             if destination.parent.is_dir():
                 assert not list(destination.parent.glob('.roots-export-*'))
+            self.failure_results.append({'category': 'destination_alias_permission', 'case': destination.name,
+                'exit': result.returncode, 'output_unchanged': True, 'destination_presence_unchanged': True,
+                'diagnostics': self.capture_failure_diagnostics('destination-' + str(len(self.failure_results)), result.stdout, result.stderr)})
         if os.name == 'posix':
             readonly_parent.chmod(0o700)  # Restore our test directory for teardown.
             unsafe_parent.chmod(0o700)
@@ -581,6 +798,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
     def test_source_change_and_output_race(self):
         if os.name != 'posix':
             return
+        import termios
         self.log.info('Detect source changes and output creation after the prompt without overwriting')
         for action in ('change', 'replace', 'destination'):
             source = self.encrypted_source(self.vectors[0], 'race-' + action)
@@ -588,6 +806,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
             destination = self.output / f'race-{action}.keys'
             with self.terminal_process(self.invocation(source, destination) + ['dumpwallet']) as (process, master, slave, saved):
                 self.wait_prompt(process, master, slave)
+                assert process.poll() is None and not destination.exists(), 'Race gate was not held'
                 if action == 'change':
                     changed = bytearray(original)
                     changed[-1] ^= 1
@@ -598,16 +817,26 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
                     replacement.replace(source)
                 else:
                     destination.write_bytes(b'UNCHANGED RACING USER FILE')
+                injected_source_state = self.source_snapshot(self.inputs)
+                injected_output_state = self.source_snapshot(self.output)
                 self.terminal_send(master, b'test\n')
                 stdout, stderr = process.communicate(timeout=10)
                 assert_equal(process.returncode, 1)
                 assert_equal(stdout, b'')
                 assert b'changed' in stderr if action != 'destination' else b'already exists' in stderr
+                assert_equal(termios.tcgetattr(slave), saved)
+                assert_equal(self.source_snapshot(self.inputs), injected_source_state)
+                assert_equal(self.source_snapshot(self.output), injected_output_state)
                 if action == 'destination':
                     assert_equal(destination.read_bytes(), b'UNCHANGED RACING USER FILE')
                 else:
                     assert not destination.exists()
                 assert not list(self.output.glob('.roots-export-*'))
+            assert process.poll() is not None
+            self.failure_results.append({'category': 'prompt_source_destination_race', 'case': action,
+                'gate_observed': True, 'released': True, 'settled': True, 'exit': process.returncode,
+                'source_after_injection_unchanged': True, 'output_after_injection_unchanged': True,
+                'diagnostics': self.capture_failure_diagnostics('race-' + action, stdout, stderr)})
 
     def test_output_io_and_reporting(self):
         if os.name != 'posix':
@@ -714,8 +943,16 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         assert_equal(self.source_snapshot(self.inputs), before)
 
     def run_test(self):
+        self.failure_results = []
         self.root = Path(self.options.tmpdir) / 'legacy-export'
         self.root.mkdir(mode=0o700)
+        self.failure_diagnostics = self.root / 'failure-diagnostics'
+        self.failure_diagnostics.mkdir(mode=0o700)
+        self.secret_canaries = [b'SYNTHETIC_PRIVATE_', b'SYNTHETIC_WRONG_CREDENTIAL_CANARY']
+        for item in fixtures():
+            self.secret_canaries.extend(key.wif.encode() for key in item.keys)
+            self.secret_canaries.extend(ExtendedPrivateKey.from_seed(seed.secret).to_string(mainnet=False).encode() for seed, _ in item.seeds)
+        self.secret_canaries = sorted(set(self.secret_canaries))
         self.datadir = self.root / 'datadir'
         self.datadir.mkdir(mode=0o700)
         self.output = self.root / 'output'
@@ -726,6 +963,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         self.vectors = json.loads(vector_path.read_text(encoding='utf8'))['vectors']
         self.test_arguments()
         self.test_plaintext()
+        self.test_historical_storage_matrix()
         self.test_invalid_sources()
         self.test_stdin_bytes()
         self.test_stdin_errors()
@@ -740,6 +978,12 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         self.test_output_io_and_reporting()
         self.test_report_source_aliases()
         assert not list(self.output.glob('.roots-export-*'))
+        summary = {'checks': self.failure_results, 'executed': len(self.failure_results),
+                   'failed': 0, 'atime': 'Excluded: exporter and verification reads can update atime',
+                   'permission_uid': os.geteuid() if os.name == 'posix' else None,
+                   'limitations': 'Native permission/PTY execution is platform-specific; native publication races are checked in legacy_wallet_export_tests'}
+        (self.root / 'failure-matrix-results.json').write_text(json.dumps(summary, indent=2) + '\n')
+        self.log.info('Failure and readonly matrix: %d identified checks passed; no leaked canary or unowned change', len(self.failure_results))
 
 
 if __name__ == '__main__':
