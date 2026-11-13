@@ -83,13 +83,15 @@ passphrase-value, file, environment or config option is added. Existing `dump`,
 
 Keep stdout and stderr separate from both source and destination, including
 hardlink aliases. A shell can create or truncate redirected files before this
-process runs. Rejected startup arguments and help do not inspect the source
-filesystem, so those inherited channels remain the operator's responsibility.
-Once valid paths can be admitted, the command suppresses pinned report handles
-whose observed file identity matches the source or an existing destination,
-before source-phase errors and success reports. It repeats these checks around
-source admission and before export; pathname checks alone cannot make malicious
-concurrent path swaps safe. Use a stable offline copy and preserve the original.
+process runs. Before startup errors, help or version reporting, the command
+checks only filesystem identities for recognizable supplied source/destination
+paths, including all duplicate candidates in rejected invocations. It suppresses
+inherited report channels that alias those files; an identity-inspection failure
+suppresses unverified regular-file channels. It does not read wallet contents or
+initialize a wallet/datadir for this protection. Ordinary pipes, terminals and
+nonaliased file logs remain available. It repeats checks around source admission
+and before export; pathname checks alone cannot make malicious concurrent path
+swaps safe. Use a stable offline copy and preserve the original.
 
 The source is an existing regular file or a directory containing `wallet.dat`.
 An absolute file path is supported by the new command; it must bypass the raw

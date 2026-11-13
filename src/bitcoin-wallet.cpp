@@ -194,6 +194,15 @@ static std::optional<int> WalletAppInit(ArgsManager& args, int argc, char* argv[
 
 MAIN_FUNCTION
 {
+    // Before initialization, parsing, help or exception diagnostics can write
+    // through inherited channels. Only metadata identities are observed here.
+    bool dumpwallet;
+    try {
+        dumpwallet = IsDumpWalletInvocation(argc, argv);
+        if (dumpwallet && !wallet::WalletTool::ProtectLegacyWalletToolReportChannels(argc, argv)) return EXIT_FAILURE;
+    } catch (...) {
+        return EXIT_FAILURE; // No diagnostic through channels not yet protected.
+    }
     ArgsManager& args = gArgs;
 
     int exit_status;
@@ -207,16 +216,20 @@ MAIN_FUNCTION
     RandomInit();
     std::unique_ptr<wallet::WalletTool::LegacyWalletToolSignals> export_signals;
     try {
-        if (IsDumpWalletInvocation(argc, argv)) export_signals = std::make_unique<wallet::WalletTool::LegacyWalletToolSignals>();
+        if (dumpwallet) export_signals = std::make_unique<wallet::WalletTool::LegacyWalletToolSignals>();
         if (const auto maybe_exit{WalletAppInit(args, argc, argv)}) return *maybe_exit;
     } catch (const std::exception& e) {
-        if (IsDumpWalletInvocation(argc, argv)) {
+        if (dumpwallet) {
             tfm::format(std::cerr, "Error: Cannot initialize dumpwallet (argument values omitted).\n");
             return EXIT_FAILURE;
         }
         PrintExceptionContinue(&e, "WalletAppInit()");
         return EXIT_FAILURE;
     } catch (...) {
+        if (dumpwallet) {
+            tfm::format(std::cerr, "Error: Cannot initialize dumpwallet (argument values omitted).\n");
+            return EXIT_FAILURE;
+        }
         PrintExceptionContinue(nullptr, "WalletAppInit()");
         return EXIT_FAILURE;
     }

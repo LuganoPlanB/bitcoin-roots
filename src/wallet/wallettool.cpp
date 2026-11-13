@@ -9,6 +9,7 @@
 #include <common/args.h>
 #include <util/check.h>
 #include <util/fs.h>
+#include <util/strencodings.h>
 #include <util/translation.h>
 #include <wallet/dump.h>
 #include <wallet/legacy_export.h>
@@ -25,10 +26,11 @@
 #include <string_view>
 #include <type_traits>
 
+#include <fcntl.h>
 #ifdef WIN32
+#include <io.h>
 #include <windows.h>
 #else
-#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -144,10 +146,12 @@ static void CheckLegacyDestination(const fs::path& source, const fs::path& desti
     }
 }
 
-// Publication has committed before this path runs. Native writes and to_chars
-// need no formatting/path allocations, and a missing report channel must never
-// turn a complete export into a claimed export failure. Only dumpwallet ignores
-// SIGPIPE; the other commands retain their existing signal/stream behavior.
+// Native success reports run after publication. Writes and to_chars need no
+// formatting/path allocations; a missing channel must never turn a complete
+// export into a claimed export failure. The same identity checks protect early
+// startup streams. Other commands retain their existing signal/stream behavior.
+static bool g_legacy_stdout_suppressed{false}, g_legacy_stderr_suppressed{false};
+
 class LegacyExportReporter
 {
     // Encode before source/output work, and pin the original report channels
@@ -156,10 +160,11 @@ class LegacyExportReporter
     using Identity = std::array<uint64_t, 2>;
 #ifdef WIN32
     HANDLE m_stdout{INVALID_HANDLE_VALUE}, m_stderr{INVALID_HANDLE_VALUE};
-    static HANDLE Pin(DWORD name) noexcept
+    static HANDLE Pin(DWORD name, bool crt) noexcept
     {
         HANDLE result{INVALID_HANDLE_VALUE};
-        if (!DuplicateHandle(GetCurrentProcess(), GetStdHandle(name), GetCurrentProcess(), &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) return INVALID_HANDLE_VALUE;
+        const auto original{crt ? reinterpret_cast<HANDLE>(_get_osfhandle(name == STD_OUTPUT_HANDLE ? 1 : 2)) : GetStdHandle(name)};
+        if (!DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(), &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) return INVALID_HANDLE_VALUE;
         return result;
     }
     static std::optional<Identity> ChannelIdentity(HANDLE& handle) noexcept
@@ -225,14 +230,15 @@ class LegacyExportReporter
 #endif
     }
 public:
-    explicit LegacyExportReporter(const fs::path& destination) : m_destination(fs::PathToString(destination))
+    explicit LegacyExportReporter(const fs::path& destination, bool crt = false) : m_destination(fs::PathToString(destination))
     {
 #ifdef WIN32
-        m_stdout = Pin(STD_OUTPUT_HANDLE);
-        m_stderr = Pin(STD_ERROR_HANDLE);
+        if (!g_legacy_stdout_suppressed) m_stdout = Pin(STD_OUTPUT_HANDLE, crt);
+        if (!g_legacy_stderr_suppressed) m_stderr = Pin(STD_ERROR_HANDLE, crt);
 #else
-        m_stdout = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 3);
-        m_stderr = fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 3);
+        (void)crt;
+        if (!g_legacy_stdout_suppressed) m_stdout = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 3);
+        if (!g_legacy_stderr_suppressed) m_stderr = fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 3);
 #endif
     }
     LegacyExportReporter(const LegacyExportReporter&) = delete;
@@ -256,6 +262,69 @@ public:
             if (error) Close(m_stderr);
             throw;
         }
+    }
+    // Startup uses both C/C++ standard streams and native reporting. Replace
+    // unsafe channels rather than merely closing them: a later source/temp
+    // open must never reuse a standard descriptor which startup might write.
+    static bool NullChannel(int descriptor) noexcept
+    {
+#ifdef WIN32
+        const int sink{_open("NUL", _O_WRONLY | _O_BINARY)};
+        if (sink == -1) return false;
+        const bool replaced{_dup2(sink, descriptor) == 0};
+        if (sink != descriptor) _close(sink);
+        return replaced && SetStdHandle(descriptor == 1 ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE,
+                                       reinterpret_cast<HANDLE>(_get_osfhandle(descriptor)));
+#else
+        const int sink{open("/dev/null", O_WRONLY | O_CLOEXEC)};
+        if (sink == -1) return false;
+        const bool replaced{dup2(sink, descriptor) == descriptor};
+        if (sink != descriptor) close(sink);
+        return replaced;
+#endif
+    }
+    bool ProtectStartupChannels(int argc, char* argv[])
+    {
+        // Disable unidentifiable file channels even when no path was supplied.
+        ChannelIdentity(m_stdout);
+        ChannelIdentity(m_stderr);
+        try {
+            for (int i{1}; i < argc; ++i) {
+                const std::string_view arg{argv[i]};
+                const auto equal{arg.find('=')};
+                std::string name{arg.substr(0, equal)};
+#ifdef WIN32
+                name = ToLower(name);
+                if (name.starts_with('/')) name[0] = '-';
+#endif
+                if (name.starts_with("--")) name.erase(0, 1);
+                const bool source{name == "-wallet" || name.ends_with(".wallet")};
+                if (!source && name != "-dumpfile" && !name.ends_with(".dumpfile")) continue;
+                // Observe every candidate, even after an invalid token/command
+                // or in the rejected space-separated form. Do not let parser
+                // rejection or last-value selection hide an earlier alias.
+                const std::string_view value{equal != arg.npos ? arg.substr(equal + 1) :
+                                                 i + 1 < argc ? std::string_view{argv[i + 1]} : std::string_view{}};
+                if (!value.empty()) ProtectChannels(fs::PathFromString(std::string{value}), source);
+            }
+        } catch (...) {
+            // An unknown path identity cannot authorize writes to a regular
+            // file. Preserve pipes/terminals; they cannot alias a wallet file.
+            if (ChannelIdentity(m_stdout)) Close(m_stdout);
+            if (ChannelIdentity(m_stderr)) Close(m_stderr);
+        }
+#ifdef WIN32
+        const bool output{m_stdout == INVALID_HANDLE_VALUE}, error{m_stderr == INVALID_HANDLE_VALUE};
+#else
+        const bool output{m_stdout == -1}, error{m_stderr == -1};
+#endif
+        if (output && !NullChannel(1)) return false;
+        if (error && !NullChannel(2)) return false;
+        // Retain suppression for the admitted native reporter so it can still
+        // warn through the other channel when a success report is unavailable.
+        g_legacy_stdout_suppressed |= output;
+        g_legacy_stderr_suppressed |= error;
+        return true;
     }
     std::string_view Destination() const noexcept { return m_destination; }
     bool Write(std::string_view bytes, bool error = false) const noexcept
@@ -284,6 +353,22 @@ public:
         Write(". Use a clean offline copy and preserve the original backup.\n", /*error=*/true);
     }
 };
+
+bool ProtectLegacyWalletToolReportChannels(int argc, char* argv[]) noexcept
+{
+    try {
+        LegacyExportReporter report{fs::path{}};
+#ifdef WIN32
+        // Win32 standard handles and CRT descriptors can differ. Pin both
+        // before replacing either, protecting C/C++ and native startup output.
+        LegacyExportReporter crt{fs::path{}, /*crt=*/true};
+        if (!crt.ProtectStartupChannels(argc, argv)) return false;
+#endif
+        return report.ProtectStartupChannels(argc, argv);
+    } catch (...) {
+        return false; // No reporting until protection has succeeded.
+    }
+}
 
 static void ReportLegacyExport(const LegacyExportResult& result, const LegacyExportReporter& report) noexcept
 {

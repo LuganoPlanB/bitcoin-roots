@@ -877,6 +877,101 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
             assert destination.read_bytes().endswith(b'# roots-export-complete: 1\n')
         assert_equal(self.source_snapshot(self.inputs), before)
 
+    def test_startup_report_aliases(self):
+        if os.name != 'posix':
+            return
+        self.log.info('Protect every raw source/destination candidate before startup errors/help/version')
+        root = self.root / 'startup-reports'
+        root.mkdir(mode=0o700)
+        source_dir = root / 'source'
+        source_dir.mkdir(mode=0o700)
+        sources = [source_dir / 'wallet.dat', root / 'other-source.dat']
+        # Content is deliberately not a BDB wallet: startup must use only file
+        # identity, never decode a wallet, even for help or rejected arguments.
+        for source in sources:
+            source.write_bytes(b'UNCHANGED OFFLINE SOURCE')
+        destinations = [root / 'existing-first.keys', root / 'existing-last.keys']
+        for destination in destinations:
+            destination.write_bytes(b'UNCHANGED EXISTING DESTINATION')
+        aliases = {}
+        for index, path in enumerate(sources + destinations):
+            alias = root / f'hardlink-{index}'
+            os.link(path, alias)
+            aliases[path] = alias
+        basic = ['-chain=regtest', f'-wallet={source_dir}', f'-dumpfile={destinations[0]}']
+        cases = [
+            ('invalid-chain', ['-chain=unsupported'] + basic[1:] + ['dumpwallet'], 1),
+            ('duplicate-wallet', basic + [f'-wallet={sources[1]}', 'dumpwallet'], 1),
+            ('duplicate-destination', basic + [f'-dumpfile={destinations[1]}', 'dumpwallet'], 1),
+            ('help', basic + ['-help', 'dumpwallet'], 0),
+            ('version', basic + ['-version', 'dumpwallet'], 0),
+            ('missing-chain', basic[1:] + ['dumpwallet'], 1),
+            ('rejected-alias', basic + [f'--wallet={sources[1]}', 'dumpwallet'], 1),
+            ('rejected-space-form', basic + ['-wallet', str(sources[1]), 'dumpwallet'], 1),
+            ('after-command', basic + ['dumpwallet', f'-wallet={sources[1]}'], 1),
+            ('invalid-before-paths', ['-unknown=omitted'] + basic + ['dumpwallet'], 1),
+        ]
+        executed = 0
+        for name, args, expected in cases:
+            candidates = [sources[0], destinations[0]]
+            if name in ('duplicate-wallet', 'rejected-alias', 'rejected-space-form', 'after-command'):
+                candidates.append(sources[1])
+            if name == 'duplicate-destination':
+                candidates.append(destinations[1])
+            for candidate in candidates:
+                for linked in (False, True):
+                    for channel in ('stdout', 'stderr', 'both'):
+                        before = self.source_snapshot(root)
+                        with (aliases[candidate] if linked else candidate).open('ab', buffering=0) as report:
+                            result = subprocess.run(self.get_binaries().wallet_argv() + [f'-datadir={self.datadir}'] + args,
+                                input=b'', stdout=report if channel in ('stdout', 'both') else subprocess.PIPE,
+                                stderr=report if channel in ('stderr', 'both') else subprocess.PIPE, timeout=10)
+                        assert_equal(result.returncode, expected)
+                        assert_equal(self.source_snapshot(root), before)
+                        assert_equal(list(self.datadir.iterdir()), [])
+                        assert not list(root.glob('.roots-export-*'))
+                        if expected and channel == 'stdout':
+                            assert b'Error:' in result.stderr
+                        if not expected and channel == 'stderr':
+                            assert b'bitcoin-wallet utility version' in result.stdout
+                        self.failure_results.append({'category': 'startup_report_alias', 'case': name,
+                            'candidate': candidate.name, 'hardlink': linked, 'channel': channel,
+                            'exit': result.returncode, 'source_and_destination_unchanged': True,
+                            'no_final_or_temporary_created': True})
+                        executed += 1
+        # A path whose identity cannot be inspected must not authorize output
+        # to any inherited regular file. ENAMETOOLONG is deterministic and
+        # does not require a permission override or a privileged test runner.
+        unknown = root / ('x' * 5000)
+        logfile = root / 'ordinary.log'
+        logfile.write_bytes(b'EXISTING USER LOG\n')
+        before = self.source_snapshot(root)
+        with logfile.open('ab', buffering=0) as report:
+            result = subprocess.run(self.get_binaries().wallet_argv() + [f'-datadir={self.datadir}'] + basic +
+                [f'-wallet={unknown}', 'dumpwallet'], input=b'', stdout=report, stderr=report, timeout=10)
+        assert_equal(result.returncode, 1)
+        assert_equal(self.source_snapshot(root), before)
+        self.failure_results.append({'category': 'startup_unknown_identity', 'exit': result.returncode,
+                                     'regular_channels_unchanged': True})
+        # Nonaliased file logs still receive startup output, including errors;
+        # the empty datadir and every nominated file remain untouched.
+        for args, expected, needle in [(cases[0][1], 1, b'Error:'), (cases[3][1], 0, b'Usage: bitcoin-wallet'),
+                                      (cases[4][1], 0, b'bitcoin-wallet utility version')]:
+            logfile.write_bytes(b'EXISTING USER LOG\n')
+            before = self.source_snapshot(root)
+            with logfile.open('ab', buffering=0) as report:
+                result = subprocess.run(self.get_binaries().wallet_argv() + [f'-datadir={self.datadir}'] + args,
+                    input=b'', stdout=report, stderr=report, timeout=10)
+            assert_equal(result.returncode, expected)
+            assert logfile.read_bytes().startswith(b'EXISTING USER LOG\n')
+            assert needle in logfile.read_bytes()
+            after = self.source_snapshot(root)
+            del before['ordinary.log']
+            del after['ordinary.log']
+            assert_equal(after, before)
+            assert_equal(list(self.datadir.iterdir()), [])
+        self.log.info('Startup alias preservation: %d cases plus unknown-identity and ordinary-log controls', executed)
+
     def test_report_source_aliases(self):
         if os.name != 'posix':
             return
@@ -977,6 +1072,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         self.test_failure_preservation()
         self.test_source_change_and_output_race()
         self.test_output_io_and_reporting()
+        self.test_startup_report_aliases()
         self.test_report_source_aliases()
         assert not list(self.output.glob('.roots-export-*'))
         summary = {'checks': self.failure_results, 'executed': len(self.failure_results),
