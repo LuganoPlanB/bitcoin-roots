@@ -1,13 +1,13 @@
-# Offline legacy wallet export: proposed version 1 contract
+# Offline legacy wallet export
 
-**Implementation status:** this document specifies planned `bitcoin-wallet
-dumpwallet` behavior. The command is not implemented at this baseline. The
-deterministic fixtures and source comparisons described below are available;
-they do not establish historical whole-wallet compatibility or a released
-`v32.1-roots.2`. Operator instructions will be checked against the implemented
-command before release.
+`bitcoin-wallet dumpwallet` exports a supported legacy wallet offline. This
+guide describes the implemented version 1 format and its limits; it does not
+establish a released `v32.1-roots.2` or universal historical compatibility.
+The [evidence boundary below](#current-evidence-boundary-and-source-attribution)
+distinguishes synthetic cases, exact-release comparisons and unverified platforms.
 
-The proposed command exports decoded private keys, positively identified HD
+Unlike the wallet tool's raw `dump` of database records, this command exports
+decoded private keys, positively identified HD
 seeds and BIP32 roots, scripts and recovery metadata from a stable offline
 legacy BDB copy. Keep the original wallet backup. The export contains
 unencrypted spending material when private keys are present; its metadata is
@@ -16,19 +16,49 @@ chain state, a BIP39 mnemonic, or every importer's wallet state. An HD root does
 not cover unrelated imported keys. Every recoverable individual key is exported
 even when roots are available. A non-HD wallet has no root.
 
-## Proposed invocation and input
+## Export an offline copy
+
+1. Retain the original wallet backup independently. Use a stable offline copy
+   made after clean shutdown; do not point this command at a running wallet.
+2. Prepare an existing empty datadir and a separate, owner-controlled output
+   directory. On POSIX, the output parent must belong to the current user and
+   must not be writable by group or others. The output must be outside the
+   source wallet directory. On Linux, both parents must be in the same mounted
+   view; see [publication limits](#publication-status-and-recovery-limits).
+3. Choose the encoding network explicitly and choose a new output filename.
+   The following paths are placeholders for those prepared locations. Keep
+   shell output on the terminal, away from both the source and export.
 
 ```sh
-# Proposed; use a clean offline copy and an existing empty datadir.
-bitcoin-wallet -datadir=/secure/empty-datadir -chain=main \
-  -wallet=/secure/offline-copy/wallet.dat \
-  -dumpfile=/secure/export/wallet.keys dumpwallet
+# Plaintext, or encrypted with a non-echoing controlling-terminal prompt.
+bitcoin-wallet -datadir=/path/to/empty-datadir -chain=main \
+  -wallet=/path/to/offline-copy/wallet.dat \
+  -dumpfile=/path/to/private-output/wallet.keys dumpwallet
 
 # A trusted parent supplies the passphrase through stdin, never in this command.
-bitcoin-wallet -datadir=/secure/empty-datadir -chain=main \
-  -wallet=/secure/offline-copy/wallet.dat \
-  -dumpfile=/secure/export/wallet.keys -stdinwalletpassphrase dumpwallet
+bitcoin-wallet -datadir=/path/to/empty-datadir -chain=main \
+  -wallet=/path/to/offline-copy/wallet.dat \
+  -dumpfile=/path/to/private-output/wallet.keys -stdinwalletpassphrase dumpwallet
 ```
+
+4. For the first command, enter an encrypted wallet's passphrase only at the
+   tool's prompt. On POSIX, finish with **Ctrl-J**, which supplies LF; ordinary
+   Enter may supply CR and does not finish collection. Terminal line editing is
+   disabled, so Backspace is not an editing command. Ctrl-C cancels the export.
+   For automation, use the second command only with a trusted parent supplying
+   the passphrase directly on stdin. Never put it in argv, a shell literal,
+   environment, config entry or command history.
+5. Check the exit status and reported state/counts. Exit 0 means the complete
+   file was published, including `# roots-export-complete: 1`; it does not mean
+   a balance or restored wallet was verified. Protect the export as spending
+   material and retain the original backup. If reporting fails after publication,
+   inspect the destination before retrying; an existing file is never replaced.
+
+The same invocation handles pre-HD, mixed/imported-key, HD and seed-rotated
+inventories. A watch-only export has zero private keys and roots and cannot
+spend. Only add `-stdinwalletpassphrase` when encrypted private keys require it.
+
+## Invocation and input rules
 
 `-wallet`, `-dumpfile` and `-chain` must each occur explicitly once with a
 nonempty `=value`. `-chain` is one of `main`, `test`, `testnet4`, `signet`,
@@ -102,10 +132,38 @@ the same pipe after the terminator. Do not wait for another byte after a complet
 line from a live pipe. Input arriving later is neither consumed nor claimed to
 have been validated. Terminal collection is length-aware with the same trimming
 and byte limit; embedded NUL must not truncate input. POSIX terminal bytes pass
-through; native Windows console Unicode is encoded as UTF-8 without normalization,
+through, with CR-to-LF translation disabled: use Ctrl-J to terminate the line.
+Native Windows console Enter ends collection as a console event; a trailing
+data CR remains part of the passphrase. Console Unicode is encoded as UTF-8 without normalization,
 rejecting invalid surrogate input. Explicit stdin remains a raw byte path. The
 same representable input must reach crypto as identical bytes in either mode.
 Do not retry altered bytes, old NUL-truncated variants, or another passphrase.
+
+## What the exported secrets mean
+
+| Material | Meaning and recovery limit |
+| --- | --- |
+| Ordinary WIF | One private key with its compression flag and selected-network encoding. It may be imported, reserve or unclassified; its presence does not make it an HD seed. Keep every exported WIF, including keys unrelated to a root. |
+| WIF-encoded seed | The original private bytes of a positively identified Core HD seed, also exported as a key payload. It is not a BIP39 mnemonic. Identification and active/inactive status appear in seed metadata. |
+| BIP32 root (`xprv`/`tprv`) | A root derived from those seed bytes. Use the recorded paths and origins; the supported Core receive/change paths are `m/0'/0'/i'` and `m/0'/1'/i'`, not an assumed BIP44 path. Every recoverable identified seed gets a root, including inactive seeds. A root alone does not recover unrelated imported keys. |
+| Symmetric `mkey` | A passphrase-encrypted key used to decrypt stored private keys. It is not a BIP32 root and is never exported as one. The export retains only its public parameter/verification metadata. An mkey-only wallet proves no recovered spending authority. |
+
+A non-HD wallet exports its individual keys and has no seed/root. Public-only
+inventories can retain unresolved seed IDs with null roots. Missing required
+seed material in an inventory containing private keys instead fails the whole
+export; there is no partial-success mode.
+
+## Supported and rejected inputs
+
+| Input | Result within version 1 limits |
+| --- | --- |
+| Clean legacy BDB v9, supported records | Export validated plaintext or decryptable keys, stored scripts and metadata. Pre-HD, unsplit/split HD, active/inactive seeds and unrelated imported keys are covered by the specific cases below. |
+| Watch-only, empty or mkey-only inventory | Export available public metadata with zero private keys/roots; no password-verification or spending-authority claim. |
+| SQLite/descriptor wallet, non-BDB file, built-in BDB encryption or dirty LSNs | Reject. Use a suitable wallet tool for that format; this command does not migrate, repair or recover a dirty database. |
+| Unknown record family, incompatible flags, damaged required key/script, missing required private seed or resource excess | Reject without publishing a partial export. A limit error is not proof of corruption or a wrong passphrase. |
+
+Release names alone do not establish support. The exact storage geometry,
+record allowlist, resource limits and executed evidence follow.
 
 ## Record dispositions and validation
 
@@ -443,16 +501,25 @@ success and attempts a fixed warning on stderr; if both channels are unavailable
 even that warning cannot be delivered. Inspect the requested destination. No
 reporting failure authorizes deletion, overwrite or automatic retry.
 
-Old Core importwallet ignores comments, including all roots-meta-v1 objects and
-root comments. It cannot recognize an empty script payload token, so an empty
-redeem script retained in metadata requires separate reconstruction. Its
-WIF/script payload import does not restore exact labels on
-every destination, original paths/origins, inactive/active root relationships,
-watch-only metadata, keypool state, expiry, settings or history. The neutral
-token also does not restore the original key classification. Unknown-time
-payloads deliberately request the earliest conservative scan bound. Separate
-reconstruction/signing tests must establish any stronger recovery claim; no new
-importer is provided by this feature.
+### What Core importwallet restores
+
+The tested Core v29.5/v0.18.1 `importwallet` consumers read payload lines and
+ignore comments. Keep the complete export for separate reconstruction of its
+metadata; importing it is not a complete wallet restore.
+
+| Export content | Core importwallet behavior / remaining work |
+| --- | --- |
+| Individual WIF and nonempty redeem-script payloads | Import the keys/scripts. A legacy label token does not restore every original destination-label association; `unclassified=1` does not restore the original classification. |
+| `# extended private masterkey` and seed `xprv` fields | Ignored as comments. They do not configure the destination's HD chain or recover inactive/active root relationships. Preserve them for a consumer that understands the recorded derivations. |
+| `roots-meta-v1` key/hdchain/pool/address/encryption/omitted objects | Ignored as comments. Original paths, origins, keypool state, raw labels/purposes, wkey expiry/comments and encryption-parameter metadata are not restored. |
+| Watch-only and empty redeem-script metadata | Ignored as comments. An empty script has no importable payload token; these public scripts require separate reconstruction and do not themselves confer signing authority. |
+| Unknown-time epoch fallback | Requests the earliest conservative scan bound. History discovery still needs independently available blockchain data and a rescan by the receiving tool; the export supplies neither blocks nor saved transaction history. |
+
+Settings, spent/locked state, receive requests, ordering and transaction history
+are omitted from the export, as described in the record allowlist. A balance
+must be established independently. Separate reconstruction/signing tests must
+establish any stronger recovery claim; no new importer is provided by this
+feature.
 
 ## Current evidence boundary and source attribution
 
@@ -574,6 +641,27 @@ covers the tested code and cases only. Native macOS and Windows permission/input
 checks and mounted-media qualification remain unverified prerequisites; the
 Linux checks above do not establish those platforms' behavior.
 
+### Maintenance provenance
+
+The pins below identify the inspected upstream sources. The implementation
+adapts small payload/schema helpers and retains current Roots crypto and BDB
+reading primitives; it does not transplant an operational legacy wallet engine.
+The following map names the maintained adapters and their regression evidence.
+Unit case names refer to
+[`legacy_wallet_export_tests.cpp`](../src/wallet/test/legacy_wallet_export_tests.cpp).
+
+| Upstream source and symbol | Current adapter and intended differences | Differential/regression checks |
+| --- | --- | --- |
+| [v29.5 backup.cpp](https://github.com/bitcoin/bitcoin/blob/16ca532c8212d691daed14940da0f71f84f7b3fc/src/wallet/rpc/backup.cpp): `EncodeDumpString`, `GetWalletAddressesForKey`, `dumpwallet` | [`legacy_export_format.cpp`](../src/wallet/legacy_export_format.cpp): `WriteDumpString`, `MatchAddresses`, `Render`. Preserve payload byte escaping/association; add deterministic metadata, all identified inactive roots and conservative unknown times. Remove RPC, chain synchronization, live birthdays and block headers. Export stored scripts rather than the donor's in-memory implicit wrappers. | `format_frozen_corpus_all_networks`, `format_labels_associations_and_injection`; [`tool_wallet_legacy_export_compatibility.py`](../test/functional/tool_wallet_legacy_export_compatibility.py) compares exact-release WIF/root/stored-script sets. |
+| [v0.18.1 wallet.h](https://github.com/bitcoin/bitcoin/blob/fa27a0760792b251585f2a70eccdd547f915b7e4/src/wallet/wallet.h): `CWalletKey`, `CKeyPool`; walletdb.cpp `ReadKeyValue`; v29.5 walletdb/schema loaders | [`legacy_export.cpp`](../src/wallet/legacy_export.cpp): `HistoricalWalletKey`, `ReadPool`, `DecodeLegacyWalletRecords`. Preserve historical fields and their presence; require bounded, complete records and consistent identities instead of wallet mutation or permissive partial loading. | `record_fixture_inventories`, `record_public_metadata_and_pool_versions`, `record_checksums_and_semantic_conflicts`; independent donor/current-primitive serializer vectors and the synthetic geometry matrix in [`tool_wallet_legacy_export.py`](../test/functional/tool_wallet_legacy_export.py). |
+| [v0.13.0 wallet.cpp](https://github.com/bitcoin/bitcoin/blob/a402396dce64c42ea73535b7dde4a9164d430438/src/wallet/wallet.cpp): `GenerateNewKey`, `GenerateNewHDMasterKey`; [v0.15.0 wallet.cpp](https://github.com/bitcoin/bitcoin/blob/3751912e8e044958d5ccea847a3f8eab0b026dc1/src/wallet/wallet.cpp): `DeriveNewChildKey`; later `m`/`s` metadata semantics | `DeriveLegacyWalletRoots` and `ValidateLegacyWalletCoverage` in `legacy_export.cpp`, using current `CExtKey`/encoding primitives. Interpret stored seed/path evidence and verify children; preserve all individual/imported keys. Never generate keys, rotate seeds or reconstruct counters. | `roots_independent_fixture_oracles`, `roots_published_bip32_vector_four`, `coverage_unsplit_and_child_index_boundaries`; independent Python roots for unsplit/split/rotated synthetic cases. |
+| [v0.4.0 db.cpp](https://github.com/bitcoin/bitcoin/blob/c7eb151ad0ed441d6fd598551059a9bbfb09e99e/src/db.cpp): `CWalletDB::LoadWallet`; crypter/keystore encryption callers; v29.5 key recovery | `RecoverLegacyWalletSecrets` retains current `CCrypter`/`DecryptKey`, verifies every required private/public pair and bounds KDF work. Keep the serialized-public-key hash IV behavior; remove unlock, upgrade and writable lifecycle paths. Never export the symmetric master key. | `recovery_independent_ciphertext_vectors`, `recovery_exact_passphrase_bytes`, `recovery_no_partial_success`; [`tool_wallet_legacy_export_recovery.py`](../test/functional/tool_wallet_legacy_export_recovery.py) separately tests the qualified import/signing boundary described above. |
+
+Historical source/vector checks and exact-release wallet comparisons are distinct
+evidence. The test names above are maintenance entry points, not broader support
+claims. In particular, inactive roots, typed comment metadata and retained WIFs
+do not provide a general importer or saved transaction history.
+
 Primary source is Bitcoin Core v29.5
 `16ca532c8212d691daed14940da0f71f84f7b3fc`, src/wallet/rpc/backup.cpp's
 EncodeDumpString/GetWalletAddressesForKey/dumpwallet, with current Roots
@@ -599,3 +687,5 @@ pins were accepted from the official HTTPS repository for query-only inspection;
 tag signer authentication remains unverified because the public keys were not
 available. Source evidence and the adapted/current-primitive harness are
 distinct from historical executable or release-artifact authentication.
+
+Copyright (C) 2026 Plan-B Foundation

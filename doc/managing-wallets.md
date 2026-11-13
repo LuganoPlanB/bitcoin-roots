@@ -140,6 +140,20 @@ It's important to note that the passphrase primarily secures the private keys an
 - **Risk of Fund Loss if Forgotten or Lost:**
 If the wallet passphrase is too complex and is subsequently forgotten or lost, there is a risk of losing access to the funds permanently. A forgotten passphrase will result in the inability to unlock the wallet and access the funds.
 
+## Offline Legacy Key Export in Bitcoin Roots
+
+For a supported, clean offline legacy BDB copy, Bitcoin Roots provides
+`bitcoin-wallet dumpwallet` to export decoded keys, identified HD roots,
+stored scripts and recovery metadata. The export contains unencrypted spending
+material when private keys are present. Keep the original backup independently.
+Read the [offline export guide](legacy-wallet-export.md) for passphrase input,
+explicit network selection, supported formats and recovery limits.
+
+This command differs from the wallet tool's raw `dump` of database records.
+It does not load a legacy wallet into the node, migrate it, or export a
+descriptor/SQLite wallet. Existing descriptor-wallet and migration operations
+remain separate.
+
 ## Migrating Legacy Wallets to Descriptor Wallets
 
 Legacy wallets (traditional non-descriptor wallets) can be migrated to become Descriptor wallets
@@ -167,3 +181,5 @@ original wallet can be found in the wallet directory with the name `<name>-<time
 
 The backup can be restored using the methods discussed in the
 [Restoring the Wallet From a Backup](#16-restoring-the-wallet-from-a-backup) section.
+
+Copyright (C) 2026 Plan-B Foundation

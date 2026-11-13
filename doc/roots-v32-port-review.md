@@ -1579,3 +1579,5 @@ pull-request workflow run at the pinned candidate SHA. The canonical review
 handoff must obtain normal exact-SHA hosted CI under its own authority. No
 public ref, workflow dispatch, release signing or publication is performed by
 this qualification. Final parent/whole-branch review remains required.
+
+Copyright (C) 2026 Plan-B Foundation

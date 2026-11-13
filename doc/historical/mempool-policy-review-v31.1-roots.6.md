@@ -695,3 +695,5 @@ not established. The existing missing-`lief` Python-lint skip and three unchange
 include-lint findings must remain explicit rather than being reported as passes.
 Independent milestone acceptance and the terminal whole-branch review remain
 separate gates; this document does not assert either has already occurred.
+
+Copyright (C) 2026 Plan-B Foundation

@@ -79,6 +79,7 @@ The Bitcoin repo's [root README](/README.md) contains relevant information on th
 - [I2P Support](i2p.md)
 - [Init Scripts (systemd/upstart/openrc)](init.md)
 - [Managing Wallets](managing-wallets.md)
+- [Offline Legacy Wallet Export (Bitcoin Roots)](legacy-wallet-export.md)
 - [Multisig Tutorial](multisig-tutorial.md)
 - [Offline Signing Tutorial](offline-signing-tutorial.md)
 - [P2P bad ports definition and list](p2p-bad-ports.md)
@@ -92,3 +93,5 @@ The Bitcoin repo's [root README](/README.md) contains relevant information on th
 License
 ---------------------
 Distributed under the [MIT software license](/COPYING).
+
+Copyright (C) 2026 Plan-B Foundation

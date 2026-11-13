@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Prove exported authority independently using isolated Core 29.5/0.18.1.

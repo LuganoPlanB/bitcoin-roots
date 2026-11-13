@@ -12,6 +12,26 @@ feature provenance, not the direct base or a release dependency. Historical
 [v31.1-roots.6 notes](../../doc/release-notes/roots-v31.1-roots.6.md) are retained
 unchanged and do not qualify this candidate.
 
+## Unreleased: offline legacy wallet export
+
+`bitcoin-wallet dumpwallet` exports decoded individual WIF keys, all identified
+recoverable active/inactive HD roots, stored scripts and recovery metadata from
+a supported clean offline legacy BDB copy. It requires explicit `-wallet`,
+`-dumpfile` and `-chain`; encrypted private keys require a non-echoing terminal
+prompt or `-stdinwalletpassphrase`, never a passphrase argument. Unlike raw
+`dump`, this is a decoded recovery export containing unencrypted spending
+material. It preserves the source and refuses to replace an existing output.
+
+Keep the original wallet backup. This does not restore legacy node-wallet
+operation, support descriptor/SQLite export, or preserve a balance, history or
+complete wallet state. Core `importwallet` ignores the additional comment
+metadata. The [operator guide](../../doc/legacy-wallet-export.md) gives exact
+format and recovery limits, donor attribution and qualified test evidence.
+Native Windows/macOS and mounted-media qualification remain unverified;
+fuzz work is deferred and nine optional functional prerequisites were skipped,
+not passed. These limitations do not establish a released version or universal
+historical compatibility.
+
 ## Preserved policy and network behavior
 
 Roots remains compatible with Bitcoin Core consensus and does not enforce
@@ -152,3 +172,5 @@ and [configured RBF reporting (#25)](https://github.com/LuganoPlanB/bitcoin-root
 Their contributions and regressions are preserved. Thanks also to Jaromil,
 Plan-B Foundation and the Bitcoin Core contributors. Historical releases,
 source credits and assets remain immutable.
+
+Copyright (C) 2026 Plan-B Foundation
