@@ -51,6 +51,16 @@ arguments report the option/category without echoing supplied values. No
 passphrase-value, file, environment or config option is added. Existing `dump`,
 `createfromdump`, `info`, `create`, RPC and GUI contracts remain separate.
 
+Keep stdout and stderr separate from both source and destination, including
+hardlink aliases. A shell can create or truncate redirected files before this
+process runs. Rejected startup arguments and help do not inspect the source
+filesystem, so those inherited channels remain the operator's responsibility.
+Once valid paths can be admitted, the command suppresses pinned report handles
+whose observed file identity matches the source or an existing destination,
+before source-phase errors and success reports. It repeats these checks around
+source admission and before export; pathname checks alone cannot make malicious
+concurrent path swaps safe. Use a stable offline copy and preserve the original.
+
 The source is an existing regular file or a directory containing `wallet.dat`.
 An absolute file path is supported by the new command; it must bypass the raw
 tool's directory-oriented wallet-loading path. Relative paths resolve against
@@ -426,6 +436,12 @@ passphrases, private keys, roots, raw records, labels or arbitrary argument
 values. Missing/corrupt required data, wrong passphrase, unsupported formats,
 unknown families/flags, limits, detected source changes, aliases, races and
 write/permission failures cannot be reported as partial recovery success.
+
+After publication, a closed, broken or suppressed report channel does not undo
+the export or turn it into an export failure. The process retains committed
+success and attempts a fixed warning on stderr; if both channels are unavailable
+even that warning cannot be delivered. Inspect the requested destination. No
+reporting failure authorizes deletion, overwrite or automatic retry.
 
 Old Core importwallet ignores comments, including all roots-meta-v1 objects and
 root comments. It cannot recognize an empty script payload token, so an empty

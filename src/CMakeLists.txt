@@ -171,6 +171,7 @@ if(ENABLE_WALLET)
       bitcoin-wallet-res.rc
       init/bitcoin-wallet.cpp
       wallet/wallettool.cpp
+      wallet/wallettool_input.cpp
     )
     add_windows_application_manifest(bitcoin-wallet)
     target_link_libraries(bitcoin-wallet

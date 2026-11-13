@@ -4,6 +4,7 @@
 
 #include <wallet/legacy_export.h>
 #include <wallet/migrate.h>
+#include <wallet/wallettool_input.h>
 
 #include <crypto/common.h>
 #include <hash.h>
@@ -3092,6 +3093,67 @@ BOOST_AUTO_TEST_CASE(storage_resource_boundaries)
     BOOST_REQUIRE(WriteBinaryFile(path, overflow.bytes));
     BOOST_CHECK_THROW(LegacyWalletSource{path}, std::runtime_error);
     BOOST_CHECK(ReadBinaryFile(path).second == overflow.bytes);
+}
+
+BOOST_AUTO_TEST_CASE(passphrase_native_enter_finalization)
+{
+    using namespace WalletTool::detail;
+    const std::vector<std::string> inputs{
+        "", "ordinary", "\r", "literal trailing CR\r", std::string{"nul\0utf8\xc3\xa9\r", 11},
+        std::string(4096, 'x'), std::string(4095, 'x') + '\r', std::string(4094, 'x') + "\xc3\xa9",
+    };
+    for (const auto& input : inputs) {
+        PassphraseLine line;
+        for (const char byte : input) BOOST_REQUIRE(!line.Push(byte));
+        // Exactly the production Windows Enter finalization: no synthetic
+        // CR or LF was appended to the accumulated data.
+        const auto result{line.Finish(PassphraseEnd::NATIVE_ENTER)};
+        BOOST_CHECK(result == SecureString(input.begin(), input.end()));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(passphrase_byte_line_and_eof_finalization)
+{
+    using namespace WalletTool::detail;
+    const std::vector<std::pair<std::string, std::string>> inputs{
+        {"", ""}, {"ordinary", "ordinary"}, {"ordinary\r", "ordinary"}, {"data\r\r", "data\r"},
+        {std::string(4096, 'x'), std::string(4096, 'x')},
+        {std::string(4096, 'x') + '\r', std::string(4096, 'x')},
+        {std::string(4095, 'x') + "\r\r", std::string(4095, 'x') + '\r'},
+    };
+    for (const auto& [input, expected] : inputs) {
+        PassphraseLine line;
+        for (const char byte : input) BOOST_REQUIRE(!line.Push(byte));
+        BOOST_REQUIRE(line.Push('\n'));
+        const auto result{line.Finish(PassphraseEnd::BYTE_LINE)};
+        BOOST_CHECK(result == SecureString(expected.begin(), expected.end()));
+    }
+    for (const auto& input : {std::string{"ordinary"}, std::string{"data\r"}, std::string(4095, 'x') + '\r'}) {
+        PassphraseLine line;
+        for (const char byte : input) BOOST_REQUIRE(!line.Push(byte));
+        const auto result{line.Finish(PassphraseEnd::END_OF_FILE)};
+        BOOST_CHECK(result == SecureString(input.begin(), input.end()));
+    }
+    PassphraseLine missing;
+    BOOST_CHECK_EXCEPTION(missing.Finish(PassphraseEnd::END_OF_FILE), std::runtime_error, [](const auto& error) {
+        return std::string_view{error.what()} == "Missing legacy passphrase input";
+    });
+}
+
+BOOST_AUTO_TEST_CASE(passphrase_finalization_limits)
+{
+    using namespace WalletTool::detail;
+    for (const auto end : {PassphraseEnd::NATIVE_ENTER, PassphraseEnd::END_OF_FILE}) {
+        PassphraseLine line;
+        for (size_t i{0}; i < 4096; ++i) BOOST_REQUIRE(!line.Push('x'));
+        BOOST_REQUIRE(!line.Push('\r')); // Permitted only as a potential CRLF separator.
+        BOOST_CHECK_EXCEPTION(line.Finish(end), std::runtime_error, [](const auto& error) {
+            return std::string_view{error.what()} == "Legacy passphrase exceeds 4096-byte limit";
+        });
+    }
+    PassphraseLine oversize;
+    for (size_t i{0}; i < 4096; ++i) BOOST_REQUIRE(!oversize.Push('x'));
+    BOOST_CHECK_THROW(oversize.Push('x'), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
