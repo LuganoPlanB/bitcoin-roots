@@ -2,7 +2,7 @@
 
 Bitcoin Roots is maintained as a small, reviewable Git history on top of
 Bitcoin Core. The exact Bitcoin Core v32.1 commit is the direct base of this
-unpublished `v32.1-roots.1` candidate. The complete released v31 series through
+unpublished `v32.1-roots.2` candidate. The complete released v31 series through
 roots.6 is folded by observable contract, with source credits preserved.
 Publishing, release tags and main promotion require separate authorization.
 The examples below describe later operator actions; they do not establish that
@@ -346,7 +346,7 @@ release. It also refuses to run if the future tag already exists remotely.
 For an explicitly requested optional rehearsal:
 
 ```sh
-release_tag=v32.1-roots.1
+release_tag=v32.1-roots.2
 release_commit=$(git rev-parse origin/roots/32.1^{commit})
 gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
@@ -361,7 +361,7 @@ Fetch again and verify the annotated tag target and ancestry
 immediately before pushing:
 
 ```sh
-release_tag=v32.1-roots.1
+release_tag=v32.1-roots.2
 git check-ref-format "refs/tags/$release_tag"
 git fetch origin roots/32.1
 git fetch https://github.com/bitcoin/bitcoin.git \
@@ -439,3 +439,5 @@ one full applicable suite for acceptance. Broad optional-platform, extended and
 long sanitizer/fuzz coverage runs nightly or by explicit manual selection.
 See [CI commands and budgets](../../ci/README.md#fast-pr-and-development-coverage).
 Local workflow/fixture tests do not establish hosted CI success.
+
+Copyright (C) 2026 Plan-B Foundation

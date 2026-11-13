@@ -1,4 +1,5 @@
 # Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -82,7 +83,7 @@ if(DEFINED CLIENT_VERSION_TAG)
   string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
 else()
   # Product version for this unpublished candidate; publication is separate.
-  string(APPEND CLIENT_VERSION_STRING "-roots.1")
+  string(APPEND CLIENT_VERSION_STRING "-roots.2")
 endif()
 
 set(COPYRIGHT_HOLDERS "Plan-B Foundation")

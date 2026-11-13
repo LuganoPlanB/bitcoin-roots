@@ -1,18 +1,18 @@
-# Bitcoin Roots v32.1-roots.1 candidate
+# Bitcoin Roots v32.1-roots.2
 
-This is an unpublished candidate, not a release announcement. No public tag,
-downloadable package, deployment or publication is established by this text.
-Source acceptance and release approval remain separate gates.
+These notes describe the v32.1-roots.2 source. Release publication, downloadable
+packages and website deployment require their separate verification and approval
+gates; preparing these notes does not perform those actions.
 
 The direct base is the exact official Bitcoin Core v32.1 commit
 `f0de87f040621468b956f01f526a43a010310501`. This new series folds the complete
 released Roots v31 line through v31.1-roots.6 and its follow-up repairs into
 the owning semantic changes. Bitcoin Knots `29.3.knots20260507` is historical
 feature provenance, not the direct base or a release dependency. Historical
-[v31.1-roots.6 notes](../../doc/release-notes/roots-v31.1-roots.6.md) are retained
-unchanged and do not qualify this candidate.
+[v31.1-roots.6 notes](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/release-notes/roots-v31.1-roots.6.md) are retained
+unchanged and do not qualify this version.
 
-## Unreleased: offline legacy wallet export
+## New in roots.2: offline legacy wallet export
 
 `bitcoin-wallet dumpwallet` exports decoded individual WIF keys, all identified
 recoverable active/inactive HD roots, stored scripts and recovery metadata from
@@ -21,16 +21,21 @@ a supported clean offline legacy BDB copy. It requires explicit `-wallet`,
 prompt or `-stdinwalletpassphrase`, never a passphrase argument. Unlike raw
 `dump`, this is a decoded recovery export containing unencrypted spending
 material. It preserves the source and refuses to replace an existing output.
+Startup errors, help and version reports suppress inherited channels that alias
+the nominated source or destination, including rejected duplicate arguments.
+Corrupt or unsupported required records fail export rather than publish partial
+recovery material. HD roots do not replace independently imported keys.
 
 Keep the original wallet backup. This does not restore legacy node-wallet
 operation, support descriptor/SQLite export, or preserve a balance, history or
 complete wallet state. Core `importwallet` ignores the additional comment
-metadata. The [operator guide](../../doc/legacy-wallet-export.md) gives exact
+metadata. The [operator guide](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/legacy-wallet-export.md) gives exact
 format and recovery limits, donor attribution and qualified test evidence.
 Native Windows/macOS and mounted-media qualification remain unverified;
-fuzz work is deferred and nine optional functional prerequisites were skipped,
-not passed. These limitations do not establish a released version or universal
-historical compatibility.
+fuzz work is deferred. The Linux qualification profile skips seven optional
+functional cases: five USDT interfaces, the benchmark utility and the experimental
+chainstate utility. Skips are not passes. These limitations do not establish a
+released version or universal historical compatibility.
 
 ## Preserved policy and network behavior
 
@@ -108,7 +113,7 @@ for transfers, keeping secrets out of command arguments, environment variables,
 logs and files. Host/client/Qt copies may persist; complete memory erasure is
 not promised. Export is not backup, does not broaden sweep's script coverage
 and does not establish additional Quietproof proof support. Read the complete
-[wallet manual](../../doc/wallet-privacy.md) before operating on funds.
+[wallet manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/wallet-privacy.md) before operating on funds.
 
 ## Current build and operator interfaces
 
@@ -126,13 +131,13 @@ CoinJoin/payjoin, automatic consolidation or anonymity guarantee is introduced.
 Product help/version/About output identifies Bitcoin Roots and Plan-B
 Foundation, with separate historical Bitcoin Core attribution. Wire identity
 remains `Satoshi`; numeric protocol/version identifiers are unchanged.
-See the [feature catalog](../../doc/roots-features.md) and
-[build profile guide](../../doc/roots-build-portability.md).
+See the [feature catalog](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/roots-features.md) and
+[build profile guide](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/roots-build-portability.md).
 
 ## Verification and release boundary
 
 Owning-theme evidence, retained failures and remaining limitations are recorded
-in the [port review](../../doc/roots-v32-port-review.md). Current manuals and
+in the [port review](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/roots-v32-port-review.md). Current manuals and
 the example configuration are generated from current candidate help through
 isolated regtest wrappers; optional-build and debug-only help omissions must
 not be interpreted as removed features. No old manual is reused as current help.
@@ -155,9 +160,10 @@ and new-draft creation. Every existing draft/public release blocks replacement.
 Manifest signing is separate from Git-tag and platform-code signing. The
 workflow describes unsigned annotated tags, ad-hoc macOS app signatures without
 Developer ID/notarization, and no Windows Authenticode signature; verify the
-actual future artifacts and signing disclosures independently. No such run,
-signature or draft is claimed here. Upstream Core-tag signature verification
-was explicitly waived for this port; source identity/ancestry checks remain
+actual artifacts and signing disclosures independently. The CI draft appends
+run-specific build and signing provenance; preparing these notes does not run
+that workflow. Upstream Core-tag signature verification was explicitly waived
+for this port; source identity/ancestry checks remain
 required and the waived check is not recorded as passed.
 
 ## Acknowledgements
