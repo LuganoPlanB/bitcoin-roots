@@ -33,7 +33,20 @@
           "scalar": "0000000000000000000000000000000000000000000000000000000000000001"
         }
       ],
-      "scripts": []
+      "scripts": [],
+      "seeds": [],
+      "wifs": [
+        {
+          "pubkey": "04e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd1351ed993ea0d455b75642e2098ea51448d967ae33bfbdfe40cfe97bdc47739922",
+          "main": "5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreB4AD8Yi",
+          "test": "91avARGdfge8E4tZfYLoxeJ5sGBdNJQH4kvjJoQFacbgx9rcrL7"
+        },
+        {
+          "pubkey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"
+        }
+      ]
     },
     {
       "name": "plain_mixed",
@@ -77,6 +90,19 @@
       ],
       "scripts": [
         "51210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179851ae"
+      ],
+      "seeds": [],
+      "wifs": [
+        {
+          "pubkey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"
+        },
+        {
+          "pubkey": "04e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd1351ed993ea0d455b75642e2098ea51448d967ae33bfbdfe40cfe97bdc47739922",
+          "main": "5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreB4AD8Yi",
+          "test": "91avARGdfge8E4tZfYLoxeJ5sGBdNJQH4kvjJoQFacbgx9rcrL7"
+        }
       ]
     },
     {
@@ -119,7 +145,36 @@
           "scalar": "657aabafb7e3884ac169211c4739b2bbd34123ebc96cdad67f44d488f3991f1b"
         }
       ],
-      "scripts": []
+      "scripts": [],
+      "seeds": [
+        {
+          "seed_id": "06afd46bcdfd22ef94ac122aa11f241244a37ecc",
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "active": true,
+          "root_main": "xprv9s21ZrQH143K3Dfym3ZPsqraXhUokyNALDNHuaDZo14vDW86EpWxTq7ypGDgHCsZNCzsMtJb6xSDWEKmGYfGUZ1edNXGmfxNVaK5aNpBVMJ",
+          "root_test": "tprv8ZgxMBicQKsPe2uWRcQu3VUZqpu1zVQAfmHQmze2GyZQ16sBEBrhyaVRjSPLHaFsjeXeMyvMGK21y5sWPm1DHcHFA1jaS2gRQg4W25DSJHB",
+          "wif_main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "wif_test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v",
+          "fingerprint": "4503c6af",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child": 0,
+          "chaincode": "7492f656ab5400f01f172283864cc0a27ca20269cc6d9bf8e968012a1177ec00",
+          "root_scalar": "b5f9c82dc75fef2f0ba88a03e9e0840a97f51a4415c4f73f43aa8a7201b07644"
+        }
+      ],
+      "wifs": [
+        {
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v"
+        },
+        {
+          "pubkey": "03d5b2eedc4fe25772e2ea180a8d4d1ee27a5b1edb798290ff9a2501c4c7a367be",
+          "main": "KzcyPw4CppmuEy5e4j8ZsLHcxjaDSYrux1swRuwBCq2TZSPBJjb9",
+          "test": "cQyxrr44FtUAQQYuT8whEengaxsd6zxc242QYLPghwgTpBSWYHcW"
+        }
+      ]
     },
     {
       "name": "hd_split",
@@ -177,7 +232,41 @@
           "scalar": "5a905d064a09b88f1be1a8fc6d5a825a83beb4d40dabdad8cbcd337c0837857e"
         }
       ],
-      "scripts": []
+      "scripts": [],
+      "seeds": [
+        {
+          "seed_id": "06afd46bcdfd22ef94ac122aa11f241244a37ecc",
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "active": true,
+          "root_main": "xprv9s21ZrQH143K3Dfym3ZPsqraXhUokyNALDNHuaDZo14vDW86EpWxTq7ypGDgHCsZNCzsMtJb6xSDWEKmGYfGUZ1edNXGmfxNVaK5aNpBVMJ",
+          "root_test": "tprv8ZgxMBicQKsPe2uWRcQu3VUZqpu1zVQAfmHQmze2GyZQ16sBEBrhyaVRjSPLHaFsjeXeMyvMGK21y5sWPm1DHcHFA1jaS2gRQg4W25DSJHB",
+          "wif_main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "wif_test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v",
+          "fingerprint": "4503c6af",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child": 0,
+          "chaincode": "7492f656ab5400f01f172283864cc0a27ca20269cc6d9bf8e968012a1177ec00",
+          "root_scalar": "b5f9c82dc75fef2f0ba88a03e9e0840a97f51a4415c4f73f43aa8a7201b07644"
+        }
+      ],
+      "wifs": [
+        {
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v"
+        },
+        {
+          "pubkey": "03d5b2eedc4fe25772e2ea180a8d4d1ee27a5b1edb798290ff9a2501c4c7a367be",
+          "main": "KzcyPw4CppmuEy5e4j8ZsLHcxjaDSYrux1swRuwBCq2TZSPBJjb9",
+          "test": "cQyxrr44FtUAQQYuT8whEengaxsd6zxc242QYLPghwgTpBSWYHcW"
+        },
+        {
+          "pubkey": "03af459220b7a9c0d4a39de05e01270f090dbdda9c5a42b280f024dee40e2a0ec9",
+          "main": "KzFkm6yhNVEKfpuhLLkKaBKMF3RsYQXyqoXZ5w5wmnNvAPePGFpR",
+          "test": "cQckE1yYoYvaqGNxikZSwVpQsGjHCrdfuqg2CMYTGu2vR8e9JuRM"
+        }
+      ]
     },
     {
       "name": "seed_rotated",
@@ -257,6 +346,60 @@
       ],
       "scripts": [
         "51210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179851ae"
+      ],
+      "seeds": [
+        {
+          "seed_id": "06afd46bcdfd22ef94ac122aa11f241244a37ecc",
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "active": true,
+          "root_main": "xprv9s21ZrQH143K3Dfym3ZPsqraXhUokyNALDNHuaDZo14vDW86EpWxTq7ypGDgHCsZNCzsMtJb6xSDWEKmGYfGUZ1edNXGmfxNVaK5aNpBVMJ",
+          "root_test": "tprv8ZgxMBicQKsPe2uWRcQu3VUZqpu1zVQAfmHQmze2GyZQ16sBEBrhyaVRjSPLHaFsjeXeMyvMGK21y5sWPm1DHcHFA1jaS2gRQg4W25DSJHB",
+          "wif_main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "wif_test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v",
+          "fingerprint": "4503c6af",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child": 0,
+          "chaincode": "7492f656ab5400f01f172283864cc0a27ca20269cc6d9bf8e968012a1177ec00",
+          "root_scalar": "b5f9c82dc75fef2f0ba88a03e9e0840a97f51a4415c4f73f43aa8a7201b07644"
+        },
+        {
+          "seed_id": "7dd65592d0ab2fe0d0257d571abf032cd9db93dc",
+          "pubkey": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "active": false,
+          "root_main": "xprv9s21ZrQH143K3zo8R6qSFcxi8RB2WGtRyjNcd32efsgxvzfSVHE5yXoC5LiebBkn7W3K8ZM6nRDkJSLEamuQELd9w6FR4fGd29Cc5Fi9sDR",
+          "root_test": "tprv8ZgxMBicQKsPep2f5fgwRGahSYbEjnvSKHHjVTT79rBSibQXUeZqVHAdzWtJbZ96Uwa68exrwmoYmHsyhzFM3PtkTjTij1zfwEx2X11kSC7",
+          "wif_main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74sHUHy8S",
+          "wif_test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87KcLPVfXz",
+          "fingerprint": "f6319e83",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child": 0,
+          "chaincode": "c2b764e35022051946aaef1800c2f8dc84f5c8478757abee16f76848c4b1a2c8",
+          "root_scalar": "0676d070102aba50c02bc22ec547d0460cae2466db113db30ebfeff56efd547f"
+        }
+      ],
+      "wifs": [
+        {
+          "pubkey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"
+        },
+        {
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v"
+        },
+        {
+          "pubkey": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74sHUHy8S",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87KcLPVfXz"
+        },
+        {
+          "pubkey": "03d5b2eedc4fe25772e2ea180a8d4d1ee27a5b1edb798290ff9a2501c4c7a367be",
+          "main": "KzcyPw4CppmuEy5e4j8ZsLHcxjaDSYrux1swRuwBCq2TZSPBJjb9",
+          "test": "cQyxrr44FtUAQQYuT8whEengaxsd6zxc242QYLPghwgTpBSWYHcW"
+        }
       ]
     },
     {
@@ -279,7 +422,15 @@
           "scalar": "0000000000000000000000000000000000000000000000000000000000000001"
         }
       ],
-      "scripts": []
+      "scripts": [],
+      "seeds": [],
+      "wifs": [
+        {
+          "pubkey": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+          "main": "5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreAnchuDf",
+          "test": "91avARGdfge8E4tZfYLoxeJ5sGBdNJQH4kvjJoQFacbgwmaKkrx"
+        }
+      ]
     },
     {
       "name": "encrypted_hd",
@@ -341,7 +492,46 @@
           "scalar": "0000000000000000000000000000000000000000000000000000000000000001"
         }
       ],
-      "scripts": []
+      "scripts": [],
+      "seeds": [
+        {
+          "seed_id": "06afd46bcdfd22ef94ac122aa11f241244a37ecc",
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "active": true,
+          "root_main": "xprv9s21ZrQH143K3Dfym3ZPsqraXhUokyNALDNHuaDZo14vDW86EpWxTq7ypGDgHCsZNCzsMtJb6xSDWEKmGYfGUZ1edNXGmfxNVaK5aNpBVMJ",
+          "root_test": "tprv8ZgxMBicQKsPe2uWRcQu3VUZqpu1zVQAfmHQmze2GyZQ16sBEBrhyaVRjSPLHaFsjeXeMyvMGK21y5sWPm1DHcHFA1jaS2gRQg4W25DSJHB",
+          "wif_main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "wif_test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v",
+          "fingerprint": "4503c6af",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child": 0,
+          "chaincode": "7492f656ab5400f01f172283864cc0a27ca20269cc6d9bf8e968012a1177ec00",
+          "root_scalar": "b5f9c82dc75fef2f0ba88a03e9e0840a97f51a4415c4f73f43aa8a7201b07644"
+        }
+      ],
+      "wifs": [
+        {
+          "pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU74NMTptX4",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87K7XCyj5v"
+        },
+        {
+          "pubkey": "03d5b2eedc4fe25772e2ea180a8d4d1ee27a5b1edb798290ff9a2501c4c7a367be",
+          "main": "KzcyPw4CppmuEy5e4j8ZsLHcxjaDSYrux1swRuwBCq2TZSPBJjb9",
+          "test": "cQyxrr44FtUAQQYuT8whEengaxsd6zxc242QYLPghwgTpBSWYHcW"
+        },
+        {
+          "pubkey": "03af459220b7a9c0d4a39de05e01270f090dbdda9c5a42b280f024dee40e2a0ec9",
+          "main": "KzFkm6yhNVEKfpuhLLkKaBKMF3RsYQXyqoXZ5w5wmnNvAPePGFpR",
+          "test": "cQckE1yYoYvaqGNxikZSwVpQsGjHCrdfuqg2CMYTGu2vR8e9JuRM"
+        },
+        {
+          "pubkey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "main": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+          "test": "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"
+        }
+      ]
     },
     {
       "name": "watch_only",
@@ -360,7 +550,9 @@
       "keys": [],
       "scripts": [
         "51210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179851ae"
-      ]
+      ],
+      "seeds": [],
+      "wifs": []
     },
     {
       "name": "empty",
@@ -368,7 +560,9 @@
       "encrypted": false,
       "records": [],
       "keys": [],
-      "scripts": []
+      "scripts": [],
+      "seeds": [],
+      "wifs": []
     },
     {
       "name": "mkey_only",
@@ -381,7 +575,11 @@
         ]
       ],
       "keys": [],
-      "scripts": []
+      "scripts": [],
+      "seeds": [],
+      "wifs": []
     }
-  ]
+  ],
+  "root_oracle_provenance": "Seed tuples from the unchanged pinned generator; independent test_framework.extendedkey.ExtendedPrivateKey/HMAC-SHA512 and address.byte_to_base58 compute roots, metadata and main/test encodings. See L3.2 root-oracle.py retained outside Git. Source-only fixture oracle, not historic executable output.",
+  "coverage_oracle_provenance": "All independent fixture.keys, including ordinary keys and old seeds, encoded with existing Python address.byte_to_base58 at main/test WIF versions. L3.3 root-oracle.py checks complete sets and retains original records/keys/seeds."
 }

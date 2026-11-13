@@ -6,6 +6,7 @@
 #define BITCOIN_WALLET_LEGACY_EXPORT_H
 
 #include <support/allocators/zeroafterfree.h>
+#include <util/chaintype.h>
 #include <util/fs.h>
 #include <wallet/crypter.h>
 #include <wallet/walletdb.h>
@@ -97,6 +98,77 @@ struct LegacyWalletInventory {
  * Variable lengths are checked before allocating or invoking a serializer.
  */
 LegacyWalletInventory DecodeLegacyWalletRecords(std::span<const LegacyWalletRecord> records);
+
+/** Recovered keys remain independent of any HD hierarchy. Empty usage sets
+ * mean the corresponding master-key slot was not verified by a private key.
+ * CKey owns its secret in secure memory; no symmetric master is retained.
+ */
+struct LegacyRecoveredSecrets {
+    std::map<CPubKey, CKey> keys;
+    std::map<uint32_t, std::set<CPubKey>> master_key_usage;
+};
+
+/** Recover all required secrets in memory or throw a non-secret diagnostic.
+ * The input is unchanged on success and failure. Passphrase bytes are used
+ * exactly as supplied, including embedded NUL, with a 4096-byte limit.
+ * No passphrase is verified for a wallet without encrypted private keys.
+ */
+LegacyRecoveredSecrets RecoverLegacyWalletSecrets(const LegacyWalletInventory& inventory, const SecureString& passphrase);
+
+struct LegacyExportSeed {
+    std::optional<CPubKey> pubkey;
+    bool active{false};
+    std::set<std::string> evidence;
+    std::optional<CExtKey> root;
+    std::optional<KeyFingerprint> fingerprint;
+    SecureString wif;
+    SecureString extended_private_key;
+};
+
+struct LegacyWalletRoots {
+    ChainType network;
+    // Seed Hash160 is the stored identity; a four-byte fingerprint is not.
+    std::map<CKeyID, LegacyExportSeed> seeds;
+};
+
+/** Identify stored seed evidence and derive every available root, without
+ * changing the inventory or reducing the recovered individual-key set.
+ * Uses the selected chain Params(), as do EncodeSecret/EncodeExtKey; this
+ * records an encoding selection, not an intrinsic network of the source.
+ * Missing required seeds fail for private-material inventories. Secret-free
+ * inventories retain unresolved seed identities with null root/fingerprint.
+ */
+LegacyWalletRoots DeriveLegacyWalletRoots(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets);
+
+enum class LegacyKeyClassification { SEED, HD_RECEIVE, HD_CHANGE, UNCLASSIFIED };
+enum class LegacyKeyDerivation { SEED, VERIFIED, UNRECOGNIZED, NOT_APPLICABLE };
+
+struct LegacyCoveredKey {
+    SecureString wif; // Empty for an explicit public-only identity.
+    LegacyKeyClassification classification{LegacyKeyClassification::UNCLASSIFIED};
+    LegacyKeyDerivation derivation{LegacyKeyDerivation::NOT_APPLICABLE};
+    std::vector<int64_t> pool_indices; // All original reserve associations.
+    std::vector<uint32_t> verified_path;
+};
+
+struct LegacyDerivedMaxima {
+    std::optional<uint32_t> external;
+    std::optional<uint32_t> internal;
+};
+
+struct LegacyWalletCoverage {
+    LegacyWalletRoots roots;
+    std::map<CPubKey, LegacyCoveredKey> keys;
+    // Observed verified child indices, separate from every stored counter.
+    std::map<CKeyID, LegacyDerivedMaxima> derived_maxima;
+    uint64_t derived_steps{0};
+};
+
+/** Account for every explicit identity and independent WIF, validating local
+ * Core child paths/origins with checked derivation. Original metadata, pool
+ * facts and counters remain in the const inventory, without inferred updates.
+ */
+LegacyWalletCoverage ValidateLegacyWalletCoverage(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets);
 
 /** Read-only records from an offline, clean legacy BDB backup.
  *

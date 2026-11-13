@@ -34,6 +34,8 @@ std::string EncodeBase58(std::span<const unsigned char> input);
  * Encode a byte span into a base58-encoded string, including checksum
  */
 std::string EncodeBase58Check(std::span<const unsigned char> input);
+/** Same encoding, with secure checksum/digit scratch and returned text. */
+SecureString EncodeBase58CheckSecure(std::span<const unsigned char> input);
 
 /**
  * Decode a base58-encoded string (str) that includes a checksum into a byte

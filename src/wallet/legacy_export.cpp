@@ -6,7 +6,9 @@
 #include <wallet/legacy_export.h>
 
 #include <hash.h>
+#include <key_io.h>
 #include <streams.h>
+#include <util/bip32.h>
 #include <wallet/migrate.h>
 
 #include <algorithm>
@@ -307,6 +309,15 @@ HistoricalWalletKey ReadWalletKey(SpanReader& stream)
     return Read<HistoricalWalletKey>(stream);
 }
 
+void CheckMasterKey(const CMasterKey& master)
+{
+    Require(master.nDerivationMethod == 0, "Unsupported legacy master key derivation method");
+    Require(master.vchCryptedKey.size() == 48 && master.vchSalt.size() == WALLET_CRYPTO_SALT_SIZE &&
+                master.vchOtherDerivationParameters.empty() && master.nDeriveIterations >= 1 &&
+                master.nDeriveIterations <= 10'000'000,
+            "Unsupported or corrupt legacy master key parameters");
+}
+
 CMasterKey ReadMasterKey(SpanReader& stream)
 {
     // Current CMasterKey preserves v0.4.0 crypter.h's field order (c7eb151a...)
@@ -318,10 +329,7 @@ CMasterKey ReadMasterKey(SpanReader& stream)
     SkipBytes(check, 0);
     Require(check.empty(), "Trailing legacy master key fields");
     auto master{Read<CMasterKey>(stream)};
-    Require(master.vchCryptedKey.size() == 48 && master.vchSalt.size() == 8 &&
-                master.nDerivationMethod == 0 && master.nDeriveIterations >= 1 &&
-                master.nDeriveIterations <= 10'000'000,
-            "Unsupported legacy master key parameters");
+    CheckMasterKey(master);
     return master;
 }
 
@@ -507,6 +515,197 @@ LegacyWalletInventory DecodeLegacyWalletRecords(std::span<const LegacyWalletReco
     Require(!(inventory.flags.value_or(0) & WALLET_FLAG_DISABLE_PRIVATE_KEYS) || private_identities == 0,
             "Legacy disable-private-keys flag conflicts with private records");
     return inventory;
+}
+
+LegacyRecoveredSecrets RecoverLegacyWalletSecrets(const LegacyWalletInventory& inventory, const SecureString& passphrase)
+{
+    Require(passphrase.size() <= 4096, "Legacy passphrase exceeds supported limit");
+    Require(inventory.master_keys.size() <= 32, "Legacy master key count exceeds supported limit");
+    LegacyRecoveredSecrets result;
+    for (const auto& [id, master] : inventory.master_keys) {
+        CheckMasterKey(master);
+        result.master_key_usage.try_emplace(id);
+    }
+    std::set<CPubKey> unresolved;
+    size_t private_identities{0};
+    for (const auto& [pubkey, entry] : inventory.keys) {
+        Require(pubkey.IsFullyValid(), "Invalid legacy public key");
+        if (entry.private_key || entry.ciphertext) {
+            Require(++private_identities <= MAX_PRIVATE_IDENTITIES, "Legacy private key count exceeds supported limit");
+        }
+        if (entry.private_key) {
+            Require(entry.private_key->IsValid() && entry.private_key->VerifyPubKey(pubkey),
+                    "Invalid legacy private/public key pair");
+            result.keys.emplace(pubkey, *entry.private_key);
+        }
+        if (entry.ciphertext) {
+            Require(entry.ciphertext->size() == 48, "Invalid legacy encrypted private key length");
+            unresolved.insert(pubkey);
+        }
+    }
+    Require(!inventory.master_keys.empty() || unresolved.empty(), "Missing legacy master key records");
+
+    // Adapt Core v29.5 wallet.cpp CWallet::Unlock's candidate loop, without
+    // Unlock(), metadata/cache upgrades or database writes. v0.4.0 keystore.cpp
+    // AddKey/GetSecret and v29.5 LegacyDataSPKM::Encrypt establish scalar32 and
+    // pubkey.GetHash() IV compatibility with current DecryptKey. Validate every
+    // required pair rather than adopting either donor's first-key shortcut.
+    uint64_t rounds_left{20'000'000};
+    for (const auto& [id, master] : inventory.master_keys) {
+        if (unresolved.empty()) break;
+        Require(master.nDeriveIterations <= rounds_left, "Legacy KDF work exceeds supported limit");
+        rounds_left -= master.nDeriveIterations;
+        CCrypter crypter;
+        Require(crypter.SetKeyFromPassphrase(passphrase, master.vchSalt, master.nDeriveIterations, master.nDerivationMethod),
+                "Unsupported legacy master key parameters");
+        CKeyingMaterial symmetric_key;
+        if (!crypter.Decrypt(master.vchCryptedKey, symmetric_key) || symmetric_key.size() != WALLET_CRYPTO_KEY_SIZE) continue;
+        for (auto it{unresolved.begin()}; it != unresolved.end();) {
+            CKey key;
+            if (!DecryptKey(symmetric_key, *inventory.keys.at(*it).ciphertext, *it, key)) {
+                ++it;
+                continue;
+            }
+            const auto previous{result.keys.find(*it)};
+            Require(previous == result.keys.end() || previous->second == key, "Conflicting legacy private key material");
+            result.keys.insert_or_assign(*it, std::move(key));
+            result.master_key_usage.at(id).insert(*it);
+            it = unresolved.erase(it);
+        }
+    }
+    // No caller can observe the local partial set. Secure allocator/CKey RAII
+    // cleanses decrypted candidates and recovered scalars on every exit.
+    Require(unresolved.empty(), "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+    return result;
+}
+
+LegacyWalletRoots DeriveLegacyWalletRoots(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets)
+{
+    LegacyWalletRoots result{Params().GetChainType(), {}};
+    std::map<CKeyID, CPubKey> identities;
+    size_t private_identities{0};
+    for (const auto& [pubkey, entry] : inventory.keys) {
+        Require(pubkey.IsFullyValid(), "Invalid legacy public key");
+        const auto [existing, inserted]{identities.emplace(pubkey.GetID(), pubkey)};
+        Require(inserted || existing->second == pubkey, "Conflicting legacy seed public identities");
+        if (entry.private_key || entry.ciphertext) {
+            ++private_identities;
+            const auto recovered{secrets.keys.find(pubkey)};
+            Require(recovered != secrets.keys.end() && recovered->second.IsValid() && recovered->second.VerifyPubKey(pubkey) &&
+                        (!entry.private_key || *entry.private_key == recovered->second),
+                    "Incomplete or inconsistent legacy recovered key set");
+        }
+    }
+    Require(private_identities == secrets.keys.size(), "Incomplete or inconsistent legacy recovered key set");
+
+    if (inventory.hdchain && !inventory.hdchain->seed_id.IsNull()) {
+        auto& seed{result.seeds[inventory.hdchain->seed_id]};
+        seed.active = true;
+        seed.evidence.insert("active_hdchain");
+    }
+    // Adapt v0.13/v0.15 GenerateNewHDMasterKey's self-referencing "m", and
+    // v0.18/v29.5 DeriveNewSeed's "s". v29.5 migration still recognizes both;
+    // metadata upgrades can add an origin to an old "m" without changing it.
+    // Explicit seed references identify old roots even without a seed marker.
+    for (const auto& [pubkey, entry] : inventory.keys) {
+        if (!entry.metadata || entry.metadata->nVersion < CKeyMetadata::VERSION_WITH_HDDATA) continue;
+        const auto& metadata{*entry.metadata};
+        if (metadata.hdKeypath == "m" || metadata.hdKeypath == "s") {
+            Require(metadata.hd_seed_id == pubkey.GetID(), "Contradictory legacy seed marker");
+            result.seeds[pubkey.GetID()].evidence.insert("seed_marker");
+        }
+        if (!metadata.hd_seed_id.IsNull()) {
+            result.seeds[metadata.hd_seed_id].evidence.insert("metadata_reference");
+        }
+    }
+    for (auto& [id, seed] : result.seeds) {
+        const auto identity{identities.find(id)};
+        if (identity != identities.end()) seed.pubkey = identity->second;
+        const auto recovered{seed.pubkey ? secrets.keys.find(*seed.pubkey) : secrets.keys.end()};
+        if (recovered == secrets.keys.end()) {
+            Require(private_identities == 0, "Missing required legacy HD seed material");
+            continue;
+        }
+        // Core v29.5 dumpwallet (backup.cpp): SetSeed(original scalar), then
+        // EncodeExtKey(root). Extend the pure operation to inactive seeds too,
+        // retaining their individual WIFs and all independent recovered keys.
+        seed.root.emplace();
+        seed.root->SetSeed(recovered->second);
+        Require(seed.root->key.IsValid(), "Invalid legacy BIP32 root");
+        seed.fingerprint = seed.root->id_key_fingerprint();
+        seed.wif = EncodeSecretSecure(recovered->second);
+        seed.extended_private_key = EncodeExtKeySecure(*seed.root);
+    }
+    return result;
+}
+
+LegacyWalletCoverage ValidateLegacyWalletCoverage(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets)
+{
+    LegacyWalletCoverage result{DeriveLegacyWalletRoots(inventory, secrets), {}, {}, 0};
+    for (const auto& [pubkey, entry] : inventory.keys) {
+        auto& covered{result.keys[pubkey]};
+        const auto secret{secrets.keys.find(pubkey)};
+        if (secret != secrets.keys.end()) covered.wif = EncodeSecretSecure(secret->second);
+        const bool is_seed{result.roots.seeds.contains(pubkey.GetID())};
+        if (is_seed) {
+            covered.classification = LegacyKeyClassification::SEED;
+            covered.derivation = LegacyKeyDerivation::SEED;
+        }
+        if (!entry.metadata || entry.metadata->nVersion < CKeyMetadata::VERSION_WITH_HDDATA) continue;
+        const auto& metadata{*entry.metadata};
+        const bool has_origin{metadata.nVersion >= CKeyMetadata::VERSION_WITH_KEY_ORIGIN && metadata.has_key_origin};
+        Require(metadata.hdKeypath.size() <= MAX_TEXT_BYTES && metadata.key_origin.path.size() <= 255,
+                "Legacy derivation metadata exceeds supported limits");
+        std::vector<uint32_t> text_path;
+        const bool parsed{!metadata.hdKeypath.empty() && ParseHDKeypath(metadata.hdKeypath, text_path)};
+        if (has_origin && parsed) {
+            Require(text_path == metadata.key_origin.path, "Conflicting legacy text and origin paths");
+        }
+        const std::vector<uint32_t>* path{has_origin ? &metadata.key_origin.path : parsed ? &text_path : nullptr};
+        const auto seed{result.roots.seeds.find(metadata.hd_seed_id)};
+        if (has_origin && seed != result.roots.seeds.end() && seed->second.root) {
+            Require(metadata.key_origin.fingerprint == *seed->second.fingerprint, "Legacy origin fingerprint mismatch");
+        }
+        const bool core_path{path && path->size() == 3 && (*path)[0] == BIP32_HARDENED_FLAG &&
+                             ((*path)[1] == BIP32_HARDENED_FLAG || (*path)[1] == (BIP32_HARDENED_FLAG | 1U)) &&
+                             ((*path)[2] & BIP32_HARDENED_FLAG)};
+        if (!is_seed && (!metadata.hdKeypath.empty() || has_origin || !metadata.hd_seed_id.IsNull())) {
+            covered.derivation = LegacyKeyDerivation::UNRECOGNIZED;
+        }
+        if (!core_path || seed == result.roots.seeds.end()) continue;
+        const bool internal{(*path)[1] == (BIP32_HARDENED_FLAG | 1U)};
+        Require(!internal || !inventory.hdchain || inventory.hdchain->seed_id != metadata.hd_seed_id ||
+                    inventory.hdchain->nVersion != CHDChain::VERSION_HD_BASE,
+                "Legacy unsplit active chain has an internal child path");
+        if (!seed->second.root) continue; // Public-only evidence cannot prove a derivation.
+        CExtKey derived{*seed->second.root};
+        // v0.13 GenerateNewKey and v0.15 DeriveNewChildKey: exactly three
+        // hardened steps, branch0 receive or branch1 change. Never skip an
+        // invalid child, increment a stored counter or generate replacement keys.
+        for (uint32_t index : *path) {
+            Require(result.derived_steps < 1'000'000, "Legacy derived child work exceeds supported limit");
+            ++result.derived_steps;
+            CExtKey next;
+            Require(derived.Derive(next, index), "Legacy child derivation failed");
+            derived = std::move(next);
+        }
+        Require(derived.key.VerifyPubKey(pubkey), "Legacy derived public key mismatch");
+        covered.verified_path = *path;
+        if (!is_seed) {
+            covered.derivation = LegacyKeyDerivation::VERIFIED;
+            covered.classification = internal ? LegacyKeyClassification::HD_CHANGE : LegacyKeyClassification::HD_RECEIVE;
+        }
+        auto& maxima{result.derived_maxima[metadata.hd_seed_id]};
+        auto& maximum{internal ? maxima.internal : maxima.external};
+        const uint32_t index{path->back() & ~BIP32_HARDENED_FLAG};
+        maximum = std::max(maximum.value_or(0), index);
+    }
+    for (const auto& [index, pool] : inventory.pool) {
+        const auto covered{result.keys.find(pool.pubkey)};
+        Require(covered != result.keys.end(), "Missing legacy pool public identity");
+        covered->second.pool_indices.push_back(index);
+    }
+    return result;
 }
 
 } // namespace wallet

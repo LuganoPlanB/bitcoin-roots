@@ -17,9 +17,11 @@
 CKey DecodeSecret(const std::string& str);
 CKey DecodeSecret(const SecureString& str);
 std::string EncodeSecret(const CKey& key);
+SecureString EncodeSecretSecure(const CKey& key);
 
 CExtKey DecodeExtKey(const std::string& str);
 std::string EncodeExtKey(const CExtKey& extkey);
+SecureString EncodeExtKeySecure(const CExtKey& extkey);
 CExtPubKey DecodeExtPubKey(const std::string& str);
 std::string EncodeExtPubKey(const CExtPubKey& extpubkey);
 

@@ -7,7 +7,9 @@
 
 #include <crypto/common.h>
 #include <hash.h>
+#include <key_io.h>
 #include <test/util/setup_common.h>
+#include <util/bip32.h>
 #include <util/readwritefile.h>
 #include <util/strencodings.h>
 #include <test/wallet/data/legacy_export.json.h>
@@ -246,9 +248,647 @@ void RejectRecords(std::vector<LegacyWalletRecord> records)
 {
     BOOST_CHECK_THROW(DecodeLegacyWalletRecords(records), std::runtime_error);
 }
+
+// Deterministic disposable test material. Frozen independent OpenSSL vectors
+// in legacy_export.json separately check compatibility without this encryptor.
+CKey RecoveryTestKey(unsigned char value, bool compressed = true)
+{
+    CKeyingMaterial scalar(32, 0);
+    scalar.back() = value;
+    CKey key;
+    key.Set(scalar.begin(), scalar.end(), compressed);
+    return key;
+}
+
+void AddRecoverySlot(LegacyWalletInventory& inventory, uint32_t id, const SecureString& passphrase,
+                     unsigned char master_byte, const std::vector<CKey>& keys)
+{
+    CKeyingMaterial symmetric_key(32, master_byte);
+    CMasterKey master;
+    master.vchSalt.assign(8, master_byte);
+    master.nDeriveIterations = 1;
+    CCrypter crypter;
+    BOOST_REQUIRE(crypter.SetKeyFromPassphrase(passphrase, master.vchSalt, master.nDeriveIterations, 0));
+    BOOST_REQUIRE(crypter.Encrypt(symmetric_key, master.vchCryptedKey));
+    inventory.master_keys.emplace(id, master);
+    for (const auto& key : keys) {
+        const auto pubkey{key.GetPubKey()};
+        auto& entry{inventory.keys[pubkey]};
+        entry.ciphertext.emplace();
+        const CKeyingMaterial scalar{UCharCast(key.begin()), UCharCast(key.end())};
+        BOOST_REQUIRE(EncryptSecret(symmetric_key, scalar, pubkey.GetHash(), *entry.ciphertext));
+        entry.source_families.insert("ckey");
+    }
+}
+
+void RejectRecovery(const LegacyWalletInventory& inventory, const SecureString& passphrase, std::string_view message)
+{
+    try {
+        const auto recovered{RecoverLegacyWalletSecrets(inventory, passphrase)};
+        BOOST_FAIL("Recovery unexpectedly succeeded");
+    } catch (const std::runtime_error& error) {
+        // Exact fixed diagnostics prevent secret values being interpolated.
+        BOOST_CHECK(std::string_view{error.what()} == message);
+    }
+}
+
+void MarkRecoverySeed(LegacyWalletInventory& inventory, const CKey& seed, const std::string& marker = "s")
+{
+    auto& entry{inventory.keys[seed.GetPubKey()]};
+    entry.private_key = seed;
+    entry.metadata.emplace();
+    entry.metadata->hdKeypath = marker;
+    entry.metadata->hd_seed_id = seed.GetPubKey().GetID();
+}
+
+void RejectRoots(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets, std::string_view message)
+{
+    try {
+        const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+        BOOST_FAIL("Root recovery unexpectedly succeeded");
+    } catch (const std::runtime_error& error) {
+        BOOST_CHECK(std::string_view{error.what()} == message);
+    }
+}
+
+void CheckRootOracle(const LegacyExportSeed& seed, const UniValue& expected, bool mainnet)
+{
+    BOOST_REQUIRE(seed.pubkey);
+    BOOST_REQUIRE(seed.root);
+    BOOST_REQUIRE(seed.fingerprint);
+    BOOST_CHECK(*seed.pubkey == PublicKey(expected["pubkey"].get_str()));
+    BOOST_CHECK_EQUAL(seed.active, expected["active"].get_bool());
+    BOOST_CHECK((std::string_view{seed.extended_private_key.data(), seed.extended_private_key.size()} ==
+                 expected[mainnet ? "root_main" : "root_test"].get_str()));
+    BOOST_CHECK((std::string_view{seed.wif.data(), seed.wif.size()} == expected[mainnet ? "wif_main" : "wif_test"].get_str()));
+    BOOST_CHECK(std::ranges::equal(*seed.fingerprint, ParseHex(expected["fingerprint"].get_str())));
+    BOOST_CHECK_EQUAL(seed.root->nDepth, expected["depth"].getInt<int>());
+    BOOST_CHECK_EQUAL(seed.root->nChild, expected["child"].getInt<int>());
+    BOOST_CHECK(std::ranges::equal(seed.root->fingerprint, ParseHex(expected["parent_fingerprint"].get_str())));
+    BOOST_CHECK(std::ranges::equal(seed.root->chaincode, ParseHex(expected["chaincode"].get_str())));
+    BOOST_CHECK(std::ranges::equal(seed.root->key, ParseHex<std::byte>(expected["root_scalar"].get_str())));
+}
+
+CKey AddCoverageChild(LegacyWalletInventory& inventory, const CKey& seed, uint32_t branch, uint32_t index)
+{
+    CExtKey root;
+    root.SetSeed(seed);
+    CExtKey child{root};
+    const std::vector<uint32_t> path{BIP32_HARDENED_FLAG, BIP32_HARDENED_FLAG | branch, BIP32_HARDENED_FLAG | index};
+    for (uint32_t step : path) {
+        CExtKey next;
+        BOOST_REQUIRE(child.Derive(next, step));
+        child = std::move(next);
+    }
+    auto& entry{inventory.keys[child.key.GetPubKey()]};
+    entry.private_key = child.key;
+    auto& metadata{entry.metadata.emplace()};
+    metadata.hdKeypath = WriteHDKeypath(path, true);
+    metadata.hd_seed_id = seed.GetPubKey().GetID();
+    metadata.key_origin.path = path;
+    metadata.key_origin.fingerprint = root.id_key_fingerprint();
+    metadata.has_key_origin = true;
+    return child.key;
+}
+
+void RejectCoverage(const LegacyWalletInventory& inventory, const LegacyRecoveredSecrets& secrets, std::string_view message)
+{
+    try {
+        const auto coverage{ValidateLegacyWalletCoverage(inventory, secrets)};
+        BOOST_FAIL("Coverage unexpectedly succeeded");
+    } catch (const std::runtime_error& error) {
+        BOOST_CHECK(std::string_view{error.what()} == message);
+    }
+}
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(legacy_wallet_export_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(coverage_complete_independent_wif_sets)
+{
+    const auto fixtures{Fixtures()};
+    for (const auto chain : {ChainType::MAIN, ChainType::REGTEST}) {
+        SelectParams(chain);
+        for (const auto& fixture : fixtures["fixtures"].getValues()) {
+            const auto inventory{DecodeLegacyWalletRecords(FixtureRecords(fixture))};
+            const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{"test"})};
+            const auto coverage{ValidateLegacyWalletCoverage(inventory, secrets)};
+            BOOST_CHECK_EQUAL(coverage.keys.size(), inventory.keys.size());
+            size_t private_count{0};
+            for (const auto& [pubkey, key] : coverage.keys) private_count += !key.wif.empty();
+            BOOST_CHECK_EQUAL(private_count, fixture["wifs"].size());
+            for (const auto& expected : fixture["wifs"].getValues()) {
+                const auto pubkey{PublicKey(expected["pubkey"].get_str())};
+                const auto& key{coverage.keys.at(pubkey)};
+                BOOST_CHECK((std::string_view{key.wif.data(), key.wif.size()} == expected[chain == ChainType::MAIN ? "main" : "test"].get_str()));
+                BOOST_CHECK(DecodeSecret(key.wif) == secrets.keys.at(pubkey));
+            }
+            BOOST_CHECK_EQUAL(coverage.roots.seeds.size(), fixture["seeds"].size());
+        }
+    }
+    SelectParams(ChainType::MAIN);
+}
+
+BOOST_AUTO_TEST_CASE(coverage_paths_reserves_and_original_facts)
+{
+    LegacyWalletInventory inventory;
+    const auto seed{RecoveryTestKey(111)};
+    MarkRecoverySeed(inventory, seed);
+    inventory.hdchain.emplace();
+    inventory.hdchain->seed_id = seed.GetPubKey().GetID();
+    inventory.hdchain->nExternalChainCounter = 2; // Deliberately not inferred maximum.
+    const auto receive{AddCoverageChild(inventory, seed, 0, 7)};
+    const auto change{AddCoverageChild(inventory, seed, 1, 9)};
+    inventory.pool.emplace(-2, LegacyPoolEntry{150000, 0, receive.GetPubKey(), false, true});
+    inventory.pool.emplace(99, LegacyPoolEntry{180100, 7, receive.GetPubKey(), false, true, true, true});
+    inventory.pool.emplace(100, LegacyPoolEntry{180100, 8, change.GetPubKey(), true, true});
+    const auto raw_chain{Encode(*inventory.hdchain)};
+    const auto raw_pool{inventory.pool};
+    std::map<CPubKey, SerializeData> raw_metadata;
+    for (const auto& [pubkey, entry] : inventory.keys) raw_metadata.emplace(pubkey, Encode(*entry.metadata));
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto coverage{ValidateLegacyWalletCoverage(inventory, secrets)};
+    BOOST_CHECK(coverage.keys.at(seed.GetPubKey()).classification == LegacyKeyClassification::SEED);
+    BOOST_CHECK(coverage.keys.at(receive.GetPubKey()).classification == LegacyKeyClassification::HD_RECEIVE);
+    BOOST_CHECK(coverage.keys.at(change.GetPubKey()).classification == LegacyKeyClassification::HD_CHANGE);
+    BOOST_CHECK(coverage.keys.at(change.GetPubKey()).derivation == LegacyKeyDerivation::VERIFIED);
+    BOOST_CHECK((coverage.keys.at(receive.GetPubKey()).pool_indices == std::vector<int64_t>{-2, 99}));
+    BOOST_CHECK(coverage.keys.at(change.GetPubKey()).pool_indices == std::vector<int64_t>{100});
+    BOOST_CHECK_EQUAL(coverage.derived_maxima.at(seed.GetPubKey().GetID()).external.value(), 7U);
+    BOOST_CHECK_EQUAL(coverage.derived_maxima.at(seed.GetPubKey().GetID()).internal.value(), 9U);
+    BOOST_CHECK_EQUAL(coverage.derived_steps, 6U);
+    BOOST_CHECK(Encode(*inventory.hdchain) == raw_chain);
+    BOOST_CHECK(inventory.pool == raw_pool);
+    for (const auto& [pubkey, entry] : inventory.keys) BOOST_CHECK(Encode(*entry.metadata) == raw_metadata.at(pubkey));
+}
+
+BOOST_AUTO_TEST_CASE(coverage_text_origin_and_fingerprint_conflicts)
+{
+    LegacyWalletInventory original;
+    const auto seed{RecoveryTestKey(112)};
+    MarkRecoverySeed(original, seed);
+    const auto child{AddCoverageChild(original, seed, 0, 3)};
+    const auto secrets{RecoverLegacyWalletSecrets(original, SecureString{})};
+    auto conflict{original};
+    auto& metadata{*conflict.keys.at(child.GetPubKey()).metadata};
+    metadata.hdKeypath = "m/44'/0'/3'";
+    RejectCoverage(conflict, secrets, "Conflicting legacy text and origin paths");
+    metadata.key_origin.path = {44U | BIP32_HARDENED_FLAG, BIP32_HARDENED_FLAG, 3U | BIP32_HARDENED_FLAG};
+    metadata.hdKeypath = "m/44'/1'/3'";
+    RejectCoverage(conflict, secrets, "Conflicting legacy text and origin paths");
+    metadata.hdKeypath = "m/44'/0'/3'";
+    const auto unsupported{ValidateLegacyWalletCoverage(conflict, secrets)};
+    BOOST_CHECK(unsupported.keys.at(child.GetPubKey()).derivation == LegacyKeyDerivation::UNRECOGNIZED);
+    metadata.key_origin.fingerprint[0] ^= 1;
+    RejectCoverage(conflict, secrets, "Legacy origin fingerprint mismatch");
+    conflict = original;
+    conflict.keys.at(child.GetPubKey()).metadata->key_origin.fingerprint[0] ^= 1;
+    RejectCoverage(conflict, secrets, "Legacy origin fingerprint mismatch");
+}
+
+BOOST_AUTO_TEST_CASE(coverage_opaque_text_and_imported_origins)
+{
+    LegacyWalletInventory inventory;
+    const auto seed{RecoveryTestKey(113)};
+    MarkRecoverySeed(inventory, seed);
+    const auto child{AddCoverageChild(inventory, seed, 1, 4)};
+    auto& metadata{*inventory.keys.at(child.GetPubKey()).metadata};
+    metadata.hdKeypath = std::string{"bad\0\xff", 5};
+    const auto raw{Encode(metadata)};
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    BOOST_CHECK(ValidateLegacyWalletCoverage(inventory, secrets).keys.at(child.GetPubKey()).derivation == LegacyKeyDerivation::VERIFIED);
+    BOOST_CHECK(Encode(metadata) == raw);
+    metadata.has_key_origin = false;
+    BOOST_CHECK(ValidateLegacyWalletCoverage(inventory, secrets).keys.at(child.GetPubKey()).derivation == LegacyKeyDerivation::UNRECOGNIZED);
+    metadata.has_key_origin = true;
+    metadata.hd_seed_id.SetNull();
+    BOOST_CHECK(ValidateLegacyWalletCoverage(inventory, secrets).keys.at(child.GetPubKey()).derivation == LegacyKeyDerivation::UNRECOGNIZED);
+    metadata.hdKeypath.clear();
+    BOOST_CHECK(ValidateLegacyWalletCoverage(inventory, secrets).keys.at(child.GetPubKey()).derivation == LegacyKeyDerivation::UNRECOGNIZED);
+}
+
+BOOST_AUTO_TEST_CASE(coverage_wrong_child_or_local_root_fails)
+{
+    LegacyWalletInventory original;
+    const auto seed{RecoveryTestKey(114)};
+    const auto other_seed{RecoveryTestKey(115)};
+    MarkRecoverySeed(original, seed);
+    MarkRecoverySeed(original, other_seed);
+    const auto child{AddCoverageChild(original, seed, 0, 8)};
+    const auto secrets{RecoverLegacyWalletSecrets(original, SecureString{})};
+    for (const auto mutation : {0, 1, 2}) {
+        auto inventory{original};
+        auto& metadata{*inventory.keys.at(child.GetPubKey()).metadata};
+        metadata.has_key_origin = false;
+        switch (mutation) {
+        case 0: metadata.hdKeypath = "m/0'/1'/8'"; break;
+        case 1: metadata.hdKeypath = "m/0'/0'/9'"; break;
+        case 2: metadata.hd_seed_id = other_seed.GetPubKey().GetID(); break;
+        }
+        RejectCoverage(inventory, secrets, "Legacy derived public key mismatch");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(coverage_unsplit_and_child_index_boundaries)
+{
+    LegacyWalletInventory inventory;
+    const auto active{RecoveryTestKey(116)};
+    const auto inactive{RecoveryTestKey(117)};
+    MarkRecoverySeed(inventory, active, "m");
+    MarkRecoverySeed(inventory, inactive);
+    const auto receive{AddCoverageChild(inventory, active, 0, 0x7fffffff)};
+    const auto inactive_change{AddCoverageChild(inventory, inactive, 1, 0)};
+    inventory.hdchain.emplace();
+    inventory.hdchain->nVersion = CHDChain::VERSION_HD_BASE;
+    inventory.hdchain->seed_id = active.GetPubKey().GetID();
+    auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto coverage{ValidateLegacyWalletCoverage(inventory, secrets)};
+    BOOST_CHECK(coverage.keys.at(receive.GetPubKey()).derivation == LegacyKeyDerivation::VERIFIED);
+    BOOST_CHECK(coverage.keys.at(inactive_change.GetPubKey()).classification == LegacyKeyClassification::HD_CHANGE);
+    auto& metadata{*inventory.keys.at(receive.GetPubKey()).metadata};
+    metadata.has_key_origin = false;
+    metadata.hdKeypath = "m/0'/0'/2147483648'";
+    BOOST_CHECK(ValidateLegacyWalletCoverage(inventory, secrets).keys.at(receive.GetPubKey()).derivation == LegacyKeyDerivation::UNRECOGNIZED);
+    metadata.hdKeypath = "m/0'/1'/2147483647'";
+    RejectCoverage(inventory, secrets, "Legacy unsplit active chain has an internal child path");
+}
+
+BOOST_AUTO_TEST_CASE(coverage_public_and_compression_identities)
+{
+    LegacyWalletInventory inventory;
+    const auto compressed{RecoveryTestKey(118)};
+    const auto uncompressed{RecoveryTestKey(118, false)};
+    const auto public_only{RecoveryTestKey(119)};
+    inventory.keys[compressed.GetPubKey()].private_key = compressed;
+    inventory.keys[uncompressed.GetPubKey()].private_key = uncompressed;
+    inventory.keys[public_only.GetPubKey()];
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto coverage{ValidateLegacyWalletCoverage(inventory, secrets)};
+    BOOST_REQUIRE_EQUAL(coverage.keys.size(), 3U);
+    BOOST_CHECK(coverage.keys.at(public_only.GetPubKey()).wif.empty());
+    BOOST_CHECK(coverage.keys.at(compressed.GetPubKey()).wif != coverage.keys.at(uncompressed.GetPubKey()).wif);
+    for (const auto& [pubkey, key] : coverage.keys) {
+        BOOST_CHECK(key.classification == LegacyKeyClassification::UNCLASSIFIED);
+        BOOST_CHECK(key.derivation == LegacyKeyDerivation::NOT_APPLICABLE);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(roots_independent_fixture_oracles)
+{
+    const auto fixtures{Fixtures()};
+    for (const auto& fixture : fixtures["fixtures"].getValues()) {
+        const auto inventory{DecodeLegacyWalletRecords(FixtureRecords(fixture))};
+        const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{"test"})};
+        const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+        BOOST_CHECK(roots.network == ChainType::MAIN);
+        BOOST_CHECK_EQUAL(roots.seeds.size(), fixture["seeds"].size());
+        BOOST_CHECK_EQUAL(secrets.keys.size(), fixture["keys"].size());
+        for (const auto& expected : fixture["seeds"].getValues()) {
+            const auto pubkey{PublicKey(expected["pubkey"].get_str())};
+            const auto& seed{roots.seeds.at(pubkey.GetID())};
+            CheckRootOracle(seed, expected, true);
+            BOOST_CHECK(seed.evidence.contains("seed_marker"));
+            BOOST_CHECK(seed.evidence.contains("metadata_reference"));
+            BOOST_CHECK_EQUAL(seed.evidence.contains("active_hdchain"), seed.active);
+            // The exact pure operation retained from v29.5 dumpwallet, also
+            // checked against independent Python HMAC/BIP32 fixture answers.
+            CExtKey donor_root;
+            donor_root.SetSeed(secrets.keys.at(pubkey));
+            BOOST_CHECK(*seed.root == donor_root);
+            BOOST_CHECK((std::string_view{seed.extended_private_key.data(), seed.extended_private_key.size()} == EncodeExtKey(donor_root)));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(roots_marker_and_reference_provenance)
+{
+    LegacyWalletInventory inventory;
+    const auto active{RecoveryTestKey(61)};
+    const auto inactive{RecoveryTestKey(62)};
+    const auto reference_only{RecoveryTestKey(63)};
+    const auto child{RecoveryTestKey(64)};
+    MarkRecoverySeed(inventory, active, "m");
+    inventory.keys.at(active.GetPubKey()).metadata->nVersion = CKeyMetadata::VERSION_WITH_HDDATA;
+    MarkRecoverySeed(inventory, inactive);
+    inventory.keys[reference_only.GetPubKey()].private_key = reference_only;
+    inventory.keys[child.GetPubKey()].private_key = child;
+    auto& metadata{inventory.keys[child.GetPubKey()].metadata.emplace()};
+    metadata.hd_seed_id = reference_only.GetPubKey().GetID();
+    metadata.hdKeypath = "unknown stored path";
+    inventory.hdchain.emplace();
+    inventory.hdchain->seed_id = active.GetPubKey().GetID();
+    const auto original_metadata{Encode(metadata)};
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+    BOOST_REQUIRE_EQUAL(roots.seeds.size(), 3U);
+    BOOST_CHECK(roots.seeds.at(active.GetPubKey().GetID()).active);
+    BOOST_CHECK(!roots.seeds.at(inactive.GetPubKey().GetID()).active);
+    const auto& referenced{roots.seeds.at(reference_only.GetPubKey().GetID())};
+    BOOST_CHECK(!referenced.active);
+    BOOST_CHECK(referenced.evidence == std::set<std::string>{"metadata_reference"});
+    BOOST_CHECK(referenced.root.has_value());
+    BOOST_CHECK_EQUAL(secrets.keys.size(), 4U);
+    BOOST_CHECK(Encode(metadata) == original_metadata);
+    // Metadata upgrade may add an origin to old "m" while retaining the marker.
+    auto& upgraded{*inventory.keys.at(active.GetPubKey()).metadata};
+    upgraded.nVersion = CKeyMetadata::VERSION_WITH_KEY_ORIGIN;
+    upgraded.has_key_origin = true;
+    upgraded.key_origin.fingerprint = *roots.seeds.at(active.GetPubKey().GetID()).fingerprint;
+    BOOST_CHECK_NO_THROW(DeriveLegacyWalletRoots(inventory, secrets));
+}
+
+BOOST_AUTO_TEST_CASE(roots_missing_and_contradictory_evidence)
+{
+    const auto ordinary{RecoveryTestKey(71)};
+    const auto missing{RecoveryTestKey(72)};
+    LegacyWalletInventory inventory;
+    inventory.keys[ordinary.GetPubKey()].private_key = ordinary;
+    inventory.hdchain.emplace();
+    inventory.hdchain->seed_id = missing.GetPubKey().GetID();
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    RejectRoots(inventory, secrets, "Missing required legacy HD seed material");
+    inventory.hdchain.reset();
+    inventory.keys.at(ordinary.GetPubKey()).metadata.emplace();
+    auto& metadata{*inventory.keys.at(ordinary.GetPubKey()).metadata};
+    metadata.hd_seed_id = missing.GetPubKey().GetID();
+    metadata.hdKeypath = "unrecognized";
+    RejectRoots(inventory, secrets, "Missing required legacy HD seed material");
+    for (const auto& marker : {"m", "s"}) {
+        metadata.hdKeypath = marker;
+        RejectRoots(inventory, secrets, "Contradictory legacy seed marker");
+        metadata.hd_seed_id.SetNull();
+        RejectRoots(inventory, secrets, "Contradictory legacy seed marker");
+        metadata.hd_seed_id = missing.GetPubKey().GetID();
+    }
+    // A secret-free inventory preserves an unresolved relationship, not a root.
+    metadata.hdKeypath = "unrecognized";
+    inventory.keys.at(ordinary.GetPubKey()).private_key.reset();
+    const auto unresolved{DeriveLegacyWalletRoots(inventory, {})};
+    BOOST_REQUIRE_EQUAL(unresolved.seeds.size(), 1U);
+    const auto& seed{unresolved.seeds.at(missing.GetPubKey().GetID())};
+    BOOST_CHECK(!seed.pubkey && !seed.root && !seed.fingerprint);
+    BOOST_CHECK(seed.wif.empty() && seed.extended_private_key.empty());
+    inventory.keys[missing.GetPubKey()];
+    const auto public_only{DeriveLegacyWalletRoots(inventory, {})};
+    BOOST_CHECK(public_only.seeds.at(missing.GetPubKey().GetID()).pubkey == missing.GetPubKey());
+    BOOST_CHECK(!public_only.seeds.at(missing.GetPubKey().GetID()).root);
+}
+
+BOOST_AUTO_TEST_CASE(roots_seed_only_and_zero_root_wallets)
+{
+    const auto key{RecoveryTestKey(81)};
+    LegacyWalletInventory inventory;
+    inventory.keys[key.GetPubKey()].private_key = key;
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    BOOST_CHECK(DeriveLegacyWalletRoots(inventory, secrets).seeds.empty());
+    inventory.hdchain.emplace();
+    BOOST_CHECK(DeriveLegacyWalletRoots(inventory, secrets).seeds.empty());
+    inventory.hdchain->seed_id = key.GetPubKey().GetID();
+    const auto active{DeriveLegacyWalletRoots(inventory, secrets)};
+    BOOST_REQUIRE_EQUAL(active.seeds.size(), 1U);
+    BOOST_CHECK(active.seeds.at(key.GetPubKey().GetID()).evidence == std::set<std::string>{"active_hdchain"});
+    BOOST_CHECK(active.seeds.at(key.GetPubKey().GetID()).root.has_value());
+    inventory.hdchain.reset();
+    MarkRecoverySeed(inventory, key);
+    const auto inactive{DeriveLegacyWalletRoots(inventory, secrets)};
+    BOOST_CHECK(!inactive.seeds.at(key.GetPubKey().GetID()).active);
+    inventory.keys.at(key.GetPubKey()).private_key.reset();
+    const auto public_only{DeriveLegacyWalletRoots(inventory, {})};
+    BOOST_CHECK(!public_only.seeds.at(key.GetPubKey().GetID()).root);
+    // An imported origin/fingerprint alone never invents a local seed.
+    auto& metadata{*inventory.keys.at(key.GetPubKey()).metadata};
+    metadata.hdKeypath.clear();
+    metadata.hd_seed_id.SetNull();
+    metadata.has_key_origin = true;
+    metadata.key_origin.fingerprint = {1, 2, 3, 4};
+    BOOST_CHECK(DeriveLegacyWalletRoots(inventory, {}).seeds.empty());
+}
+
+BOOST_AUTO_TEST_CASE(roots_fingerprints_are_not_identities)
+{
+    const auto compressed{RecoveryTestKey(91)};
+    const auto uncompressed{RecoveryTestKey(91, false)};
+    LegacyWalletInventory inventory;
+    MarkRecoverySeed(inventory, compressed);
+    MarkRecoverySeed(inventory, uncompressed, "m");
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+    BOOST_REQUIRE_EQUAL(roots.seeds.size(), 2U);
+    const auto& first{roots.seeds.at(compressed.GetPubKey().GetID())};
+    const auto& second{roots.seeds.at(uncompressed.GetPubKey().GetID())};
+    BOOST_CHECK(first.fingerprint == second.fingerprint);
+    BOOST_CHECK(*first.root == *second.root);
+    BOOST_CHECK(first.pubkey != second.pubkey);
+    BOOST_CHECK(first.wif != second.wif);
+    BOOST_CHECK(DecodeSecret(first.wif) == compressed);
+    BOOST_CHECK(DecodeSecret(second.wif) == uncompressed);
+    BOOST_CHECK_EQUAL(secrets.keys.size(), 2U);
+}
+
+BOOST_AUTO_TEST_CASE(roots_network_encodings)
+{
+    const auto fixtures{Fixtures()};
+    const auto& fixture{fixtures["fixtures"][4]};
+    const auto inventory{DecodeLegacyWalletRecords(FixtureRecords(fixture))};
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    for (const auto chain : {ChainType::MAIN, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
+        SelectParams(chain);
+        const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+        BOOST_CHECK(roots.network == chain);
+        for (const auto& expected : fixture["seeds"].getValues()) {
+            const auto pubkey{PublicKey(expected["pubkey"].get_str())};
+            const auto& seed{roots.seeds.at(pubkey.GetID())};
+            CheckRootOracle(seed, expected, chain == ChainType::MAIN);
+            const std::string encoded{seed.extended_private_key.begin(), seed.extended_private_key.end()};
+            BOOST_CHECK(DecodeExtKey(encoded) == *seed.root);
+            BOOST_CHECK(DecodeSecret(seed.wif) == secrets.keys.at(pubkey));
+        }
+    }
+    SelectParams(ChainType::MAIN);
+}
+
+BOOST_AUTO_TEST_CASE(roots_published_bip32_vector_four)
+{
+    // Published BIP32 vector4 has a valid 32-byte seed, unlike vector1's16.
+    // Literal answer also appears in Core bip32_tests.cpp; no generated oracle.
+    const auto scalar{ParseHex("3ddd5602285899a946114506157c7997e5444528f3003f6134712147db19b678")};
+    CKey seed;
+    seed.Set(scalar.begin(), scalar.end(), true);
+    BOOST_REQUIRE(seed.IsValid());
+    LegacyWalletInventory inventory;
+    MarkRecoverySeed(inventory, seed);
+    const auto secrets{RecoverLegacyWalletSecrets(inventory, SecureString{})};
+    const auto roots{DeriveLegacyWalletRoots(inventory, secrets)};
+    const auto& root{roots.seeds.at(seed.GetPubKey().GetID())};
+    BOOST_CHECK((std::string_view{root.extended_private_key.data(), root.extended_private_key.size()} ==
+                 "xprv9s21ZrQH143K48vGoLGRPxgo2JNkJ3J3fqkirQC2zVdk5Dgd5w14S7fRDyHH4dWNHUgkvsvNDCkvAwcSHNAQwhwgNMgZhLtQC63zxwhQmRv"));
+    auto incomplete{secrets};
+    incomplete.keys.clear();
+    RejectRoots(inventory, incomplete, "Incomplete or inconsistent legacy recovered key set");
+    auto extra{secrets};
+    const auto unrelated{RecoveryTestKey(99)};
+    extra.keys.emplace(unrelated.GetPubKey(), unrelated);
+    RejectRoots(inventory, extra, "Incomplete or inconsistent legacy recovered key set");
+}
+
+BOOST_AUTO_TEST_CASE(recovery_independent_ciphertext_vectors)
+{
+    const auto fixtures{Fixtures()};
+    for (const auto& fixture : fixtures["fixtures"].getValues()) {
+        const auto inventory{DecodeLegacyWalletRecords(FixtureRecords(fixture))};
+        const auto recovered{RecoverLegacyWalletSecrets(inventory, SecureString{"test"})};
+        BOOST_CHECK_EQUAL(recovered.keys.size(), fixture["keys"].size());
+        for (const auto& expected : fixture["keys"].getValues()) {
+            const auto pubkey{PublicKey(expected["pubkey"].get_str())};
+            BOOST_REQUIRE(recovered.keys.contains(pubkey));
+            const auto bytes{ParseHex(expected["scalar"].get_str())};
+            const auto& key{recovered.keys.at(pubkey)};
+            BOOST_CHECK(std::equal(UCharCast(key.begin()), UCharCast(key.end()), bytes.begin(), bytes.end()));
+            BOOST_CHECK(recovered.keys.at(pubkey).VerifyPubKey(pubkey));
+        }
+        size_t used{0};
+        for (const auto& [id, keys] : recovered.master_key_usage) used += keys.size();
+        BOOST_CHECK_EQUAL(used, fixture["encrypted"].get_bool() ? fixture["keys"].size() : 0U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(recovery_exact_passphrase_bytes)
+{
+    const std::vector<SecureString> passphrases{
+        SecureString{}, SecureString{" \t test \r "}, SecureString{"\xc3\xa9\xe2\x82\xac"},
+        SecureString{"ab\0cd", 5}, SecureString(4096, 'p')};
+    for (const auto& passphrase : passphrases) {
+        LegacyWalletInventory inventory;
+        const auto key{RecoveryTestKey(17)};
+        AddRecoverySlot(inventory, 91, passphrase, 42, {key});
+        const auto recovered{RecoverLegacyWalletSecrets(inventory, passphrase)};
+        BOOST_CHECK(recovered.keys.at(key.GetPubKey()) == key);
+        BOOST_CHECK(!inventory.keys.at(key.GetPubKey()).private_key);
+        for (const auto& wrong : {SecureString{"wrong"}, SecureString{"ab"}, SecureString{"test"}}) {
+            RejectRecovery(inventory, wrong, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+        }
+        if (!passphrase.empty()) {
+            RejectRecovery(inventory, SecureString{}, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+        }
+    }
+    RejectRecovery({}, SecureString(4097, 'p'), "Legacy passphrase exceeds supported limit");
+}
+
+BOOST_AUTO_TEST_CASE(recovery_multiple_master_candidates)
+{
+    const SecureString passphrase{"test"};
+    LegacyWalletInventory inventory;
+    const auto first{RecoveryTestKey(21)};
+    const auto second{RecoveryTestKey(22, false)};
+    const auto plain{RecoveryTestKey(23)};
+    AddRecoverySlot(inventory, 0, SecureString{"other"}, 1, {});
+    AddRecoverySlot(inventory, 300, passphrase, 2, {first});
+    AddRecoverySlot(inventory, 9, passphrase, 3, {second});
+    AddRecoverySlot(inventory, 400, passphrase, 4, {});
+    inventory.keys[plain.GetPubKey()].private_key = plain;
+    const auto recovered{RecoverLegacyWalletSecrets(inventory, passphrase)};
+    BOOST_CHECK_EQUAL(recovered.keys.size(), 3U);
+    BOOST_CHECK(recovered.keys.at(first.GetPubKey()) == first);
+    BOOST_CHECK(recovered.keys.at(second.GetPubKey()) == second);
+    BOOST_CHECK(recovered.keys.at(plain.GetPubKey()) == plain);
+    BOOST_CHECK(recovered.master_key_usage.at(0).empty());
+    BOOST_CHECK(recovered.master_key_usage.at(400).empty());
+    BOOST_CHECK(recovered.master_key_usage.at(9) == std::set{second.GetPubKey()});
+    BOOST_CHECK(recovered.master_key_usage.at(300) == std::set{first.GetPubKey()});
+    inventory.keys[first.GetPubKey()].private_key = first;
+    BOOST_CHECK_NO_THROW(RecoverLegacyWalletSecrets(inventory, passphrase));
+    inventory.keys[first.GetPubKey()].private_key = plain;
+    RejectRecovery(inventory, passphrase, "Invalid legacy private/public key pair");
+}
+
+BOOST_AUTO_TEST_CASE(recovery_no_partial_success)
+{
+    const SecureString passphrase{"test"};
+    LegacyWalletInventory original;
+    const auto first{RecoveryTestKey(31)};
+    const auto second{RecoveryTestKey(32)};
+    AddRecoverySlot(original, 1, passphrase, 5, {first, second});
+    for (const auto mutation : {0, 1, 2, 3}) {
+        auto inventory{original};
+        switch (mutation) {
+        case 0: inventory.keys.at(second.GetPubKey()).ciphertext->back() ^= 1; break;
+        case 1: inventory.keys.at(second.GetPubKey()).ciphertext = inventory.keys.at(first.GetPubKey()).ciphertext; break;
+        case 2: AddRecoverySlot(inventory, 2, SecureString{"other"}, 6, {second}); break;
+        case 3: inventory.master_keys.at(1).vchCryptedKey.back() ^= 1; break;
+        }
+        RejectRecovery(inventory, passphrase, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+        for (const auto& [pubkey, entry] : inventory.keys) BOOST_CHECK(!entry.private_key);
+    }
+    auto missing{original};
+    missing.master_keys.clear();
+    RejectRecovery(missing, passphrase, "Missing legacy master key records");
+}
+
+BOOST_AUTO_TEST_CASE(recovery_parameter_validation)
+{
+    const SecureString passphrase{"test"};
+    LegacyWalletInventory original;
+    AddRecoverySlot(original, 1, passphrase, 7, {RecoveryTestKey(41)});
+    for (const auto mutation : {0, 1, 2, 3, 4, 5, 6}) {
+        auto inventory{original};
+        auto& master{inventory.master_keys.at(1)};
+        switch (mutation) {
+        case 0: master.nDerivationMethod = 1; break;
+        case 1: master.nDeriveIterations = 0; break;
+        case 2: master.nDeriveIterations = 10'000'001; break;
+        case 3: master.vchSalt.resize(7); break;
+        case 4: master.vchCryptedKey.resize(47); break;
+        case 5: master.vchOtherDerivationParameters.push_back(0); break;
+        case 6: inventory.keys.begin()->second.ciphertext->resize(47); break;
+        }
+        RejectRecovery(inventory, passphrase,
+                       mutation == 0 ? "Unsupported legacy master key derivation method" :
+                       mutation == 6 ? "Invalid legacy encrypted private key length" :
+                                       "Unsupported or corrupt legacy master key parameters");
+    }
+    auto slots{original};
+    for (uint32_t id{2}; id <= 33; ++id) slots.master_keys.emplace(id, original.master_keys.at(1));
+    RejectRecovery(slots, passphrase, "Legacy master key count exceeds supported limit");
+}
+
+BOOST_AUTO_TEST_CASE(recovery_rejects_padding_only_candidates)
+{
+    const SecureString passphrase{"test"};
+    const auto key{RecoveryTestKey(44)};
+    LegacyWalletInventory original;
+    AddRecoverySlot(original, 1, passphrase, 7, {key});
+    // AES padding success with the wrong master length is not authority.
+    auto wrong_length{original};
+    auto& master{wrong_length.master_keys.at(1)};
+    CCrypter crypter;
+    BOOST_REQUIRE(crypter.SetKeyFromPassphrase(passphrase, master.vchSalt, master.nDeriveIterations, 0));
+    BOOST_REQUIRE(crypter.Encrypt(CKeyingMaterial(33, 7), master.vchCryptedKey));
+    BOOST_REQUIRE_EQUAL(master.vchCryptedKey.size(), 48U);
+    RejectRecovery(wrong_length, passphrase, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+    for (const auto size : {31U, 32U, 33U}) {
+        auto invalid{original};
+        // Zero32 is an invalid scalar; adjacent lengths are invalid secrets.
+        BOOST_REQUIRE(EncryptSecret(CKeyingMaterial(32, 7), CKeyingMaterial(size, 0), key.GetPubKey().GetHash(),
+                                    *invalid.keys.at(key.GetPubKey()).ciphertext));
+        RejectRecovery(invalid, passphrase, size == 31 ? "Invalid legacy encrypted private key length" :
+                                                       "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(recovery_kdf_work_bound, *boost::unit_test::timeout(60))
+{
+    LegacyWalletInventory inventory;
+    AddRecoverySlot(inventory, 1, SecureString{"test"}, 8, {RecoveryTestKey(51)});
+    auto master{inventory.master_keys.at(1)};
+    master.nDeriveIterations = 10'000'000;
+    inventory.master_keys = {{1, master}, {2, master}, {3, master}};
+    RejectRecovery(inventory, SecureString{"wrong"}, "Legacy KDF work exceeds supported limit");
+    // No encrypted private keys means no KDF attempts or password claim.
+    inventory.keys.clear();
+    const auto recovered{RecoverLegacyWalletSecrets(inventory, SecureString{"wrong"})};
+    BOOST_CHECK(recovered.keys.empty());
+    for (const auto& [id, keys] : recovered.master_key_usage) BOOST_CHECK(keys.empty());
+}
 
 BOOST_AUTO_TEST_CASE(source_paths_and_preservation)
 {
