@@ -20,7 +20,7 @@ from dataclasses import replace
 
 from test_framework.address import byte_to_base58
 from test_framework.extendedkey import ExtendedPrivateKey
-from test_framework.legacy_export import bdb_bytes, encrypted_key, FixtureKey, fixtures, pool_key, record_key
+from test_framework.legacy_export import bdb_bytes, encrypted_key, FixtureKey, fixtures, key_metadata, pool_key, record_key
 from test_framework.messages import deser_compact_size, deser_string, hash256, ser_string
 from test_framework.script import hash160
 from test_framework.test_framework import BitcoinTestFramework
@@ -335,14 +335,77 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         assert_equal(executed, 162)
         self.log.info('Historical synthetic matrix: 162 passed; exact keys, roots, scripts, metadata and unchanged sources')
 
-    def encrypted_source(self, vector, name=None, iterations=25000):
+    def encrypted_source(self, vector, name=None, iterations=25000, metadata_version=None):
         key = FixtureKey((1).to_bytes(32, 'big'))
         master = ser_string(bytes.fromhex(vector['master_ciphertext'])) + ser_string(bytes.fromhex('0000deadbeef0000'))
         master += struct.pack('<II', 0, iterations) + ser_string(b'')
         records = [(record_key('mkey', struct.pack('<I', 1)), master), encrypted_key(key, 'imported')]
+        if metadata_version is not None:
+            record, value = key_metadata(key, version=metadata_version, created=1231006505)
+            if metadata_version == 2:
+                value += b'\x81'  # Knots' opaque flag, outside Core's serializer.
+            records.append((record, value))
         source = self.inputs / (name or vector['name'])
         source.write_bytes(bdb_bytes(records))
         return source
+
+    def test_encrypted_metadata_versions(self):
+        self.log.info('Check correct/wrong passphrases with metadata 1/2/10/12 through stdin and terminal input')
+        key = FixtureKey((1).to_bytes(32, 'big'))
+        checks = []
+
+        def check_export(source, destination, version, before):
+            assert_equal(source.read_bytes(), before)
+            lines = destination.read_text(encoding='utf8').splitlines()
+            assert_equal([line.split()[0] for line in lines if line and not line.startswith('#')], [key.wif])
+            objects = [json.loads(line[16:]) for line in lines if line.startswith('# roots-meta-v1 ')]
+            metadata = next(obj['metadata'] for obj in objects if obj['type'] == 'key')
+            assert_equal(metadata['version'], version)
+            assert_equal(metadata.get('unsupported_key_flags'), 129 if version == 2 else None)
+            assert_equal(lines[-1], '# roots-export-complete: 1')
+
+        for version in (1, 2, 10, 12):
+            for vector in self.vectors:
+                source = self.encrypted_source(vector, f"metadata-{version}-{vector['name']}.dat", metadata_version=version)
+                before = source.read_bytes()
+                passphrase = bytes.fromhex(vector['passphrase_hex'])
+                for ending, terminator in [('lf', b'\n'), ('crlf', b'\r\n'), ('eof', b'')]:
+                    if (not passphrase and not terminator) or (passphrase.endswith(b'\r') and terminator == b'\n'):
+                        continue
+                    destination = self.output / f"metadata-{version}-{vector['name']}-{ending}.keys"
+                    result = self.tool(self.invocation(source, destination) + ['-stdinwalletpassphrase', 'dumpwallet'], data=passphrase + terminator)
+                    assert result.returncode == 0, 'Correct-passphrase metadata export failed'
+                    assert_equal(result.stderr, b'')
+                    self.assert_no_secret(result, passphrase)
+                    check_export(source, destination, version, before)
+                    checks.append({'version': version, 'vector': vector['name'], 'input': 'stdin-' + ending, 'expected': 'success'})
+                if os.name == 'posix':
+                    destination = self.output / f"metadata-{version}-{vector['name']}-tty.keys"
+                    with self.terminal_process(self.invocation(source, destination) + ['dumpwallet']) as (process, master, slave, saved):
+                        import termios
+                        self.wait_prompt(process, master, slave)
+                        # CRLF also represents passphrases whose data ends in CR.
+                        self.terminal_send(master, passphrase + b'\r\n')
+                        stdout, stderr = process.communicate(timeout=20)
+                        assert_equal(process.returncode, 0)
+                        assert_equal(stderr, b'')
+                        assert_equal(termios.tcgetattr(slave), saved)
+                        self.assert_no_secret(subprocess.CompletedProcess([], process.returncode, stdout, stderr), passphrase)
+                    check_export(source, destination, version, before)
+                    checks.append({'version': version, 'vector': vector['name'], 'input': 'terminal', 'expected': 'success'})
+            source = self.encrypted_source(self.vectors[0], f'metadata-{version}-wrong.dat', metadata_version=version)
+            before = source.read_bytes()
+            destination = self.output / f'metadata-{version}-wrong.keys'
+            result = self.tool(self.invocation(source, destination) + ['-stdinwalletpassphrase', 'dumpwallet'], data=b'SYNTHETIC_WRONG_CREDENTIAL_CANARY\n')
+            assert_equal(result.returncode, 1)
+            assert_equal(result.stdout, b'')
+            assert b'Legacy decryption failed' in result.stderr
+            assert b'SYNTHETIC_WRONG_CREDENTIAL_CANARY' not in result.stderr
+            assert not destination.exists()
+            assert_equal(source.read_bytes(), before)
+            checks.append({'version': version, 'vector': 'wrong-passphrase', 'input': 'stdin', 'expected': 'failure-no-output'})
+        (self.root / 'decryption-metadata-results.json').write_text(json.dumps({'checks': checks, 'executed': len(checks), 'failed': 0}) + '\n')
+        self.log.info('Decryption metadata matrix: %d identified correct/wrong-passphrase checks passed', len(checks))
 
     @staticmethod
     def assert_no_secret(result, passphrase):
@@ -1113,6 +1176,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         self.test_historical_storage_matrix()
         self.test_invalid_sources()
         self.test_stdin_bytes()
+        self.test_encrypted_metadata_versions()
         self.test_stdin_errors()
         self.test_live_pipe()
         self.test_terminal()
