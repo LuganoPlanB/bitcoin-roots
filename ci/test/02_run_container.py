@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -120,6 +121,12 @@ def main():
         CI_PREVIOUS_RELEASES_MOUNT = f"type=volume,src={os.environ['CONTAINER_NAME']}_previous_releases,dst={os.environ['PREVIOUS_RELEASES_DIR']}"
         CI_BUILD_MOUNT = []
         CI_ARTIFACTS_MOUNT = []
+        CI_QA_ASSETS_MOUNT = []
+        if os.getenv("ROOTS_QA_ASSETS_DIR"):
+            assets = Path(os.environ["ROOTS_QA_ASSETS_DIR"])
+            if not assets.is_absolute() or not assets.is_dir() or ',' in str(assets):
+                sys.exit("ROOTS_QA_ASSETS_DIR must be an existing absolute path without commas")
+            CI_QA_ASSETS_MOUNT = [f"--mount=type=bind,src={assets},dst={assets},readonly"]
         if os.getenv("ROOTS_ARTIFACTS_DIR"):
             artifacts = Path(os.environ["ROOTS_ARTIFACTS_DIR"])
             if not artifacts.is_absolute():
@@ -180,6 +187,7 @@ def main():
             f"--mount={CI_PREVIOUS_RELEASES_MOUNT}",
             *CI_BUILD_MOUNT,
             *CI_ARTIFACTS_MOUNT,
+            *CI_QA_ASSETS_MOUNT,
             f"--env-file={env_file}",
             f"--name={os.environ['CONTAINER_NAME']}",
             f"--network={network_name}",

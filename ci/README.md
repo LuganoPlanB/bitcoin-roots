@@ -121,6 +121,29 @@ v32 compiler/dependency profiles, Unicode/space build paths, Nix Windows cross
 support and per-profile container networks. Windows smoke requests optional
 MiniUPnPc explicitly; Windows fuzz disables ZMQ to match its wallet manifest.
 
+### Shared test inputs
+
+PR and nightly workflows acquire `bitcoin-core/qa-assets` once through
+`actions/checkout`, at the revision pinned in `test/download_utils.py`. The
+preparation job checks the unit-vector SHA256, records the source revision and
+file hashes, retains qa-assets' license, and shares separate unit/fuzz inputs
+through Actions artifacts.
+Nested nightly calls reuse their caller's prepared inputs; full fuzz data is
+requested only for suites that consume it. Fast fuzz smoke stays self-contained.
+
+Every consumer verifies its prepared files before use. Linux containers receive
+a read-only input mount; native macOS and Windows jobs use the same handoff.
+Fuzz runners receive a writable per-job copy so they can create directories for
+new targets and retain newly discovered inputs without changing the shared data.
+Preparation cleans interrupted copies and reuses unchanged completed copies;
+choose a fresh working directory to preserve a corpus changed by a prior run.
+`ROOTS_QA_ASSETS_DIR` makes missing or corrupt prepared inputs fatal instead of
+triggering another external download. Standalone shell and Windows helpers keep
+their fallback acquisition through `test/download_utils.py`; existing valid unit
+vectors are reused. Update the pinned revision and unit-vector SHA256 together
+when deliberately updating inputs. Sharing inputs reduces duplicate requests;
+initial acquisition still depends on GitHub being available.
+
 ### Diagnostics and assurance cadence
 
 Hosted container jobs set an absolute `ROOTS_ARTIFACTS_DIR` and bind-mount the
@@ -205,3 +228,5 @@ In this case, GitHub's cache size limitations may cause caches to be frequently 
 
 It is also possible to use your own WarpBuild Runners in your own fork by replacing the references to `bitcoin/bitcoin` in `../.github/workflows/ci.yml` with the name of your fork (e.g. `your-org/bitcoin`).
 NB that WarpBuild Runners only work at an organisation level, therefore in order to use your own WarpBuild Runners, *the fork must be within your own organisation*.
+
+Copyright (C) 2026 Plan-B Foundation

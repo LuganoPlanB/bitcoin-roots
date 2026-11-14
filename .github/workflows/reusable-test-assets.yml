@@ -1,0 +1,63 @@
+# Copyright (C) 2026 Plan-B Foundation
+# Distributed under the MIT software license, see the accompanying file COPYING.
+
+name: Prepare shared test inputs
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      fuzz:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Resolve pinned test inputs
+        id: inputs
+        run: echo "revision=$(python3 test/download_utils.py revision)" >> "$GITHUB_OUTPUT"
+      - name: Acquire qa-assets once
+        uses: actions/checkout@v6
+        with:
+          repository: bitcoin-core/qa-assets
+          ref: ${{ steps.inputs.outputs.revision }}
+          path: qa-assets-inputs
+          persist-credentials: false
+          sparse-checkout: |
+            unit_test_data
+            ${{ inputs.fuzz && 'fuzz_corpora' || '' }}
+      - name: Validate shared unit inputs
+        run: python3 test/download_utils.py prepare qa-assets-inputs unit_test_data
+      - name: Share unit inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-assets-unit_test_data
+          path: qa-assets-inputs/unit_test_data/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+      - name: Validate shared fuzz inputs
+        if: inputs.fuzz
+        run: python3 test/download_utils.py prepare qa-assets-inputs fuzz_corpora
+      - name: Share fuzz inputs
+        if: inputs.fuzz
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-assets-fuzz_corpora
+          path: qa-assets-inputs/fuzz_corpora/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3

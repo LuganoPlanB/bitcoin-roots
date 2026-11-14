@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Plan-B Foundation
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 
 name: Reusable sanitizer coverage
@@ -69,6 +69,8 @@ jobs:
           persist-credentials: false
       - name: Configure environment
         uses: ./.github/actions/configure-environment
+      - name: Restore shared test inputs
+        uses: ./.github/actions/restore-test-assets
       - name: Restore compiler cache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:

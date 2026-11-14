@@ -1,4 +1,5 @@
 # Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit.
 
@@ -122,6 +123,15 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             "${args[@]}"
 
+  test-assets:
+    name: Shared test inputs
+    needs: classify
+    if: needs.classify.outputs.gui == 'true' || needs.classify.outputs.sanitizers == 'true' || needs.classify.outputs.compat == 'true' || needs.classify.outputs.platforms == 'true' || needs.classify.outputs.nightly_sanitizers == 'true' || needs.classify.outputs.nightly_fuzz == 'true' || needs.classify.outputs.nightly_platforms == 'true' || needs.classify.outputs.nightly_full == 'true'
+    uses: ./.github/workflows/reusable-test-assets.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      fuzz: ${{ needs.classify.outputs.nightly_fuzz == 'true' || needs.classify.outputs.nightly_full == 'true' }}
+
   lint:
     name: lint
     runs-on: ubuntu-24.04
@@ -149,7 +159,7 @@ jobs:
 
   gui:
     name: GUI and resources
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.gui == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -168,6 +178,8 @@ jobs:
           persist-credentials: false
       - name: Configure environment
         uses: ./.github/actions/configure-environment
+      - name: Restore shared test inputs
+        uses: ./.github/actions/restore-test-assets
       - name: Restore compiler cache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
@@ -197,7 +209,7 @@ jobs:
 
   sanitizers:
     name: Fast ASan and affected Roots regressions
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.sanitizers == 'true' || needs.classify.outputs.compat == 'true' || needs.classify.outputs.platforms == 'true'
     uses: ./.github/workflows/reusable-sanitizer.yml
     with:
@@ -249,39 +261,43 @@ jobs:
 
   nightly-sanitizers:
     name: nightly sanitizers (ci:sanitizers)
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.nightly_sanitizers == 'true'
     uses: ./.github/workflows/nightly.yml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       suite: sanitizers
+      test-assets-ready: true
 
   nightly-fuzz:
     name: nightly platform fuzz (ci:fuzz)
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.nightly_fuzz == 'true'
     uses: ./.github/workflows/nightly.yml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       suite: fuzz
+      test-assets-ready: true
 
   nightly-platforms:
     name: nightly i686 Debug (ci:platforms)
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.nightly_platforms == 'true'
     uses: ./.github/workflows/nightly.yml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       suite: platforms
+      test-assets-ready: true
 
   nightly-full:
     name: full nightly assurance (ci:full)
-    needs: classify
+    needs: [classify, test-assets]
     if: needs.classify.outputs.nightly_full == 'true'
     uses: ./.github/workflows/nightly.yml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       suite: all
+      test-assets-ready: true
 
   required-result:
     name: required result
