@@ -1,4 +1,5 @@
 // Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,11 +13,25 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <variant>
 #include <vector>
 
 namespace wallet {
+/** A logical page/header probe is charged before seeking, reading or growing
+ * its per-page metadata. This also bounds repeated/deleted offset work.
+ */
+struct PageBudget {
+    uint64_t& visits;
+    const uint64_t limit;
+    void Visit()
+    {
+        if (visits >= limit) throw std::runtime_error("BDB page visits exceed extraction limit");
+        ++visits;
+    }
+};
+
 // Magic bytes in both endianness's
 constexpr uint32_t BTREE_MAGIC = 0x00053162;    // If the file endianness matches our system, we see this magic
 constexpr uint32_t BTREE_MAGIC_OE = 0x62310500; // If the file endianness is the other one, we will see this magic
@@ -242,6 +257,7 @@ public:
     DataRecord() = delete;
 
     RecordHeader m_header;
+    uint32_t offset{0}; // Inline payload offset within its page (strict lazy reads).
 
     std::vector<std::byte> data; // Variable length key/data item
 
@@ -257,10 +273,11 @@ public:
 class InternalRecord
 {
 public:
-    InternalRecord(const RecordHeader& header) : m_header(header) {}
+    InternalRecord(const RecordHeader& header, bool load_data = true) : m_header(header), m_load_data(load_data) {}
     InternalRecord() = delete;
 
     RecordHeader m_header;
+    bool m_load_data;
 
     uint8_t unused;              // Padding, unused
     uint32_t page_num;           // Page number of referenced page
@@ -276,8 +293,14 @@ public:
         s >> page_num;
         s >> records;
 
-        data.resize(m_header.len);
-        s.read(std::as_writable_bytes(std::span(data.data(), data.size())));
+        if (m_load_data) {
+            data.resize(m_header.len);
+            s.read(std::as_writable_bytes(std::span(data.data(), data.size())));
+        } else {
+            // Internal separator bytes are not wallet records. Strict readers
+            // validate their page bounds but need not allocate/copy them.
+            s.seek(m_header.len, SEEK_CUR);
+        }
 
         if (m_header.other_endian) {
             page_num = internal_bswap_32(page_num);
@@ -379,10 +402,14 @@ public:
 class RecordsPage
 {
 public:
-    RecordsPage(const PageHeader& header) : m_header(header) {}
+    RecordsPage(const PageHeader& header, uint32_t page_size = 0, bool load_data = true, PageBudget* budget = nullptr)
+        : m_header(header), m_page_size(page_size), m_load_data(load_data), m_budget(budget) {}
     RecordsPage() = delete;
 
     PageHeader m_header;
+    uint32_t m_page_size;
+    bool m_load_data;
+    PageBudget* m_budget;
 
     std::vector<uint16_t> indexes;
     std::vector<std::variant<DataRecord, OverflowRecord>> records;
@@ -390,16 +417,24 @@ public:
     template <typename Stream>
     void Unserialize(Stream& s)
     {
+        if (m_page_size && PageHeader::SIZE + 2U * m_header.entries > m_page_size) {
+            throw std::runtime_error("BDB record index array exceeds page");
+        }
         // Current position within the page
         int64_t pos = PageHeader::SIZE;
 
         // Get the items
         for (uint32_t i = 0; i < m_header.entries; ++i) {
+            if (m_budget) m_budget->Visit();
             // Get the index
             uint16_t index;
             s >> index;
             if (m_header.other_endian) {
                 index = internal_bswap_16(index);
+            }
+            if (m_page_size && (index < PageHeader::SIZE + 2U * m_header.entries ||
+                                index > m_page_size - RecordHeader::SIZE)) {
+                throw std::runtime_error("BDB record offset outside page data");
             }
             indexes.push_back(index);
             pos += sizeof(uint16_t);
@@ -409,7 +444,7 @@ public:
             if (to_jump < 0) {
                 throw std::runtime_error("Data record position not in page");
             }
-            s.ignore(to_jump);
+            if (m_page_size) s.seek(to_jump, SEEK_CUR); else s.ignore(to_jump);
 
             // Read the record
             RecordHeader rec_hdr(m_header.other_endian);
@@ -419,12 +454,23 @@ public:
             switch (rec_hdr.type) {
             case RecordType::KEYDATA: {
                 DataRecord record(rec_hdr);
-                s >> record;
-                records.emplace_back(record);
+                record.offset = uint32_t{index} + RecordHeader::SIZE;
+                if (m_page_size && rec_hdr.len > m_page_size - index - RecordHeader::SIZE) {
+                    throw std::runtime_error("BDB inline record crosses page boundary");
+                }
+                if (!m_load_data || (m_page_size && rec_hdr.deleted)) {
+                    s.seek(rec_hdr.len, SEEK_CUR);
+                } else {
+                    s >> record;
+                }
+                records.emplace_back(std::move(record));
                 to_jump += rec_hdr.len;
                 break;
             }
             case RecordType::OVERFLOW_DATA: {
+                if (m_page_size && OverflowRecord::SIZE > m_page_size - index - RecordHeader::SIZE) {
+                    throw std::runtime_error("BDB overflow pointer crosses page boundary");
+                }
                 OverflowRecord record(rec_hdr);
                 s >> record;
                 records.emplace_back(record);
@@ -445,10 +491,11 @@ public:
 class OverflowPage
 {
 public:
-    OverflowPage(const PageHeader& header) : m_header(header) {}
+    OverflowPage(const PageHeader& header, uint32_t page_size = 0) : m_header(header), m_page_size(page_size) {}
     OverflowPage() = delete;
 
     PageHeader m_header;
+    uint32_t m_page_size;
 
     // BDB overloads some page fields to store overflow page data
     // hf_offset contains the length of the overflow data stored on this page
@@ -460,6 +507,9 @@ public:
     template <typename Stream>
     void Unserialize(Stream& s)
     {
+        if (m_page_size && m_header.hf_offset > m_page_size - PageHeader::SIZE) {
+            throw std::runtime_error("BDB overflow data crosses page boundary");
+        }
         data.resize(m_header.hf_offset);
         s.read(std::as_writable_bytes(std::span(data.data(), data.size())));
     }
@@ -469,10 +519,13 @@ public:
 class InternalPage
 {
 public:
-    InternalPage(const PageHeader& header) : m_header(header) {}
+    InternalPage(const PageHeader& header, uint32_t page_size = 0, PageBudget* budget = nullptr)
+        : m_header(header), m_page_size(page_size), m_budget(budget) {}
     InternalPage() = delete;
 
     PageHeader m_header;
+    uint32_t m_page_size;
+    PageBudget* m_budget;
 
     std::vector<uint16_t> indexes;
     std::vector<InternalRecord> records;
@@ -480,16 +533,24 @@ public:
     template <typename Stream>
     void Unserialize(Stream& s)
     {
+        if (m_page_size && PageHeader::SIZE + 2U * m_header.entries > m_page_size) {
+            throw std::runtime_error("BDB internal index array exceeds page");
+        }
         // Current position within the page
         int64_t pos = PageHeader::SIZE;
 
         // Get the items
         for (uint32_t i = 0; i < m_header.entries; ++i) {
+            if (m_budget) m_budget->Visit();
             // Get the index
             uint16_t index;
             s >> index;
             if (m_header.other_endian) {
                 index = internal_bswap_16(index);
+            }
+            if (m_page_size && (index < PageHeader::SIZE + 2U * m_header.entries ||
+                                index > m_page_size - RecordHeader::SIZE - InternalRecord::FIXED_SIZE)) {
+                throw std::runtime_error("BDB internal record offset outside page data");
             }
             indexes.push_back(index);
             pos += sizeof(uint16_t);
@@ -499,7 +560,7 @@ public:
             if (to_jump < 0) {
                 throw std::runtime_error("Internal record position not in page");
             }
-            s.ignore(to_jump);
+            if (m_page_size) s.seek(to_jump, SEEK_CUR); else s.ignore(to_jump);
 
             // Read the record
             RecordHeader rec_hdr(m_header.other_endian);
@@ -509,7 +570,10 @@ public:
             if (rec_hdr.type != RecordType::KEYDATA) {
                 throw std::runtime_error("Unknown record type in internal page");
             }
-            InternalRecord record(rec_hdr);
+            if (m_page_size && rec_hdr.len > m_page_size - index - RecordHeader::SIZE - InternalRecord::FIXED_SIZE) {
+                throw std::runtime_error("BDB internal record crosses page boundary");
+            }
+            InternalRecord record(rec_hdr, /*load_data=*/m_page_size == 0);
             s >> record;
             records.emplace_back(record);
             to_jump += InternalRecord::FIXED_SIZE + rec_hdr.len;
@@ -536,15 +600,25 @@ void BerkeleyRODatabase::Open()
     }
 
     uint32_t page_size = 4096; // Default page size
+    const int64_t size{db_file.size()};
+    if (m_limits && (size < 4096 || uint64_t(size) > m_limits->file_bytes)) {
+        throw std::runtime_error("BDB source bytes exceed extraction limits");
+    }
+    uint64_t page_visits{0};
+    std::optional<PageBudget> budget;
+    if (m_limits) budget.emplace(PageBudget{page_visits, m_limits->page_visits});
+    auto charge_visit = [&] {
+        if (budget) budget->Visit(); else ++page_visits;
+    };
 
     // Read the outer metapage
     // Expected page number is 0
     MetaPage outer_meta(0);
+    charge_visit();
     db_file >> outer_meta;
     page_size = outer_meta.pagesize;
 
     // Verify the size of the file is a multiple of the page size
-    const int64_t size{db_file.size()};
 
     // Since BDB stores everything in a page, the file size should be a multiple of the page size;
     // However, BDB doesn't actually check that this is the case, and enforcing this check results
@@ -559,6 +633,16 @@ void BerkeleyRODatabase::Open()
     if (outer_meta.last_page != expected_last_page) {
         throw std::runtime_error("Last page number could not fit in file");
     }
+    auto check_page = [&](uint32_t number) {
+        if (m_limits && (size < page_size || number > outer_meta.last_page)) {
+            throw std::runtime_error("BDB referenced page is not completely present");
+        }
+    };
+    auto seek_page = [&](uint32_t number) {
+        check_page(number);
+        charge_visit();
+        SeekToPage(db_file, number, page_size);
+    };
 
     // Make sure encryption is disabled
     if (outer_meta.encrypt_algo != 0) {
@@ -572,7 +656,7 @@ void BerkeleyRODatabase::Open()
         // It will always be the first 8 bytes of a page, so we deserialize it directly for every page
         uint32_t file;
         uint32_t offset;
-        SeekToPage(db_file, i, page_size);
+        seek_page(i);
         db_file >> file >> offset;
         if (outer_meta.other_endian) {
             file = internal_bswap_32(file);
@@ -584,7 +668,7 @@ void BerkeleyRODatabase::Open()
     }
 
     // Read the root page
-    SeekToPage(db_file, outer_meta.root, page_size);
+    seek_page(outer_meta.root);
     PageHeader header(outer_meta.root, outer_meta.other_endian);
     db_file >> header;
     if (header.type != PageType::BTREE_LEAF) {
@@ -593,15 +677,18 @@ void BerkeleyRODatabase::Open()
     if (header.entries != 2) {
         throw std::runtime_error("Unexpected number of entries in outer database root page");
     }
-    RecordsPage page(header);
+    RecordsPage page(header, m_limits ? page_size : 0, true, budget ? &*budget : nullptr);
     db_file >> page;
 
     // First record should be the string "main"
     if (!std::holds_alternative<DataRecord>(page.records.at(0)) || std::get<DataRecord>(page.records.at(0)).data != SUBDATABASE_NAME) {
         throw std::runtime_error("Subdatabase has an unexpected name");
     }
-    // Check length of page number for subdatabase location
-    if (!std::holds_alternative<DataRecord>(page.records.at(1)) || std::get<DataRecord>(page.records.at(1)).m_header.len != 4) {
+    // Check the record and payload before reading the subdatabase page number.
+    if (!std::holds_alternative<DataRecord>(page.records.at(1)) ||
+        std::get<DataRecord>(page.records.at(1)).m_header.deleted ||
+        std::get<DataRecord>(page.records.at(1)).m_header.len != 4 ||
+        std::get<DataRecord>(page.records.at(1)).data.size() != 4) {
         throw std::runtime_error("Subdatabase page number has unexpected length");
     }
 
@@ -615,7 +702,7 @@ void BerkeleyRODatabase::Open()
     }
 
     // Read the inner metapage
-    SeekToPage(db_file, main_db_page, page_size);
+    seek_page(main_db_page);
     MetaPage inner_meta(main_db_page);
     db_file >> inner_meta;
 
@@ -635,13 +722,53 @@ void BerkeleyRODatabase::Open()
 
     // Read the root's level from its header
     // Note that we will read the root page twice in order to process it.
-    SeekToPage(db_file, inner_meta.root, page_size);
+    seek_page(inner_meta.root);
     PageHeader root_header(inner_meta.root, inner_meta.other_endian);
     db_file >> root_header;
 
     // Do a DFS through the BTree, starting at root
     // We track the expected level of each page in order to avoid loops
     std::vector<std::pair<uint32_t, uint32_t>> pages{{inner_meta.root, root_header.level}};
+    std::set<uint32_t> tree_pages;
+    if (m_limits) tree_pages.insert(inner_meta.root);
+    BerkeleyROData strict_records;
+    uint64_t decoded_bytes{0};
+    auto strict_record = [&](const std::variant<DataRecord, OverflowRecord>& record, uint32_t page_num) {
+        if (const auto* inline_record = std::get_if<DataRecord>(&record)) {
+            SerializeData data;
+            if (inline_record->m_header.len != 0) {
+                seek_page(page_num);
+                db_file.seek(inline_record->offset, SEEK_CUR);
+                data.resize(inline_record->m_header.len);
+                db_file.read(data);
+            }
+            return data;
+        }
+        const auto& overflow{std::get<OverflowRecord>(record)};
+        if (overflow.item_len > max_data_size) throw std::runtime_error("Overflow record has an impossible length");
+        SerializeData data;
+        std::set<uint32_t> chain;
+        uint32_t next_page{overflow.page_number};
+        while (next_page != 0) {
+            if (chain.contains(next_page)) throw std::runtime_error("Cyclic BDB overflow chain");
+            seek_page(next_page); // Bound the page and work before allocation/read.
+            chain.insert(next_page);
+            PageHeader overflow_header(next_page, inner_meta.other_endian);
+            db_file >> overflow_header;
+            if (overflow_header.type != PageType::OVERFLOW_DATA) throw std::runtime_error("Bad overflow record page type");
+            if (overflow_header.hf_offset > overflow.item_len - data.size()) {
+                throw std::runtime_error("Overflow record data is larger than stated size");
+            }
+            OverflowPage overflow_page(overflow_header, page_size);
+            db_file >> overflow_page;
+            data.insert(data.end(), overflow_page.data.begin(), overflow_page.data.end());
+            next_page = overflow_header.next_page;
+        }
+        if (data.size() != overflow.item_len) throw std::runtime_error("Incomplete BDB overflow record");
+        // Sharing pages across separate chains is legitimate. Each chain has
+        // its own cycle set, exact length check, and charges the common budget.
+        return data;
+    };
     while (pages.size() > 0) {
         auto [curr_page, expected_level] = pages.back();
         // It turns out BDB completely ignores this last_page field and doesn't actually update it to the correct
@@ -651,7 +778,7 @@ void BerkeleyRODatabase::Open()
         //     throw std::runtime_error("Page number is greater than subdatabase last page");
         // }
         pages.pop_back();
-        SeekToPage(db_file, curr_page, page_size);
+        seek_page(curr_page);
         PageHeader header(curr_page, inner_meta.other_endian);
         db_file >> header;
         if (header.level != expected_level) {
@@ -659,10 +786,17 @@ void BerkeleyRODatabase::Open()
         }
         switch (header.type) {
         case PageType::BTREE_INTERNAL: {
-            InternalPage int_page(header);
+            InternalPage int_page(header, m_limits ? page_size : 0, budget ? &*budget : nullptr);
             db_file >> int_page;
             for (const InternalRecord& rec : int_page.records) {
                 if (rec.m_header.deleted) continue;
+                if (m_limits) {
+                    check_page(rec.page_num);
+                    if (pages.size() >= m_limits->page_visits - page_visits) {
+                        throw std::runtime_error("BDB pending page visits exceed extraction limit");
+                    }
+                    if (!tree_pages.insert(rec.page_num).second) throw std::runtime_error("Repeated BDB tree page");
+                }
                 pages.emplace_back(rec.page_num, header.level - 1);
             }
             break;
@@ -671,11 +805,40 @@ void BerkeleyRODatabase::Open()
             if (header.level != 1) {
                 throw std::runtime_error("BTree Leaf page is not at level 1");
             }
-            RecordsPage rec_page(header);
+            // Strict parsing first records only headers/offsets. Check complete
+            // pair/count/byte budgets before materializing any wallet bytes.
+            RecordsPage rec_page(header, m_limits ? page_size : 0, /*load_data=*/!m_limits, budget ? &*budget : nullptr);
             db_file >> rec_page;
             if (rec_page.records.size() % 2 != 0) {
                 // BDB stores key value pairs in consecutive records, thus an odd number of records is unexpected
                 throw std::runtime_error("Records page has odd number of records");
+            }
+            if (m_limits) {
+                auto deleted = [](const auto& record) {
+                    return std::visit([](const auto& item) { return item.m_header.deleted; }, record);
+                };
+                auto length = [](const auto& record) -> uint64_t {
+                    if (const auto* data = std::get_if<DataRecord>(&record)) return data->m_header.len;
+                    return std::get<OverflowRecord>(record).item_len;
+                };
+                for (size_t index{0}; index < rec_page.records.size(); index += 2) {
+                    const auto& key_record{rec_page.records[index]};
+                    const auto& value_record{rec_page.records[index + 1]};
+                    if (deleted(key_record) != deleted(value_record)) throw std::runtime_error("Mismatched BDB deletion markers");
+                    if (deleted(key_record)) continue;
+                    const uint64_t key_bytes{length(key_record)}, value_bytes{length(value_record)};
+                    if (strict_records.size() >= m_limits->records || key_bytes > m_limits->key_bytes ||
+                        value_bytes > m_limits->pair_bytes || key_bytes > m_limits->pair_bytes - value_bytes ||
+                        key_bytes + value_bytes > m_limits->total_bytes - decoded_bytes) {
+                        throw std::runtime_error("BDB records exceed extraction limits");
+                    }
+                    decoded_bytes += key_bytes + value_bytes;
+                    auto key{strict_record(key_record, curr_page)};
+                    if (strict_records.contains(key)) throw std::runtime_error("Duplicate physical BDB record key");
+                    auto value{strict_record(value_record, curr_page)};
+                    strict_records.emplace(std::move(key), std::move(value));
+                }
+                break;
             }
             bool is_key = true;
             std::vector<std::byte> key;
@@ -691,7 +854,7 @@ void BerkeleyRODatabase::Open()
                         throw std::runtime_error("Overflow record has an impossible length");
                     }
                     while (next_page != 0) {
-                        SeekToPage(db_file, next_page, page_size);
+                        seek_page(next_page);
                         PageHeader opage_header(next_page, inner_meta.other_endian);
                         db_file >> opage_header;
                         if (opage_header.type != PageType::OVERFLOW_DATA) {
@@ -721,6 +884,7 @@ void BerkeleyRODatabase::Open()
             throw std::runtime_error("Unexpected page type");
         }
     }
+    if (m_limits) m_records = std::move(strict_records);
 }
 
 std::unique_ptr<DatabaseBatch> BerkeleyRODatabase::MakeBatch()

@@ -1,4 +1,5 @@
 // Copyright (c) 2014-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -248,6 +249,16 @@ std::string EncodeSecret(const CKey& key)
     return ret;
 }
 
+SecureString EncodeSecretSecure(const CKey& key)
+{
+    assert(key.IsValid());
+    const auto& prefix{Params().Base58Prefix(CChainParams::SECRET_KEY)};
+    std::vector<unsigned char, secure_allocator<unsigned char>> data(prefix.begin(), prefix.end());
+    data.insert(data.end(), UCharCast(key.begin()), UCharCast(key.end()));
+    if (key.IsCompressed()) data.push_back(1);
+    return EncodeBase58CheckSecure(data);
+}
+
 CExtPubKey DecodeExtPubKey(const std::string& str)
 {
     CExtPubKey key;
@@ -296,6 +307,16 @@ std::string EncodeExtKey(const CExtKey& key)
     std::string ret = EncodeBase58Check(data);
     memory_cleanse(data.data(), data.size());
     return ret;
+}
+
+SecureString EncodeExtKeySecure(const CExtKey& key)
+{
+    const auto& prefix{Params().Base58Prefix(CChainParams::EXT_SECRET_KEY)};
+    std::vector<unsigned char, secure_allocator<unsigned char>> data(prefix.begin(), prefix.end());
+    const size_t size{data.size()};
+    data.resize(size + BIP32_EXTKEY_SIZE);
+    key.Encode(data.data() + size);
+    return EncodeBase58CheckSecure(data);
 }
 
 std::string EncodeDestination(const CTxDestination& dest)

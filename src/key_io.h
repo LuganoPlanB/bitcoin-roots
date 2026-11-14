@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,9 +18,11 @@
 CKey DecodeSecret(const std::string& str);
 CKey DecodeSecret(const SecureString& str);
 std::string EncodeSecret(const CKey& key);
+SecureString EncodeSecretSecure(const CKey& key);
 
 CExtKey DecodeExtKey(const std::string& str);
 std::string EncodeExtKey(const CExtKey& extkey);
+SecureString EncodeExtKeySecure(const CExtKey& extkey);
 CExtPubKey DecodeExtPubKey(const std::string& str);
 std::string EncodeExtPubKey(const CExtPubKey& extpubkey);
 

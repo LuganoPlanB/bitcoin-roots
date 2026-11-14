@@ -1,4 +1,5 @@
 // Copyright 2014 BitPay Inc.
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://opensource.org/licenses/mit-license.php.
 
@@ -59,6 +60,50 @@ std::string UniValue::write(unsigned int prettyIndent,
     }
 
     return s;
+}
+
+static void json_write_quoted(const std::string& text, const std::function<void(std::string_view)>& sink)
+{
+    sink("\"");
+    size_t first{0};
+    for (size_t pos{0}; pos < text.size(); ++pos) {
+        const char* escaped{escapes[static_cast<unsigned char>(text[pos])]};
+        if (!escaped) continue;
+        if (pos > first) sink(std::string_view{text}.substr(first, pos - first));
+        sink(escaped);
+        first = pos + 1;
+    }
+    if (first < text.size()) sink(std::string_view{text}.substr(first));
+    sink("\"");
+}
+
+// NOLINTNEXTLINE(misc-no-recursion)
+void UniValue::writeTo(const std::function<void(std::string_view)>& sink) const
+{
+    switch (typ) {
+    case VNULL: sink("null"); break;
+    case VBOOL: sink(val == "1" ? "true" : "false"); break;
+    case VNUM: sink(val); break;
+    case VSTR: json_write_quoted(val, sink); break;
+    case VARR:
+        sink("[");
+        for (size_t i{0}; i < values.size(); ++i) {
+            if (i) sink(",");
+            values[i].writeTo(sink);
+        }
+        sink("]");
+        break;
+    case VOBJ:
+        sink("{");
+        for (size_t i{0}; i < keys.size(); ++i) {
+            if (i) sink(",");
+            json_write_quoted(keys[i], sink);
+            sink(":");
+            values.at(i).writeTo(sink);
+        }
+        sink("}");
+        break;
+    }
 }
 
 static void indentStr(unsigned int prettyIndent, unsigned int indentLevel, std::string& s)

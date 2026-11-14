@@ -1,4 +1,5 @@
 // Copyright (c) 2018-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -28,6 +29,7 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
 {
     argsman.AddHiddenArgs({
         "-addresstype",
+        "-allow-dangerous-rpc",
         "-avoidpartialspends",
         "-changetype",
         "-consolidatefeerate=<amt>",

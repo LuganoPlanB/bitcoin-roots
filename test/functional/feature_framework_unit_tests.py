@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2017-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Framework unit tests
@@ -23,6 +24,7 @@ TEST_FRAMEWORK_MODULES = [
     "crypto.ellswift",
     "extendedkey",
     "key",
+    "legacy_export",
     "messages",
     "crypto.muhash",
     "crypto.poly1305",

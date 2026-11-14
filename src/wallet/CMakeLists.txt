@@ -1,4 +1,5 @@
 # Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -15,6 +16,9 @@ add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
   feebumper.cpp
   fees.cpp
   interfaces.cpp
+  legacy_export.cpp
+  legacy_export_output.cpp
+  legacy_export_format.cpp
   load.cpp
   migrate.cpp
   receive.cpp
@@ -42,5 +46,6 @@ target_link_libraries(bitcoin_wallet
     SQLite3::SQLite3
     univalue
     Boost::headers
+    $<$<PLATFORM_ID:Windows>:advapi32>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )

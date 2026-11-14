@@ -1,4 +1,5 @@
 // Copyright (c) 2014-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,9 +11,11 @@
 #include <util/string.h>
 
 #include <cassert>
+#include <algorithm>
 #include <cstring>
 
 #include <limits>
+#include <type_traits>
 
 using util::ContainsNUL;
 
@@ -87,7 +90,8 @@ template <typename Allocator>
     return true;
 }
 
-std::string EncodeBase58(std::span<const unsigned char> input)
+template <typename String, typename ByteAllocator>
+static String EncodeBase58Impl(std::span<const unsigned char> input)
 {
     // Skip & count leading zeroes.
     int zeroes = 0;
@@ -98,13 +102,13 @@ std::string EncodeBase58(std::span<const unsigned char> input)
     }
     // Allocate enough space in big-endian base58 representation.
     int size = input.size() * 138 / 100 + 1; // log(256) / log(58), rounded up.
-    std::vector<unsigned char> b58(size);
+    std::vector<unsigned char, ByteAllocator> b58(size);
     // Process the bytes.
     while (input.size() > 0) {
         int carry = input[0];
         int i = 0;
         // Apply "b58 = b58 * 256 + ch".
-        for (std::vector<unsigned char>::reverse_iterator it = b58.rbegin(); (carry != 0 || i < length) && (it != b58.rend()); it++, i++) {
+        for (auto it = b58.rbegin(); (carry != 0 || i < length) && (it != b58.rend()); it++, i++) {
             carry += 256 * (*it);
             *it = carry % 58;
             carry /= 58;
@@ -115,16 +119,27 @@ std::string EncodeBase58(std::span<const unsigned char> input)
         input = input.subspan(1);
     }
     // Skip leading zeroes in base58 result.
-    std::vector<unsigned char>::iterator it = b58.begin() + (size - length);
+    auto it = b58.begin() + (size - length);
     while (it != b58.end() && *it == 0)
         it++;
     // Translate the result into a string.
-    std::string str;
-    str.reserve(zeroes + (b58.end() - it));
+    String str;
+    auto output_size{static_cast<size_t>(zeroes + (b58.end() - it))};
+    if constexpr (std::is_same_v<String, SecureString>) {
+        // Bypass small-string storage, whose destruction does not invoke the
+        // cleansing allocator, including for short generic encoder inputs.
+        output_size = std::max(output_size, str.capacity() + 1);
+    }
+    str.reserve(output_size);
     str.assign(zeroes, '1');
     while (it != b58.end())
         str += pszBase58[*(it++)];
     return str;
+}
+
+std::string EncodeBase58(std::span<const unsigned char> input)
+{
+    return EncodeBase58Impl<std::string, std::allocator<unsigned char>>(input);
 }
 
 bool DecodeBase58(const std::string& str, std::vector<unsigned char>& vchRet, int max_ret_len)
@@ -135,13 +150,24 @@ bool DecodeBase58(const std::string& str, std::vector<unsigned char>& vchRet, in
     return DecodeBase58(str.c_str(), vchRet, max_ret_len);
 }
 
-std::string EncodeBase58Check(std::span<const unsigned char> input)
+template <typename String, typename ByteAllocator>
+static String EncodeBase58CheckImpl(std::span<const unsigned char> input)
 {
     // add 4-byte hash check to the end
-    std::vector<unsigned char> vch(input.begin(), input.end());
+    std::vector<unsigned char, ByteAllocator> vch(input.begin(), input.end());
     uint256 hash = Hash(vch);
     vch.insert(vch.end(), hash.data(), hash.data() + 4);
-    return EncodeBase58(vch);
+    return EncodeBase58Impl<String, ByteAllocator>(vch);
+}
+
+std::string EncodeBase58Check(std::span<const unsigned char> input)
+{
+    return EncodeBase58CheckImpl<std::string, std::allocator<unsigned char>>(input);
+}
+
+SecureString EncodeBase58CheckSecure(std::span<const unsigned char> input)
+{
+    return EncodeBase58CheckImpl<SecureString, secure_allocator<unsigned char>>(input);
 }
 
 template <typename Allocator>

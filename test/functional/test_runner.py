@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Run regression test suite.
@@ -91,6 +92,8 @@ EXTENDED_SCRIPTS = [
     'feature_dbcrash.py',
     'feature_index_prune.py',
     'feature_utxo_abort_on_error.py',
+    'tool_wallet_legacy_export_compatibility.py',
+    'tool_wallet_legacy_export_recovery.py',
 ]
 
 # Special script to run each bench sanity check
@@ -190,6 +193,7 @@ BASE_SCRIPTS = [
     'wallet_txn_doublespend.py --mineblock',
     'tool_bitcoin_chainstate.py',
     'tool_wallet.py',
+    'tool_wallet_legacy_export.py',
     'tool_utils.py',
     'tool_signet_miner.py',
     'wallet_txn_clone.py',

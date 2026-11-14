@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 Plan-B Foundation
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -44,7 +44,7 @@ class BuildIdentityTest(unittest.TestCase):
             return result, header.read_text(encoding="utf-8") if header.exists() else ""
 
     def test_release_version_without_git(self):
-        for tag in ("v32.1-roots.1", "v32.1-roots.6"):
+        for tag in ("v32.1-roots.1", "v32.1-roots.2", "v32.1-roots.6"):
             with self.subTest(tag=tag):
                 result, header = self.configure(tag)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -63,7 +63,7 @@ class BuildIdentityTest(unittest.TestCase):
     def test_default_version(self):
         result, header = self.configure()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('#define CLIENT_VERSION_STRING "32.1-roots.1"', header)
+        self.assertIn('#define CLIENT_VERSION_STRING "32.1-roots.2"', header)
 
 
 if __name__ == "__main__":

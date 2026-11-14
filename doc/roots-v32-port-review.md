@@ -1301,8 +1301,9 @@ imply full hits when 128 offers exceed that capacity. Production cache defaults
 are unchanged. Native microbenchmarks and source/unit/compile checks do not
 establish an instrumented experiment run or production performance result.
 
-The S27 policy review and its later released updates are preserved byte-for-byte
-under `doc/historical/mempool-policy-review-v31.1-roots.6.md`. The active
+The S27 policy review and its later released updates are retained under
+`doc/historical/mempool-policy-review-v31.1-roots.6.md`, with source links pinned
+to v31.1-roots.6. Its historical narrative and measurements are unchanged. The active
 `doc/mempool-policy-review.md` records that historical/current distinction and
 links the current parsing/effective-policy/subdust and preservation contracts.
 The old 32,768-slot measurements, warmed-vector limitations and unanswered
@@ -1578,3 +1579,5 @@ pull-request workflow run at the pinned candidate SHA. The canonical review
 handoff must obtain normal exact-SHA hosted CI under its own authority. No
 public ref, workflow dispatch, release signing or publication is performed by
 this qualification. Final parent/whole-branch review remains required.
+
+Copyright (C) 2026 Plan-B Foundation

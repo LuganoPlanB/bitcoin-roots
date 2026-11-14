@@ -1,4 +1,5 @@
 // Copyright (c) 2011-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,6 +20,26 @@
 #include <algorithm>
 
 BOOST_FIXTURE_TEST_SUITE(key_io_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(secure_private_encoding_parity)
+{
+    for (const auto chain : {ChainType::MAIN, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
+        SelectParams(chain);
+        for (const bool compressed : {false, true}) {
+            const std::array<unsigned char, 32> scalar{1};
+            CKey key;
+            key.Set(scalar.begin(), scalar.end(), compressed);
+            const auto wif{EncodeSecretSecure(key)};
+            BOOST_CHECK((std::string_view{wif.data(), wif.size()} == EncodeSecret(key)));
+            BOOST_CHECK(DecodeSecret(wif) == key);
+            CExtKey root;
+            root.SetSeed(key);
+            const auto xprv{EncodeExtKeySecure(root)};
+            BOOST_CHECK((std::string_view{xprv.data(), xprv.size()} == EncodeExtKey(root)));
+        }
+    }
+    SelectParams(ChainType::MAIN);
+}
 
 BOOST_AUTO_TEST_CASE(secure_wif_decode_matches_script_key_forms)
 {

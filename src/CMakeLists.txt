@@ -1,4 +1,5 @@
 # Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
@@ -171,6 +172,7 @@ if(ENABLE_WALLET)
       bitcoin-wallet-res.rc
       init/bitcoin-wallet.cpp
       wallet/wallettool.cpp
+      wallet/wallettool_input.cpp
     )
     add_windows_application_manifest(bitcoin-wallet)
     target_link_libraries(bitcoin-wallet

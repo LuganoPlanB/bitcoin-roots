@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 """Private workload entry point; launch with cache_bench.py run."""
@@ -14,8 +15,7 @@ import sys
 import threading
 import time
 
-FRAMEWORK = Path(os.environ.get("ROOTS_BENCH_FRAMEWORK", Path(__file__).resolve().parents[2])).resolve()
-sys.path.insert(0, str(FRAMEWORK / "test/functional"))
+sys.path.insert(0, str((FRAMEWORK := Path(os.environ.get("ROOTS_BENCH_FRAMEWORK", Path(__file__).resolve().parents[2])).resolve()) / "test/functional"))
 
 from cache_bench import CASES, VARIANTS, case_name, check_environment, parse_metric, select_profile, write_json
 from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS, add_witness_commitment, create_block

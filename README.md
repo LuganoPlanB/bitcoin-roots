@@ -3,7 +3,7 @@ Bitcoin Roots
 
 Connected to the trunk. Conservative in policy. Neutral in consensus.
 
-This is the unpublished v32.1-roots.1 development candidate, based directly on
+This is the unpublished v32.1-roots.2 development candidate, based directly on
 the exact Bitcoin Core v32.1 source. It preserves the released Roots line
 through v31.1-roots.6 and folds its follow-up fixes into the new series.
 Publishing and release tagging are separate from this port. See the
@@ -110,3 +110,5 @@ Translations
 
 Do not manually edit generated translations; see the
 [translation process](doc/translation_process.md).
+
+Copyright (C) 2026 Plan-B Foundation

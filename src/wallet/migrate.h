@@ -1,4 +1,5 @@
 // Copyright (c) 2021-present The Bitcoin Core developers
+// Copyright (C) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,24 +8,40 @@
 
 #include <wallet/db.h>
 
+#include <cstdint>
 #include <optional>
 
 namespace wallet {
 
 using BerkeleyROData = std::map<SerializeData, SerializeData, std::less<>>;
 
+/** Opt-in strict read-only extraction envelope. Migration keeps its historical
+ * behavior unless limits are supplied. The exporter always uses these defaults;
+ * callers can impose smaller budgets without constructing large test inputs.
+ */
+struct BerkeleyROLimits {
+    uint64_t file_bytes{512ULL * 1024 * 1024};
+    uint64_t records{1'000'000};
+    uint64_t key_bytes{1024 * 1024};
+    uint64_t pair_bytes{16 * 1024 * 1024};
+    uint64_t total_bytes{256ULL * 1024 * 1024};
+    uint64_t page_visits{2'000'000};
+};
+
 /**
  * A class representing a BerkeleyDB file from which we can only read records.
- * This is used only for migration of legacy to descriptor wallets
+ * Used for migration and bounded offline legacy extraction.
  */
 class BerkeleyRODatabase : public WalletDatabase
 {
 private:
     const fs::path m_filepath;
+    const std::optional<BerkeleyROLimits> m_limits;
 
 public:
     /** Create DB handle */
-    BerkeleyRODatabase(const fs::path& filepath, bool open = true) : WalletDatabase(), m_filepath(filepath)
+    BerkeleyRODatabase(const fs::path& filepath, bool open = true, std::optional<BerkeleyROLimits> limits = std::nullopt)
+        : WalletDatabase(), m_filepath(filepath), m_limits(limits)
     {
         if (open) Open();
     }

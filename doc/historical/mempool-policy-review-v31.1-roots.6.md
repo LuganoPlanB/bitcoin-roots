@@ -24,7 +24,7 @@ test sources supplement the functional entry points in the tables.
 
 ## Admission, retention and block validity
 
-`MemPoolAccept::PreChecks` in [validation.cpp](../src/validation.cpp) applies
+`MemPoolAccept::PreChecks` in [validation.cpp](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/validation.cpp) applies
 Roots local policy. Successfully admitted transactions enter the native mempool
 and ordinary relay path. A transaction rejected here may still satisfy consensus.
 Compact reconstruction's extra vector holds shared transaction references; it
@@ -35,14 +35,14 @@ Missing transactions use `getblocktxn`/`blocktxn` or full-block fallback. The sa
 consensus-valid block must be accepted with the cache enabled, disabled or evicted.
 
 Core already retains rejected and replaced transactions. The current insertion
-sites in [net_processing.cpp](../src/net_processing.cpp), lines 3163–3166 and
+sites in [net_processing.cpp](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/net_processing.cpp), lines 3163–3166 and
 3190–3192, are inherited from the exact base: `ProcessInvalidTx` consumes
 `MempoolRejectedTx`'s eligibility result, with the existing `<100000` dynamic-byte
 test, and `ProcessValidTx` inserts each replaced transaction. Roots' common
 insertion function adds the size test for replacements too. No cache insertion
 site was added for Roots policy specifically.
 
-[TxDownloadManagerImpl::MempoolRejectedTx](../src/node/txdownloadman_impl.cpp)
+[TxDownloadManagerImpl::MempoolRejectedTx](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/txdownloadman_impl.cpp)
 (350–499) is byte-identical to Core. Eligibility starts as `first_time_failure`;
 `TX_WITNESS_STRIPPED` disables it. For new missing-input transactions with eligible
 parents it suppresses an extra insertion when `TxOrphanage::HaveTx(wtxid)` is true
@@ -72,7 +72,7 @@ specifications:
 - **P**: `e5445b7c96193c7ec141705aac5ba96651e0ee30`, scoped parsing and local
   checks. Knots-derived selected Roots policy is carried through the historical
   `1b73fe3d21`/`ec9db369f5` source overlays; the historical source/author ledger
-  is in [the port review](roots-v31-port-review.md#complete-source-to-theme-accounting).
+  is in [the port review](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/doc/roots-v31-port-review.md#complete-source-to-theme-accounting).
 - **G**: `846c9de12a5e71259dc1ed829413d68f449ebfd5`, native graph integration,
   replacement/reuse, synchronized dynamic dust, overflow/lifetime and reload
   repairs. Source RBF corrections include `aa27c9117a`, `48f3b3bbe8`,
@@ -181,7 +181,7 @@ No-relay observation, a policy-specific reason assertion, mixed-size native byte
 boundaries, replacement threshold and orphan shared-lifetime cases still need
 focused coverage. Extend observable gaps without discarding existing cases.
 
-Historical [feature-catalog](roots-features.md) statements that dynamic dust is
+Historical [feature-catalog](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/doc/roots-features.md) statements that dynamic dust is
 unwired and that script reuse has no dedicated functional coverage are superseded
 by the current node-owned scheduler and `mempool_graph_policy.py`. Earlier
 parsing-only/acceptance-pending text describes earlier stages. Its v30.3 direct
@@ -373,7 +373,7 @@ nor block validation.
 
 ## Controlled cache experiment and bounded dispositions
 
-The Linux-only [offline harness](../contrib/roots/cache-bench.md) compares the
+The Linux-only [offline harness](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/contrib/roots/cache-bench.md) compares the
 exact Core base above with Roots product code at
 `fefd98420907870a60c103720a9589bba16b2e5f`. Identical temporary instrumentation
 is applied only to isolated source exports; the normal production tree and all
@@ -616,10 +616,10 @@ Core comparator and have separate purposes and accounting:
 
 | Structure and current source | Budget and lifetime | Consequence for this review |
 | --- | --- | --- |
-| Extra reconstruction references: [insertion](../src/net_processing.cpp), [option parsing](../src/node/peerman_args.cpp) | Default count 100 (matching Core) and 10,000,000 charged dynamic bytes. Slots have a separate bound of `min(count, byte_budget / sizeof(slot))`; dynamic charges exclude transaction objects/control blocks and slot storage. Ring overwrite and byte pressure drop cache references; either zero control disables stores. | This is independent of `maxmempool`, orphan weight and filter capacity. Shared owners can keep allocations alive after eviction; charged bytes are not unique process memory. |
-| Missing-input orphanage: [interface/defaults](../src/node/txorphanage.h), [accounting/eviction](../src/node/txorphanage.cpp) | Weight is a memory-work proxy, not allocator bytes. Reserved usage is 404,000 weight units per tracked orphanage peer; global allowance is that value times `max(tracked_peer_count, 1)`. The separate global latency score defaults to 3,000, accounting for announcements and inputs. Global pressure triggers eviction from over-budget peers; peer/block resolution also removes announcements. | No fixed 10 MB or `maxmempool` allowance applies here. Global transaction weight is deduplicated; per-peer usage counts each announcer's transaction. An orphan and an extra entry can share the same transaction allocation while having different charges and lifetimes. |
-| Recent-reject and reconsiderable-reject filters: [download manager](../src/node/txdownloadman_impl.h) | Two lazily allocated rolling Bloom filters, each configured for 120,000 elements and false-positive probability 0.000001; both reset on a chain-tip change. They store probabilistic hash membership, including package hashes where appropriate, rather than transaction bodies. | Suppressing repeated download/validation is distinct from retaining reconstruction data. Turning off extras does not eliminate these filters, their false-positive behavior or download-manager state. These parameters are not a measured cache-memory saving. |
-| Accepted mempool: [options](../src/kernel/mempool_options.h), [parsing](../src/node/mempool_args.cpp), [accounting/trim](../src/txmempool.cpp) | `maxmempool` defaults to 300 decimal MB; blocksonly startup supplies 5 MB when not explicitly overridden. Native graph/container estimates include Roots script-claim indexes, and native trimming/expiry removes accepted entries. This is an accounting budget, not process RSS. | Admission, replacement and eviction operate on accepted transactions with Roots policy fees/weights. Extra-cache charges are not added to `getmempoolinfo` usage, and changing the extra budget does not resize this budget. |
+| Extra reconstruction references: [insertion](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/net_processing.cpp), [option parsing](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/peerman_args.cpp) | Default count 100 (matching Core) and 10,000,000 charged dynamic bytes. Slots have a separate bound of `min(count, byte_budget / sizeof(slot))`; dynamic charges exclude transaction objects/control blocks and slot storage. Ring overwrite and byte pressure drop cache references; either zero control disables stores. | This is independent of `maxmempool`, orphan weight and filter capacity. Shared owners can keep allocations alive after eviction; charged bytes are not unique process memory. |
+| Missing-input orphanage: [interface/defaults](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/txorphanage.h), [accounting/eviction](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/txorphanage.cpp) | Weight is a memory-work proxy, not allocator bytes. Reserved usage is 404,000 weight units per tracked orphanage peer; global allowance is that value times `max(tracked_peer_count, 1)`. The separate global latency score defaults to 3,000, accounting for announcements and inputs. Global pressure triggers eviction from over-budget peers; peer/block resolution also removes announcements. | No fixed 10 MB or `maxmempool` allowance applies here. Global transaction weight is deduplicated; per-peer usage counts each announcer's transaction. An orphan and an extra entry can share the same transaction allocation while having different charges and lifetimes. |
+| Recent-reject and reconsiderable-reject filters: [download manager](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/txdownloadman_impl.h) | Two lazily allocated rolling Bloom filters, each configured for 120,000 elements and false-positive probability 0.000001; both reset on a chain-tip change. They store probabilistic hash membership, including package hashes where appropriate, rather than transaction bodies. | Suppressing repeated download/validation is distinct from retaining reconstruction data. Turning off extras does not eliminate these filters, their false-positive behavior or download-manager state. These parameters are not a measured cache-memory saving. |
+| Accepted mempool: [options](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/kernel/mempool_options.h), [parsing](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/node/mempool_args.cpp), [accounting/trim](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/src/txmempool.cpp) | `maxmempool` defaults to 300 decimal MB; blocksonly startup supplies 5 MB when not explicitly overridden. Native graph/container estimates include Roots script-claim indexes, and native trimming/expiry removes accepted entries. This is an accounting budget, not process RSS. | Admission, replacement and eviction operate on accepted transactions with Roots policy fees/weights. Extra-cache charges are not added to `getmempoolinfo` usage, and changing the extra budget does not resize this budget. |
 
 The orphanage's tracked-peer count is its own accounting population, not an
 assumption that every connected peer has an orphan. Its latency score and weight
@@ -633,7 +633,7 @@ orphanage/filter/mempool capacity or adversarial steady-state benchmark.
 The confirmed correction is operator wording for C2/C5. The candidate help now
 identifies decimal MB, charged dynamic storage, separate slot/object/control-block
 overhead, shared lifetime, independence from `maxmempool`, and both zero-valued
-disable controls. The [feature contract](roots-features.md#peer-controls-and-current-connection-health)
+disable controls. The [feature contract](https://github.com/LuganoPlanB/bitcoin-roots/blob/e93a8cca047c12ce9cab97181dd30705ed0e7e83/doc/roots-features.md#peer-controls-and-current-connection-health)
 describes the accounting equation. No parsing, default, cache insertion,
 eligibility, policy acceptance or consensus behavior changed, so no affected
 benchmark pair needs recollection. No code removal or redesign follows from the
@@ -695,3 +695,5 @@ not established. The existing missing-`lief` Python-lint skip and three unchange
 include-lint findings must remain explicit rather than being reported as passes.
 Independent milestone acceptance and the terminal whole-branch review remain
 separate gates; this document does not assert either has already occurred.
+
+Copyright (C) 2026 Plan-B Foundation

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2018-present The Bitcoin Core developers
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test bitcoin-wallet."""
@@ -145,6 +146,17 @@ class ToolWalletTest(BitcoinTestFramework):
         )
         path = self.nodes[0].wallets_path / "nonexistent.dat"
         self.assert_raises_tool_error("Failed to load database path '{}'. Path does not exist.".format(path), '-wallet=nonexistent.dat', 'info')
+        self.assert_raises_tool_error("The -stdinwalletpassphrase option cannot be used with the 'info' command.", '-stdinwalletpassphrase', 'info')
+
+    def test_legacy_export_help(self):
+        process = self.bitcoin_wallet_process('-help')
+        stdout, stderr = process.communicate()
+        assert_equal(process.returncode, 0)
+        assert_equal(stderr, '')
+        help_text = ' '.join(stdout.split())
+        for text in ('dumpwallet', '-stdinwalletpassphrase', 'clean offline legacy BDB',
+                     '-wallet=<file or directory>', 'current directory', 'original backup'):
+            assert text in help_text, text
 
     def test_tool_wallet_info(self):
         # Stop the node to close the wallet to call the info command.
@@ -434,6 +446,7 @@ class ToolWalletTest(BitcoinTestFramework):
 
     def run_test(self):
         self.wallet_path = self.nodes[0].wallets_path / self.default_wallet_name / self.wallet_data_filename
+        self.test_legacy_export_help()
         self.test_invalid_tool_commands_and_args()
         # Warning: The following tests are order-dependent.
         self.test_tool_wallet_info()

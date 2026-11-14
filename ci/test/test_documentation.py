@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 Plan-B Foundation
+# Copyright (C) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying file COPYING.
 """Current candidate documentation and stable preservation vocabulary."""
 from pathlib import Path
@@ -22,12 +22,16 @@ class CandidateDocumentationTest(unittest.TestCase):
     def test_preservation_ids_and_current_candidate_state(self):
         catalog = (ROOT / 'doc/roots-features.md').read_text()
         self.assertEqual(set(re.findall(r'^\| `([a-z-]+)`', catalog, re.MULTILINE)), STABLE_IDS)
-        for name in ['README.md', 'doc/roots-features.md', 'doc/wallet-privacy.md', 'contrib/release/release-notes.md']:
+        for name in ['README.md', 'doc/roots-features.md', 'doc/wallet-privacy.md']:
             text = (ROOT / name).read_text()
             self.assertIn('v32.1', text, name)
             self.assertIn('unpublished', text, name)
             self.assertIn('candidate', text, name)
         notes = (ROOT / 'contrib/release/release-notes.md').read_text()
+        self.assertIn('v32.1-roots.2', notes)
+        self.assertIn('separate verification and approval', ' '.join(notes.split()))
+        self.assertIn('preparing these notes does not perform those actions.', notes)
+        self.assertNotIn('This is an unpublished candidate', notes)
         self.assertIn('Historical', notes)
         self.assertTrue((ROOT / 'doc/release-notes/roots-v31.1-roots.6.md').is_file())
         self.assertNotIn('optional Qt 5 support', notes)

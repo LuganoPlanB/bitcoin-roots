@@ -1,6 +1,6 @@
 # Bitcoin Roots v32.1 preservation contracts
 
-This is the unpublished `v32.1-roots.1` candidate, based directly on Core
+This is the unpublished `v32.1-roots.2` candidate, based directly on Core
 v32.1 (`f0de87f040621468b956f01f526a43a010310501`). The
 [port review](roots-v32-port-review.md) accounts for the full released v31
 series through roots.6, main-only differences, source credits and verification
@@ -104,3 +104,5 @@ The user waived upstream Core-tag signature verification for this port; it is
 not recorded as passed. Roots commits and local patch replays still require
 the specified signing key. Old released tags/assets and historical credits
 remain immutable; a later Core base starts a new folded semantic series.
+
+Copyright (C) 2026 Plan-B Foundation
