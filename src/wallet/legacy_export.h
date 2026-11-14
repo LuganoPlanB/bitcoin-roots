@@ -54,6 +54,8 @@ struct LegacyExportKey {
     std::optional<CKey> private_key;
     std::optional<std::vector<unsigned char>> ciphertext;
     std::optional<CKeyMetadata> metadata;
+    // Knots metadata v2's opaque byte, absent in Core's metadata serializer.
+    std::optional<uint8_t> unsupported_key_flags;
     std::optional<LegacyWKeyMetadata> wkey;
     // Original associations only: absent metadata never implies "imported".
     std::set<std::string> source_families;
@@ -64,6 +66,7 @@ struct LegacyExportScript {
     bool redeem{false};
     std::optional<bool> watch_enabled;
     std::optional<CKeyMetadata> metadata;
+    std::optional<uint8_t> unsupported_key_flags;
 };
 
 struct LegacyExportAddress {

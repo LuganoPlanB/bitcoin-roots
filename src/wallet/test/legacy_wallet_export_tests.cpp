@@ -2799,6 +2799,61 @@ BOOST_AUTO_TEST_CASE(record_public_metadata_and_pool_versions)
     BOOST_CHECK(!meta.keys.at(pubkey).private_key);
 }
 
+BOOST_AUTO_TEST_CASE(record_knots_version_two_metadata)
+{
+    const auto key{RecoveryTestKey(7)};
+    const auto pubkey{key.GetPubKey()};
+    const CScript script{OP_1};
+    const auto key_record{Encode(std::string{"keymeta"}, pubkey)};
+    const auto script_record{Encode(std::string{"watchmeta"}, script)};
+    // Exact Knots v27.1.knots20240801 wire fields, not CKeyMetadata's serializer.
+    for (unsigned flag{0}; flag <= 255; ++flag) {
+        const auto value{Encode(int32_t{2}, int64_t{1231006505}, uint8_t(flag))};
+        const auto inventory{DecodeLegacyWalletRecords(std::vector<LegacyWalletRecord>{
+            {key_record, value}, {script_record, value}, {key_record, value}, {script_record, value}})};
+        const auto& entry{inventory.keys.at(pubkey)};
+        const auto& watched{inventory.scripts.at(CScriptID(script))};
+        BOOST_REQUIRE(entry.metadata);
+        BOOST_REQUIRE(watched.metadata);
+        BOOST_CHECK_EQUAL(entry.metadata->nVersion, 2);
+        BOOST_CHECK_EQUAL(watched.metadata->nVersion, 2);
+        BOOST_CHECK_EQUAL(entry.metadata->nCreateTime, 1231006505);
+        BOOST_REQUIRE(entry.unsupported_key_flags);
+        BOOST_REQUIRE(watched.unsupported_key_flags);
+        BOOST_CHECK_EQUAL(*entry.unsupported_key_flags, flag);
+        BOOST_CHECK_EQUAL(*watched.unsupported_key_flags, flag);
+    }
+    for (const auto& record : {key_record, script_record}) {
+        const auto value{Encode(int32_t{2}, int64_t{0}, uint8_t{129})};
+        RejectRecords({{record, Encode(int32_t{2}, int64_t{0})}}); // Missing flag.
+        RejectRecords({{record, Encode(int32_t{2}, int64_t{0}, uint16_t{129})}}); // Extra byte.
+        RejectRecords({{record, value}, {record, Encode(int32_t{2}, int64_t{0}, uint8_t{128})}});
+        RejectRecords({{record, value}, {record, Encode(int32_t{1}, int64_t{0})}});
+    }
+    SelectParams(ChainType::MAIN);
+    for (const auto flag : {uint8_t{0}, uint8_t{1}, uint8_t{128}, uint8_t{255}}) {
+        const auto value{Encode(int32_t{2}, int64_t{1231006505}, flag)};
+        const std::vector<LegacyWalletRecord> records{
+            {Encode(std::string{"key"}, pubkey), Encode(key.GetPrivKey())},
+            {key_record, value}, {script_record, value}};
+        OutputFixture fixture{m_path_root / fs::PathFromString(util::ToString(unsigned{flag}))};
+        const auto [result, bytes]{ExportRecords(fixture, records)};
+        const auto read{ReadExport(bytes, "main")};
+        BOOST_CHECK_EQUAL(result.counts.private_keys, 1U);
+        BOOST_CHECK_EQUAL(result.counts.roots, 0U);
+        BOOST_CHECK(read.payloads.front().starts_with(EncodeSecret(key) + " "));
+        for (const auto family : {"key", "script"}) {
+            const auto& metadata{read.metadata.at(family).front()["metadata"]};
+            BOOST_CHECK_EQUAL(metadata["version"].getInt<int>(), 2);
+            BOOST_CHECK_EQUAL(metadata["created"].get_str(), "1231006505");
+            BOOST_CHECK_EQUAL(metadata["unsupported_key_flags"].getInt<unsigned>(), flag);
+            BOOST_CHECK(metadata["hd_path"].isNull());
+            BOOST_CHECK(metadata["hd_seed_id"].isNull());
+            BOOST_CHECK(metadata["origin"].isNull());
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(record_rejects_required_corruption)
 {
     const auto fixtures{Fixtures()};
@@ -2826,7 +2881,7 @@ BOOST_AUTO_TEST_CASE(record_rejects_required_corruption)
     }
     RejectRecords({{master_key, Encode(master)}, {master_key, Encode(master)}});
     CKeyMetadata metadata;
-    for (const auto version : {0, 2, 9, 11, 13}) {
+    for (const auto version : {0, 3, 9, 11, 13}) {
         metadata.nVersion = version;
         RejectRecords({{Encode(std::string{"keymeta"}, pubkey), Encode(metadata)}});
     }

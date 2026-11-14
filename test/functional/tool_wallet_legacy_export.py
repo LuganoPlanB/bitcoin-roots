@@ -153,6 +153,56 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         assert_equal(relative.stderr, b'')
         assert_equal((self.output / 'relative.keys').read_bytes(), (self.output / 'regtest.keys').read_bytes())
 
+    def test_knots_metadata(self):
+        self.log.info('Preserve Knots v27.1 version-2 metadata flags for plaintext, encrypted and watch records')
+        # e933c45607ca9eb50fa3d17c6566e6fb8e6b21e1 walletdb.h:
+        # int32 version, int64 created, uint8 unsupported_key_flags.
+        script = b'\x51'
+        for fixture in (item for item in fixtures() if item.name in ('plain_mixed', 'encrypted_non_hd')):
+            for flag in (0, 1, 128, 255):
+                records = [(key, value) for key, value in fixture.records
+                           if deser_string(BytesIO(key)) not in (b'keymeta', b'watchmeta')]
+                for key in fixture.keys:
+                    records.append((record_key('keymeta', ser_string(key.pubkey)), struct.pack('<iqB', 2, 1231006505, flag)))
+                records.append((record_key('watchmeta', ser_string(script)), struct.pack('<iqB', 2, -1, flag)))
+                source = self.inputs / 'knots-metadata.dat'
+                source.write_bytes(bdb_bytes(records))
+                before = self.source_snapshot(self.inputs)
+                destination = self.output / f'knots-{fixture.name}-{flag}.keys'
+                options = ['-stdinwalletpassphrase'] if fixture.passphrase is not None else []
+                data = fixture.passphrase + b'\n' if fixture.passphrase is not None else b''
+                result = self.tool(self.invocation(source, destination) + options + ['dumpwallet'], data=data)
+                assert_equal(result.returncode, 0)
+                assert_equal(result.stderr, b'')
+                assert_equal(self.source_snapshot(self.inputs), before)
+                lines = destination.read_text(encoding='utf8').splitlines()
+                payload = [line.split()[0] for line in lines
+                           if line and not line.startswith('#') and line.split()[2] != 'script=1']
+                assert_equal(set(payload), {key.wif for key in fixture.keys})
+                objects = [json.loads(line[16:]) for line in lines if line.startswith('# roots-meta-v1 ')]
+                keys = [obj for obj in objects if obj['type'] == 'key']
+                assert_equal(len(keys), len(fixture.keys))
+                metadata = {'version': 2, 'created': '1231006505', 'unsupported_key_flags': flag,
+                            'hd_path': None, 'hd_seed_id': None, 'origin': None}
+                for key in keys:
+                    assert_equal(key['metadata'], metadata)
+                    assert_equal(key['classification'], 'unclassified')
+                watched = next(obj for obj in objects if obj['type'] == 'script' and obj['script_hex'] == script.hex())
+                assert_equal(watched['metadata'], metadata | {'created': '-1'})
+                assert_equal(lines[-1], '# roots-export-complete: 1')
+        # Truncated and overlong v2 metadata must still fail without output.
+        fixture = next(item for item in fixtures() if item.name == 'encrypted_non_hd')
+        for suffix in (b'', b'\x00\x00'):
+            source = self.inputs / 'invalid-knots-metadata.dat'
+            records = list(fixture.records) + [(record_key('keymeta', ser_string(fixture.keys[0].pubkey)),
+                                               struct.pack('<iq', 2, 0) + suffix)]
+            source.write_bytes(bdb_bytes(records))
+            before = self.source_snapshot(self.inputs)
+            destination = self.output / f'invalid-knots-{len(suffix)}.keys'
+            self.assert_failure(self.invocation(source, destination) + ['dumpwallet'], 'Error:')
+            assert not destination.exists()
+            assert_equal(self.source_snapshot(self.inputs), before)
+
     def test_invalid_sources(self):
         self.log.info('Reject unsupported source formats and records without publishing output')
         for name, data in [('sqlite', b'SQLite format 3\x00' + b'\x00' * 8192),
@@ -1059,6 +1109,7 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
         self.vectors = json.loads(vector_path.read_text(encoding='utf8'))['vectors']
         self.test_arguments()
         self.test_plaintext()
+        self.test_knots_metadata()
         self.test_historical_storage_matrix()
         self.test_invalid_sources()
         self.test_stdin_bytes()

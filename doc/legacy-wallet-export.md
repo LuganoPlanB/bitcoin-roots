@@ -186,7 +186,7 @@ not evidence that a key was imported or used for change.
 | `ckey` | Public key plus ciphertext vector; optional absent or 32-byte ciphertext checksum. Require correct checksum, decryption, 32-byte scalar and public-key agreement. Emit WIF after full validation. |
 | `mkey` | uint32 ID and CMasterKey schema. Accept method0, salt8, 48-byte encrypted master, empty other-parameters vector and bounded nonzero iterations. Retain public parameter metadata; never export the decrypted symmetric master or ciphertext. |
 | `hdchain` | One exact v1 or v2 record: version, external counter, seed ID, and internal counter only in v2. Preserve stored counters; do not reconstruct or increment them. |
-| `keymeta` | Exact metadata versions 1, 10 or 12. v1 has version/time; v10 adds byte path/seed ID; v12 adds four-byte origin fingerprint, uint32 path vector and has-origin bool. Preserve raw fields and unknown times. Other versions fail rather than inferring their production from donor `>=` conditions. |
+| `keymeta` | Exact metadata versions 1, 2, 10 or 12. v1 has version/time; Knots v2 adds one opaque `unsupported_key_flags` byte; v10 adds byte path/seed ID instead of that flag; v12 adds four-byte origin fingerprint, uint32 path vector and has-origin bool. Preserve raw fields and unknown times without interpreting the Knots flag. Other versions fail rather than inferring their production from donor `>=` conditions. |
 | `pool` | int64 index and stream-version/time/pubkey, followed by zero, one or two bool bytes (internal, pre-split). Preserve field presence; absent bools default false. Each present bool must be 0 or 1. No keypool refill/consumption. |
 | `cscript` | Require script hash160 key to match the serialized script; validate push-data boundaries. Export redeem-script payload and metadata. A valid empty script is retained only in typed metadata because the legacy importer cannot recognize an empty HEX token. Do not require the script to be standard or independently spendable. |
 | `watchs` | Script key and exactly ASCII `0` or `1`; preserve disabled/enabled state. Emit watch metadata, not a redeem-script payload merely because a watch script exists. |
@@ -348,7 +348,8 @@ Common types:
   null; raw zero/negative/out-of-calendar timestamps remain exact Time64.
   uint32/int32/counts are JSON integers; uint64 flags are 16-digit hexadecimal
   strings in numeric most-significant-digit-first order.
-- **Metadata**: object members `version` (1/10/12), `created` (raw Time64),
+- **Metadata**: object members `version` (1/2/10/12), `created` (raw Time64),
+  `unsupported_key_flags` (JSON integer 0–255, present only for Knots v2),
   `hd_path` (Bytes or null before v10), `hd_seed_id` (ID or null before v10/zero
   ID), `origin` (null before v12, otherwise object `has_origin` bool,
   `fingerprint` hex8, `path` array<uint32>). Preserve unused origin fields when
@@ -546,6 +547,19 @@ metadata expectations read the original serialized records independently of the
 C++ exporter. Changing the BDB geometry must preserve every non-wallet metadata
 and payload byte. The native exporter suite separately exercises the frozen
 record corpus and deliberate rejections.
+
+Knots [v27.1.knots20240801's metadata serializer](https://github.com/bitcoinknots/bitcoin/blob/e933c45607ca9eb50fa3d17c6566e6fb8e6b21e1/src/wallet/walletdb.h)
+defines the additional v2 layout. Separate synthetic cases check its opaque
+flag byte for plaintext, encrypted and watch metadata, malformed lengths,
+conflicting duplicates and unchanged source bytes. This is schema-based
+compatibility testing; it does not establish testing of a personal wallet or
+every Knots wallet feature.
+
+A header survey of 25 Core major-line releases (v0.8.0 through v32.1) and
+41 non-RC Knots release tags identified only metadata versions 1, 2, 10 and
+12. Those four exact layouts are supported. This source survey does not mean
+every release-produced wallet has been exercised; unassigned version numbers
+remain rejected rather than being treated as compatible by guesswork.
 
 These synthetic/source comparisons establish specific format cases, not a
 universal supported release range or proof that a named release emitted each

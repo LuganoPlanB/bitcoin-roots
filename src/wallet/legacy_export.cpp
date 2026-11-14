@@ -290,15 +290,19 @@ void CheckChecksum(SpanReader& stream, const uint256& expected)
 // (16ca532c8212d691daed14940da0f71f84f7b3fc) and v0.18.1 walletdb.h.
 // v0.13/v0.15's v1/v10 wire fields match. This allocation-free preflight bounds
 // variable fields and rejects future versions/non-boolean flags before reuse.
-CKeyMetadata ReadMetadata(SpanReader& stream)
+// Knots v27.1.knots20240801 (e933c45607ca9eb50fa3d17c6566e6fb8e6b21e1)
+// walletdb.h additionally preserves an opaque uint8 after v2's version/time.
+CKeyMetadata ReadMetadata(SpanReader& stream, std::optional<uint8_t>& unsupported_key_flags)
 {
     auto check{stream};
     const auto version{Read<int32_t>(check)};
-    Require(version == 1 || version == 10 || version == 12, "Unsupported legacy key metadata version");
+    Require(version == 1 || version == 2 || version == 10 || version == 12, "Unsupported legacy key metadata version");
     check.ignore(8);
     if (version >= 10) {
         SkipBytes(check, MAX_TEXT_BYTES);
         check.ignore(20);
+    } else if (version == 2) {
+        check.ignore(1);
     }
     if (version >= 12) {
         check.ignore(4);
@@ -308,7 +312,9 @@ CKeyMetadata ReadMetadata(SpanReader& stream)
         ReadBool(check);
     }
     Require(check.empty(), "Trailing legacy metadata fields");
-    return Read<CKeyMetadata>(stream);
+    auto metadata{Read<CKeyMetadata>(stream)};
+    if (version == 2) unsupported_key_flags = Read<uint8_t>(stream);
+    return metadata;
 }
 
 // Adapted CWalletKey::SerializationOp, Core v0.18.1 wallet.h:599,
@@ -414,6 +420,14 @@ void AssignSerialized(std::optional<T>& target, T value)
     target = std::move(value);
 }
 
+void AssignMetadata(std::optional<CKeyMetadata>& target, std::optional<uint8_t>& flags, SpanReader& stream)
+{
+    std::optional<uint8_t> unsupported_key_flags;
+    AssignSerialized(target, ReadMetadata(stream, unsupported_key_flags));
+    // CKeyMetadata serialization omits this Knots field; compare it separately.
+    if (unsupported_key_flags) AssignConsistent(flags, *unsupported_key_flags);
+}
+
 LegacyExportScript& ScriptEntry(LegacyWalletInventory& inventory, const CScript& script)
 {
     auto [entry, inserted]{inventory.scripts.try_emplace(CScriptID(script))};
@@ -460,7 +474,7 @@ LegacyWalletInventory DecodeLegacyWalletRecords(std::span<const LegacyWalletReco
             auto& entry{inventory.keys[pubkey]};
             entry.source_families.insert(family);
             if (family == "keymeta") {
-                AssignSerialized(entry.metadata, ReadMetadata(value));
+                AssignMetadata(entry.metadata, entry.unsupported_key_flags, value);
             } else {
                 if (family == "ckey") {
                     auto ciphertext{ReadBytes<std::vector<unsigned char>>(value, 48)};
@@ -509,7 +523,7 @@ LegacyWalletInventory DecodeLegacyWalletRecords(std::span<const LegacyWalletReco
         } else if (family == "watchs" || family == "watchmeta") {
             auto& script{ScriptEntry(inventory, ReadScript(key))};
             if (family == "watchmeta") {
-                AssignSerialized(script.metadata, ReadMetadata(value));
+                AssignMetadata(script.metadata, script.unsupported_key_flags, value);
             } else {
                 const auto enabled{Read<uint8_t>(value)};
                 Require(enabled == '0' || enabled == '1', "Invalid legacy watch-only marker");

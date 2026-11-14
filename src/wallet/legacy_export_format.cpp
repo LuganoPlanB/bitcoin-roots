@@ -136,13 +136,14 @@ std::string FlagString(uint64_t flags)
     return HexStr(bytes);
 }
 
-UniValue Metadata(const std::optional<CKeyMetadata>& metadata)
+UniValue Metadata(const std::optional<CKeyMetadata>& metadata, const std::optional<uint8_t>& unsupported_key_flags)
 {
     if (!metadata) return {};
     const auto& fact{*metadata};
     UniValue result{UniValue::VOBJ};
     result.pushKVEnd("version", fact.nVersion);
     result.pushKVEnd("created", util::ToString(fact.nCreateTime));
+    if (unsupported_key_flags) result.pushKVEnd("unsupported_key_flags", uint64_t{*unsupported_key_flags});
     result.pushKVEnd("hd_path", fact.nVersion >= 10 ? ByteString(fact.hdKeypath) : UniValue{});
     result.pushKVEnd("hd_seed_id", fact.nVersion >= 10 && !fact.hd_seed_id.IsNull() ? UniValue{HexStr(fact.hd_seed_id)} : UniValue{});
     UniValue origin;
@@ -389,7 +390,7 @@ void Render(LegacyExportOutput& output, const LegacySourceInfo& source, const Le
         j.pushKVEnd("classification", Classification(covered.classification));
         j.pushKVEnd("reserve", !covered.pool_indices.empty());
         j.pushKVEnd("created_at", TimeValue(KeyTime(key)));
-        j.pushKVEnd("metadata", Metadata(key.metadata));
+        j.pushKVEnd("metadata", Metadata(key.metadata, key.unsupported_key_flags));
         UniValue old;
         if (key.wkey) {
             old.setObject();
@@ -455,7 +456,7 @@ void Render(LegacyExportOutput& output, const LegacySourceInfo& source, const Le
         j.pushKVEnd("kinds", std::move(kinds));
         j.pushKVEnd("watch_enabled", script.watch_enabled ? UniValue{*script.watch_enabled} : UniValue{});
         j.pushKVEnd("created_at", TimeValue(script.metadata ? UsableTime(script.metadata->nCreateTime) : std::nullopt));
-        j.pushKVEnd("metadata", Metadata(script.metadata));
+        j.pushKVEnd("metadata", Metadata(script.metadata, script.unsupported_key_flags));
         Checkpoint(processing, LegacyExportStage::SCRIPT_METADATA);
         WriteMetadata(output, j);
     }
