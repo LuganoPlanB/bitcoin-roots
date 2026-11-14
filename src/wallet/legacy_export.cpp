@@ -592,6 +592,8 @@ LegacyRecoveredSecrets RecoverLegacyWalletSecrets(const LegacyWalletInventory& i
     // pubkey.GetHash() IV compatibility with current DecryptKey. Validate every
     // required pair rather than adopting either donor's first-key shortcut.
     uint64_t rounds_left{20'000'000};
+    bool master_candidate_decrypted{false};
+    bool encrypted_key_verified{false};
     for (const auto& [id, master] : inventory.master_keys) {
         if (unresolved.empty()) break;
         Require(master.nDeriveIterations <= rounds_left, "Legacy KDF work exceeds supported limit");
@@ -601,6 +603,7 @@ LegacyRecoveredSecrets RecoverLegacyWalletSecrets(const LegacyWalletInventory& i
                 "Unsupported legacy master key parameters");
         CKeyingMaterial symmetric_key;
         if (!crypter.Decrypt(master.vchCryptedKey, symmetric_key) || symmetric_key.size() != WALLET_CRYPTO_KEY_SIZE) continue;
+        master_candidate_decrypted = true;
         for (auto it{unresolved.begin()}; it != unresolved.end();) {
             CKey key;
             if (!DecryptKey(symmetric_key, *inventory.keys.at(*it).ciphertext, *it, key)) {
@@ -611,12 +614,19 @@ LegacyRecoveredSecrets RecoverLegacyWalletSecrets(const LegacyWalletInventory& i
             Require(previous == result.keys.end() || previous->second == key, "Conflicting legacy private key material");
             result.keys.insert_or_assign(*it, std::move(key));
             result.master_key_usage.at(id).insert(*it);
+            encrypted_key_verified = true;
             it = unresolved.erase(it);
         }
     }
     // No caller can observe the local partial set. Secure allocator/CKey RAII
     // cleanses decrypted candidates and recovered scalars on every exit.
-    Require(unresolved.empty(), "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+    if (!unresolved.empty()) {
+        // A padding-valid master candidate alone does not prove the password.
+        // Report only the failed stage, never identities, counts or key bytes.
+        Require(master_candidate_decrypted, "Legacy decryption failed: master-key stage produced no 32-byte candidate (passphrase input or encrypted master key material)");
+        Require(encrypted_key_verified, "Legacy decryption failed: private-key stage verified no encrypted private keys after master-key candidate decryption");
+        throw std::runtime_error("Legacy decryption failed: incomplete private-key recovery after some encrypted private keys verified");
+    }
     return result;
 }
 

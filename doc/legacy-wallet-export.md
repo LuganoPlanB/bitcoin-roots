@@ -58,6 +58,20 @@ The same invocation handles pre-HD, mixed/imported-key, HD and seed-rotated
 inventories. A watch-only export has zero private keys and roots and cannot
 spend. Only add `-stdinwalletpassphrase` when encrypted private keys require it.
 
+Decryption failures identify their stage without reporting key data:
+
+- `master-key stage`: no candidate decrypted to the required 32-byte length.
+  The entered passphrase bytes or encrypted master-key material need investigation.
+- `private-key stage`: a master candidate decrypted, but no encrypted private
+  key passed decryption and public-key verification. A decrypted candidate alone
+  does not prove that the passphrase is correct for the required keys.
+- `incomplete private-key recovery`: some encrypted keys verified and others
+  did not. The tool rejects the export rather than publishing a partial result.
+
+All three are failures with no new export published. These diagnostics narrow
+the failing operation; they do not by themselves establish corruption, a wrong
+passphrase or universal format compatibility.
+
 ## Invocation and input rules
 
 `-wallet`, `-dumpfile` and `-chain` must each occur explicitly once with a

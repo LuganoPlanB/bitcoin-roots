@@ -1750,10 +1750,10 @@ BOOST_AUTO_TEST_CASE(recovery_exact_passphrase_bytes)
         BOOST_CHECK(recovered.keys.at(key.GetPubKey()) == key);
         BOOST_CHECK(!inventory.keys.at(key.GetPubKey()).private_key);
         for (const auto& wrong : {SecureString{"wrong"}, SecureString{"ab"}, SecureString{"test"}}) {
-            RejectRecovery(inventory, wrong, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+            RejectRecovery(inventory, wrong, "Legacy decryption failed: master-key stage produced no 32-byte candidate (passphrase input or encrypted master key material)");
         }
         if (!passphrase.empty()) {
-            RejectRecovery(inventory, SecureString{}, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+            RejectRecovery(inventory, SecureString{}, "Legacy decryption failed: master-key stage produced no 32-byte candidate (passphrase input or encrypted master key material)");
         }
     }
     RejectRecovery({}, SecureString(4097, 'p'), "Legacy passphrase exceeds supported limit");
@@ -1801,7 +1801,9 @@ BOOST_AUTO_TEST_CASE(recovery_no_partial_success)
         case 2: AddRecoverySlot(inventory, 2, SecureString{"other"}, 6, {second}); break;
         case 3: inventory.master_keys.at(1).vchCryptedKey.back() ^= 1; break;
         }
-        RejectRecovery(inventory, passphrase, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+        RejectRecovery(inventory, passphrase, mutation == 3 ?
+                       "Legacy decryption failed: master-key stage produced no 32-byte candidate (passphrase input or encrypted master key material)" :
+                       "Legacy decryption failed: incomplete private-key recovery after some encrypted private keys verified");
         for (const auto& [pubkey, entry] : inventory.keys) BOOST_CHECK(!entry.private_key);
     }
     auto missing{original};
@@ -1849,15 +1851,30 @@ BOOST_AUTO_TEST_CASE(recovery_rejects_padding_only_candidates)
     BOOST_REQUIRE(crypter.SetKeyFromPassphrase(passphrase, master.vchSalt, master.nDeriveIterations, 0));
     BOOST_REQUIRE(crypter.Encrypt(CKeyingMaterial(33, 7), master.vchCryptedKey));
     BOOST_REQUIRE_EQUAL(master.vchCryptedKey.size(), 48U);
-    RejectRecovery(wrong_length, passphrase, "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+    RejectRecovery(wrong_length, passphrase, "Legacy decryption failed: master-key stage produced no 32-byte candidate (passphrase input or encrypted master key material)");
     for (const auto size : {31U, 32U, 33U}) {
         auto invalid{original};
         // Zero32 is an invalid scalar; adjacent lengths are invalid secrets.
         BOOST_REQUIRE(EncryptSecret(CKeyingMaterial(32, 7), CKeyingMaterial(size, 0), key.GetPubKey().GetHash(),
                                     *invalid.keys.at(key.GetPubKey()).ciphertext));
         RejectRecovery(invalid, passphrase, size == 31 ? "Invalid legacy encrypted private key length" :
-                                                       "Legacy decryption failed: incorrect passphrase or corrupt encrypted key material");
+                                                       "Legacy decryption failed: private-key stage verified no encrypted private keys after master-key candidate decryption");
     }
+}
+
+BOOST_AUTO_TEST_CASE(recovery_master_candidates_do_not_prove_password_or_partial_recovery)
+{
+    const SecureString passphrase{"test"};
+    LegacyWalletInventory inventory;
+    // An unrelated slot may decrypt with this password while the required
+    // encrypted key belongs to a slot that needs a different password.
+    AddRecoverySlot(inventory, 1, passphrase, 7, {});
+    AddRecoverySlot(inventory, 2, SecureString{"other"}, 8, {RecoveryTestKey(45)});
+    RejectRecovery(inventory, passphrase, "Legacy decryption failed: private-key stage verified no encrypted private keys after master-key candidate decryption");
+    const auto plain{RecoveryTestKey(46)};
+    inventory.keys[plain.GetPubKey()].private_key = plain;
+    // A valid plaintext key must not be counted as encrypted-key verification.
+    RejectRecovery(inventory, passphrase, "Legacy decryption failed: private-key stage verified no encrypted private keys after master-key candidate decryption");
 }
 
 BOOST_AUTO_TEST_CASE(recovery_kdf_work_bound, *boost::unit_test::timeout(60))

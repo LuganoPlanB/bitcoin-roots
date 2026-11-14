@@ -399,11 +399,41 @@ class ToolWalletLegacyExportTest(BitcoinTestFramework):
             result = self.tool(self.invocation(source, destination) + ['-stdinwalletpassphrase', 'dumpwallet'], data=b'SYNTHETIC_WRONG_CREDENTIAL_CANARY\n')
             assert_equal(result.returncode, 1)
             assert_equal(result.stdout, b'')
-            assert b'Legacy decryption failed' in result.stderr
+            assert b'Legacy decryption failed: master-key stage' in result.stderr
             assert b'SYNTHETIC_WRONG_CREDENTIAL_CANARY' not in result.stderr
             assert not destination.exists()
             assert_equal(source.read_bytes(), before)
             checks.append({'version': version, 'vector': 'wrong-passphrase', 'input': 'stdin', 'expected': 'failure-no-output'})
+            # A correct passphrase may decrypt the master candidate but fail
+            # private-key verification. Keep that distinct from input failure.
+            vector = self.vectors[0]
+            master_value = ser_string(bytes.fromhex(vector['master_ciphertext'])) + ser_string(bytes.fromhex('0000deadbeef0000'))
+            master_value += struct.pack('<II', 0, 25000) + ser_string(b'')
+            metadata_key, metadata_value = key_metadata(key, version=version, created=1231006505)
+            if version == 2:
+                metadata_value += b'\x81'
+            for partial, stage in [(False, 'private-key'), (True, 'incomplete')]:
+                bad_key = FixtureKey((2 if partial else 1).to_bytes(32, 'big'))
+                raw_key, raw_value = encrypted_key(bad_key, 'seed' if partial else 'imported')
+                damaged = bytearray(raw_value)
+                damaged[1] ^= 1  # Corrupt ciphertext, keeping its encoded length.
+                records = [(record_key('mkey', struct.pack('<I', 1)), master_value),
+                           (metadata_key, metadata_value), (raw_key, bytes(damaged))]
+                if partial:
+                    records.append(encrypted_key(key, 'imported'))
+                source = self.inputs / f'metadata-{version}-{stage}.dat'
+                source.write_bytes(bdb_bytes(records))
+                before = source.read_bytes()
+                destination = self.output / f'metadata-{version}-{stage}.keys'
+                result = self.tool(self.invocation(source, destination) + ['-stdinwalletpassphrase', 'dumpwallet'],
+                                   data=bytes.fromhex(vector['passphrase_hex']) + b'\n')
+                assert_equal(result.returncode, 1)
+                assert_equal(result.stdout, b'')
+                assert ('Legacy decryption failed: ' + stage).encode() in result.stderr
+                self.assert_no_secret(result, bytes.fromhex(vector['passphrase_hex']))
+                assert not destination.exists()
+                assert_equal(source.read_bytes(), before)
+                checks.append({'version': version, 'vector': stage, 'input': 'stdin', 'expected': 'failure-no-output'})
         (self.root / 'decryption-metadata-results.json').write_text(json.dumps({'checks': checks, 'executed': len(checks), 'failed': 0}) + '\n')
         self.log.info('Decryption metadata matrix: %d identified correct/wrong-passphrase checks passed', len(checks))
 
