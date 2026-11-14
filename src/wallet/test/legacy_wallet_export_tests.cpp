@@ -2133,12 +2133,19 @@ BOOST_AUTO_TEST_CASE(output_rejects_untrusted_and_readonly_parents)
 {
     OutputFixture fixture{m_path_root};
     RestorePermissions restore{fixture.directory};
-    for (const auto permissions : {fs::perms::all, fs::perms::owner_all | fs::perms::group_write,
-                                   fs::perms::owner_read | fs::perms::owner_exec}) {
+    for (const auto permissions : {fs::perms::all, fs::perms::owner_all | fs::perms::group_write}) {
         fs::permissions(fixture.directory, permissions);
         BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, fixture.destination}), std::runtime_error);
         BOOST_CHECK(Entries(fixture.directory).empty());
     }
+    fs::permissions(fixture.directory, fs::perms::owner_read | fs::perms::owner_exec);
+    if (access(fixture.directory.c_str(), W_OK) == 0) {
+        BOOST_TEST_MESSAGE("Skipping read-only parent rejection: this process can write despite the directory mode bits");
+    } else {
+        BOOST_REQUIRE_EQUAL(errno, EACCES);
+        BOOST_CHECK_THROW((LegacyExportOutput{*fixture.source, fixture.destination}), std::runtime_error);
+    }
+    BOOST_CHECK(Entries(fixture.directory).empty());
 }
 
 BOOST_AUTO_TEST_CASE(output_destination_races_never_replace)
@@ -2380,8 +2387,13 @@ BOOST_AUTO_TEST_CASE(source_without_write_permissions)
     fs::permissions(dirty, fs::perms::owner_read);
     fs::permissions(directory, fs::perms::owner_read | fs::perms::owner_exec);
 #ifndef WIN32
-    BOOST_REQUIRE_NE(access(path.c_str(), W_OK), 0);
-    BOOST_REQUIRE_NE(access(directory.c_str(), W_OK), 0);
+    for (const auto& input : {path, directory}) {
+        if (access(input.c_str(), W_OK) == 0) {
+            BOOST_TEST_MESSAGE("Write access bypasses read-only mode bits; source preservation checks still apply");
+        } else {
+            BOOST_REQUIRE_EQUAL(errno, EACCES);
+        }
+    }
 #endif
     BOOST_CHECK_NO_THROW(LegacyWalletSource{directory});
     BOOST_CHECK_THROW(LegacyWalletSource{dirty}, std::runtime_error);
