@@ -182,6 +182,25 @@ released source retains ownership. Preserve upstream and Plan-B credits.
 
 ## Configuring upstream-compatible cache providers
 
+### Shared test inputs
+
+Consuming Actions runs select a fresh `bitcoin-core/qa-assets` revision once
+and share verified unit vectors and, only for full replay jobs, fuzz corpora
+through same-run tar artifacts. PR-triggered reusable nightly workflows reuse
+their caller's inputs. Standalone nightly runs prepare their own inputs; docs
+and tidy/extended-functional-only runs need none. Fast fuzz retains its bounded,
+download-free path.
+The default artifact ZIP compression transports one tar file per input kind.
+Consumers verify the revision, license and file hashes before use. Containers
+mount shared inputs read-only, while full fuzz jobs make independent writable
+copies. Missing or corrupt prepared inputs fail without a network fallback.
+
+Standalone shell and Windows callers use `test/download_utils.py` directly.
+For local prepared inputs, run its `prepare` command for each required kind
+and set `QA_ASSETS_DIR` and `QA_ASSETS_REVISION`. No permanent snapshot or
+cross-run artifact is selected. Local fixture passes do not establish hosted
+Linux, macOS or Windows execution.
+
 ### Primary repository
 
 To configure the primary repository, follow these steps:
