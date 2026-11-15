@@ -17,7 +17,8 @@ Unsafe or unassembled packages fail before upload or final preparation. No
 prior binary is substituted for a fresh build.
 
 The current candidate targets Core v32.1 and the future
-`v32.1-roots.1` name. Source/tag checks derive `roots/32.1` and `v32.1`
+`v32.1-roots.2` name, appending to the published Roots.1 history.
+Source/tag checks derive `roots/32.1` and `v32.1`
 from that name; an absent future name may be checked only offline or in an
 explicitly requested disposable rehearsal. Tag presence does not establish
 publication. Local fixtures are not five-platform hosted build evidence.
@@ -66,7 +67,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    python3 ci/release/repack.py intermediate.tar.gz assembled.tar.gz \
-     bitcoin-roots-32.1-roots.1 notice-inputs/index.json linux-x86_64
+     bitcoin-roots-32.1-roots.2 notice-inputs/index.json linux-x86_64
    ```
 
    The repacker adds canonical `COPYING` and `notices/` at the archive root,
@@ -81,7 +82,7 @@ The supported assembly interface uses explicitly reviewed inputs:
 
    ```sh
    ci/release/prepare-release.sh assembled-downloads release-assets \
-     contrib/release/bitcoin-roots-release-key.asc v32.1-roots.1 5
+     contrib/release/bitcoin-roots-release-key.asc v32.1-roots.2 5
    ```
 
    This final gate derives each expected platform from its exact asset filename,

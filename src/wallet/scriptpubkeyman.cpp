@@ -7,6 +7,7 @@
 #include <coins.h>
 #include <hash.h>
 #include <key_io.h>
+#include <musig.h>
 #include <node/types.h>
 #include <outputtype.h>
 #include <script/descriptor.h>
@@ -24,6 +25,7 @@
 #include <optional>
 #include <algorithm>
 #include <iterator>
+#include <map>
 
 using common::PSBTError;
 using util::ToString;
@@ -1511,6 +1513,9 @@ bool DescriptorScriptPubKeyMan::SignTransaction(CMutableTransaction& tx, const s
         keys->Merge(std::move(*coin_keys));
     }
 
+    // Only scriptSig and witness leave this call, so its MuSig2 sessions cannot be resumed.
+    std::map<uint256, MuSig2SecNonce> musig2_secnonces;
+    keys->musig2_secnonces = &musig2_secnonces;
     return ::SignTransaction(tx, keys.get(), coins, {.sighash_type = sighash}, input_errors);
 }
 

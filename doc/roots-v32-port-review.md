@@ -82,6 +82,43 @@ No product behavior, native build, hosted CI or release artifact pass is claimed
 at this input boundary. Complete source/contract accounting and the maintenance
 baseline follow before this review unit is accepted.
 
+## v32.1-roots.2 maintenance extension
+
+The current unpublished candidate extends published
+[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+at `f0393f2688656ba544b40fe508db909152201c18`, retaining exact Core v32.1
+`f0de87f040621468b956f01f526a43a010310501`. The published temporary release
+ref is preserved; no normal Roots.1 tag is implied. The original port evidence
+and revision labels below remain historical observations of their named inputs.
+
+Three append-only semantic ports retain their original contributor credit:
+[Core #36872](https://github.com/bitcoin/bitcoin/pull/36872), same-run verified
+qa-assets sharing; [Core #36871](https://github.com/bitcoin/bitcoin/pull/36871),
+replacement of reused read-only BDB cursor streams; and
+[Core #36809](https://github.com/bitcoin/bitcoin/pull/36809), the complete
+seven-commit BIP322 simple-proof implementation. Their Roots commits are
+`92e6c11966d6a4d73ba14d7ee36b269ef098238b`,
+`8ab22f8bceb843ccb42b03644938dbd1a74ff66e` and
+`97161eca73a15878b0e9ce2a04cec5e8892003e7`, respectively.
+The [current notes](../contrib/release/release-notes.md#changes-since-v321-roots1)
+and [wallet manual](wallet-privacy.md#sign-and-verify-a-message) specify support
+and limits; the stable preservation contracts below remain intact.
+
+Release preparation uses the existing version/tag inputs for
+`32.1-roots.2`, without changing numeric or wire identifiers. Its inherited
+no-wallet hidden-option correction does not change wallet-enabled dangerous-RPC
+authorization. Local version/help generation and maintenance checks are separate
+from final exact-candidate hosted qualification. The .2 manual/configuration
+generation profile enables wallet, Qt6, QR, IPC and ZeroMQ; USDT, MiniUPnPc
+and lock-contention diagnostics are not enabled. Optional/debug help differences
+describe that generating profile, without removing those source features.
+BIP322 unit/RPC/legacy help,
+selector fixtures, sanitizer and bounded message-fuzz qualification remain
+required there; no additional local fuzz campaign is implied. Existing local
+GPG/IPC infrastructure gaps do not waive actual signing or hosted coverage.
+Permanent tagging, five-platform draft verification, publication and main/site
+promotion retain their separate review and authorization boundaries.
+
 ## Inventory interpretation and acceptance owners
 
 The inventory covers **38 commits** in

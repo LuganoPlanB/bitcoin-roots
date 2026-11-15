@@ -11,9 +11,12 @@ interface, which can be optionally built.
 
 Choose the guide for the system where you plan to run your node:
 
-This source tree tracks the Core v32.1 port and v32.1-roots.1 source. Read the
-[32.x port review](/doc/roots-v32-port-review) and
-[current build requirements](/doc/roots-build-portability) before building.
+This source tree contains the v32.1-roots.2 source candidate, extending
+[published v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+on the same Core v32.1 base. Treat .2 as unreleased until it appears in the
+public release catalogue. Read the [candidate release notes](/contrib/release/release-notes),
+[current feature contracts](/doc/roots-features), [32.x port review](/doc/roots-v32-port-review)
+and [build requirements](/doc/roots-build-portability) before building.
 Source availability does not establish release publication. Published downloads
 and patches are listed in the [release patch browser](/patches/), which excludes
 unpublished drafts. Use that catalogue to check which versions have public assets.
@@ -32,6 +35,17 @@ Read the [configuration reference](/doc/bitcoin-conf) before changing defaults.
 For a smaller home-node footprint, the existing guides cover
 [reducing memory usage](/doc/reduce-memory) and
 [reducing traffic](/doc/reduce-traffic).
+
+Wallets use descriptors and SQLite. Retain independent secure backups and use
+the supported legacy-wallet migration path; this candidate does not restore a
+Berkeley DB wallet engine. See the [migration and disclosure notes](/contrib/release/release-notes#wallet-migration-and-disclosure)
+and [wallet manual](/doc/wallet-privacy) before changing wallet workflows.
+
+The candidate adds BIP322 simple message proofs for native P2WPKH, P2WSH and
+P2TR. Signing needs a complete wallet satisfaction; P2SH/wrapped SegWit, partial
+proofs, full signatures and proofs of funds are unsupported. P2PKH compact
+signatures remain unchanged. Read the [RPC notes](/doc/release-notes-bip322) and
+[message-proof limits](/doc/wallet-privacy#sign-and-verify-a-message).
 
 Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
 conservative, configurable transaction relay and mempool policy. It does not

@@ -1,16 +1,50 @@
-# Bitcoin Roots v32.1-roots.1 candidate
+# Bitcoin Roots v32.1-roots.2 candidate
 
 This is an unpublished candidate, not a release announcement. No public tag,
 downloadable package, deployment or publication is established by this text.
 Source acceptance and release approval remain separate gates.
 
 The direct base is the exact official Bitcoin Core v32.1 commit
-`f0de87f040621468b956f01f526a43a010310501`. This new series folds the complete
-released Roots v31 line through v31.1-roots.6 and its follow-up repairs into
-the owning semantic changes. Bitcoin Knots `29.3.knots20260507` is historical
+`f0de87f040621468b956f01f526a43a010310501`. This maintenance candidate appends
+three reviewed Core PR ports to published
+[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+(`f0393f2688656ba544b40fe508db909152201c18`), preserving that complete history.
+Roots.1 already folds the complete released Roots v31 line through
+v31.1-roots.6 and its follow-up repairs into the owning semantic changes.
+Bitcoin Knots `29.3.knots20260507` is historical
 feature provenance, not the direct base or a release dependency. Historical
 [v31.1-roots.6 notes](../../doc/release-notes/roots-v31.1-roots.6.md) are retained
 unchanged and do not qualify this candidate.
+
+## Changes since v32.1-roots.1
+
+- [Core PR #36872](https://github.com/bitcoin/bitcoin/pull/36872): select one
+  fresh qa-assets revision per consuming Actions run and share verified unit
+  vectors/full-replay corpora through same-run tar artifacts. Consumers check
+  revision, license and hashes; missing/corrupt prepared inputs fail without
+  network fallback. Shared container inputs remain read-only, full-fuzz copies
+  remain independently writable and fast fuzz retains its download-free bounds.
+- [Core PR #36871](https://github.com/bitcoin/bitcoin/pull/36871): advancing a
+  read-only Berkeley DB cursor replaces reused key/value streams rather than
+  appending unread record data. SQLite prefix coverage retains the same output
+  contract. This preserves the supported migration path without restoring an
+  obsolete Berkeley DB wallet engine.
+- [Core PR #36809](https://github.com/bitcoin/bitcoin/pull/36809): `signmessage`
+  and `verifymessage` support BIP322 simple proofs for native P2WPKH, P2WSH
+  and P2TR. Descriptor-wallet signing requires a complete satisfaction with
+  available keys/scripts, including supported multisig/Miniscript and Taproot
+  key/script paths. Output is `smp` plus a base64 serialized witness stack;
+  verification also accepts older unprefixed simple proofs without wallet or
+  chain data. Invalid/unsupported/inconclusive proofs return `false`;
+  malformed base64 or witness serialization raises error -3.
+  P2SH/wrapped SegWit, partial/full signatures and proofs of funds are
+  unsupported. Version, locktime and sequence are zero, so incompatible
+  timelocks cannot be satisfied by waiting. P2PKH compact signatures and
+  legacy-only `signmessagewithprivkey` are unchanged. A message proof does not
+  establish a balance or payment. See [operator limits](../../doc/wallet-privacy.md#sign-and-verify-a-message).
+- Keep the no-wallet hidden option list aligned with wallet-enabled
+  `-allow-dangerous-rpc` registration. Wallet-enabled authorization, command-line
+  restrictions and flags remain unchanged.
 
 ## Preserved policy and network behavior
 
@@ -133,8 +167,10 @@ close source-verification gaps.
 Only a separately authorized tag push reaches required SHA512 manifest signing
 and new-draft creation. Every existing draft/public release blocks replacement.
 Manifest signing is separate from Git-tag and platform-code signing. The
-workflow describes unsigned annotated tags, ad-hoc macOS app signatures without
-Developer ID/notarization, and no Windows Authenticode signature; verify the
+permanent release tag requires the maintainer's signing key; disposable annotated
+rehearsal tags do not establish that signature. Platform packaging uses ad-hoc
+macOS app signatures without Developer ID/notarization and no Windows
+Authenticode signature; verify the
 actual future artifacts and signing disclosures independently. No such run,
 signature or draft is claimed here. Upstream Core-tag signature verification
 was explicitly waived for this port; source identity/ancestry checks remain

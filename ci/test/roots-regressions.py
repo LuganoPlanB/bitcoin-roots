@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 GROUPS = {
+    "message": ("rpc_bip322.py", "rpc_signmessagewithprivkey.py", "wallet_signmessagewithaddress.py"),
     "policy": ("feature_policy_args.py", "mempool_datacarrier.py", "mempool_subdust_fee_penalty.py", "mempool_dynamic_dust.py", "mempool_roots_local_policy.py", "mempool_graph_policy.py", "mempool_rbf_policy.py"),
     "mining": ("mining_roots_template.py", "mempool_truc.py", "interface_ipc_mining.py"),
     "wallet": ("wallet_send.py", "wallet_sweepprivkeys.py", "wallet_signer.py", "wallet_exportaddresskey.py", "wallet_dangerous_rpc.py"),
@@ -24,6 +25,7 @@ GROUPS = {
     "runtime": ("feature_config_args.py", "interface_http.py", "rpc_effective_policy.py", "rpc_uptime.py"),
 }
 FUZZ = {
+    "message": ("message",),
     "policy": ("policy_args", "subdust_fee_penalty", "dynamic_dust_fee"),
     "mining": ("tx_pool", "txgraph"),
     "wallet": ("script", "psbt"),
@@ -31,6 +33,17 @@ FUZZ = {
     "runtime": ("policy_args", "string"),
 }
 BUDGETS = {"fast": {"functional": 900, "fuzz": 5}, "nightly": {"functional": 7200, "fuzz": 60}}
+
+MESSAGE_PATHS = {
+    'src/common/signmessage.cpp', 'src/common/signmessage.h', 'src/rpc/signmessage.cpp',
+    'src/wallet/rpc/signmessage.cpp', 'src/test/bip322_tests.cpp',
+    'src/wallet/test/bip322_wallet_tests.cpp', 'src/test/data/bip322_vectors.json',
+    'src/test/fuzz/message.cpp',
+}
+MESSAGE_WALLET_PATHS = {
+    'src/wallet/wallet.cpp', 'src/wallet/wallet.h',
+    'src/wallet/scriptpubkeyman.cpp', 'src/wallet/scriptpubkeyman.h',
+}
 
 
 def affected(files):
@@ -43,6 +56,12 @@ def affected(files):
         owners = {group for group, tests in GROUPS.items() if path in {'test/functional/' + test for test in tests}}
         if owners:
             groups.update(owners)
+            continue
+        if path in MESSAGE_PATHS:
+            groups.add('message')
+            continue
+        if path in MESSAGE_WALLET_PATHS:
+            groups.update(('message', 'wallet'))
             continue
         if path.startswith(('doc/man/', 'share/examples/')):
             return sorted(GROUPS)
