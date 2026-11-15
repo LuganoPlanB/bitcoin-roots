@@ -218,6 +218,7 @@ class TxDownloadTest(BitcoinTestFramework):
     def test_preferred_inv(self, connection_type: ConnectionType):
         if connection_type == ConnectionType.WHITELIST:
             self.log.info('Check invs from preferred (whitelisted) peers are downloaded immediately')
+            assert self.extra_args is not None
             self.restart_node(0, extra_args=self.extra_args[0] + ['-whitelist=noban@127.0.0.1'])
         elif connection_type == ConnectionType.OUTBOUND:
             self.log.info('Check invs from preferred (outbound) peers are downloaded immediately')
