@@ -140,12 +140,7 @@ jobs:
       - name: Run lint
         run: |
           set -Eeuo pipefail
-          cache_args=()
-          if [[ -n "${DOCKER_BUILD_CACHE_ARG:-}" ]]; then
-            read -r -a cache_args <<< "${DOCKER_BUILD_CACHE_ARG}"
-          fi
-          docker buildx build -t "$CONTAINER_NAME" "${cache_args[@]}" --file ./ci/lint_imagefile .
-          docker run --rm -e CI_PULL_REQUEST=1 -e "CI_REPOSITORY=${{ github.repository }}" -v "$(pwd)":/bitcoin "$CONTAINER_NAME"
+          python3 ci/lint.py
 
   test-assets:
     name: Shared test inputs
