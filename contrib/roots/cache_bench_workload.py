@@ -17,9 +17,10 @@ import time
 FRAMEWORK = Path(os.environ.get("ROOTS_BENCH_FRAMEWORK", Path(__file__).resolve().parents[2])).resolve()
 sys.path.insert(0, str(FRAMEWORK / "test/functional"))
 
-from cache_bench import CASES, VARIANTS, case_name, check_environment, parse_metric, select_profile, write_json
-from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS, add_witness_commitment, create_block
-from test_framework.messages import (
+# These imports require the selected framework path to be installed first.
+from cache_bench import CASES, VARIANTS, case_name, check_environment, parse_metric, select_profile, write_json  # noqa: E402
+from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS, add_witness_commitment, create_block  # noqa: E402
+from test_framework.messages import (  # noqa: E402
     BlockTransactions,
     CBlockHeader,
     CTxOut,
@@ -29,11 +30,11 @@ from test_framework.messages import (
     msg_sendcmpct,
     msg_tx,
 )
-from test_framework.p2p import P2PInterface, p2p_lock
-from test_framework.script import CScript, OP_RETURN
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
-from test_framework.wallet import MiniWallet
+from test_framework.p2p import P2PInterface, p2p_lock  # noqa: E402
+from test_framework.script import CScript, OP_RETURN  # noqa: E402
+from test_framework.test_framework import BitcoinTestFramework  # noqa: E402
+from test_framework.util import assert_equal  # noqa: E402
+from test_framework.wallet import MiniWallet  # noqa: E402
 
 
 class Peer(P2PInterface):

@@ -1,9 +1,28 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+export async function checkDocumentationRoutes(groups, outputDirectory) {
+  const routes = new Set(groups.flatMap(({ documents }) => documents.map(({ link }) => link)));
+  const missing = [];
+
+  for (const route of routes) {
+    try {
+      const info = await stat(resolve(outputDirectory, `.${route}.html`));
+      if (!info.isFile()) missing.push(route);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      missing.push(route);
+    }
+  }
+
+  assert.equal(missing.length, 0, `Missing built documentation routes:\n${missing.join("\n")}`);
+  return routes.size;
+}
+
 const pages = {
   "privacy.html": [
     "<h1",
@@ -50,12 +69,19 @@ const pages = {
   ],
 };
 
-for (const [filename, expectedContent] of Object.entries(pages)) {
-  const html = await readFile(resolve(websiteRoot, ".vitepress/dist", filename), "utf8");
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { documentationGroups } = await import("../.vitepress/generated/catalog.mjs");
+  const outputDirectory = resolve(websiteRoot, ".vitepress/dist");
+  const routeCount = await checkDocumentationRoutes(documentationGroups, outputDirectory);
 
-  for (const expected of expectedContent) {
-    assert.ok(html.includes(expected), `${filename} is missing server-rendered content: ${expected}`);
+  for (const [filename, expectedContent] of Object.entries(pages)) {
+    const html = await readFile(resolve(outputDirectory, filename), "utf8");
+
+    for (const expected of expectedContent) {
+      assert.ok(html.includes(expected), `${filename} is missing server-rendered content: ${expected}`);
+    }
   }
-}
 
-console.log("Verified server-rendered content in the homepage, Principles, Compare, and Privacy HTML.");
+  console.log(`Verified all ${routeCount} catalogue documentation routes.`);
+  console.log("Verified server-rendered content in the homepage, Principles, Compare, and Privacy HTML.");
+}

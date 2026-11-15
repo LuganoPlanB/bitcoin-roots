@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { checkDocumentationRoutes } from "../../scripts/check-static-html.mjs";
 import { checkPublication, fetchDeployedReceipt, needsPublication, preparePublication,
     publicationReceipt, publicationSnapshot, writePublicationReceipt } from "../../scripts/website-publication.mjs";
 
@@ -35,6 +36,33 @@ async function renderedCatalogue(verified, outputDir, base = revisions.base) {
         releases: verified.releases.map((release) => ({ tag: release.tag, state: release.patchState,
             sha512: release.integrity?.sha512 ?? null })) }));
 }
+
+test("documentation route check imports without generated inputs and accepts every built route", async (t) => {
+    const { outputDir } = await directories(t);
+    const script = join(outputDir, "check-static-html.mjs");
+    await writeFile(script, await readFile(new URL("../../scripts/check-static-html.mjs", import.meta.url)));
+    const { checkDocumentationRoutes: isolatedCheck } = await import(pathToFileURL(script).href);
+    const routes = ["/README", "/doc/feature-contracts/effective-policy", "/doc/historical/policy-review"];
+    for (const route of routes) {
+        const filename = join(outputDir, `${route.slice(1)}.html`);
+        await mkdir(join(filename, ".."), { recursive: true });
+        await writeFile(filename, "<h1>Built source documentation</h1>");
+    }
+    assert.equal(await isolatedCheck([{ documents: routes.map((link) => ({ link })) }], outputDir), 3);
+});
+
+test("documentation route check reports all missing catalogue pages", async (t) => {
+    const { outputDir } = await directories(t);
+    await mkdir(join(outputDir, "doc"));
+    await writeFile(join(outputDir, "doc/roots-features.html"), "<h1>Features</h1>");
+    const missing = ["/doc/feature-contracts/subdust", "/doc/historical/policy-review"];
+    const groups = [{ documents: ["/doc/roots-features", ...missing].map((link) => ({ link })) }];
+    await assert.rejects(checkDocumentationRoutes(groups, outputDir), (error) => {
+        assert.match(error.message, /Missing built documentation routes/);
+        for (const route of missing) assert.ok(error.message.includes(route), route);
+        return true;
+    });
+});
 
 test("unsupported tag metadata is counted and displayed without blocking source publication", async (t) => {
     const other = release({ id: 123, tag_name: 'not-a-roots-version', assets: [],
