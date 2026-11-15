@@ -1,7 +1,8 @@
 # Bitcoin Roots v32.1 preservation contracts
 
-This is the unpublished `v32.1-roots.1` candidate, based directly on Core
-v32.1 (`f0de87f040621468b956f01f526a43a010310501`). The
+This is the unpublished `v32.1-roots.2` candidate, extending published
+[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+on Core v32.1 (`f0de87f040621468b956f01f526a43a010310501`). The
 [port review](roots-v32-port-review.md) accounts for the full released v31
 series through roots.6, main-only differences, source credits and verification
 limits. A version string or local test result does not establish publication,
@@ -32,6 +33,15 @@ monotonic uptime and RAM/cache/index defaults remain in force. Do not copy old
 v31 resource or cache defaults into a new configuration.
 
 ## Stable contracts
+
+The .2 maintenance extension adds same-run verified CI asset sharing and fixes
+replacement of reused legacy-wallet database cursor streams, preserving the
+descriptor/SQLite migration boundary. BIP322 simple message signing supports
+native P2WPKH/P2WSH/P2TR with a complete wallet satisfaction, including supported
+multisig/Miniscript and Taproot key/script paths. It does not support P2SH,
+wrapped SegWit, full signatures or proofs of funds. P2PKH compact signatures
+remain unchanged. See [message proof limits](wallet-privacy.md#sign-and-verify-a-message)
+and the [BIP322 RPC notes](release-notes-bip322.md).
 
 These IDs remain the preservation vocabulary across Core ports. Tests linked
 from the port review prove their exercised cases, not every configuration or

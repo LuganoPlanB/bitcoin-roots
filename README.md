@@ -3,14 +3,16 @@ Bitcoin Roots
 
 Connected to the trunk. Conservative in policy. Neutral in consensus.
 
-This is the unpublished v32.1-roots.1 development candidate, based directly on
-the exact Bitcoin Core v32.1 source. It preserves the released Roots line
-through v31.1-roots.6 and folds its follow-up fixes into the new series.
-Publishing and release tagging are separate from this port. See the
+This is the unpublished v32.1-roots.2 development candidate, extending
+[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
+on the same exact Bitcoin Core v32.1 base. It adds verified shared CI inputs,
+a legacy-wallet cursor fix and BIP322 simple message signatures. The retained
+Roots contracts and historical feature credits remain unchanged.
+Publishing and release tagging are separate gates. See the
 [port review](doc/roots-v32-port-review.md)
 for exact inputs, implementation dispositions and verification gaps.
 The [candidate release notes](contrib/release/release-notes.md) describe migration
-and the expanded address-key export disclosure scope.
+and the message-signing and address-key export boundaries.
 
 What is Bitcoin Roots?
 ----------------------

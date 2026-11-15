@@ -28,6 +28,7 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
 {
     argsman.AddHiddenArgs({
         "-addresstype",
+        "-allow-dangerous-rpc",
         "-avoidpartialspends",
         "-changetype",
         "-consolidatefeerate=<amt>",

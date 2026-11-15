@@ -82,7 +82,7 @@ if(DEFINED CLIENT_VERSION_TAG)
   string(REGEX REPLACE "^v" "" CLIENT_VERSION_STRING "${CLIENT_VERSION_TAG}")
 else()
   # Product version for this unpublished candidate; publication is separate.
-  string(APPEND CLIENT_VERSION_STRING "-roots.1")
+  string(APPEND CLIENT_VERSION_STRING "-roots.2")
 endif()
 
 set(COPYRIGHT_HOLDERS "Plan-B Foundation")

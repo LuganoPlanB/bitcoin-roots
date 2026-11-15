@@ -87,6 +87,28 @@ create PSBT2 by default. Signaling does not guarantee replacement acceptance.
 Review custom change carefully because it can affect address linkage. These
 controls do not add CoinJoin, payjoin or automatic consolidation.
 
+## Sign and verify a message
+
+The v32.1-roots.2 candidate adds BIP322 simple proofs to `signmessage` and
+`verifymessage` for native P2WPKH, P2WSH and P2TR addresses. Descriptor-wallet
+signing requires available local keys/scripts and a complete satisfaction;
+supported paths include multisig/Miniscript and Taproot key/script paths.
+Normal selected-wallet authorization and unlock requirements still apply.
+The dangerous-export startup opt-in does not authorize or gate message signing.
+
+Signing returns `smp` followed by a base64 serialized witness stack.
+Verification accepts prefixed and older unprefixed simple proofs without
+wallet or chain data. Invalid, unsupported or inconclusive proofs return
+`false`; malformed base64 or witness serialization raises error -3.
+
+P2SH/wrapped SegWit, partial proofs, full signatures and proofs of funds are
+unsupported. Simple proofs fix transaction version, locktime and sequence to
+zero; incompatible timelocks cannot be satisfied by waiting. Another script
+branch or Taproot key path may still work. P2PKH compact signatures and the
+legacy-only `signmessagewithprivkey` RPC remain unchanged. A message proof
+does not prove a balance or past payment, and this RPC support does not imply
+a new GUI signing interface or additional Quietproof support.
+
 ## Export a spending key for one address
 
 This v32.1 port preserves the complete released roots.3-through-roots.6
