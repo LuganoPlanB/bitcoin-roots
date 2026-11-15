@@ -1,0 +1,54 @@
+name: Test documentation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and build documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOCS_BASE: /bitcoin-roots/
+    steps:
+      - name: Check out Bitcoin Roots
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: bitcoin-roots
+          persist-credentials: false
+
+      - name: Check out the Plan B Vite theme
+        uses: actions/checkout@v6
+        with:
+          repository: LuganoPlanB/vite-theme
+          ref: b969923b3407fb85a46cf45a8e18385d239cf79e
+          path: vite-theme
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: bitcoin-roots/doc/website/package-lock.json
+
+      - name: Install website dependencies
+        run: npm ci
+        working-directory: bitcoin-roots/doc/website
+
+      - name: Test website
+        run: npm test
+        working-directory: bitcoin-roots/doc/website
+
+      - name: Build website and check static output
+        run: npm run releases:build
+        working-directory: bitcoin-roots/doc/website
