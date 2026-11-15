@@ -296,7 +296,7 @@ suites; L11 audits this entire table and range-diff again at the final candidate
 | S24 | `2b4c8982dd65e87947a085735bdf4455b63ac136` | docs(release): regenerate manuals for v31.1-roots.3 | L10: Supersede roots.3 generated manuals using fresh v32 candidate help, preserving historical source lineage. |
 | S25 | `b8c98a129f141ac5ba077c33b473120f0cd2ece4` | test(wallet): include address key export in fast regressions | L7/L10: Fold exportaddresskey registration in fast regressions/classification; coverage must include later generalized export. |
 | S26 | `59185c317ef80ef289b46c38ba82081b61a1d101` | fix(wallet): compare exported key destinations by type | L7.2: Fold destination type-aware exported-key comparison; preserve regression rather than string-only address matching. |
-| S27 | `fe7cfe976edabc8c8d374b2bbe2bbaf2bef734c1` | docs: inventory mempool policy and cache review contracts | L3/L4/L6/L10: Historical v31 review retained byte-identically; doc/mempool-policy-review.md separates its measurements/defaults from current applied v32 contracts. See the L10 audit correction below. |
+| S27 | `fe7cfe976edabc8c8d374b2bbe2bbaf2bef734c1` | docs: inventory mempool policy and cache review contracts | L3/L4/L6/L10: Historical v31 review retained with only fifteen local href destination repairs; the pinned released document preserves the exact original bytes. doc/mempool-policy-review.md separates its measurements/defaults from current applied v32 contracts. See the L10 audit correction below. |
 | S28 | `bd5422a481aae345cf287bce1c8ab3dc296c20b7` | test: characterize compact reconstruction cache contracts | L6.2: Fold compact extra cache unit/functional characterization, test-only accessors and registered fixtures. |
 | S29 | `e9ddb283303167331fb6f5e76fedbf95ffa2b272` | bench: measure compact reconstruction cache tradeoffs | L6.2/L10: Native microbenchmarks complement the restored isolated exact-Core-versus-Roots multi-cell experiment, not replace it. Explicit v31.1/v32.1 adapters preserve raw samples, instrumentation and controls; no required performance gain. |
 | S30 | `5fa358fbb7ce5e95be8f959888ae25dd70e3b1de` | docs: clarify compact reconstruction cache accounting | L6.2/L10: Fold corrected charged-dynamic-storage/cache accounting explanations; historical 32768 default superseded by S34. |
@@ -1338,9 +1338,13 @@ imply full hits when 128 offers exceed that capacity. Production cache defaults
 are unchanged. Native microbenchmarks and source/unit/compile checks do not
 establish an instrumented experiment run or production performance result.
 
-The S27 policy review and its later released updates are preserved byte-for-byte
-under `doc/historical/mempool-policy-review-v31.1-roots.6.md`. The active
-`doc/mempool-policy-review.md` records that historical/current distinction and
+The S27 policy review and its later released updates are retained under
+`doc/historical/mempool-policy-review-v31.1-roots.6.md` with narrative,
+measurements and attribution unchanged; only fifteen href destinations are
+repaired to resolve in the maintained v32 tree. The pinned released document
+referenced by the active `doc/mempool-policy-review.md` retains the exact original
+bytes and historical link context. That active review records the
+historical/current distinction and
 links the current parsing/effective-policy/subdust and preservation contracts.
 The old 32,768-slot measurements, warmed-vector limitations and unanswered
 questions remain historical. They cannot qualify v32 or justify a default
@@ -1396,8 +1400,10 @@ observable regressions, not merely to historical case totals:
 | Supplemental address export | `ExportAddressKeys`, checked descriptor derivation/MuSig2 provenance and secure key extraction retain the full roots.6 contract, unlock/opt-in boundaries, partial ownership and RPC/Qt secret-history regressions. |
 
 The six previously undisposed S27/S29 tooling/review paths are restored by the
-accepted correction. The historical policy review is byte-identical to the
-released source; its active replacement explicitly separates v31 measurements
+accepted correction. The local historical policy review preserves the released
+narrative, measurements and attribution with only fifteen href destination
+repairs; the pinned released document retains the exact original bytes and link
+context. Its active replacement explicitly separates v31 measurements
 from current contracts. The three S35 platform metadata inputs now retain both
 copyright holders and their correct year ranges, with numeric bundle/resource
 versions unchanged. These are source/configured-preprocessing results; they do
