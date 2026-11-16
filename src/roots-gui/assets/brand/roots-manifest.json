@@ -1,0 +1,42 @@
+{
+  "name": "Bitcoin Roots",
+  "website": "https://plan-b.foundation/bitcoin-roots/",
+  "repository": "https://github.com/LuganoPlanB/bitcoin-roots",
+  "sourceCommit": "ebdc72c0cd25603ddc89026faef9fc7bf5d6a538",
+  "retrievedAt": "2026-10-18",
+  "orange": "#F57C00",
+  "assets": [
+    {
+      "path": "assets/projects/bitcoin-roots/bitcoinroots-logo.svg",
+      "sha256": "ebb631cba80083fafcae44aeeaad0fbb7c4a39a7b3aae3dc27aae02f45b8df01",
+      "source": "https://github.com/LuganoPlanB/bitcoin-roots/blob/ebdc72c0cd25603ddc89026faef9fc7bf5d6a538/src/qt/res/src/bitcoinroots-logo.svg",
+      "transformation": "none"
+    },
+    {
+      "path": "assets/projects/bitcoin-roots/bitcoinroots-logo-black.svg",
+      "sha256": "ead853dec2505a3fcd6c33214bc236095aa75ead680f6dfc2e79e0a95b3075c9",
+      "source": "https://github.com/LuganoPlanB/bitcoin-roots/blob/ebdc72c0cd25603ddc89026faef9fc7bf5d6a538/src/qt/res/src/bitcoinroots-logo.svg",
+      "transformation": "Only replace #F57C00 fill with #000000; preserve geometry and viewBox."
+    },
+    {
+      "path": "assets/projects/bitcoin-roots/bitcoinroots-logo-white.svg",
+      "sha256": "3cbb7367f793bf3671252070b24e8a6541a3c23a2f6b9c4413ff7c193432ee57",
+      "source": "https://github.com/LuganoPlanB/bitcoin-roots/blob/ebdc72c0cd25603ddc89026faef9fc7bf5d6a538/src/qt/res/src/bitcoinroots-logo.svg",
+      "transformation": "Only replace #F57C00 fill with #FFFFFF; preserve geometry and viewBox."
+    },
+    {
+      "path": "assets/projects/bitcoin-roots/bitcoin-roots.lottie.json",
+      "sha256": "b6bd0bd33b6ec03fdd3b59eeac317c2dff4d6731db19ba9998282bb61143b585",
+      "source": "https://github.com/LuganoPlanB/bitcoin-roots/blob/ebdc72c0cd25603ddc89026faef9fc7bf5d6a538/doc/website/content/public/bitcoin-roots.lottie.json",
+      "transformation": "none"
+    }
+  ],
+  "animation": {
+    "format": "Lottie JSON",
+    "width": 512,
+    "height": 512,
+    "framesPerSecond": 60,
+    "durationSeconds": 7.5
+  },
+  "rights": "Original project artwork retains its existing rights. Black and white are fill-only derivatives requested for this brand guide; no new trademark rights are granted."
+}

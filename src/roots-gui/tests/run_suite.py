@@ -18,9 +18,9 @@ from support.runtime import evidence_directory,write_json
 SUITES={
  'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts'}),
  'rpc':('rpc',{'roots_gui.rpc.fake_http','roots_gui.rpc.scratch'}),
- 'ui':('ui',{'roots_gui.engine.preferences','roots_gui.engine.bootstrap',*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
+ 'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker','roots_gui.engine.preferences','roots_gui.engine.bootstrap','roots_gui.engine.appearance','roots_gui.engine.components','roots_gui.engine.privacy','roots_gui.engine.shell','roots_gui.engine.documents','roots_gui.engine.commands','roots_gui.engine.semantics',*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
  'regtest':('regtest',{'roots_gui.regtest.owned'}),
- 'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts'}),
+ 'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts','roots_gui.theme.native_gallery','roots_gui.theme.native_appearance','roots_gui.theme.native_components','roots_gui.theme.native_shell','roots_gui.theme.native_shell_appearance','roots_gui.theme.native_documents','roots_gui.theme.native_commands','roots_gui.theme.native_semantics'}),
  'boundary':('boundary',{'roots_gui.boundary.actual','roots_gui.boundary.rejections','roots_gui.build_contract',*[f'roots_gui.runner.{x}' for x in ['failure','unknown','count','undrained','timeout']]}),
 }
 def main():

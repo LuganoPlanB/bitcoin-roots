@@ -61,3 +61,9 @@ production host/draw code. Ordinary CTest build metadata checks do not claim
 native qualification. The [visual runner](render-harness.md) reproduces this matrix and compares actual pixels against an explicitly inspected external baseline.
 
 Mapped native decoration extents are cached rather than queried repeatedly while minimized; mapped DPI changes refresh that observation. The renderer still uses actual client/framebuffer sizes independently.
+
+The application-owned [Linux accessibility bridge](linux-accessibility.md) uses
+the same native owner and immutable publications. Its real AT-SPI bus, Orca
+braille-monitor journey and failure/teardown evidence are separate from the
+historical bootstrap matrix above. Speech/audio, hardware braille, complete IME
+and physical/mixed-DPI/platform follow-ons are not implied by monitor evidence.

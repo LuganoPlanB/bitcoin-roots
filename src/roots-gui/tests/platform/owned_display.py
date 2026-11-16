@@ -5,6 +5,7 @@ import sys
 sys.dont_write_bytecode=True
 import argparse
 import ctypes
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -19,12 +20,31 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from support.runtime import validated_scratch,evidence_directory
 
 
+def reserve_display(scratch):
+    # Keep the reservation inode and lock until Xvfb has exited. Unlinking a
+    # lock file could allow two owners to lock different inodes for one number.
+    for number in range(711,811):
+        path=Path(scratch)/('owned-x-display-'+str(number)+'.lock')
+        fd=os.open(path,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+        try:
+            if os.fstat(fd).st_uid!=os.getuid():raise RuntimeError('foreign display reservation')
+            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            socket=Path('/tmp/.X11-unix')/('X'+str(number))
+            if socket.exists() or Path('/tmp/.X'+str(number)+'-lock').exists():
+                os.close(fd);continue
+            return number,socket,fd
+        except BlockingIOError:os.close(fd)
+        except BaseException:os.close(fd);raise
+    raise RuntimeError('no free owned display')
+
+
 def main():
     def interrupted(*_):raise RuntimeError('owned display interrupted')
     signal.signal(signal.SIGTERM,interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--dpi', type=int, default=96)
+    parser.add_argument('--timeout',type=int,default=120)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
@@ -43,10 +63,7 @@ def main():
     if literal and Path(literal).resolve()==scratch_root:scratch_root=literal
     with tempfile.TemporaryDirectory(prefix='roots-native-', dir=scratch_root) as scratch:
         folder = Path(scratch)
-        for number in range(711, 811):
-            socket = Path('/tmp/.X11-unix')/('X'+str(number))
-            if not socket.exists() and not Path('/tmp/.X'+str(number)+'-lock').exists(): break
-        else: raise RuntimeError('no free owned display')
+        number,socket,reservation=reserve_display(scratch_root)
         auth = folder/'Xauthority'
         def field(value): return struct.pack('!H', len(value))+value
         auth.write_bytes(struct.pack('!H', 65535)+field(b'')+field(str(number).encode())+field(b'MIT-MAGIC-COOKIE-1')+field(secrets.token_bytes(16)))
@@ -92,7 +109,7 @@ def main():
                     time.sleep(.02)
             finally: xlib.XCloseDisplay(display)
             child=subprocess.Popen(command,env=env,stdout=logs[2],stderr=subprocess.STDOUT)
-            try:child.wait(timeout=120)
+            try:child.wait(timeout=args.timeout)
             except subprocess.TimeoutExpired:
                 child.kill();child.wait(timeout=5);record['timedOut']=True
             record['result']=child.returncode
@@ -136,6 +153,7 @@ def main():
             record['auth'] = 'ephemeral local test cookie removed with owned scratch; no cookie logged'
             record['display'] = env['DISPLAY']
             (args.output/'processes.json').write_text(json.dumps(record, indent=2)+'\n')
+            os.close(reservation)
     return record['result'] if record['result'] is not None else 1
 
 

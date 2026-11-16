@@ -2,11 +2,15 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "ui/bootstrap.h"
+#include "platform/linux/accessibility.h"
+#include "platform/input.h"
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <vector>
 struct GLFWwindow;
 namespace roots::gui::platform {
 struct NativeOptions {
@@ -14,6 +18,12 @@ struct NativeOptions {
     bool dark{false};
     float font_scale{1};
     std::filesystem::path font_directory;
+    std::filesystem::path appearance_file; // Empty for isolated callers/captures.
+    float fixed_delta_seconds{}; // Optional deterministic presentation clock; 0 uses native time.
+    // Optional host adapter; empty uses the read-only desktop integration.
+    // Supplying a reader does not manufacture UI flags or change OS settings.
+    std::function<std::optional<bool>()> system_appearance_reader;
+    ui::components::SemanticExchange* accessibility{}; // Owner-lifetime association, never a borrowed tree.
 };
 struct NativeFrame {
     int iteration{}, rendered_frames{}, width{}, height{}, framebuffer_width{}, framebuffer_height{};
@@ -29,7 +39,10 @@ struct NativeFrame {
 };
 struct NativeTeardown {
     bool renderer_cleared{}, platform_cleared{}, textures_released{}, imgui_cleared{}, context_cleared{};
+    bool accessibility_cleared{true};
+    bool input_cleared{true};
 };
+struct DroppedPaths { std::vector<std::string> paths;double x{},y{}; };
 class NativeHost;
 class NativeObserver {
 public:
@@ -51,7 +64,13 @@ public:
     int Run();
     GLFWwindow* Window(); // Borrowed host-thread-only handle, never transferred.
     void RequestClose();
+    std::vector<DroppedPaths> TakeDroppedPaths(); // Owned copy, drained only on host thread.
     void SetFontScale(float scale);
+    bool SetAppearance(int choice); // Light=0, Dark=1, System=2; acknowledges actual saved preference.
+    ui::AppearanceStatus AppearanceState() const; // Current owner-thread snapshot, not mutable host flags.
+    AccessibilityStatus AccessibilityState() const;
+    NativeInput& Input();
+    InputStatus InputState() const;
     void RecreateRendererResources(); // Must be outside frame submission on the owning thread.
     const std::string& Renderer() const;
 private:

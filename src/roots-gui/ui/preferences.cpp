@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/preferences.h"
+#include "ui/theme/theme.h"
 #include <imkit/imkit.h>
 #include <algorithm>
 namespace roots::gui::ui {
@@ -13,7 +14,7 @@ PreferenceFacts DrawPreferences(PreferencePanel& state, PreferenceRequests& serv
     ImGui::InputInt("###refresh", &state.draft.refresh_seconds);
     ImGui::Checkbox("Hide balances###hide-balances", &state.draft.hide_balances);
     ImGui::BeginDisabled(!ValidPreferences(state.draft));
-    if (imkit::ActionButton("Save###save", imkit::ActionVariant::Primary, {}, {&theme})) {
+    if (theme::ActionButton("Save###save", imkit::ActionVariant::Primary, {}, theme)) {
         state.save_rejected = !SavePreferences(state.draft, service);
         if (!state.save_rejected) state.saved = state.draft;
     }
@@ -21,7 +22,7 @@ PreferenceFacts DrawPreferences(PreferencePanel& state, PreferenceRequests& serv
     facts.save={a.x,a.y,b.x,b.y};facts.save_visible=ImGui::IsItemVisible();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (imkit::ActionButton("Cancel###cancel", imkit::ActionVariant::Secondary, {}, {&theme})) {
+    if (theme::ActionButton("Cancel###cancel", imkit::ActionVariant::Secondary, {}, theme)) {
         CancelPreferences(state.draft, state.saved, service);
         state.save_rejected = false;
     }

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/preferences.h"
 #include "ui/bootstrap.h"
+#include "ui/theme/theme.h"
 #include <imkit/imkit.h>
 #include <imgui_test_engine/imgui_te_engine.h>
 #include <imgui_test_engine/imgui_te_context.h>
@@ -18,8 +19,20 @@ struct FakePreferences final : PreferenceRequests {
     void Cancel() override { ++cancels; }
 };
 struct Fixture { ui::PreferencePanel panel; FakePreferences service; };
+void RegisterSemanticTests(ImGuiTestEngine*);
+void RegisterComponentTests(ImGuiTestEngine*);
+void RegisterPrivacyTests(ImGuiTestEngine*);
+void RegisterCommandTests(ImGuiTestEngine*);
+void RegisterDocumentTests(ImGuiTestEngine*);
+void RegisterShellTests(ImGuiTestEngine*);
 void RegisterHeadlessTests(ImGuiTestEngine* engine)
 {
+    RegisterSemanticTests(engine);
+    RegisterComponentTests(engine);
+    RegisterPrivacyTests(engine);
+    RegisterShellTests(engine);
+    RegisterDocumentTests(engine);
+    RegisterCommandTests(engine);
     auto* test = IM_REGISTER_TEST(engine, "roots.preferences", "save_cancel_requests");
     test->SetVarsDataType<Fixture>();
     test->GuiFunc = [](ImGuiTestContext* ctx) {
@@ -76,6 +89,24 @@ void RegisterHeadlessTests(ImGuiTestEngine* engine)
         ctx->SetRef("###roots-bootstrap");
         ctx->ItemClick("**/###bootstrap-close");
         IM_CHECK(s.closed);
+    };
+    struct AppearanceFixture { ui::BootstrapState state; std::vector<int> requests; };
+    test=IM_REGISTER_TEST(engine,"roots.appearance","production_choice_requests");
+    test->SetVarsDataType<AppearanceFixture>();
+    test->GuiFunc=[](ImGuiTestContext* ctx) {
+        auto& s=ctx->GetVars<AppearanceFixture>();s.state.show_appearance=true;
+        const auto theme=ui::MakeBootstrapTheme({});ui::theme::Scope scope(theme);
+        const auto facts=ui::DrawBootstrap(theme,{},s.state);
+        if (facts.appearance_requested>=0) s.requests.push_back(facts.appearance_requested);
+    };
+    test->TestFunc=[](ImGuiTestContext* ctx) {
+        auto& s=ctx->GetVars<AppearanceFixture>();ctx->SetRef("###roots-bootstrap");
+        ctx->ComboClick("###appearance/Dark");
+        ctx->ComboClick("###appearance/System");
+        ctx->ComboClick("###appearance/Light");
+        IM_CHECK_EQ(s.requests.size(),3);
+        IM_CHECK_EQ(s.requests[0],1);IM_CHECK_EQ(s.requests[1],2);IM_CHECK_EQ(s.requests[2],0);
+        IM_CHECK_EQ(s.state.appearance_choice,0);
     };
     test = IM_REGISTER_TEST(engine, "runner.failure", "intentional_assertion");
     test->TestFunc = [](ImGuiTestContext* ctx) { IM_CHECK(false && "injected assertion failure"); };

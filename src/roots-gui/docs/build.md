@@ -85,3 +85,9 @@ Public-data provider limits and
 explicit signing/broadcast boundaries remain unchanged.
 
 All six public test targets are mapped in [render-harness.md](render-harness.md). Full CTest additionally requires an explicit inspected visual baseline and native capability; absence returns unavailable rather than a passing skip.
+
+Linux accessibility additionally links the installed gio-2.0 SDK (>=2.66).
+Real-bus tests require the installed AT-SPI registry, Python GI/Atspi typelib,
+D-Bus and existing owned-display tools. The separate Orca gate requires an
+installed working screen reader with its supported GTK braille monitor; missing capability fails
+explicitly. See [Linux accessibility](linux-accessibility.md).

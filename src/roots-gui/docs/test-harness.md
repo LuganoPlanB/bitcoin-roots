@@ -90,3 +90,56 @@ All CTest cases have labels and bounded waits; use `ctest --no-tests=error
 establish simulated interactions, not framebuffer/native input/platform facts.
 The native evidence in [native-platform.md](native-platform.md) remains separate,
 and the current visual runner reproduces its full bootstrap matrix.
+
+## Wallet theme gates
+
+`roots_gui.theme.contracts` checks every specified light/dark role, actual
+source-over contrast, appearance file round trips/failure reporting, fresh DPI
+derivation and exact nested ImKit style restoration. `roots_gui.theme.assets`
+checks reviewed JSON/SVG hashes, proportions and retained notices.
+`roots_gui.engine.appearance` drives the production bootstrap's Light/Dark/System
+combo and verifies typed host requests. These join the exact public UI selector.
+
+On Linux, `roots_gui.theme.native_gallery` captures production `DrawThemeGallery`
+at 1200x820/960x640, both themes, 100/150/200% scale, and four real input states.
+It checks 48 real primary-fill RGB samples against the specified rest/hover/
+pressed palette, all primary bounds and teardown. The scrolling inspection area
+keeps the bottom action visible at 200%. `roots_gui.theme.native_appearance`
+uses a disposable GSettings keyfile under the owned desktop's isolated XDG
+directory: live System Light/Dark/Light, independent host reload, and explicit
+Dark against a Light desktop. These are three native journeys, not a universal
+desktop-provider or accessibility claim. Both native tests join the public
+visual selector and retain unique manifests, exact commands/times, source/font/
+binary/capture hashes and process-settlement records through `native_runner.py`.
+
+Native gallery focus checks require Continue itself focused and keyboard
+navigation visible, after bounded real Tab traversal from the label input;
+global `NavVisible` alone cannot pass. The production child shares navigation
+scope with the footer. A separate native negative first reaches Continue, then
+Tabs away and must return exactly one target-focus assertion failure while
+global navigation remains visible. Its observed failure/teardown is retained
+separately from the 48 positive scenarios.
+
+For all twelve actual focused captures, `focus_pixels.py` measures the clear
+background gap, integrated antialiased ring thickness and contrast directly
+from framebuffer scanlines. The checks require a scaled minimum 2px gap,
+scaled 2px effective stroke and 3:1 contrast. Retained original collapsed-gap
+captures fail this checker. `roots_gui.theme.focus_checker` contains nine
+synthetic signal fixtures, including collapsed-gap and wrong-target rejection;
+these validate the checker and never count as native application journeys.
+
+## Shared component gates
+
+The public UI selector includes `roots_gui.engine.components`, whose nine
+selected Test Engine cases drive the production shared controls and validate
+exact command values, Enter/blur, rejected writes, stable selection IDs,
+disabled actions and dialog focus return. The native visual selector also
+includes `roots_gui.theme.native_components`: 132 actual rendered fixture scenes,
+including twelve native full-value Copy requests. See [components.md](components.md)
+for contracts, API fallback reasons, fixture boundaries and evidence layers.
+
+The UI selector also runs five `roots.privacy` cases and twenty snapshot
+checker probes. The native extension clicks actual privacy/reduced-motion
+controls and checks 132 presentation/annotation snapshots, including 36 hidden
+scenes with no chart samples. See [amount-privacy.md](amount-privacy.md) for
+explicit reveal for review, borrowed-frame lifetime and native accessibility limits.

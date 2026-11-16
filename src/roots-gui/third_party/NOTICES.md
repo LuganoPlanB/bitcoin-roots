@@ -105,3 +105,12 @@ lock binds the unchanged manifest and original upstream archive/revision pins.
 Configure extracts only into an external build tree and fetches nothing. No
 filename/include adaptation or license change is applied. None of the engine is
 linked into roots-gui.
+
+## Installed Linux accessibility SDK and protocol
+
+The application-owned adapter links the system GIO/GLib SDK (LGPL-2.1-or-later);
+no GLib runtime source is bundled. AT-SPI2 D-Bus public interface signatures
+follow GNOME at-spi2-core 2.56.2 protocol documentation. Application declarations
+are maintained separately from the unchanged ImKit archive. The reference XML
+and source URLs/hashes are retained with execution evidence, not shipped as
+vendor code. System-library license obligations remain applicable to distribution.

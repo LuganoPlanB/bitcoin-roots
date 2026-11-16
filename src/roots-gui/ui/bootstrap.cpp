@@ -1,42 +1,13 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/bootstrap.h"
+#include "ui/theme/theme.h"
 #include <imkit/imkit.h>
 #include <algorithm>
 namespace roots::gui::ui {
-namespace {
-ImVec4 Color(unsigned int rgb, float alpha = 1)
-{
-    return {float((rgb >> 16) & 255) / 255, float((rgb >> 8) & 255) / 255, float(rgb & 255) / 255, alpha};
-}
-}
 imkit::Theme MakeBootstrapTheme(const BootstrapAppearance& appearance)
 {
-    auto theme = imkit::MakePrecisionTheme(appearance.dark ? imkit::ColorScheme::Dark : imkit::ColorScheme::Light);
-    const float scale = appearance.font_scale * appearance.dpi_scale;
-    auto& s = theme.semantic;
-    s.canvas = Color(appearance.dark ? 0x171717 : 0xFFFEFA);
-    s.surface = Color(appearance.dark ? 0x211D1D : 0xFCFCFC);
-    s.surfaceRaised = Color(appearance.dark ? 0x292424 : 0xF3F8FD);
-    s.overlay = s.surface;
-    s.text = Color(appearance.dark ? 0xFFFFFF : 0x030B20);
-    s.textSecondary = Color(appearance.dark ? 0xFFFFFF : 0x030B20, .72F);
-    s.border = Color(appearance.dark ? 0x8A7F7F : 0x74849A);
-    s.accent = Color(appearance.dark ? 0xFFFFFF : 0x082952); // Primary action role.
-    s.onAccent = Color(appearance.dark ? 0x171717 : 0xFFFEFA);
-    theme.typography = {12 * scale, 14 * scale, 14 * scale, 20 * scale, 20 * scale, 13 * scale};
-    theme.layout.controlHeight = 32 * scale;
-    theme.layout.windowPaddingX = theme.layout.windowPaddingY = 24 * scale;
-    theme.layout.horizontalPadding = 12 * scale;
-    theme.layout.spacingX = theme.layout.spacingY = 8 * scale;
-    theme.radius = {4 * scale, 6 * scale, 8 * scale};
-    theme.stroke = {1, 2 * scale};
-    theme.motion.enabled = false;
-    theme.motion.reducedMotion = true;
-    // All dimensions derive once from immutable base tokens. ApplyTheme uses
-    // scale 1; framebuffer density is independently supplied by the backend.
-    imkit::ResolveTheme(theme);
-    return theme;
+    return theme::Make(appearance.dark, appearance.font_scale * appearance.dpi_scale);
 }
 BootstrapFacts DrawBootstrap(const imkit::Theme& theme, const BootstrapAppearance& appearance, BootstrapState& state)
 {
@@ -52,6 +23,13 @@ BootstrapFacts DrawBootstrap(const imkit::Theme& theme, const BootstrapAppearanc
     ImGui::TextUnformatted("Bitcoin Roots");
     imkit::PopTextRole();
     ImGui::TextColored(theme.semantic.textSecondary, "RPC wallet");
+    if (state.show_appearance) {
+        ImGui::SetNextItemWidth(160 * scale);
+        if (ImGui::Combo("Appearance###appearance", &state.appearance_choice, "Light\0Dark\0System\0"))
+            facts.appearance_requested = state.appearance_choice;
+        if (state.appearance_error) ImGui::TextUnformatted("Appearance could not be saved. Choose again to retry.");
+        if (state.system_unknown) ImGui::TextUnformatted("System appearance is unavailable; using Light.");
+    }
     const auto available = ImGui::GetContentRegionAvail();
     const float footer = 40 * scale;
     const float card_width = std::min(450 * scale, available.x);
@@ -68,8 +46,8 @@ BootstrapFacts DrawBootstrap(const imkit::Theme& theme, const BootstrapAppearanc
         const float button_height = std::max(32 * scale, ImGui::GetFrameHeight());
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::max(0.F, content.y - button_height));
         if (state.initial_focus) ImGui::SetKeyboardFocusHere();
-        facts.close_requested = imkit::ActionButton("Close###bootstrap-close", imkit::ActionVariant::Primary,
-                                                   {std::min(140 * scale, content.x), button_height}, {&theme});
+        facts.close_requested = theme::ActionButton("Close###bootstrap-close", imkit::ActionVariant::Primary,
+                                                   {std::min(140 * scale, content.x), button_height}, theme);
         facts.close_visible = ImGui::IsItemVisible();
         facts.close_focused = ImGui::IsItemFocused();
         const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();

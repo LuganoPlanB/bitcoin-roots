@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "name": "Plan B Foundation",
+  "designSystem": "Civic Digital Commons",
+  "defaultTheme": "light",
+  "themeSelector": "html[data-theme=dark]",
+  "tokenFormat": "CSS custom property name to CSS string; dark overrides light; not DTCG",
+  "resources": {
+    "designSystem": "DESIGN.md",
+    "brief": "docs/brand-brief.md",
+    "modelEntry": "llms.txt",
+    "tokens": "tokens/tokens.json",
+    "css": "tokens/tokens.css",
+    "layout": "tokens/layout.css",
+    "provenance": "provenance.json",
+    "assetNotes": "assets/README.md",
+    "slideGuide": "slides/README.md",
+    "slideStarter": "slides/planb-starter.pptx",
+    "slideTemplate": "slides/planb-template.potx",
+    "slidePreview": "slides/planb-preview.pdf",
+    "slideStarterLight": "slides/planb-starter-light.pptx",
+    "slideTemplateLight": "slides/planb-template-light.potx",
+    "slidePreviewLight": "slides/planb-preview-light.pdf",
+    "slideStarterDark": "slides/planb-starter-dark.pptx",
+    "slideTemplateDark": "slides/planb-template-dark.potx",
+    "slidePreviewDark": "slides/planb-preview-dark.pdf",
+    "bitcoinRootsAssets": "assets/projects/bitcoin-roots/manifest.json"
+  },
+  "roles": {
+    "canvas": "--planb-color-canvas",
+    "text": "--planb-color-text",
+    "primaryAction": "--planb-color-accent-strong",
+    "structure": "--planb-color-accent",
+    "exceptionalSignal": "--planb-color-highlight",
+    "energy": "--planb-gradient-rainbow"
+  },
+  "rules": [
+    "Prefer solid-color headings and readable text on solid grounds.",
+    "Use one exceptional signal: gold or a coordinated electric gradient.",
+    "Preserve original vector proportions, view boxes and intrinsic colors.",
+    "Do not imply partner endorsement or invent Foundation claims.",
+    "Honor keyboard access, visible focus and reduced motion."
+  ],
+  "newGeometry": [
+    "assets/shapes/signal.svg",
+    "assets/shapes/energy-band.svg"
+  ],
+  "rights": "Original assets retain existing rights; no new blanket trademark or third-party license is granted.",
+  "projects": [
+    {
+      "name": "Bitcoin Roots",
+      "website": "https://plan-b.foundation/bitcoin-roots/",
+      "manifest": "assets/projects/bitcoin-roots/manifest.json"
+    }
+  ]
+}
