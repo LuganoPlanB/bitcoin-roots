@@ -52,3 +52,5 @@ jobs:
       - name: Build website and check static output
         run: npm run releases:build
         working-directory: bitcoin-roots/doc/website
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

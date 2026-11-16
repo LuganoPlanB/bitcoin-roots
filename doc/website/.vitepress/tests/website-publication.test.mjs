@@ -242,7 +242,14 @@ test("documentation test workflow runs on ordinary pull requests with read-only 
     assert.ok(trigger);
     assert.equal(trigger[1].trim(), "pull_request:");
     assert.match(workflow, /^permissions:\n  contents: read\n/m);
-    assert.doesNotMatch(workflow, /^[\t ]+permissions:|\bwrite\b|\benvironment:|secrets[.\[]|github\.token/mi);
+    assert.doesNotMatch(workflow, /^[\t ]+permissions:|\bwrite\b|\benvironment:|secrets[.\[]/mi);
+    const steps = workflow.split(/\n      - name: /).slice(1);
+    const build = steps.find((step) => step.startsWith("Build website and check static output\n"));
+    assert.ok(build);
+    assert.match(build, /\n        env:\n          GITHUB_TOKEN: \$\{\{ github\.token \}\}\n?$/);
+    assert.equal((workflow.match(/github\.token/g) ?? []).length, 1);
+    assert.equal((workflow.match(/GITHUB_TOKEN/g) ?? []).length, 1);
+    for (const step of steps.filter((step) => step !== build)) assert.doesNotMatch(step, /GITHUB_TOKEN|github\.token/);
     assert.doesNotMatch(workflow, /pages:|id-token:|configure-pages|upload-.*artifact|deploy-pages|website-publication\.mjs|gh release/);
     assert.match(workflow, /group: docs-tests-\$\{\{ github\.event\.pull_request\.number \}\}/);
     assert.match(workflow, /cancel-in-progress: true/);
