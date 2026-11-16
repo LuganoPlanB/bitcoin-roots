@@ -1,0 +1,4562 @@
+{
+  "schema": 2,
+  "delivery": "Linux RPC wallet",
+  "registration_status": "planned screen/service contracts; no rendered UI or implemented service claim",
+  "states": [
+    "normal",
+    "empty",
+    "loading",
+    "error",
+    "stale",
+    "offline",
+    "locked",
+    "unavailable"
+  ],
+  "sections": [
+    {
+      "section": 1,
+      "owner": "contracts-providers",
+      "fixture": "profile-rpc",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "section": 2,
+      "owner": "shell",
+      "fixture": "shell-wallet-tabs",
+      "acceptance": [
+        "AC01",
+        "AC02"
+      ]
+    },
+    {
+      "section": 3,
+      "owner": "theme",
+      "fixture": "theme-density",
+      "acceptance": [
+        "AC17"
+      ]
+    },
+    {
+      "section": 4,
+      "owner": "shell",
+      "fixture": "shell-commands",
+      "acceptance": [
+        "AC02"
+      ]
+    },
+    {
+      "section": 5,
+      "owner": "wallet-setup",
+      "fixture": "descriptor-wallet",
+      "acceptance": [
+        "AC01",
+        "AC04",
+        "AC19"
+      ]
+    },
+    {
+      "section": 6,
+      "owner": "history",
+      "fixture": "wallet-history",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "section": 7,
+      "owner": "funding",
+      "fixture": "funded-draft",
+      "acceptance": [
+        "AC06",
+        "AC07"
+      ]
+    },
+    {
+      "section": 8,
+      "owner": "receive",
+      "fixture": "reserved-receive",
+      "acceptance": [
+        "AC04"
+      ]
+    },
+    {
+      "section": 9,
+      "owner": "addresses",
+      "fixture": "address-inventory",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "section": 10,
+      "owner": "coins",
+      "fixture": "coin-inventory",
+      "acceptance": [
+        "AC05"
+      ]
+    },
+    {
+      "section": 11,
+      "owner": "wallet-settings",
+      "fixture": "descriptor-policy",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "section": 12,
+      "owner": "workbench",
+      "fixture": "review-identity",
+      "acceptance": [
+        "AC08",
+        "AC09"
+      ]
+    },
+    {
+      "section": 13,
+      "owner": "signing-broadcast",
+      "fixture": "approved-psbt",
+      "acceptance": [
+        "AC10",
+        "AC11",
+        "AC12",
+        "AC13"
+      ]
+    },
+    {
+      "section": 14,
+      "owner": "preferences",
+      "fixture": "connection-profile",
+      "acceptance": [
+        "AC14"
+      ]
+    },
+    {
+      "section": 15,
+      "owner": "tools",
+      "fixture": "utility-workspace",
+      "acceptance": [
+        "AC15"
+      ]
+    },
+    {
+      "section": 16,
+      "owner": "offline",
+      "fixture": "offline-public-data",
+      "acceptance": [
+        "AC09",
+        "AC14"
+      ]
+    },
+    {
+      "section": 17,
+      "owner": "accessibility",
+      "fixture": "keyboard-semantic-tree",
+      "acceptance": [
+        "AC02",
+        "AC17"
+      ]
+    },
+    {
+      "section": 18,
+      "owner": "persistence",
+      "fixture": "locked-workspace",
+      "acceptance": [
+        "AC16",
+        "AC18"
+      ]
+    },
+    {
+      "section": 19,
+      "owner": "recovery",
+      "fixture": "interrupted-operation",
+      "acceptance": [
+        "AC19"
+      ]
+    },
+    {
+      "section": 20,
+      "owner": "release",
+      "fixture": "acceptance-journeys",
+      "acceptance": [
+        "AC20"
+      ]
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "AC01",
+      "owner": "L2.4-L2.6/L3.4-L3.6",
+      "test": "wallet_tab_identity_and_restore",
+      "fixture": "shell-wallet-tabs"
+    },
+    {
+      "id": "AC02",
+      "owner": "L2.4-L2.9",
+      "test": "keyboard_workspace_navigation",
+      "fixture": "keyboard-semantic-tree"
+    },
+    {
+      "id": "AC03",
+      "owner": "L3.7-L3.12",
+      "test": "history_address_coin_consistency",
+      "fixture": "wallet-history"
+    },
+    {
+      "id": "AC04",
+      "owner": "L4.1-L4.3/L6.10-L6.12",
+      "test": "receive_address_and_device_evidence",
+      "fixture": "reserved-receive"
+    },
+    {
+      "id": "AC05",
+      "owner": "L3.10-L3.12/L5.1-L5.3",
+      "test": "selected_outpoints_enter_send",
+      "fixture": "coin-inventory"
+    },
+    {
+      "id": "AC06",
+      "owner": "L5.1-L5.6",
+      "test": "funding_fee_and_recipient_invariants",
+      "fixture": "funded-draft"
+    },
+    {
+      "id": "AC07",
+      "owner": "L5.1-L5.3/L6.1-L6.3",
+      "test": "funding_never_signs_implicitly",
+      "fixture": "funded-draft"
+    },
+    {
+      "id": "AC08",
+      "owner": "L5.7-L5.9/L6.1-L6.3",
+      "test": "review_approval_identity_revocation",
+      "fixture": "review-identity"
+    },
+    {
+      "id": "AC09",
+      "owner": "L4.7-L4.9/L6.1-L6.3",
+      "test": "offline_psbt_roundtrip",
+      "fixture": "offline-public-data"
+    },
+    {
+      "id": "AC10",
+      "owner": "L6.1-L6.3",
+      "test": "per_input_signing_completion",
+      "fixture": "approved-psbt"
+    },
+    {
+      "id": "AC11",
+      "owner": "L6.1-L6.6",
+      "test": "finalization_actual_bytes_and_submission",
+      "fixture": "approved-psbt"
+    },
+    {
+      "id": "AC12",
+      "owner": "L6.4-L6.6",
+      "test": "broadcast_timeout_same_transaction",
+      "fixture": "interrupted-operation"
+    },
+    {
+      "id": "AC13",
+      "owner": "L3.7-L3.9/L6.4-L6.9",
+      "test": "replacement_conflict_and_reorg",
+      "fixture": "wallet-history"
+    },
+    {
+      "id": "AC14",
+      "owner": "L3.1-L3.3/L3.7-L3.9/L4.7-L4.9",
+      "test": "offline_cache_and_reconnect_provenance",
+      "fixture": "offline-public-data"
+    },
+    {
+      "id": "AC15",
+      "owner": "L3.4-L3.6/L6.10-L6.12/L7.7-L7.9",
+      "test": "exchange_metadata_recovery",
+      "fixture": "utility-workspace"
+    },
+    {
+      "id": "AC16",
+      "owner": "L3.4-L3.6/L6.1-L6.3",
+      "test": "lock_epoch_rejects_late_signatures",
+      "fixture": "locked-workspace"
+    },
+    {
+      "id": "AC17",
+      "owner": "L2.1-L2.3/L8.1-L8.3",
+      "test": "theme_accessibility_visual_matrix",
+      "fixture": "theme-density"
+    },
+    {
+      "id": "AC18",
+      "owner": "L1.1-L1.3/L7.10-L7.12",
+      "test": "capability_profile_and_domain_contract",
+      "fixture": "profile-rpc"
+    },
+    {
+      "id": "AC19",
+      "owner": "L4.1-L4.3/L7.7-L7.9",
+      "test": "interrupted_wallet_operation_reconciliation",
+      "fixture": "interrupted-operation"
+    },
+    {
+      "id": "AC20",
+      "owner": "L7.10-L7.12/L8.4-L8.6",
+      "test": "linux_release_acceptance_matrix",
+      "fixture": "acceptance-journeys"
+    }
+  ],
+  "fixtures": [
+    "profile-rpc",
+    "shell-wallet-tabs",
+    "theme-density",
+    "shell-commands",
+    "descriptor-wallet",
+    "wallet-history",
+    "funded-draft",
+    "reserved-receive",
+    "address-inventory",
+    "descriptor-policy",
+    "coin-inventory",
+    "review-identity",
+    "approved-psbt",
+    "connection-profile",
+    "utility-workspace",
+    "offline-public-data",
+    "keyboard-semantic-tree",
+    "locked-workspace",
+    "interrupted-operation",
+    "acceptance-journeys"
+  ],
+  "action_groups": [
+    {
+      "fixture": "shell-wallet-tabs",
+      "actions": [
+        "Move Tab Left",
+        "Move Tab Right",
+        "Close Other Tabs",
+        "Close All Tabs",
+        "Close Tab",
+        "Quit",
+        "Separate Wallet Windows"
+      ],
+      "owner": "workspace",
+      "support": "required",
+      "effect": "local-session",
+      "transition": "open documents -> reordered/closed after unsaved confirmation",
+      "acceptance": [
+        "AC01",
+        "AC02"
+      ]
+    },
+    {
+      "fixture": "descriptor-wallet",
+      "actions": [
+        "New Wallet",
+        "Open Wallet",
+        "Import Wallet",
+        "Apply Wallet Settings"
+      ],
+      "owner": "wallet-service",
+      "support": "required",
+      "effect": "stateful-rpc",
+      "transition": "validated request -> pending -> observed wallet or uncertain; explicit create/load/import/rescan; no blind retry",
+      "acceptance": [
+        "AC01",
+        "AC19"
+      ]
+    },
+    {
+      "fixture": "descriptor-policy",
+      "actions": [
+        "Revert Wallet Settings"
+      ],
+      "owner": "wallet-settings",
+      "support": "required",
+      "effect": "local-edit",
+      "transition": "edited public policy -> last applied policy; no RPC mutation",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "fixture": "descriptor-policy",
+      "actions": [
+        "Export Wallet",
+        "Rename Wallet",
+        "Set Wallet Icon",
+        "Delete Wallet",
+        "Edit Wallet Label"
+      ],
+      "owner": "metadata-service",
+      "support": "required",
+      "effect": "local-metadata",
+      "transition": "workspace -> explicit export/metadata update; deletion separately confirmed, no daemon disk deletion",
+      "acceptance": [
+        "AC15",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "review-identity",
+      "actions": [
+        "Open Transaction File",
+        "Open Transaction Text",
+        "Open Transaction QR",
+        "Save Transaction",
+        "Save PSBT",
+        "Show Transaction QR",
+        "Show PSBT QR",
+        "Transaction Hex",
+        "Review Transaction"
+      ],
+      "owner": "document-protocol-service",
+      "support": "required",
+      "effect": "public-document",
+      "transition": "classified input -> independent document -> inspect/review/export; no signing or submission",
+      "acceptance": [
+        "AC08",
+        "AC09"
+      ]
+    },
+    {
+      "fixture": "review-identity",
+      "actions": [
+        "Open Transaction ID"
+      ],
+      "owner": "rpc-document-service",
+      "support": "required",
+      "effect": "rpc-observation",
+      "transition": "explicit txid -> available wallet/node transaction or unknown/pruned; no mutation",
+      "acceptance": [
+        "AC08",
+        "AC14"
+      ]
+    },
+    {
+      "fixture": "shell-commands",
+      "actions": [
+        "Transactions",
+        "Send",
+        "Receive",
+        "Addresses",
+        "UTXOs",
+        "Settings",
+        "Go To Section",
+        "Search Current",
+        "Search All",
+        "Summaries",
+        "Loading Log"
+      ],
+      "owner": "workspace",
+      "support": "required",
+      "effect": "presentation",
+      "transition": "current wallet/document -> selected section/search/view",
+      "acceptance": [
+        "AC02",
+        "AC03"
+      ]
+    },
+    {
+      "fixture": "theme-density",
+      "actions": [
+        "BTC Units",
+        "Sats Units",
+        "Automatic Units",
+        "Decimal Format",
+        "Address Grouping",
+        "Hide Empty Used Addresses",
+        "System Theme",
+        "Light Theme",
+        "Dark Theme",
+        "Hide Amounts",
+        "Tray"
+      ],
+      "owner": "preferences-service",
+      "support": "required",
+      "effect": "local-preferences",
+      "transition": "semantic display -> preview -> persisted preferences",
+      "acceptance": [
+        "AC16",
+        "AC17"
+      ]
+    },
+    {
+      "fixture": "locked-workspace",
+      "actions": [
+        "Lock Current",
+        "Lock All"
+      ],
+      "owner": "privacy-lock-service",
+      "support": "required",
+      "effect": "local-lock",
+      "transition": "epoch increment; sensitive presentation removed; late results rejected; daemon request may finish",
+      "acceptance": [
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "connection-profile",
+      "actions": [
+        "Preferences",
+        "Switch Server",
+        "Test Connection",
+        "Apply Server Settings",
+        "Refresh",
+        "Restart GUI With Profile"
+      ],
+      "owner": "connection-service",
+      "support": "required",
+      "effect": "rpc-observation",
+      "transition": "edited profile -> test/apply -> new backend session; no daemon launch/restart",
+      "acceptance": [
+        "AC14"
+      ]
+    },
+    {
+      "fixture": "reserved-receive",
+      "actions": [
+        "Next Receive Address"
+      ],
+      "owner": "receive-service",
+      "support": "required",
+      "effect": "stateful-rpc",
+      "transition": "reserved pool/explicit allocation -> provenance address; cancelled allocation reconciled",
+      "acceptance": [
+        "AC04",
+        "AC19"
+      ]
+    },
+    {
+      "fixture": "reserved-receive",
+      "actions": [
+        "Verify Receive Address"
+      ],
+      "owner": "signer-service",
+      "support": "required",
+      "effect": "explicit-device-verification",
+      "transition": "public address -> supported daemon-signer verification or unavailable; no address allocation",
+      "acceptance": [
+        "AC04"
+      ]
+    },
+    {
+      "fixture": "reserved-receive",
+      "actions": [
+        "Set Receive Label"
+      ],
+      "owner": "metadata-service",
+      "support": "required",
+      "effect": "local-metadata",
+      "transition": "label edit -> local commit; optional setlabel synchronization explicit",
+      "acceptance": [
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "reserved-receive",
+      "actions": [
+        "Copy Receive Address"
+      ],
+      "owner": "clipboard-service",
+      "support": "required",
+      "effect": "local-clipboard",
+      "transition": "deliberate public address copy -> clipboard; privacy-lock presentation rules apply",
+      "acceptance": [
+        "AC04",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "coin-inventory",
+      "actions": [
+        "Freeze Coins",
+        "Unfreeze Coins",
+        "Set Address Label"
+      ],
+      "owner": "coin-metadata-service",
+      "support": "required",
+      "effect": "local-metadata",
+      "transition": "stable outpoints/address -> local freeze or label metadata; optional daemon lock/label synchronization explicit; no draft creation",
+      "acceptance": [
+        "AC03",
+        "AC05",
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "funded-draft",
+      "actions": [
+        "Add Recipient",
+        "Remove Recipient",
+        "Set Max",
+        "Send To Many"
+      ],
+      "owner": "draft-service",
+      "support": "required",
+      "effect": "local-edit",
+      "transition": "recipient edit/grid -> new draft revision and revoked approval; Send To Many never invokes sendmany RPC",
+      "acceptance": [
+        "AC06",
+        "AC07"
+      ]
+    },
+    {
+      "fixture": "funded-draft",
+      "actions": [
+        "Prepare Transaction",
+        "Prepare RBF",
+        "Prepare CPFP"
+      ],
+      "owner": "construction-service",
+      "support": "required",
+      "effect": "unsigned-construction",
+      "transition": "connected capable backend + immutable validated request -> independently checked unsigned funded PSBT with observation provenance; no signing/submission; offline uses separate public-data construction",
+      "acceptance": [
+        "AC05",
+        "AC06",
+        "AC07",
+        "AC13"
+      ],
+      "result_contract": {
+        "output": "unsigned-psbt",
+        "signs": false,
+        "submits": false,
+        "spendability": "backend-snapshot-not-live-guarantee"
+      }
+    },
+    {
+      "fixture": "approved-psbt",
+      "actions": [
+        "Approve Transaction"
+      ],
+      "owner": "document-service",
+      "support": "required",
+      "effect": "local-approval",
+      "transition": "Reviewed -> exact approved identity; no signing, finalization or submission",
+      "acceptance": [
+        "AC08"
+      ]
+    },
+    {
+      "fixture": "approved-psbt",
+      "actions": [
+        "Sign Transaction"
+      ],
+      "owner": "signing-service",
+      "support": "required",
+      "effect": "explicit-daemon-signing",
+      "transition": "approved identity -> walletprocesspsbt true/false -> independently verified per-input signatures; timeout is uncertain",
+      "acceptance": [
+        "AC10",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "approved-psbt",
+      "actions": [
+        "Import Signed PSBT",
+        "Merge PSBT"
+      ],
+      "owner": "protocol-service",
+      "support": "required",
+      "effect": "public-document",
+      "transition": "import -> exact identity comparison and signature verification -> merge; never sign or submit",
+      "acceptance": [
+        "AC08",
+        "AC09",
+        "AC10"
+      ]
+    },
+    {
+      "fixture": "approved-psbt",
+      "actions": [
+        "Finalize Transaction"
+      ],
+      "owner": "protocol-service",
+      "support": "required",
+      "effect": "public-finalization",
+      "transition": "all inputs satisfied -> actual final bytes/hashes/vsize/fee; no signing or submission",
+      "acceptance": [
+        "AC11"
+      ]
+    },
+    {
+      "fixture": "approved-psbt",
+      "actions": [
+        "Broadcast Transaction"
+      ],
+      "owner": "submission-service",
+      "support": "required",
+      "effect": "explicit-submission",
+      "transition": "approved finalized bytes -> submitting -> same-txid observation or uncertainty; no automatic retry",
+      "acceptance": [
+        "AC11",
+        "AC12"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Camera",
+        "Hardware Access Setup"
+      ],
+      "owner": "tools-platform-service",
+      "support": "required",
+      "effect": "explicit-platform-permission",
+      "transition": "deliberate request -> permission/capability check -> public exchange or unavailable; no direct GUI USB/HID transport",
+      "acceptance": [
+        "AC15",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Sign Message"
+      ],
+      "owner": "message-service",
+      "support": "required",
+      "effect": "explicit-daemon-signing",
+      "transition": "deliberate message/address approval -> supported daemon signing or unavailable; no local keys",
+      "acceptance": [
+        "AC15",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Verify Message"
+      ],
+      "owner": "protocol-service",
+      "support": "required",
+      "effect": "public-verification",
+      "transition": "public signature/message -> verified/invalid/unsupported result; no signing",
+      "acceptance": [
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Sweep Private Key"
+      ],
+      "owner": "sweep-service",
+      "support": "required",
+      "effect": "explicit-transient-daemon-key-use",
+      "transition": "authorized daemon capability -> transient preview -> independent review and explicit signing/submission; no GUI key storage",
+      "acceptance": [
+        "AC15",
+        "AC16"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Verify Download"
+      ],
+      "owner": "download-verifier",
+      "support": "required",
+      "effect": "explicit-download-verification",
+      "transition": "user-selected bytes/trust source -> signature/hash result; no installation or update execution",
+      "acceptance": [
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "utility-workspace",
+      "actions": [
+        "Prevent Sleep"
+      ],
+      "owner": "power-service",
+      "support": "required",
+      "effect": "local-platform-lease",
+      "transition": "explicit enable -> owned power lease -> disable/exit releases lease",
+      "acceptance": [
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "shell-commands",
+      "actions": [
+        "Introduction",
+        "Documentation",
+        "Log File",
+        "Support",
+        "Report Issue",
+        "About"
+      ],
+      "owner": "help-service",
+      "support": "required",
+      "effect": "local-help-or-consented-link",
+      "transition": "help request -> local content or explicit external link; redact diagnostics",
+      "acceptance": [
+        "AC02",
+        "AC20"
+      ]
+    },
+    {
+      "fixture": "descriptor-policy",
+      "actions": [
+        "Add Account"
+      ],
+      "owner": "future-account-service",
+      "support": "extension",
+      "effect": "unavailable",
+      "transition": "hidden account strip; explain missing real account service",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "fixture": "profile-rpc",
+      "actions": [
+        "Payment Code Contacts",
+        "Payjoin",
+        "Local Seed Custody",
+        "Privacy Optimization",
+        "Indexed Spending History"
+      ],
+      "owner": "extension-services",
+      "support": "extension",
+      "effect": "unavailable",
+      "transition": "explicit missing service explanation; never fabricate backend capability",
+      "acceptance": [
+        "AC18",
+        "AC20"
+      ]
+    },
+    {
+      "fixture": "connection-profile",
+      "actions": [
+        "Fiat Provider",
+        "Explorer Provider",
+        "Update Checks"
+      ],
+      "owner": "external-services",
+      "support": "optional-opt-in",
+      "effect": "consented-external-request",
+      "transition": "permission -> independently failing provider; Bitcoin actions remain usable",
+      "acceptance": [
+        "AC14",
+        "AC20"
+      ]
+    },
+    {
+      "actions": [
+        "Open Context Menu",
+        "Dismiss Dialog",
+        "Exit Batch Grid"
+      ],
+      "owner": "workspace",
+      "support": "required",
+      "effect": "presentation",
+      "transition": "keyboard scope -> menu / cancellable dismissal / next outer focus scope",
+      "fixture": "shell-commands",
+      "acceptance": [
+        "AC02",
+        "AC16"
+      ]
+    },
+    {
+      "actions": [
+        "Toggle BTC/Sats"
+      ],
+      "owner": "workspace",
+      "support": "required",
+      "effect": "local-preferences",
+      "transition": "current denomination -> opposite explicit denomination; exact values unchanged",
+      "fixture": "shell-commands",
+      "acceptance": [
+        "AC02",
+        "AC16"
+      ]
+    },
+    {
+      "actions": [
+        "Unlock Workspace"
+      ],
+      "owner": "workspace",
+      "support": "required",
+      "effect": "local-lock",
+      "transition": "authenticate local workspace -> new epoch; refresh observations; never imply daemon unlock",
+      "fixture": "shell-commands",
+      "acceptance": [
+        "AC02",
+        "AC16"
+      ]
+    },
+    {
+      "actions": [
+        "Unload Wallet"
+      ],
+      "owner": "wallet-service",
+      "support": "required",
+      "effect": "stateful-rpc",
+      "transition": "explicit unload confirmation -> observed daemon unload or uncertain; no disk deletion",
+      "fixture": "shell-commands",
+      "acceptance": [
+        "AC02",
+        "AC16"
+      ]
+    },
+    {
+      "actions": [
+        "Edit Recipient",
+        "Clear Send",
+        "Set Fee Policy",
+        "Set Change Policy",
+        "Import Batch Recipients"
+      ],
+      "owner": "draft-service",
+      "effect": "local-edit",
+      "support": "required",
+      "transition": "stable selection / validated local edit -> new presentation or draft revision; revoke transaction approval when identity changes; no sign or submission",
+      "fixture": "funded-draft",
+      "acceptance": [
+        "AC06",
+        "AC07"
+      ]
+    },
+    {
+      "actions": [
+        "Select All Coins",
+        "Clear Coin Selection",
+        "Inspect Outpoint"
+      ],
+      "owner": "coin-metadata-service",
+      "effect": "presentation",
+      "support": "required",
+      "transition": "stable selection / validated local edit -> new presentation or draft revision; revoke transaction approval when identity changes; no sign or submission",
+      "fixture": "coin-inventory",
+      "acceptance": [
+        "AC05"
+      ]
+    },
+    {
+      "actions": [
+        "Inspect Transaction"
+      ],
+      "owner": "document-protocol-service",
+      "effect": "public-document",
+      "support": "required",
+      "transition": "selected public transaction -> independent inspector document; no clipboard write, draft mutation, signing or submission",
+      "fixture": "wallet-history",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "actions": [
+        "Copy Address"
+      ],
+      "owner": "clipboard-service",
+      "effect": "local-clipboard",
+      "support": "required",
+      "transition": "explicit selected public address copy -> clipboard disclosure; no draft or metadata mutation",
+      "fixture": "address-inventory",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "actions": [
+        "Edit Descriptor",
+        "Advanced Wallet Settings"
+      ],
+      "owner": "wallet-settings",
+      "effect": "local-edit",
+      "support": "required",
+      "transition": "stable selection / validated local edit -> new presentation or draft revision; revoke transaction approval when identity changes; no sign or submission",
+      "fixture": "descriptor-policy",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "actions": [
+        "Show Descriptor QR"
+      ],
+      "owner": "document-protocol-service",
+      "effect": "public-document",
+      "support": "required",
+      "transition": "stable selection / validated local edit -> new presentation or draft revision; revoke transaction approval when identity changes; no sign or submission",
+      "fixture": "descriptor-policy",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "actions": [
+        "Restore Wallet"
+      ],
+      "owner": "wallet-service",
+      "effect": "stateful-rpc",
+      "support": "required",
+      "transition": "explicit validated restore -> pending -> observed or uncertain; reconcile, no blind retry",
+      "fixture": "descriptor-wallet",
+      "acceptance": [
+        "AC01",
+        "AC04",
+        "AC19"
+      ]
+    },
+    {
+      "actions": [
+        "Sort Table",
+        "Filter Table",
+        "Select Row",
+        "Inspect Selection"
+      ],
+      "owner": "workspace",
+      "effect": "presentation",
+      "support": "required",
+      "transition": "stable selection / validated local edit -> new presentation or draft revision; revoke transaction approval when identity changes; no sign or submission",
+      "fixture": "shell-wallet-tabs",
+      "acceptance": [
+        "AC18"
+      ]
+    },
+    {
+      "actions": [
+        "Copy Transaction ID"
+      ],
+      "owner": "clipboard-service",
+      "effect": "local-clipboard",
+      "support": "required",
+      "transition": "explicit copy of selected public txid -> clipboard disclosure; no document mutation",
+      "fixture": "wallet-history",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "actions": [
+        "Show Address QR"
+      ],
+      "owner": "address-presentation-service",
+      "effect": "presentation",
+      "support": "required",
+      "transition": "selected public address -> QR/detail presentation; no clipboard write, signing or submission",
+      "fixture": "address-inventory",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "actions": [
+        "Inspect Address"
+      ],
+      "owner": "address-presentation-service",
+      "effect": "presentation",
+      "support": "required",
+      "transition": "selected public address -> QR/detail presentation; no clipboard write, signing or submission",
+      "fixture": "address-inventory",
+      "acceptance": [
+        "AC03"
+      ]
+    },
+    {
+      "fixture": "coin-inventory",
+      "actions": [
+        "Send Selected Coins"
+      ],
+      "owner": "draft-service",
+      "support": "required",
+      "effect": "local-edit",
+      "transition": "stable selected outpoints -> pinned send draft and Send screen; revoke prior approval; no wallet metadata mutation, funding, signing or submission",
+      "acceptance": [
+        "AC03",
+        "AC05",
+        "AC15"
+      ]
+    },
+    {
+      "fixture": "coin-inventory",
+      "actions": [
+        "Export CSV"
+      ],
+      "owner": "export-service",
+      "support": "required",
+      "effect": "local-file-disclosure",
+      "transition": "explicit selected public table export -> GUI-host CSV file; no metadata mutation or external request",
+      "acceptance": [
+        "AC03",
+        "AC05",
+        "AC15"
+      ]
+    },
+    {
+      "actions": [
+        "Construct Offline Transaction"
+      ],
+      "owner": "public-construction-service",
+      "support": "required",
+      "effect": "unsigned-construction",
+      "transition": "complete network-matched public prevouts, exact outputs/fee/change and supported construction policy -> independently checked unsigned PSBT; unknown live spendability explicitly retained; no RPC, custody, signing or submission",
+      "fixture": "offline-public-data",
+      "acceptance": [
+        "AC06",
+        "AC07",
+        "AC09",
+        "AC14"
+      ],
+      "result_contract": {
+        "output": "unsigned-psbt",
+        "signs": false,
+        "submits": false,
+        "spendability": "not-observed"
+      }
+    }
+  ],
+  "screens": [
+    {
+      "id": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "fixture": "shell-wallet-tabs",
+      "layout": "wallet tab strip; six-item rail; content; status; no account strip",
+      "initial_focus": "tab-strip",
+      "owner": "workspace",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "fixture": "descriptor-wallet",
+      "layout": "wallet name/network/source -> public policy -> explicit create/load/restore/import confirmation",
+      "initial_focus": "wallet-name",
+      "owner": "wallet-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "transactions",
+      "sections": [
+        6
+      ],
+      "fixture": "wallet-history",
+      "layout": "balance summary/chart above history table; row context actions and details",
+      "initial_focus": "history-table",
+      "owner": "history-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "send",
+      "sections": [
+        7
+      ],
+      "fixture": "funded-draft",
+      "layout": "recipient tabs/grid above fee controls and unsigned diagram; Prepare primary",
+      "initial_focus": "recipient-address",
+      "owner": "draft-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "receive",
+      "sections": [
+        8
+      ],
+      "fixture": "reserved-receive",
+      "layout": "public address/label/path left; QR right; Verify and Next below",
+      "initial_focus": "receive-label",
+      "owner": "receive-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "addresses",
+      "sections": [
+        9
+      ],
+      "fixture": "address-inventory",
+      "layout": "receive and change tables; address row context actions",
+      "initial_focus": "receive-table",
+      "owner": "address-presentation-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "utxos",
+      "sections": [
+        10
+      ],
+      "fixture": "coin-inventory",
+      "layout": "summary/chart above selectable outpoint table; Send Selected below",
+      "initial_focus": "outpoint-table",
+      "owner": "coin-inventory-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "fixture": "descriptor-policy",
+      "layout": "policy/script/m-of-n; public descriptor; signer origins; Advanced; Revert/Apply",
+      "initial_focus": "policy-type",
+      "owner": "wallet-settings",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "fixture": "review-identity",
+      "layout": "left Headers/Inputs/Outputs tree; inspector right; optional hex split; explicit review/sign/finalize/broadcast",
+      "initial_focus": "transaction-tree",
+      "owner": "document-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "preferences",
+      "sections": [
+        14
+      ],
+      "fixture": "connection-profile",
+      "layout": "General/Server rail; local display/provider options; endpoint/auth/proxy/test/apply",
+      "initial_focus": "preferences-category",
+      "owner": "preferences-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "tools",
+      "sections": [
+        15
+      ],
+      "fixture": "utility-workspace",
+      "layout": "separate message/batch/sweep/download/hardware/power workspaces",
+      "initial_focus": "tool-selector",
+      "owner": "tools-platform-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "privacy",
+      "sections": [
+        18
+      ],
+      "fixture": "locked-workspace",
+      "layout": "redacted workspace and local unlock; pending operation summary without amounts",
+      "initial_focus": "unlock-control",
+      "owner": "privacy-lock-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "recovery",
+      "sections": [
+        19
+      ],
+      "fixture": "interrupted-operation",
+      "layout": "owned operation identity/status/reconcile; export diagnostics; no blind retry",
+      "initial_focus": "operation-list",
+      "owner": "operation-recovery-service",
+      "status": "planned",
+      "owner_kind": "service"
+    },
+    {
+      "id": "help",
+      "sections": [
+        20
+      ],
+      "fixture": "acceptance-journeys",
+      "layout": "local introduction/about/help; explicit external support links",
+      "initial_focus": "help-content",
+      "owner": "help-service",
+      "status": "planned",
+      "owner_kind": "service"
+    }
+  ],
+  "navigation": [
+    {
+      "action": "Transactions",
+      "screen": "transactions",
+      "position": 1
+    },
+    {
+      "action": "Send",
+      "screen": "send",
+      "position": 2
+    },
+    {
+      "action": "Receive",
+      "screen": "receive",
+      "position": 3
+    },
+    {
+      "action": "Addresses",
+      "screen": "addresses",
+      "position": 4
+    },
+    {
+      "action": "UTXOs",
+      "screen": "utxos",
+      "position": 5
+    },
+    {
+      "action": "Settings",
+      "screen": "wallet-settings",
+      "position": 6
+    }
+  ],
+  "menus": {
+    "File": [
+      "New Wallet",
+      "Open Wallet",
+      "Import Wallet",
+      "Export Wallet",
+      "Open Transaction File",
+      "Open Transaction ID",
+      "Open Transaction Text",
+      "Open Transaction QR",
+      "Save Transaction",
+      "Save PSBT",
+      "Show Transaction QR",
+      "Show PSBT QR",
+      "Rename Wallet",
+      "Delete Wallet",
+      "Preferences",
+      "Close Tab",
+      "Quit"
+    ],
+    "View": [
+      "BTC Units",
+      "Sats Units",
+      "Automatic Units",
+      "Decimal Format",
+      "Address Grouping",
+      "Hide Empty Used Addresses",
+      "System Theme",
+      "Light Theme",
+      "Dark Theme",
+      "Camera",
+      "Separate Wallet Windows",
+      "Hide Amounts",
+      "Loading Log",
+      "Transaction Hex",
+      "Tray",
+      "Lock Current",
+      "Lock All",
+      "Search Current",
+      "Search All",
+      "Summaries",
+      "Go To Section",
+      "Refresh"
+    ],
+    "Tools": [
+      "Sign Message",
+      "Verify Message",
+      "Send To Many",
+      "Sweep Private Key",
+      "Payment Code Contacts",
+      "Switch Server",
+      "Verify Download",
+      "Hardware Access Setup",
+      "Prevent Sleep",
+      "Restart GUI With Profile"
+    ],
+    "Help": [
+      "Introduction",
+      "Documentation",
+      "Log File",
+      "Support",
+      "Report Issue",
+      "About"
+    ]
+  },
+  "shortcuts": [
+    {
+      "action": "New Wallet",
+      "key": "Primary+N",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Wallet",
+      "key": "Primary+O",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Transaction File",
+      "key": "Primary+F",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Transaction ID",
+      "key": "Primary+I",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Transaction Text",
+      "key": "Primary+T",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Transaction QR",
+      "key": "Primary+U",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Save Transaction",
+      "key": "Primary+S",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Preferences",
+      "key": "Primary+Comma",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Close Tab",
+      "key": "Primary+W",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Refresh",
+      "key": "Primary+R",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Toggle BTC/Sats",
+      "key": "Primary+B",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Hide Amounts",
+      "key": "Primary+Shift+H",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Lock Current",
+      "key": "Primary+L",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Lock All",
+      "key": "Primary+Shift+L",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Search Current",
+      "key": "Primary+Shift+S",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Search All",
+      "key": "Primary+Shift+Alt+S",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Sign Message",
+      "key": "Primary+M",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Open Context Menu",
+      "key": "Shift+F10",
+      "context": "focused-control",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Dismiss Dialog",
+      "key": "Escape",
+      "context": "cancellable-dialog",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Exit Batch Grid",
+      "key": "Ctrl+Tab",
+      "context": "batch-grid",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Transactions",
+      "key": "Primary+1",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Send",
+      "key": "Primary+2",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Receive",
+      "key": "Primary+3",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Addresses",
+      "key": "Primary+4",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "UTXOs",
+      "key": "Primary+5",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Settings",
+      "key": "Primary+6",
+      "context": "workspace",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS; literal Ctrl stays Ctrl",
+      "guard": "dispatch only within active focus scope; text/IME composition takes precedence"
+    },
+    {
+      "action": "Save PSBT",
+      "key": "Primary+S",
+      "context": "psbt-document",
+      "platform": "Primary=Ctrl on Linux/Windows; Command on macOS",
+      "guard": "replaces Save Transaction dispatch when active document is PSBT"
+    }
+  ],
+  "dialogs": [
+    {
+      "id": "wallet-source",
+      "actions": [
+        "New Wallet",
+        "Open Wallet",
+        "Import Wallet",
+        "Restore Wallet"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "wallet-export",
+      "actions": [
+        "Export Wallet"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "wallet-delete",
+      "actions": [
+        "Delete Wallet",
+        "Unload Wallet"
+      ],
+      "initial_focus": "cancel",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "metadata-edit",
+      "actions": [
+        "Rename Wallet",
+        "Set Wallet Icon",
+        "Edit Wallet Label",
+        "Set Receive Label",
+        "Set Address Label"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "transaction-source",
+      "actions": [
+        "Open Transaction File",
+        "Open Transaction ID",
+        "Open Transaction Text",
+        "Open Transaction QR",
+        "Import Signed PSBT",
+        "Merge PSBT"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "document-save",
+      "actions": [
+        "Save Transaction",
+        "Save PSBT",
+        "Export CSV"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "public-qr",
+      "actions": [
+        "Show Transaction QR",
+        "Show PSBT QR"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "unsaved-confirm",
+      "actions": [
+        "Close Tab",
+        "Close Other Tabs",
+        "Close All Tabs",
+        "Quit",
+        "Restart GUI With Profile"
+      ],
+      "initial_focus": "cancel",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "settings-advanced",
+      "actions": [
+        "Apply Wallet Settings",
+        "Advanced Wallet Settings"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "device-verification",
+      "actions": [
+        "Verify Receive Address",
+        "Hardware Access Setup"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "signing-consent",
+      "actions": [
+        "Sign Transaction",
+        "Sign Message",
+        "Sweep Private Key"
+      ],
+      "initial_focus": "cancel",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "broadcast-confirm",
+      "actions": [
+        "Broadcast Transaction"
+      ],
+      "initial_focus": "cancel",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "search",
+      "actions": [
+        "Search Current",
+        "Search All"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "unlock",
+      "actions": [
+        "Unlock Workspace"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "unavailable",
+      "actions": [
+        "Add Account",
+        "Payment Code Contacts",
+        "Payjoin",
+        "Local Seed Custody",
+        "Privacy Optimization",
+        "Indexed Spending History"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    },
+    {
+      "id": "camera-permission",
+      "actions": [
+        "Camera"
+      ],
+      "initial_focus": "safe-first-field",
+      "dismiss": "Escape cancels only before irreversible dispatch; afterward detach/reconcile without claiming cancellation",
+      "return_focus": "invoking stable control; nearest surviving tab/section fallback",
+      "status": "planned"
+    }
+  ],
+  "action_details": [
+    {
+      "action": "Move Tab Left",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Move Tab Right",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Close Other Tabs",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "unsaved-confirm"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Close All Tabs",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "unsaved-confirm"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Close Tab",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "unsaved-confirm"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Quit",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "unsaved-confirm"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Separate Wallet Windows",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "New Wallet",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [
+        "wallet-source"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Open Wallet",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [
+        "wallet-source"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Import Wallet",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [
+        "wallet-source"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Apply Wallet Settings",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [
+        "settings-advanced"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Revert Wallet Settings",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Export Wallet",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "wallet-export"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Rename Wallet",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "metadata-edit"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Wallet Icon",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "metadata-edit"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Delete Wallet",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "wallet-delete"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Edit Wallet Label",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "metadata-edit"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Open Transaction File",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Open Transaction Text",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Open Transaction QR",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Save Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "document-save"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Save PSBT",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "document-save"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Show Transaction QR",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "public-qr"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Show PSBT QR",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "public-qr"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Transaction Hex",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Review Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Open Transaction ID",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Transactions",
+      "screen": "transactions",
+      "sections": [
+        6
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "history-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "transactions",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Send",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Receive",
+      "screen": "receive",
+      "sections": [
+        8
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-label",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "receive",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Addresses",
+      "screen": "addresses",
+      "sections": [
+        9
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "addresses",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "UTXOs",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Settings",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Go To Section",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Search Current",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "search"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Search All",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "search"
+      ],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Summaries",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Loading Log",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "BTC Units",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Sats Units",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Automatic Units",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Decimal Format",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Address Grouping",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Hide Empty Used Addresses",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "System Theme",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Light Theme",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Dark Theme",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Hide Amounts",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Tray",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Lock Current",
+      "screen": "privacy",
+      "sections": [
+        18
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "unlock-control",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "privacy",
+      "requirements": []
+    },
+    {
+      "action": "Lock All",
+      "screen": "privacy",
+      "sections": [
+        18
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "unlock-control",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "privacy",
+      "requirements": []
+    },
+    {
+      "action": "Preferences",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": []
+    },
+    {
+      "action": "Switch Server",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": []
+    },
+    {
+      "action": "Test Connection",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Apply Server Settings",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Refresh",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Restart GUI With Profile",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Requires configured reachable matching backend for fresh observation; offline uses explicitly stale cache only, never a fabricated result.",
+      "dialogs": [
+        "unsaved-confirm"
+      ],
+      "state_fixture": "preferences",
+      "requirements": []
+    },
+    {
+      "action": "Next Receive Address",
+      "screen": "receive",
+      "sections": [
+        8
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-label",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [],
+      "state_fixture": "receive",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Verify Receive Address",
+      "screen": "receive",
+      "sections": [
+        8
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "receive-label",
+      "disabled_reason": "Requires daemon signer capability and selected supported device; missing permission/device/unsupported address disables and explains.",
+      "dialogs": [
+        "device-verification"
+      ],
+      "state_fixture": "receive",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Receive Label",
+      "screen": "receive",
+      "sections": [
+        8
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "receive-label",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "metadata-edit"
+      ],
+      "state_fixture": "receive",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Copy Receive Address",
+      "screen": "receive",
+      "sections": [
+        8
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-label",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "receive",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Freeze Coins",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Unfreeze Coins",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Send Selected Coins",
+      "screen": "send",
+      "sections": [
+        7,
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Export CSV",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "document-save"
+      ],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Address Label",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "metadata-edit"
+      ],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Add Recipient",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Remove Recipient",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Max",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Send To Many",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Prepare Transaction",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "RPC funding requires an observed online capable matching backend, valid exact draft, spendability snapshot and unlocked workspace. Offline uses the separate Construct Offline Transaction route with complete public inputs; neither route signs or submits.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Prepare RBF",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "RPC funding requires an observed online capable matching backend, valid exact draft, spendability snapshot and unlocked workspace. Offline uses the separate Construct Offline Transaction route with complete public inputs; neither route signs or submits.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Prepare CPFP",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "RPC funding requires an observed online capable matching backend, valid exact draft, spendability snapshot and unlocked workspace. Offline uses the separate Construct Offline Transaction route with complete public inputs; neither route signs or submits.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Approve Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "workbench",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Sign Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires approved exact identity, signing capability and explicit consent; locked/offline/missing signer/unsupported scheme disables; message signing requires message approval.",
+      "dialogs": [
+        "signing-consent"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked",
+        "approved-identity"
+      ]
+    },
+    {
+      "action": "Import Signed PSBT",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Merge PSBT",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "transaction-source"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "unlocked",
+        "valid-context"
+      ]
+    },
+    {
+      "action": "Finalize Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires all inputs independently validated and supported satisfaction (standard multisig <=15 or supported single-key/keypath); unsupported tapscript/Miniscript disables with export path.",
+      "dialogs": [],
+      "state_fixture": "workbench",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "approved-identity",
+        "supported-satisfaction",
+        "verified-signatures"
+      ]
+    },
+    {
+      "action": "Broadcast Transaction",
+      "screen": "workbench",
+      "sections": [
+        12,
+        13,
+        16
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "transaction-tree",
+      "disabled_reason": "Requires approved independently verified final bytes and connected matching network; locked/stale/unknown prior submission disables pending reconciliation.",
+      "dialogs": [
+        "broadcast-confirm"
+      ],
+      "state_fixture": "workbench",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked",
+        "approved-identity",
+        "final-bytes",
+        "reconciled-submission"
+      ]
+    },
+    {
+      "action": "Camera",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "camera-permission"
+      ],
+      "state_fixture": "tools",
+      "requirements": []
+    },
+    {
+      "action": "Hardware Access Setup",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "device-verification"
+      ],
+      "state_fixture": "tools",
+      "requirements": []
+    },
+    {
+      "action": "Sign Message",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires approved exact identity, signing capability and explicit consent; locked/offline/missing signer/unsupported scheme disables; message signing requires message approval.",
+      "dialogs": [
+        "signing-consent"
+      ],
+      "state_fixture": "tools",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked",
+        "approved-identity"
+      ]
+    },
+    {
+      "action": "Verify Message",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "tools",
+      "requirements": []
+    },
+    {
+      "action": "Sweep Private Key",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires explicitly authorized daemon transient-key capability and review; unsupported backend disables; no GUI key persistence.",
+      "dialogs": [
+        "signing-consent"
+      ],
+      "state_fixture": "tools",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Verify Download",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "tools",
+      "requirements": []
+    },
+    {
+      "action": "Prevent Sleep",
+      "screen": "tools",
+      "sections": [
+        15
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tool-selector",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "tools",
+      "requirements": []
+    },
+    {
+      "action": "Introduction",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "Documentation",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "Log File",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "Support",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "Report Issue",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "About",
+      "screen": "help",
+      "sections": [
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "help-content",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "help",
+      "requirements": []
+    },
+    {
+      "action": "Add Account",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires future-account-service, a real account lifecycle service not supplied by one-daemon-wallet-per-tab RPC profile; hidden account strip; explanation remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Payment Code Contacts",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Unavailable in RPC profile; name missing real service; explanatory entry remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "shell",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Payjoin",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Unavailable in RPC profile; name missing real service; explanatory entry remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "shell",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Local Seed Custody",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Unavailable in RPC profile; name missing real service; explanatory entry remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "shell",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Privacy Optimization",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Unavailable in RPC profile; name missing real service; explanatory entry remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "shell",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Indexed Spending History",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Unavailable in RPC profile; name missing real service; explanatory entry remains keyboard reachable.",
+      "dialogs": [
+        "unavailable"
+      ],
+      "state_fixture": "shell",
+      "requirements": [
+        "future-service"
+      ]
+    },
+    {
+      "action": "Fiat Provider",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Disabled until explicit provider opt-in; provider failure does not disable Bitcoin actions.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "opt-in"
+      ]
+    },
+    {
+      "action": "Explorer Provider",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Disabled until explicit provider opt-in; provider failure does not disable Bitcoin actions.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "opt-in"
+      ]
+    },
+    {
+      "action": "Update Checks",
+      "screen": "preferences",
+      "sections": [
+        14
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "preferences-category",
+      "disabled_reason": "Disabled until explicit provider opt-in; provider failure does not disable Bitcoin actions.",
+      "dialogs": [],
+      "state_fixture": "preferences",
+      "requirements": [
+        "opt-in"
+      ]
+    },
+    {
+      "action": "Open Context Menu",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Dismiss Dialog",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Exit Batch Grid",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Toggle BTC/Sats",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": []
+    },
+    {
+      "action": "Unlock Workspace",
+      "screen": "privacy",
+      "sections": [
+        18
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "unlock-control",
+      "disabled_reason": "Requires relevant valid selection/document and unlocked sensitive workspace; otherwise explain missing context. Global presentation/help remains available without wallet or network.",
+      "dialogs": [
+        "unlock"
+      ],
+      "state_fixture": "privacy",
+      "requirements": [
+        "locked"
+      ]
+    },
+    {
+      "action": "Unload Wallet",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires connected unlocked wallet/backend with observed capability, validated request and no conflicting operation; offline/stale/locked/unsupported disables with named cause.",
+      "dialogs": [
+        "wallet-delete"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "online",
+        "capability",
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Edit Recipient",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Clear Send",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Fee Policy",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Set Change Policy",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Import Batch Recipients",
+      "screen": "send",
+      "sections": [
+        7
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "recipient-address",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "send",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Select All Coins",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Clear Coin Selection",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Inspect Outpoint",
+      "screen": "utxos",
+      "sections": [
+        10
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "outpoint-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "utxos",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Inspect Transaction",
+      "screen": "transactions",
+      "sections": [
+        6
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "history-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "transactions",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Copy Transaction ID",
+      "screen": "transactions",
+      "sections": [
+        6
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "history-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "transactions",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Copy Address",
+      "screen": "addresses",
+      "sections": [
+        9
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "addresses",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Show Address QR",
+      "screen": "addresses",
+      "sections": [
+        9
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "addresses",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Inspect Address",
+      "screen": "addresses",
+      "sections": [
+        9
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "receive-table",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "addresses",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Edit Descriptor",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Advanced Wallet Settings",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [
+        "settings-advanced"
+      ],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Show Descriptor QR",
+      "screen": "wallet-settings",
+      "sections": [
+        11
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "policy-type",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "wallet-settings",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Restore Wallet",
+      "screen": "wallet-setup",
+      "sections": [
+        5,
+        19
+      ],
+      "focus_rule": "modal-trap-and-return",
+      "focus_target": "wallet-name",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [
+        "wallet-source"
+      ],
+      "state_fixture": "wallet-setup",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "online",
+        "capability"
+      ]
+    },
+    {
+      "action": "Sort Table",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Filter Table",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Select Row",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Inspect Selection",
+      "screen": "shell",
+      "sections": [
+        1,
+        2,
+        3,
+        4,
+        17,
+        20
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "tab-strip",
+      "disabled_reason": "Requires valid public context/selection and unlocked workspace; restore additionally requires reachable capable daemon and explicit confirmation; explain exact missing field/capability.",
+      "dialogs": [],
+      "state_fixture": "shell",
+      "requirements": [
+        "valid-context",
+        "unlocked"
+      ]
+    },
+    {
+      "action": "Construct Offline Transaction",
+      "screen": "workbench",
+      "sections": [
+        7,
+        12,
+        16
+      ],
+      "focus_rule": "preserve-stable-selection",
+      "focus_target": "offline-public-inputs",
+      "disabled_reason": "Requires unlocked valid public draft, complete authenticated prevout amounts/scripts/outpoints, matching network, exact fee/change policy and supported public construction; incomplete or unsupported inputs disable with field cause. Live spendability remains unknown; no keys, RPC, signing or broadcast.",
+      "dialogs": [],
+      "state_fixture": "workbench",
+      "requirements": [
+        "valid-context",
+        "unlocked",
+        "public-inputs-complete",
+        "supported-construction",
+        "matching-network",
+        "exact-fee-policy"
+      ]
+    }
+  ],
+  "state_fixtures": {
+    "shell": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "wallet-setup": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "transactions": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "send": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "receive": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "addresses": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "utxos": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "wallet-settings": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "workbench": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "preferences": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "tools": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "privacy": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "recovery": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    },
+    "help": {
+      "normal": {
+        "presentation": "Deterministic valid public values and stable IDs; primary action reachable",
+        "command": "Only declared effect after explicit invocation"
+      },
+      "empty": {
+        "presentation": "No matching records/document; useful setup/import route",
+        "command": "Selection-dependent actions disabled; no synthetic balances/address"
+      },
+      "loading": {
+        "presentation": "Owned request indicator; cached data labeled with source/time",
+        "command": "Prevent duplicate mutation; cancel detaches observation, reconcile mutation"
+      },
+      "error": {
+        "presentation": "Typed sanitized cause and retry/reconcile/export route",
+        "command": "No blind mutation retry or implicit sign/broadcast"
+      },
+      "stale": {
+        "presentation": "Last known data explicitly stale; no current-confirmation claim",
+        "command": "Fence financial approval/freshness-sensitive operations"
+      },
+      "offline": {
+        "presentation": "Offline banner; cached/public documents still inspectable",
+        "command": "No RPC/network dispatch; public parsing/export/independent verification remains"
+      },
+      "locked": {
+        "presentation": "Sensitive rows/charts/tooltips/semantic text redacted; unlock focus",
+        "command": "Epoch fences late replies; no signing/approval/submission"
+      },
+      "unavailable": {
+        "presentation": "Name missing capability/service; explanation keyboard reachable",
+        "command": "No fabricated success; retain safe export/help route"
+      }
+    }
+  },
+  "platform_evidence": {
+    "Linux": {
+      "requirement": "required",
+      "status": "pending native implementation and evidence",
+      "matrix": [
+        "1200x820",
+        "960x640",
+        "Light",
+        "Dark",
+        "100%",
+        "150%",
+        "200% stress",
+        "keyboard",
+        "IME",
+        "screen reader",
+        "native dialogs",
+        "camera/device capability",
+        "mixed DPI"
+      ]
+    },
+    "Windows": {
+      "requirement": "follow-on",
+      "status": "not qualified"
+    },
+    "macOS": {
+      "requirement": "follow-on",
+      "status": "not qualified"
+    },
+    "Extended": {
+      "requirement": "separate future services",
+      "status": "not delivered by required RPC profile"
+    }
+  }
+}

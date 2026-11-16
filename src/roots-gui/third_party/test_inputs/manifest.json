@@ -1,0 +1,192 @@
+{
+  "schema": 1,
+  "engineRevision": "7c808483d6f0a69b9d0843d5f4a141f0a9f74a58",
+  "upstreamArchiveSha256": "6aaefa028e00ca7b3fdad73848c83870bd903db61f083ac0d476db88a57b36c4",
+  "files": [
+    {
+      "path": "engine/imgui_test_engine/LICENSE.txt",
+      "sha256": "8d01df5085b3d7c055999188bfc743354b00658be309819eb0415239820b1835",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/LICENSE.txt"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_capture_tool.cpp",
+      "sha256": "9308f675d5343f1c22599d21e80f8a4e70aa19e2a79bdad10d3e914acd491810",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_capture_tool.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_capture_tool.h",
+      "sha256": "580a824a816d983c9cf4bd830a5994e1d522ef3649bd548eee682a12379df589",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_capture_tool.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_context.cpp",
+      "sha256": "c34317501d1cf7b1e560f8b344c6b85dad0f6a5cd5f2d721e7261a2bbcb245a4",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_context.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_context.h",
+      "sha256": "0015be86bce41b887c66923488a8d1ee745b19c7c52215de788e2fad296e9657",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_context.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_coroutine.cpp",
+      "sha256": "a4ea7bf4aea394f56b1f588b70bd77f96f2331af26eee973295904ebbc08494a",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_coroutine.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_coroutine.h",
+      "sha256": "43db2cf9b3d39fdbce385c04ac49fc70a57e5c5ab4b682d5c71ae9654b784e82",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_coroutine.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_engine.cpp",
+      "sha256": "0d8e36251dbbec8ec817539d1b3a0a82aab60928bdb8a258ec6a5b656ff22af6",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_engine.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_engine.h",
+      "sha256": "8a7cd47c4381aa69b02e763dfc888e9a85d3865b4eff3e1a14a98bec71d3d960",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_engine.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_exporters.cpp",
+      "sha256": "84e1bc0daad1cde3e59cf9719f5dba2adcc43894cc720cbafa79ec5c6d8bcb29",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_exporters.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_exporters.h",
+      "sha256": "1deaec6a0c94808e73101219c32f7dc643613e959f918f09f7a73551652fac9a",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_exporters.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_imconfig.h",
+      "sha256": "d8ebb750cabaeb544a6e2350bb2704b9c16a06f52f228e9d030b06466835ebba",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_imconfig.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_internal.h",
+      "sha256": "4ea717e535b3e6e9e110c62cefd62f0835bb17603e6adb84d5279b370a6d40ce",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_internal.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_perftool.cpp",
+      "sha256": "f9a9cc78d08b855afcfdfcadeb78342934b23d1600804ad60d9b4a9d455fab7e",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_perftool.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_perftool.h",
+      "sha256": "87900961b84d6744845f2b244f700f7dc2ea3181c3268a984ed195b596522b1a",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_perftool.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_ui.cpp",
+      "sha256": "aa19db413b9e22dc323b40d45c8ac07cffbfbc64ccc051553e0c82cf8375f139",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_ui.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_ui.h",
+      "sha256": "1390d011a1ae6fa46dc5853a8342136c908330451cb45d8c57e2ce7fbd4a7eab",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_ui.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_utils.cpp",
+      "sha256": "038d307b4db68f84a4ab72029b089f3306125f656277aad40da277cb704f943d",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_utils.cpp"
+    },
+    {
+      "path": "engine/imgui_test_engine/imgui_te_utils.h",
+      "sha256": "8c41e2df36cd45c44a98963a1fbd70f4f566e1882a17206cfaf009b19942eee8",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/imgui_te_utils.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/thirdparty/README.md",
+      "sha256": "4cc212b15d628f34a050daa1537f552f0e87b9732d85797d02c4003e3b0e208a",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/thirdparty/README.md"
+    },
+    {
+      "path": "engine/imgui_test_engine/thirdparty/Str/README.md",
+      "sha256": "c899fa61f78ab5aa309640b9993910b9e25dcb828b3d0aac9f918a4c28ba086b",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/thirdparty/Str/README.md"
+    },
+    {
+      "path": "engine/imgui_test_engine/thirdparty/Str/Str.h",
+      "sha256": "704a91401a1004a121ce07b6c096c66398a05ae4ee35f3bdc2fc0d98ea19f852",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/thirdparty/Str/Str.h"
+    },
+    {
+      "path": "engine/imgui_test_engine/thirdparty/stb/imstb_image_write.h",
+      "sha256": "4a7244b82babade4236abdefb943a369255f5ed92e800fbb504207eaeaae20e0",
+      "origin": "ocornut/imgui_test_engine@7c808483d6f0a69b9d0843d5f4a141f0a9f74a58:imgui_test_engine/thirdparty/stb/imstb_image_write.h"
+    },
+    {
+      "path": "imgui/LICENSE.txt",
+      "sha256": "173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3",
+      "origin": "imgui@367b2c24f399988ddafc0bb4628da0106bcc09be:LICENSE.txt"
+    },
+    {
+      "path": "imgui/backends/imgui_impl_null.cpp",
+      "sha256": "43a91209fa70302174b22c9241c6f95a8edf799bb06536b783d31419de58007e",
+      "origin": "imgui@367b2c24f399988ddafc0bb4628da0106bcc09be:backends/imgui_impl_null.cpp"
+    },
+    {
+      "path": "imgui/backends/imgui_impl_null.h",
+      "sha256": "49c6bd69de307af5c7ed532ab46c2d42941af3ec667d9afc6f39d481501819cc",
+      "origin": "imgui@367b2c24f399988ddafc0bb4628da0106bcc09be:backends/imgui_impl_null.h"
+    },
+    {
+      "path": "imkit/LICENSE",
+      "sha256": "dd481dbbb87f16bef89a734616beba6ba2eb456bb18d4c32345c20adeea06659",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:LICENSE"
+    },
+    {
+      "path": "imkit/examples/gallery/allocation_probe.cpp",
+      "sha256": "1dcf6a47429a0c90154d55542a0e7c335ed839905c2fa75d24cc0730b06bf272",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:examples/gallery/allocation_probe.cpp"
+    },
+    {
+      "path": "imkit/examples/gallery/allocation_probe.h",
+      "sha256": "8d0c77ed3a40804b7b81c139a0da6ad4e252358e041b57dc2826c2b4eebbeefe",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:examples/gallery/allocation_probe.h"
+    },
+    {
+      "path": "imkit/src/draw_internal.h",
+      "sha256": "9a0a61150d007723102eb685e646f5a9eb42c6ec25de37eae054a13b76254470",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:src/draw_internal.h"
+    },
+    {
+      "path": "imkit/tests/api_compile.cpp",
+      "sha256": "9ab4896644f117005e0a8ec0df7d6a4935cda54a187041b5f780ad24c74acdb1",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/api_compile.cpp"
+    },
+    {
+      "path": "imkit/tests/charts.cpp",
+      "sha256": "7d06c99a0db0bc15a77559e0c2f132189faa70aa114073322e4ec02a572ef18d",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/charts.cpp"
+    },
+    {
+      "path": "imkit/tests/charts_api_compile.cpp",
+      "sha256": "e2dc6ac2571106c3e88fc7a0bf94656dcddb9b8793508171e104b8614667c0ed",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/charts_api_compile.cpp"
+    },
+    {
+      "path": "imkit/tests/design_api_compile.cpp",
+      "sha256": "d94550afde1aced35a85d38adb0f21a74d3affbeb047f8f22aa89d6760d13a4f",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/design_api_compile.cpp"
+    },
+    {
+      "path": "imkit/tests/design_system.cpp",
+      "sha256": "e198447578f8885b92287deda28139773ac3817f224aac026f307f188cd441bd",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/design_system.cpp"
+    },
+    {
+      "path": "imkit/tests/theme.cpp",
+      "sha256": "a4f486750bda059e6472200aad979e448eb627f8cad37b389344095dd46a455f",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/theme.cpp"
+    },
+    {
+      "path": "imkit/tests/workflow.cpp",
+      "sha256": "ae1d0778f180e0674630a3689375a87d9564d23c969512946978038036e4656e",
+      "origin": "imgui-modern-kit@986d8d286a74fb7b2f724b9ef5d008af139aa887:tests/workflow.cpp"
+    }
+  ]
+}

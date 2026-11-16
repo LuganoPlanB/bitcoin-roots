@@ -1,0 +1,2 @@
+# Reviewed provider corrections are build inputs, not generated patch exports.
+!patches/*.patch

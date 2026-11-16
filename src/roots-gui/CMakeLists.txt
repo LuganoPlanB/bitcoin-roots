@@ -1,0 +1,102 @@
+cmake_minimum_required(VERSION 3.22)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  project(RootsGui VERSION 0.1.0 LANGUAGES C CXX)
+  set(roots_gui_standalone ON)
+else()
+  enable_language(C)
+  set(roots_gui_standalone OFF)
+endif()
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR "roots-gui requires an out-of-source build")
+endif()
+# The parent src directory exports internal include paths. Isolate this child
+# locally; do not change any parent target, compiler flags or directory property.
+foreach(property INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_OPTIONS LINK_DIRECTORIES)
+  set_property(DIRECTORY PROPERTY ${property} "")
+endforeach()
+set(CMAKE_MODULE_PATH "")
+option(ROOTS_GUI_BUILD_TESTS "Build roots-gui build contract tests." ${roots_gui_standalone})
+if(ROOTS_GUI_BUILD_TESTS)
+  # Metadata for the public boundary runner, scoped to GUI targets. This does
+  # not change the parent cache or its compiler options/target properties.
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+  if(COMMAND cmake_file_api)
+    cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
+  else()
+    # Older supported CMake reads this query on the next configure invocation.
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/.cmake/api/v1/query")
+    file(WRITE "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2" "")
+  endif()
+endif()
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+find_program(ROOTS_GUI_CCACHE ccache)
+if(ROOTS_GUI_CCACHE AND (NOT DEFINED WITH_CCACHE OR WITH_CCACHE))
+  foreach(language C CXX)
+    if(NOT DEFINED CMAKE_${language}_COMPILER_LAUNCHER)
+      set(CMAKE_${language}_COMPILER_LAUNCHER "${ROOTS_GUI_CCACHE}")
+    endif()
+  endforeach()
+endif()
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/prepare_build_inputs.py"
+  --destination "${CMAKE_CURRENT_BINARY_DIR}/inputs"
+  RESULT_VARIABLE roots_gui_prepare_result OUTPUT_VARIABLE roots_gui_inputs
+  ERROR_VARIABLE roots_gui_prepare_log)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/prepare-inputs.log" "${roots_gui_prepare_log}")
+if(NOT roots_gui_prepare_result EQUAL 0)
+  message(FATAL_ERROR "Local roots-gui input verification failed: ${roots_gui_prepare_log}")
+endif()
+string(JSON roots_gui_ui_source GET "${roots_gui_inputs}" uiSource)
+string(JSON roots_gui_provider_source GET "${roots_gui_inputs}" providerSource)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/input-identities.json" "${roots_gui_inputs}")
+include(cmake/ui-dependencies.cmake)
+include(cmake/service-dependencies.cmake)
+include(cmake/provider-dependency.cmake)
+roots_gui_add_ui_dependencies("${roots_gui_ui_source}")
+roots_gui_add_service_dependencies("${roots_gui_ui_source}")
+roots_gui_add_provider("${roots_gui_provider_source}")
+
+add_library(roots_gui_core STATIC domain/money.cpp domain/workflow.cpp application/build_info.cpp application/preferences.cpp)
+target_include_directories(roots_gui_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(roots_gui_core PUBLIC cxx_std_20)
+target_link_libraries(roots_gui_core PRIVATE roots_gui_protocol roots_gui_http roots_gui_sqlite)
+add_library(roots_gui_ui STATIC ui/bootstrap.cpp ui/preferences.cpp)
+target_include_directories(roots_gui_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(roots_gui_ui PUBLIC cxx_std_20)
+target_link_libraries(roots_gui_ui PUBLIC imkit::imkit PRIVATE roots_gui_core)
+add_library(roots_gui_platform STATIC platform/foundation.cpp platform/native_host.cpp)
+target_include_directories(roots_gui_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(roots_gui_platform PUBLIC cxx_std_20)
+target_link_libraries(roots_gui_platform PRIVATE roots_gui_ui roots_gui_backends)
+add_executable(roots-gui main.cpp)
+target_compile_features(roots-gui PRIVATE cxx_std_20)
+target_link_libraries(roots-gui PRIVATE roots_gui_platform roots_gui_ui roots_gui_core)
+add_custom_command(TARGET roots-gui POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${roots_gui_ui_source}/imkit/assets/fonts/Inter-Regular.ttf"
+    "${roots_gui_ui_source}/imkit/assets/fonts/Inter-SemiBold.ttf"
+    "${roots_gui_ui_source}/imkit/assets/fonts/Inter-OFL.txt"
+    "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+  VERBATIM)
+
+if(ROOTS_GUI_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests/engine)
+  add_subdirectory(tests)
+  add_test(NAME roots_gui.build_contract
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/build/command_contract.py" "$<TARGET_FILE:roots-gui>")
+  set_tests_properties(roots_gui.build_contract PROPERTIES TIMEOUT 30 LABELS "roots-gui;build;boundary")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(X11 REQUIRED)
+    add_executable(roots_gui_native_lifecycle tests/platform/native_lifecycle.cpp)
+    target_include_directories(roots_gui_native_lifecycle PRIVATE "${roots_gui_ui_source}/x11/include")
+    target_link_libraries(roots_gui_native_lifecycle PRIVATE roots_gui_platform roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
+    target_compile_features(roots_gui_native_lifecycle PRIVATE cxx_std_20)
+    add_dependencies(roots_gui_native_lifecycle roots-gui)
+    add_executable(roots_gui_visual_capture tests/visual/native_capture.cpp)
+    target_link_libraries(roots_gui_visual_capture PRIVATE roots_gui_platform roots_gui_ui roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
+    target_compile_features(roots_gui_visual_capture PRIVATE cxx_std_20)
+    add_dependencies(roots_gui_visual_capture roots-gui)
+    # Explicit owned-display runner; never silently skip a native CTest.
+  endif()
+endif()

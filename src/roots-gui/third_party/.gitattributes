@@ -1,0 +1,3 @@
+# Unified-diff context blanks contain a required leading space. Preserve the
+# patch format; ordinary application sources retain normal whitespace checks.
+patches/libwally-1.6.1-psbt-conformance.patch -whitespace

@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "archive": "ui-sources.tar.gz",
+  "sha256": "616864c183124626ac4f0e92627c285caef0cd978a905f09e597fa7cd1056142",
+  "manifest": "ui-source-manifest.json",
+  "manifestSha256": "9ed448f8056e6a275d8f002c21d9e447e9af5799b07cb76310e3ebba07d6b7a5",
+  "imkit": {
+    "version": "4.1.0",
+    "revision": "986d8d286a74fb7b2f724b9ef5d008af139aa887",
+    "url": "https://github.com/AokiMotohide/imgui-modern-kit",
+    "coreSources": [
+      "widgets",
+      "theme",
+      "theme_text",
+      "decor",
+      "components",
+      "icons",
+      "accessibility",
+      "patterns",
+      "workflow",
+      "toast",
+      "charts",
+      "range_slider",
+      "ptz",
+      "shell",
+      "window_frame"
+    ]
+  },
+  "imgui": {
+    "version": 19297,
+    "revision": "367b2c24f399988ddafc0bb4628da0106bcc09be",
+    "url": "https://github.com/ocornut/imgui",
+    "branch": "docking"
+  },
+  "glfw": {
+    "version": "3.5.1",
+    "revision": "d9d6f0f1f967807ffade6598ea9a631ebaf37a56"
+  },
+  "acquiredArchives": {
+    "glfw-upstream.tar.gz": [
+      "glfw",
+      "https://codeload.github.com/glfw/glfw/tar.gz/d9d6f0f1f967807ffade6598ea9a631ebaf37a56",
+      "96722514789b1aa1ad9c4debd874450156ea457aea691e546ffaf5b53892d5a3"
+    ],
+    "curl-8.23.0.tar.xz": [
+      "curl",
+      "https://curl.se/download/curl-8.23.0.tar.xz",
+      "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5"
+    ],
+    "sqlite-amalgamation-3540100.zip": [
+      "sqlite",
+      "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+      "0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9"
+    ],
+    "libXcursor-1.2.3.tar.xz": [
+      "libXcursor",
+      "https://www.x.org/releases/individual/lib/libXcursor-1.2.3.tar.xz",
+      "fde9402dd4cfe79da71e2d96bb980afc5e6ff4f8a7d74c159e1966afb2b2c2c0"
+    ],
+    "libXrandr-1.5.4.tar.xz": [
+      "libXrandr",
+      "https://www.x.org/releases/individual/lib/libXrandr-1.5.4.tar.xz",
+      "1ad5b065375f4a85915aa60611cc6407c060492a214d7f9daf214be752c3b4d3"
+    ],
+    "libXinerama-1.1.5.tar.xz": [
+      "libXinerama",
+      "https://www.x.org/releases/individual/lib/libXinerama-1.1.5.tar.xz",
+      "5094d1f0fcc1828cb1696d0d39d9e866ae32520c54d01f618f1a3c1e30c2085c"
+    ],
+    "libXi-1.8.2.tar.xz": [
+      "libXi",
+      "https://www.x.org/releases/individual/lib/libXi-1.8.2.tar.xz",
+      "d0e0555e53d6e2114eabfa44226ba162d2708501a25e18d99cfb35c094c6c104"
+    ],
+    "libXfixes-6.0.1.tar.xz": [
+      "libXfixes",
+      "https://www.x.org/releases/individual/lib/libXfixes-6.0.1.tar.xz",
+      "b695f93cd2499421ab02d22744458e650ccc88c1d4c8130d60200213abc02d58"
+    ]
+  },
+  "selection": "ImKit core include closure, 15 core units and Inter assets; no editor/show/Gallery units. ImGui core/matching selected backends. GLFW/curl full source archives; SQLite amalgamation; X11 headers/notices only.",
+  "modifications": "Source bytes unchanged; selected regular archive members normalized to mode 0644. Original upstream CMake retained as provenance; core-only integration adapter is separate.",
+  "trust": "Exact Git object or HTTPS archive hash; independent signature authenticity not established"
+}

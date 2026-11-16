@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "roots_commit": "12a50ee10a359da22f6bb37798da8ac6b2b99977",
+  "core_commit": "f0de87f040621468b956f01f526a43a010310501",
+  "core_release": "v32.1",
+  "contracts": [
+    {"method": "walletprocesspsbt", "file": "src/wallet/rpc/spend.cpp", "defaults": {"sign": "true", "bip32derivs": "true", "finalize": "true"}, "effect": "signs and finalizes by default; inspection false/false; approved signing true/false"},
+    {"method": "walletcreatefundedpsbt", "file": "src/wallet/rpc/spend.cpp", "defaults": {"locktime": "0", "bip32derivs": "true", "version": "DEFAULT_WALLET_TX_VERSION", "psbt_version": "2"}, "effect": "unsigned funding only; independently verify recipients/change/fees/eligible inputs"},
+    {"method": "createpsbt", "shared_args": ["CreateTxDoc"], "file": "src/rpc/rawtransaction.cpp", "defaults": {"locktime": "0", "replaceable": "true", "version": "DEFAULT_RAWTX_VERSION", "psbt_version": "2"}, "effect": "unsigned construction only"},
+    {"method": "finalizepsbt", "file": "src/rpc/rawtransaction.cpp", "defaults": {"extract": "true"}, "effect": "public finalization/extraction; no broadcast"},
+    {"method": "descriptorprocesspsbt", "file": "src/rpc/rawtransaction.cpp", "defaults": {"bip32derivs": "true", "finalize": "true"}, "effect": "can sign when private descriptors supplied; no sign argument; GUI uses public descriptors and finalize=false for enrichment"},
+    {"method": "psbtbumpfee", "definition": "bumpfee_helper", "file": "src/wallet/rpc/spend.cpp", "defaults": {"replaceable": "true", "psbt_version": "2"}, "effect": "prepare unsigned replacement only; do not use bumpfee to bypass review"},
+    {"method": "createwallet", "file": "src/wallet/rpc/wallet.cpp", "defaults": {"disable_private_keys": "false", "blank": "false", "descriptors": "true", "external_signer": "false"}, "effect": "stateful creation; GUI chooses custody explicitly; do not blindly retry cancellation"},
+    {"method": "listdescriptors", "file": "src/wallet/rpc/backup.cpp", "defaults": {"private": "false"}, "effect": "public inventory; Roots startup dangerous-RPC gate applies even to public mode"},
+    {"method": "listunspent", "file": "src/wallet/rpc/coins.cpp", "defaults": {"minconf": "1", "maxconf": "9999999", "include_unsafe": "true"}, "effect": "coin observations; unsafe inclusion is not permission to spend every returned coin"},
+    {"method": "combinepsbt", "file": "src/rpc/rawtransaction.cpp", "defaults": {}, "effect": "public merge after independent identity/prevout/policy checks"},
+    {"method": "restorewallet", "file": "src/wallet/rpc/backup.cpp", "defaults": {}, "effect": "stateful restore; path belongs to daemon host"},
+    {"method": "importdescriptors", "file": "src/wallet/rpc/backup.cpp", "defaults": {}, "effect": "stateful import/rescan; no blind retries"},
+    {"method": "getaddressinfo", "file": "src/wallet/rpc/addresses.cpp", "defaults": {}, "effect": "wallet address observation"},
+    {"method": "getnewaddress", "file": "src/wallet/rpc/addresses.cpp", "defaults": {}, "effect": "stateful address allocation"},
+    {"method": "deriveaddresses", "file": "src/rpc/output_script.cpp", "registry": "src/rpc/output_script.cpp", "defaults": {}, "effect": "public derivation without consuming receive index"},
+    {"method": "listsinceblock", "file": "src/wallet/rpc/transactions.cpp", "defaults": {}, "effect": "incremental wallet observations, including reorg removals"},
+    {"method": "gettransaction", "file": "src/wallet/rpc/transactions.cpp", "defaults": {}, "effect": "wallet transaction observation, not arbitrary complete chain history"},
+    {"method": "lockunspent", "file": "src/wallet/rpc/coins.cpp", "defaults": {}, "effect": "stateful daemon coin locks; preserve ownership"},
+    {"method": "sendrawtransaction", "file": "src/rpc/mempool.cpp", "registry": "src/rpc/mempool.cpp", "defaults": {}, "effect": "explicit submission; timeout is uncertainty"},
+    {"method": "testmempoolaccept", "file": "src/rpc/mempool.cpp", "registry": "src/rpc/mempool.cpp", "defaults": {}, "effect": "relay-policy preflight observation; no submission guarantee"},
+    {"method": "enumeratesigners", "file": "src/rpc/external_signer.cpp", "registry": "src/rpc/external_signer.cpp", "build_gate": "ENABLE_EXTERNAL_SIGNER", "defaults": {}, "effect": "daemon signer enumeration; no GUI USB/HID transport"},
+    {"method": "walletdisplayaddress", "file": "src/wallet/rpc/addresses.cpp", "build_gate": "ENABLE_EXTERNAL_SIGNER", "defaults": {}, "effect": "explicit daemon-mediated device display verification"},
+    {"method": "sweepprivkeys", "baselines": ["roots"], "file": "src/wallet/rpc/spend.cpp", "defaults": {}, "effect": "Roots-only transient daemon custody; preview/review/explicit submission"},
+    {"method": "exportaddresskey", "baselines": ["roots"], "file": "src/wallet/rpc/backup.cpp", "defaults": {}, "effect": "Roots-only dangerous secret export; outside automatic GUI workflows"}
+  ],
+  "negative_fixtures": [
+    {"id": "unsupported-method", "rpc_error": -32601, "meaning": "unsupported/disabled RPC, no product-name inference"},
+    {"id": "unsupported-argument", "rpc_error": -8, "meaning": "unsupported named argument; adapt proven capabilities, never drop constraints"},
+    {"id": "wallet-not-loaded", "rpc_error": -18, "meaning": "wallet unavailable; preserve tab/document identity"},
+    {"id": "wallet-disabled", "rpc_error": -32601, "meaning": "known disabled-wallet fixture; generic server needs explicit evidence before naming this cause"},
+    {"id": "pruned-node", "field": "getblockchaininfo.pruned=true", "meaning": "historical data may be unavailable; never infer complete history"},
+    {"id": "external-signer-missing", "rpc_error": -1, "meaning": "signer configuration absent; no connected-device claim"},
+    {"id": "roots-public-descriptor-policy", "rpc_error": -4, "meaning": "requires explicit --allow-dangerous-rpc startup policy; never silently enable"},
+    {"id": "wrong-network-public-key", "rpc_error": -5, "meaning": "network-specific extended-public-key prefix mismatch"}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "archive": "test-inputs.tar.gz",
+  "sha256": "06e3d5eca63e966cfcbd734423c5d7b65293213ab469d0c42af3aca8af08d2ae",
+  "manifest": "test_inputs/manifest.json",
+  "manifestSha256": "a94702071019a711d4875dfa905fe756a3754aa449309e98c8e4e0de06bf6670",
+  "engineRevision": "7c808483d6f0a69b9d0843d5f4a141f0a9f74a58",
+  "upstreamArchiveSha256": "6aaefa028e00ca7b3fdad73848c83870bd903db61f083ac0d476db88a57b36c4",
+  "packaging": "Deterministic gzip mtime0/USTAR sorted original files; no source adaptation; original pins/licenses unchanged"
+}

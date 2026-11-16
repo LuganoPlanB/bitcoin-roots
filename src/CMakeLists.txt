@@ -416,6 +416,10 @@ if(BUILD_GUI)
   add_subdirectory(qt)
 endif()
 
+if(BUILD_ROOTS_GUI)
+  add_subdirectory(roots-gui)
+endif()
+
 
 if(BUILD_KERNEL_LIB)
   add_subdirectory(kernel)

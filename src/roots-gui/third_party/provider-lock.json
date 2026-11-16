@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "normal_build_network": "forbidden",
+  "libwally": {
+    "archive": "libwally-core-1.6.1.tar.gz",
+    "sha256": "82d7d92fc8ffb3c6fde757a21997a7d4eca200ce6e960aef73faab307492758a",
+    "bytes": 3942853,
+    "entries": 676,
+    "url": "https://github.com/ElementsProject/libwally-core",
+    "tag": "release_1.6.1",
+    "revision": "f7b0a15b8d6fc79a5c4ed0123955dd482934483e",
+    "license": "MIT; CCAN CC0/MIT/BSD-2-Clause; Android/Wycheproof Apache-2.0; unused Autoconf macros GPL-3.0-or-later with retained exceptions",
+    "secp256k1_zkp": {
+      "url": "https://github.com/BlockstreamResearch/secp256k1-zkp",
+      "revision": "8e1f96c20e16bf960be6caec7f3c94acb360cdf2",
+      "license": "MIT"
+    },
+    "patches": [
+      {
+        "path": "patches/libwally-1.6.1-psbt-conformance.patch",
+        "sha256": "b9ee0a35dbfe72ab6144ec05dc9ea38035191f62262668b82b71bce4294ad1d5"
+      }
+    ]
+  },
+  "bips_vectors": {
+    "archive": "bips-provider-vectors.tar.gz",
+    "sha256": "7c1dcfccc5980bd028db377287b27016a7e14f920df7711ecd0639541dd75aaa",
+    "bytes": 59304,
+    "entries": 5,
+    "revision": "b34d9f751791d4feb22feff4f2ed00bcac83961b",
+    "license": "BSD-2-Clause; copyright/license statements preserved in source documents",
+    "inputs": [
+      {
+        "path": "bip-0174.mediawiki",
+        "url": "https://raw.githubusercontent.com/bitcoin/bips/b34d9f751791d4feb22feff4f2ed00bcac83961b/bip-0174.mediawiki",
+        "sha256": "1c73b0d4afe3bf1805656968010261964a3657bf116aa371201dec6d0999047f"
+      },
+      {
+        "path": "bip-0340.mediawiki",
+        "url": "https://raw.githubusercontent.com/bitcoin/bips/b34d9f751791d4feb22feff4f2ed00bcac83961b/bip-0340.mediawiki",
+        "sha256": "17d64d6dc6bc97f4ecf178697bf810b92aa2a9e41ef13db809c25bc44a9b8109"
+      },
+      {
+        "path": "bip-0370.mediawiki",
+        "url": "https://raw.githubusercontent.com/bitcoin/bips/b34d9f751791d4feb22feff4f2ed00bcac83961b/bip-0370.mediawiki",
+        "sha256": "b2b6e9099592fa04179383f9a1fd8b201fbeef4470f4c3f1c050d25589979c57"
+      },
+      {
+        "path": "bip-0371.mediawiki",
+        "url": "https://raw.githubusercontent.com/bitcoin/bips/b34d9f751791d4feb22feff4f2ed00bcac83961b/bip-0371.mediawiki",
+        "sha256": "c2e8143a3c9aee0ee38d863cf40947ddf8ee67b4f40a748fb6925ccc5ad4b791"
+      },
+      {
+        "path": "bip340-test-vectors.csv",
+        "url": "https://raw.githubusercontent.com/bitcoin/bips/b34d9f751791d4feb22feff4f2ed00bcac83961b/bip-0340/test-vectors.csv",
+        "sha256": "34c9d1d9c3a88d524bc80778540dc43f8306ec249a7485293063c376db851c2d"
+      }
+    ]
+  },
+  "license_texts": [
+    {
+      "path": "licenses/Apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/Autoconf-exception-3.0.txt",
+      "sha256": "bb96c8e5d1aeba92975ad66f23f6c9316581247fd0c82c3f0d025f56edb30533"
+    },
+    {
+      "path": "licenses/GPL-3.0.txt",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    }
+  ],
+  "license_sources": {
+    "GPL-3.0.txt": "Debian /usr/share/common-licenses/GPL-3; GNU GPL version 3 full text",
+    "Apache-2.0.txt": "Debian /usr/share/common-licenses/Apache-2.0; Apache license version 2.0 full text",
+    "Autoconf-exception-3.0.txt": "https://raw.githubusercontent.com/spdx/license-list-data/31846481de7ea17d92f2f46fad76abe58b2e9bb0/text/Autoconf-exception-3.0.txt"
+  }
+}
