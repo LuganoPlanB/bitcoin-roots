@@ -6,6 +6,7 @@ const overview = [
   { feature: "Disk space", core: "Keep all blocks or turn on pruning", roots: "Keep all blocks or turn on pruning" },
   { feature: "Relay policy", core: "Uses Core’s relay defaults", roots: "Tighter limits on embedded data, with more settings to choose from" },
   { feature: "Using a wallet", core: "Send, receive and choose which coins to spend", roots: "Also see address reuse and preview a private-key sweep" },
+  { feature: "Signing messages", core: "Sign with a legacy address", roots: "Also sign with supported native SegWit and Taproot addresses" },
 ];
 
 const details = [
@@ -13,6 +14,7 @@ const details = [
   { feature: "Replacing transactions", core: "Uses full replace-by-fee policy.", roots: "Adds a replacement policy selector (-mempoolreplacement) and a fee-replacement checkbox when sending." },
   { feature: "Inspecting the mempool", core: "getmempoolinfo reports size, fees and memory use.", roots: "The same command also reports the local policy settings in effect." },
   { feature: "Choosing coins to spend", core: "Coin control lets you select individual outputs.", roots: "Also shows whether an address was reused and how much an output is worth after the fee to spend it." },
+  { feature: "Message signing RPCs", core: "signmessage and verifymessage use compact signatures for legacy P2PKH addresses.", roots: "The same calls also support BIP322 simple proofs for native P2WPKH, P2WSH and Taproot (P2TR) addresses. Verification needs no wallet." },
   { feature: "Sweeping a private key", core: "No built-in sweep dialog.", roots: "Preview a transfer from a supported private key into your wallet, then decide whether to broadcast it." },
   { feature: "Access to spending keys", core: "Wallet permissions and unlock rules apply.", roots: "Also disables key-disclosure commands by default. They require an explicit startup option (--allow-dangerous-rpc)." },
   { feature: "Reconstructing blocks", core: "Limits the number of extra transactions kept for compact blocks.", roots: "Also limits how much memory those transactions use. The default is 10 MB." },
