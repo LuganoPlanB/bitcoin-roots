@@ -45,6 +45,14 @@ for directory in "$build_dir" "$install_dir"; do
 done
 mkdir -p "$build_dir"
 release_flags='-fPIC -g0 -O2 -fstack-protector-all -D_FORTIFY_SOURCE=2 -fno-strict-overflow'
+if [[ "$1" == arm_hf ]]; then
+    # The pinned ARM SDK cannot link the required atomic operations as static PIE.
+    linker_flags='-static -static-libgcc -static-libstdc++ -no-pie'
+    final_link_mode=-no-pie
+else
+    linker_flags='-static-pie -static-libgcc -static-libstdc++'
+    final_link_mode=-static-pie
+fi
 {
     cmake -S "$source_dir" -B "$build_dir" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$toolchain_prefix/settings.cmake" \
@@ -52,8 +60,8 @@ release_flags='-fPIC -g0 -O2 -fstack-protector-all -D_FORTIFY_SOURCE=2 -fno-stri
         -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
         -DCMAKE_C_FLAGS="$release_flags" -DCMAKE_CXX_FLAGS="$release_flags" \
         -DCCACHE=OFF -DWITH_CCACHE=OFF -DFORCE_STATIC=OFF -DBUILD_SHARED_LIBS=OFF \
-        -DCMAKE_EXE_LINKER_FLAGS='-static-pie -static-libgcc -static-libstdc++' \
-        -DAPPEND_LDFLAGS=-static-pie \
+        -DCMAKE_EXE_LINKER_FLAGS="$linker_flags" \
+        -DAPPEND_LDFLAGS="$final_link_mode" \
         -DAPPEND_CXXFLAGS=-fPIC \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$install_dir" \
         -DCLIENT_VERSION_TAG="$RELEASE_TAG" -DBUILD_GUI=OFF -DENABLE_IPC=OFF \

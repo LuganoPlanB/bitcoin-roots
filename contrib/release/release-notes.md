@@ -29,6 +29,8 @@ unchanged and do not qualify this candidate.
   manifest/draft requires all nine packages. See the
   [musl release profile](../../ci/release/README.md#static-headless-musl-packages)
   for checks and runtime coverage limits. Actual builds remain a release gate.
+  ARM hard-float uses static non-PIE linking because of the pinned SDK's
+  static-PIE atomic-operation link limitation; the 64-bit profiles use static PIE.
 
 ## Inherited from v32.1-roots.2
 
