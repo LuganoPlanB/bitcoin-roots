@@ -1,114 +1,25 @@
 ---
 title: Principles
-description: The Bitcoin Roots principles for Bitcoin consensus, local node policy, upstream development, and reviewable differences.
+description: How Bitcoin Roots checks blocks, handles transactions and builds on Bitcoin Core.
 pageClass: bitcoin-roots-reading
-head:
-  - - meta
-    - property: og:title
-      content: Bitcoin Roots Principles
-  - - meta
-    - property: og:description
-      content: The boundary between Bitcoin consensus and local node policy in Bitcoin Roots.
 ---
 
 # Principles
 
-Bitcoin Roots exists to preserve a clear boundary between Bitcoin consensus and
-node policy.
+## Every node checks the blocks
 
-Consensus is shared across the network. Policy belongs to the operator. Bitcoin
-Roots provides conservative local controls without turning those preferences
-into new rules for Bitcoin.
+Bitcoin Roots follows the same rules as Bitcoin Core when it decides whether a block is valid. Those shared rules are called *consensus*. They let people run different software and still agree on Bitcoin’s history.
 
-## 1. Bitcoin consensus is shared
+## You choose what your node relays
 
-A Bitcoin node independently determines whether blocks and transactions satisfy
-Bitcoin consensus rules.
+Before a transaction appears in a block, your node can hold it in its *mempool* and pass it on to peers. You can set limits on what it keeps and shares. These choices are your node’s *policy*.
 
-Bitcoin Roots follows Bitcoin Core-compatible consensus. It must accept blocks
-that are valid under those rules, including blocks containing transactions that
-its local mempool policy would not have accepted or relayed.
+For example, your node might decline to pass on a transaction carrying more data than you allow. If a miner later includes that transaction in a valid block, your node accepts the block. The project keeps those two decisions separate. Roots does not enforce RDTS/BIP-110.
 
-## 2. Policy belongs to the operator
+## Where Roots comes from
 
-Before confirmation, every node chooses which transactions to keep in memory
-and which to relay.
+Each Roots release starts with Bitcoin Core. Roots also carries selected wallet, networking and policy tools developed in Bitcoin Knots. The project publishes its changes as [release patches](/patches/) so anyone can see what changed and review the code.
 
-These choices can reflect resource limits, security considerations, privacy
-requirements, fee policy, or an operator’s preferred use of the network. They
-remain local choices. They do not redefine Bitcoin validity for other nodes.
+Changes to the rules for valid blocks need broad agreement across Bitcoin. For local choices, the project favours settings people can understand, test and change for themselves.
 
-## 3. Consensus neutrality does not require policy neutrality
-
-A node can apply conservative transaction relay and mempool rules while
-remaining neutral at the consensus layer.
-
-Bitcoin Roots supports stricter local policy where it is useful, but does not
-use that policy to reject otherwise valid Bitcoin blocks.
-
-## 4. Bitcoin Core remains the development trunk
-
-Bitcoin Core is the principal upstream source for consensus, validation,
-security, networking, and protocol development.
-
-Suitable Bitcoin Core changes are reviewed and incorporated into Bitcoin Roots
-releases. Staying connected to this development trunk reduces unnecessary
-divergence and makes differences easier to inspect.
-
-## 5. Selected Knots controls remain useful
-
-Bitcoin Knots developed policy and operator controls that many node operators
-found useful.
-
-Bitcoin Roots preserves selected features where they improve transaction policy,
-privacy, resource control, or node operation without changing Bitcoin consensus.
-
-These features are selected individually. Bitcoin Roots does not claim automatic
-compatibility with every past or future Bitcoin Knots change.
-
-## 6. Consensus changes require exceptional scrutiny
-
-Consensus changes affect every participant who wishes to remain on the same
-network. They therefore require a much higher threshold than local policy
-changes.
-
-Bitcoin Roots does not enforce RDTS/BIP-110. Concerns about network use should
-first be addressed through transparent node and miner policy unless a broadly
-supported consensus change is justified through evidence, review, and careful
-coordination.
-
-No developer group, miner, company, or single software project can unilaterally
-define agreement for the broader Bitcoin network.
-
-## 7. Differences must be visible
-
-Project-specific changes should be documented, reviewable, and testable.
-
-Operators should be able to determine which behaviour comes from Bitcoin Core,
-which policy features are preserved from Bitcoin Knots, and which changes are
-specific to Bitcoin Roots.
-
-## 8. Security takes priority over novelty
-
-Full-node software handles security-critical data and may protect funds.
-
-Bitcoin Roots should favour careful review, reproducible testing, predictable
-operation, and understandable configuration over rapid feature accumulation.
-
-## Practical consequences
-
-In practice, these principles mean:
-
-- Bitcoin Roots remains on the Bitcoin network.
-- Bitcoin Roots follows Bitcoin Core-compatible block validity.
-- Local policy may reject or decline to relay an unconfirmed transaction.
-- The same transaction may later appear in a valid block.
-- Bitcoin Roots must accept that valid block.
-- Policy differences must not silently become consensus differences.
-- Consensus-affecting changes must be prominently identified and reviewed.
-
-## Continue
-
-- [Compare implementations](/compare)
-- [Read the transaction relay policy](/doc/policy/README)
-- [View the Bitcoin Roots source](https://github.com/LuganoPlanB/bitcoin-roots)
+[Compare Bitcoin Core and Bitcoin Roots](/compare)

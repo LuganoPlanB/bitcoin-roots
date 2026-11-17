@@ -24,49 +24,11 @@ export async function checkDocumentationRoutes(groups, outputDirectory) {
 }
 
 const pages = {
-  "privacy.html": [
-    "<h1",
-    "Privacy settings",
-    "Defaults at a glance",
-    "Private transaction broadcasting",
-    "Wallet privacy and coin selection",
-    "Versioned references",
-  ],
-  "index.html": [
-    'class="roots-home"',
-    "Your node. Your policy. Bitcoin consensus.",
-    "Bitcoin Core-compatible consensus",
-    "Independently verify Bitcoin",
-    "Know exactly where policy ends",
-    "Open development for security-critical software",
-    "Get started",
-  ],
-  "principles.html": [
-    "<h1",
-    "Principles",
-    "Bitcoin consensus is shared",
-    "Policy belongs to the operator",
-    "Practical consequences",
-    "Compare implementations",
-  ],
-  "compare.html": [
-    "<h1",
-    "Compare Bitcoin node implementations",
-    "Versions reviewed",
-    "v32.1-roots.1",
-    "v32.1",
-    "v29.4.3.knots20260508",
-    "Roots-only features",
-    "exportaddresskey RPC",
-    "--allow-dangerous-rpc",
-    "getmempoolinfo.policy",
-    "Private-key sweeping",
-    "Advanced privacy-aware coin control",
-    "Monotonic process-uptime reporting",
-    "Windows taskbar synchronization progress",
-    "Project-specific consensus changes",
-    "Frequently asked questions",
-  ],
+  "privacy.html": ["Who can see my connection?", "private broadcasting"],
+  "index.html": ['class="roots-home"', "Run your own Bitcoin node", "Get started", "Compare with Core"],
+  "principles.html": ["Every node checks the blocks", "You choose what your node relays"],
+  "compare.html": ["At a glance", "A closer look", "Disk space", "Choosing coins to spend", "--allow-dangerous-rpc"],
+  "getting-started.html": ["Windows ZIP", "Apple silicon ZIP", "Linux ARM64 archive", "Let the first sync run"],
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -83,5 +45,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
 
   console.log(`Verified all ${routeCount} catalogue documentation routes.`);
-  console.log("Verified server-rendered content in the homepage, Principles, Compare, and Privacy HTML.");
+  console.log("Verified server-rendered content in the homepage, Get started, Principles, Compare, and Privacy HTML.");
 }
