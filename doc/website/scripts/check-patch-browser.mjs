@@ -49,10 +49,11 @@ const server = createServer(async (request, response) => {
         const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
         const fixture = ["prerelease", "empty"].find((name) => pathname.startsWith(`/_fixture-${name}/`));
         const prefix = fixture ? `/_fixture-${fixture}/` : base;
-        const sharedAsset = fixture && pathname.slice(prefix.length).startsWith("assets/");
+        const relativePath = pathname.slice(prefix.length);
+        const sharedAsset = relativePath.startsWith("assets/") || relativePath === "vp-icons.css";
         const root = resolve(fixture && !sharedAsset ? join(fixtureRoot, fixture) : siteDir);
         if (!pathname.startsWith(prefix)) return response.writeHead(404).end();
-        let path = resolve(root, pathname.slice(prefix.length));
+        let path = resolve(root, relativePath);
         if (path !== root && !path.startsWith(`${root}/`)) return response.writeHead(404).end();
         try { if ((await stat(path)).isDirectory()) path = join(path, "index.html"); }
         catch { path += ".html"; }
