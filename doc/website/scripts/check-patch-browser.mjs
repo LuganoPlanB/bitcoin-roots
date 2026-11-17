@@ -88,6 +88,7 @@ try {
         });
         const shellResponse = await page.goto(`${origin}${local("getting-started")}`, { waitUntil: "networkidle" });
         assert.equal(shellResponse.status(), 200, "Website shell is unavailable");
+        const siteLinks = await page.locator(".VPNavBarMenu a").allTextContents();
         if (viewport.width < 960) await page.locator(".VPNavBarHamburger").click();
         const nav = viewport.width < 960 ? page.locator(".VPNavScreen") : page.locator(".VPNavBar");
         await nav.getByRole("link", { name: "Patches", exact: true }).click();
@@ -95,7 +96,7 @@ try {
         assert.equal(await page.locator("body.roots-patches").count(), 1);
         assert.equal(await page.locator("#patch-latest").innerText(), releaseLabel(newest));
         assert.equal(await page.locator("header.VPNav").count(), 1);
-        assert.equal(await page.locator(".VPNavBarMenu a").count(), 9);
+        assert.deepEqual(await page.locator(".VPNavBarMenu a").allTextContents(), siteLinks);
         assert.equal(await page.locator(".patch-header").count(), 0);
         assert.equal(await page.locator(".patch-release-list > li").count(), catalogue.releases.length);
         assert.ok(!requests.some((url) => /catalogue\.json|\.patch(?:$|\?)|commit-\d|file-\d/.test(url)), "Initial shell/index loaded historical payload");
