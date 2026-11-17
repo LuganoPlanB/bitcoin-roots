@@ -3,8 +3,8 @@ defineProps<{ detailed?: boolean }>();
 
 const overview = [
   { feature: "Checking blocks", core: "Verifies the Bitcoin blockchain", roots: "Uses the same rules as Core" },
-  { feature: "Disk space", core: "Keep all blocks or turn on pruning", roots: "Same choice" },
-  { feature: "Sharing transactions", core: "Uses Core’s relay defaults", roots: "Tighter limits on embedded data, with more settings to choose from" },
+  { feature: "Disk space", core: "Keep all blocks or turn on pruning", roots: "Keep all blocks or turn on pruning" },
+  { feature: "Relay policy", core: "Uses Core’s relay defaults", roots: "Tighter limits on embedded data, with more settings to choose from" },
   { feature: "Using a wallet", core: "Send, receive and choose which coins to spend", roots: "Also see address reuse and preview a private-key sweep" },
 ];
 
