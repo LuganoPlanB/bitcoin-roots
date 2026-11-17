@@ -10,19 +10,19 @@ You can run Bitcoin Roots on a desktop or laptop. All you need to get started is
 
 ## Download Bitcoin Roots
 
-Choose a package from the **v32.1-roots.2** release. The [release page](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v32.1-roots.2) lists the signed checksums for verifying your download.
+Choose the package for your computer. You can verify your download with the signed checksums on the [latest release page](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest).
 
 ### Windows
 
-Download the [Windows ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/download/v32.1-roots.2/bitcoin-roots-windows-x86_64.zip) for a 64-bit Intel or AMD computer. Choose **Extract All**, then open `bitcoin-qt.exe` in the `bin` folder.
+Download the [Windows ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-windows-x86_64.zip) for a 64-bit Intel or AMD computer. Choose **Extract All**, then open `bitcoin-qt.exe` in the `bin` folder.
 
 ### macOS
 
-Open **Apple menu → About This Mac**. If you see an Apple M-series chip, download the [Apple silicon ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/download/v32.1-roots.2/bitcoin-roots-darwin-arm64.zip). If you see Intel, choose the [Intel Mac ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/download/v32.1-roots.2/bitcoin-roots-darwin-x86_64.zip). Unzip it, move `Bitcoin-Qt.app` to Applications and open it.
+Open **Apple menu → About This Mac**. If you see an Apple M-series chip, download the [Apple silicon ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-darwin-arm64.zip). If you see Intel, choose the [Intel Mac ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-darwin-x86_64.zip). Unzip it, move `Bitcoin-Qt.app` to Applications and open it.
 
 ### Linux
 
-Choose the [Linux x86_64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/download/v32.1-roots.2/bitcoin-roots-linux-x86_64.tar.gz) for an Intel or AMD computer, or the [Linux ARM64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/download/v32.1-roots.2/bitcoin-roots-linux-aarch64.tar.gz) for a 64-bit ARM system. If you’re unsure, `uname -m` shows which one you have. Extract the archive and open `bitcoin-qt` in the `bin` folder.
+Choose the [Linux x86_64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-linux-x86_64.tar.gz) for an Intel or AMD computer, or the [Linux ARM64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-linux-aarch64.tar.gz) for a 64-bit ARM system. If you’re unsure, `uname -m` shows which one you have. Extract the archive and open `bitcoin-qt` in the `bin` folder.
 
 ## Choose a drive and a storage limit
 

@@ -20,6 +20,6 @@ Sweeping requires a wallet that can sign locally. Only certain address types are
 
 ## Access to private keys
 
-Anyone who obtains a spending key may be able to spend the coins it controls. In v32.1-roots.2 the commands `exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled by default. They require the startup option `--allow-dangerous-rpc`. Configuration files and settings cannot enable them. Wallet permissions and unlock requirements still apply.
+Anyone who obtains a spending key may be able to spend the coins it controls. The commands `exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled by default. They require the startup option `--allow-dangerous-rpc`. Configuration files and settings cannot enable them. Wallet permissions and unlock requirements still apply.
 
 For how your node connects to peers, see [privacy settings](/privacy).
