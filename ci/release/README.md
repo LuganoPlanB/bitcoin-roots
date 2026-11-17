@@ -50,6 +50,11 @@ Executables explicitly link with `-static-pie -static-libgcc -static-libstdc++`.
 The SDK's `FORCE_STATIC` switch stays off to avoid adding ordinary `-static`
 startup selection to that PIE link mode. This preserves position-independent
 executables while keeping every runtime library static.
+`APPEND_LDFLAGS=-static-pie` keeps this mode after CMake's PIE flags; a later
+ordinary `-pie` would otherwise select a dynamic link again.
+Compilation uses `-fPIC` from the initial compiler probes onward, including
+after CMake's executable flags, so ARM and RISC-V stack-protector references
+remain position independent during the static PIE link.
 Qt, IPC, USDT, tests and experimental kernel tools are disabled. SQLite wallets,
 ZeroMQ, embedded dependencies, the `bitcoin` launcher, `bitcoind`, `bitcoin-cli`,
 `bitcoin-tx`, `bitcoin-util` and `bitcoin-wallet` are included. No Cap'n Proto or

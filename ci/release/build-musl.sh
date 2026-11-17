@@ -44,7 +44,7 @@ for directory in "$build_dir" "$install_dir"; do
     fi
 done
 mkdir -p "$build_dir"
-release_flags='-g0 -O2 -fstack-protector-all -D_FORTIFY_SOURCE=2 -fno-strict-overflow'
+release_flags='-fPIC -g0 -O2 -fstack-protector-all -D_FORTIFY_SOURCE=2 -fno-strict-overflow'
 {
     cmake -S "$source_dir" -B "$build_dir" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$toolchain_prefix/settings.cmake" \
@@ -53,6 +53,8 @@ release_flags='-g0 -O2 -fstack-protector-all -D_FORTIFY_SOURCE=2 -fno-strict-ove
         -DCMAKE_C_FLAGS="$release_flags" -DCMAKE_CXX_FLAGS="$release_flags" \
         -DCCACHE=OFF -DWITH_CCACHE=OFF -DFORCE_STATIC=OFF -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_EXE_LINKER_FLAGS='-static-pie -static-libgcc -static-libstdc++' \
+        -DAPPEND_LDFLAGS=-static-pie \
+        -DAPPEND_CXXFLAGS=-fPIC \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$install_dir" \
         -DCLIENT_VERSION_TAG="$RELEASE_TAG" -DBUILD_GUI=OFF -DENABLE_IPC=OFF \
         -DENABLE_WALLET=ON -DWITH_ZMQ=ON -DWITH_USDT=OFF \

@@ -135,7 +135,7 @@ class MuslReleaseTest(unittest.TestCase):
             shutil.copyfile(static, self.install / 'bin' / name)
         musl.validate(self.install, 'x86_64')
         binary = self.install / 'bin/bitcoin-cli'
-        subprocess.run(['cc', '-static-pie', '-fPIE', '-pie', str(source), '-o', str(binary)], check=True)
+        subprocess.run(['cc', '-fPIC', '-pie', str(source), '-o', str(binary), '-static-pie'], check=True)
         musl.validate(self.install, 'x86_64')
         subprocess.run([binary], check=True)
         subprocess.run(['cc', str(source), '-o', str(binary)], check=True)
@@ -189,6 +189,8 @@ class MuslReleaseTest(unittest.TestCase):
                 for expected in (f'-DARCH={triple}', f'-DCMAKE_C_COMPILER={env["CC"]}',
                                  f'-DCMAKE_CXX_COMPILER={env["CXX"]}', '-DFORCE_STATIC=OFF',
                                  '-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -static-libstdc++',
+                                 '-DAPPEND_LDFLAGS=-static-pie',
+                                 '-DAPPEND_CXXFLAGS=-fPIC',
                                  '-DBUILD_GUI=OFF', '-DENABLE_IPC=OFF', '-DENABLE_WALLET=ON',
                                  '-DWITH_ZMQ=ON', '-DBUILD_WALLET_TOOL=ON', '-DBUILD_TESTS=OFF',
                                  '-DCLIENT_VERSION_TAG=v32.1-roots.3'):
@@ -200,6 +202,7 @@ class MuslReleaseTest(unittest.TestCase):
                     self.assertNotIn('-Os', flags)
                     self.assertNotIn('-ffast-math', flags)
                     self.assertNotIn('-static', flags)
+                    self.assertIn('-fPIC', flags)
                 calls.unlink()
                 shutil.rmtree(build)
                 # The fixture simulates cmake --install creating the payload.
