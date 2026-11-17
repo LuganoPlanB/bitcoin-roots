@@ -1,12 +1,14 @@
 # Historical policy review and current v32 contracts
 
 The released S27 review and its S28/S29/S30/S34/S36 follow-ups remain available
-as the byte-identical [v31.1-roots.6 historical review](historical/mempool-policy-review-v31.1-roots.6.md).
-Its source is the exact released commit
-`e93a8cca047c12ce9cab97181dd30705ed0e7e83`, original Git blob
-`1837f64c27e05e1c3749ea82fac344007fe17dca`. Embedded relative paths refer to
-that original v31 document/source context; the [pinned released document](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.6/doc/mempool-policy-review.md)
-preserves those historical links. The inventory, raw-measurement context and
+in the local [v31.1-roots.6 historical review](historical/mempool-policy-review-v31.1-roots.6.md).
+The immutable [pinned released document](https://github.com/LuganoPlanB/bitcoin-roots/blob/v31.1-roots.6/doc/mempool-policy-review.md)
+retains the original v31 bytes and relative-link context from the exact released
+commit `e93a8cca047c12ce9cab97181dd30705ed0e7e83`, original Git blob
+`1837f64c27e05e1c3749ea82fac344007fe17dca`. The local historical copy preserves
+the narrative, measurements and attribution; only fifteen href destinations
+are repaired to resolve in the maintained v32 tree.
+The inventory, raw-measurement context and
 32,768-slot baseline are historical, not current v32 qualification or defaults.
 
 The unpublished v32.1 candidate starts directly from Core

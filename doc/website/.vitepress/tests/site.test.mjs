@@ -107,7 +107,8 @@ test("website-owned navigation only targets published pages", async () => {
     ].map((match) => match[1]);
 
     for (const route of routes) {
-      assert.ok(availableRoutes.has(route), `${file} targets unpublished route ${route}`);
+      const page = route.split(/[?#]/, 1)[0];
+      assert.ok(availableRoutes.has(page), `${file} targets unpublished route ${route}`);
     }
   }
 });
@@ -158,12 +159,20 @@ test("32.x navigation separates source availability from public release assets",
     readFile(resolve(siteRoot, "content/getting-started.md"), "utf8"),
   ]);
   assert.match(config, /text: "32.x source", link: "\/doc\/roots-v32-port-review"/);
-  assert.match(gettingStarted, /Core v32\.1 port and v32\.1-roots\.1 source/);
+  assert.match(gettingStarted, /v32\.1-roots\.2 source candidate/);
+  assert.match(gettingStarted, /Treat \.2 as unreleased until it appears in the\s+public release catalogue/);
+  assert.match(gettingStarted, /untagged-3450aebe1f5e3a73703b/);
+  assert.match(gettingStarted, /BIP322 simple message proofs/);
+  assert.match(gettingStarted, /does not restore a\s+Berkeley DB wallet engine/);
   assert.match(gettingStarted, /Source availability does not establish release publication/);
   assert.match(gettingStarted, /excludes\s+unpublished drafts/);
   assert.doesNotMatch(gettingStarted, /releases\/download\/v32/);
   await access(resolve(siteRoot, "content/doc/roots-v32-port-review.md"));
   await access(resolve(siteRoot, "content/doc/roots-build-portability.md"));
+  assert.equal(
+    await readFile(resolve(siteRoot, "content/doc/release-notes-bip322.md"), "utf8"),
+    await readFile(resolve(repositoryRoot, "doc/release-notes-bip322.md"), "utf8"),
+  );
 });
 
 test("wallet privacy copy states capabilities and boundaries", async () => {

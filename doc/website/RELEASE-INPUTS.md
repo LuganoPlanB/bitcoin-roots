@@ -37,6 +37,15 @@ build do not contact GitHub. Rendering these inputs into patch pages is a
 separate offline stage included in `npm run build`. A build requires a prepared
 input catalogue.
 
+The PR test workflow supplies its ephemeral, read-only `github.token` only to
+the release build step as `GITHUB_TOKEN`. The preparation CLI passes it solely
+to the fixed GitHub releases API GET; redirects are rejected and drafts are
+excluded before publication metadata is processed. Asset/CDN downloads and
+public deployment receipts remain unauthenticated. Local preparation works
+anonymously when `GITHUB_TOKEN` is absent. Authentication failures stop the
+build without an anonymous retry or stale-inventory fallback; an HTTP 403 alone
+does not establish its upstream cause. Do not supply a PAT or release secret.
+
 The ignored `.vitepress/release-inputs/catalogue.json` contains the stable,
 chronologically sorted public inventory, including prereleases and releases
 without a patch. `.vitepress/release-inputs/assets/` holds the original patch

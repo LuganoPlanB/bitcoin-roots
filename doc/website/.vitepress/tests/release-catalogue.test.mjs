@@ -124,3 +124,77 @@ test("API requests use fixed paginated URL and bounded time/body", async () => {
     fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("abort")))),
   }), /timed out/);
 });
+
+test("optional API credentials stay in the fixed request header with redirects disabled", async () => {
+  for (const token of [undefined, "ghs_mock_read_only_token"]) {
+    const calls = [];
+    await fetchReleasePage(3, { token, fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response("[]");
+    } });
+    assert.equal(calls.length, 1);
+    const { url, options } = calls[0];
+    assert.equal(url, "https://api.github.com/repos/LuganoPlanB/bitcoin-roots/releases?per_page=100&page=3");
+    assert.equal(options.redirect, "error");
+    assert.equal(options.method, "GET");
+    assert.equal(options.body, undefined);
+    assert.equal(options.headers.Authorization, token === undefined ? undefined : `Bearer ${token}`);
+    assert.equal(options.headers.Accept, "application/vnd.github+json");
+    assert.equal(options.headers["X-GitHub-Api-Version"], "2022-11-28");
+  }
+  for (const token of ["", "bad\r\nheader", "has space", 123, "x".repeat(4097)]) {
+    await assert.rejects(fetchReleasePage(1, { token, fetchImpl: () => assert.fail("invalid credential must not fetch") }),
+      { message: "Invalid GitHub releases API token" });
+  }
+});
+
+test("authenticated discovery finishes pagination and excludes drafts before validating or serializing them", async (t) => {
+  const token = "ghs_private_mock_marker";
+  const calls = [];
+  const pages = [[{ draft: true, id: -1, assets: token, tag_name: token, body: token }],
+    [release("v30.3rc1-roots.1", 1, { prerelease: true })], []];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push(url);
+    assert.equal(options.headers.Authorization, `Bearer ${token}`);
+    assert.equal(options.redirect, "error");
+    return Response.json(pages[Number(new URL(url).searchParams.get("page")) - 1]);
+  });
+  const result = await discoverReleases({ token });
+  assert.deepEqual(calls.map((url) => new URL(url).searchParams.get("page")), ["1", "2", "3"]);
+  assert.equal(result.releases.length, 1);
+  assert.equal(result.releases[0].prerelease, true);
+  assert.doesNotMatch(serializeCatalogue(result), new RegExp(token));
+});
+
+test("authenticated HTTP failures never retry anonymously or expose response bodies", async () => {
+  const token = "ghs_error_mock_marker";
+  for (const status of [301, 302, 401, 403, 429, 500]) {
+    let calls = 0;
+    await assert.rejects(fetchReleasePage(1, { token, fetchImpl: async (_url, options) => {
+      calls++;
+      assert.equal(options.headers.Authorization, `Bearer ${token}`);
+      assert.equal(options.redirect, "error");
+      return new Response(`private body ${token}`, { status, headers: { location: "https://evil.example/" } });
+    } }), { message: `GitHub release discovery failed (HTTP ${status})` });
+    assert.equal(calls, 1);
+  }
+});
+
+test("request, stream and JSON exceptions are redacted; authenticated bounds remain enforced", async () => {
+  const token = "ghs_exception_mock_marker";
+  for (const fetchImpl of [
+    async () => { throw new Error(`request Authorization: Bearer ${token}`); },
+    async () => new Response(new ReadableStream({ start(controller) { controller.error(new Error(`stream ${token}`)); } })),
+    async () => new Response(`private malformed JSON ${token}`),
+  ]) {
+    await assert.rejects(fetchReleasePage(1, { token, fetchImpl }), (error) => {
+      assert.doesNotMatch(error.stack, new RegExp(`${token}|private|Authorization`));
+      assert.equal(error.cause, undefined);
+      return true;
+    });
+  }
+  await assert.rejects(fetchReleasePage(1, { token, maxBytes: 2, fetchImpl: async () => new Response("large") }), /byte limit/);
+  await assert.rejects(fetchReleasePage(1, { token, timeoutMs: 5,
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error(token)))),
+  }), /timed out/);
+});

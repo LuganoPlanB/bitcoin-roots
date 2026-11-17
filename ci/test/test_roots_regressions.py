@@ -76,10 +76,26 @@ class RootsRegressionTest(unittest.TestCase):
 
     def test_fallback_retains_all_groups_and_documented_counts(self):
         plan = MODULE.selection(None, 'fast')
-        self.assertEqual(plan['groups'], ['mining', 'net', 'policy', 'runtime', 'wallet'])
-        self.assertEqual(len(plan['functional']), 28)
-        self.assertEqual(len(plan['fuzz']), 9)
+        self.assertEqual(plan['groups'], ['message', 'mining', 'net', 'policy', 'runtime', 'wallet'])
+        self.assertEqual(len(plan['functional']), 31)
+        self.assertEqual(len(plan['fuzz']), 10)
         self.assertEqual(plan['budgets']['functional'], 900)
+
+    def test_message_sources_and_tests_select_complete_contract(self):
+        expected = {'rpc_bip322.py', 'rpc_signmessagewithprivkey.py', 'wallet_signmessagewithaddress.py'}
+        for path in [*MODULE.MESSAGE_PATHS, *('test/functional/' + name for name in expected)]:
+            with self.subTest(path=path):
+                plan = MODULE.selection([path], 'fast')
+                self.assertEqual(plan['groups'], ['message'])
+                self.assertEqual(set(plan['functional']), expected)
+                self.assertEqual(plan['fuzz'], ['message'])
+        for path in MODULE.MESSAGE_WALLET_PATHS:
+            with self.subTest(path=path):
+                plan = MODULE.selection([path], 'fast')
+                self.assertEqual(plan['groups'], ['message', 'wallet'])
+                self.assertTrue(expected.issubset(plan['functional']))
+                self.assertIn('wallet_sweepprivkeys.py', plan['functional'])
+                self.assertEqual(set(plan['fuzz']), {'message', 'psbt', 'script'})
 
     def test_mixed_changes_take_union_and_all_tests_exist(self):
         wallet = MODULE.selection(['src/wallet/wallet.cpp'], 'fast')
@@ -106,7 +122,7 @@ class RootsRegressionTest(unittest.TestCase):
                 with contextlib.redirect_stderr(summary):
                     self.assertEqual(MODULE.execute(plan, 'fuzz', build, artifacts, []), 1)
                 results = json.loads((artifacts / 'fuzz-results.json').read_text())['results']
-                self.assertEqual(len(results), 2)
+                self.assertEqual(len(results), 3)
                 for record in results:
                     self.assertEqual(record['exit'], 3)
                     self.assertEqual(record['timeout'], expected + 10)
@@ -171,7 +187,10 @@ class RootsRegressionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             artifacts = work / 'host-artifacts'
+            shared_assets = work / 'shared inputs ₿'
+            shared_assets.mkdir()
             env = {'USER': work.name, 'CONTAINER_NAME': 'diagnostic-fixture',
+                   'QA_ASSETS_DIR': str(shared_assets), 'QA_ASSETS_REVISION': 'a' * 40,
                    'PATH': os.environ.get('PATH', '/usr/bin'), 'ROOTS_ARTIFACTS_DIR': str(artifacts),
                    'BASE_READ_ONLY_DIR': str(ROOT), 'BASE_ROOT_DIR': str(work / 'guest'),
                    'CCACHE_DIR': str(work / 'ccache'), 'DEPENDS_DIR': str(work / 'depends'),
@@ -191,10 +210,13 @@ class RootsRegressionTest(unittest.TestCase):
             def run(command, **kwargs):
                 calls.append(command)
                 if command[:2] == ['bash', '-c']:
-                    return SimpleNamespace(stdout='export ROOTS_ARTIFACTS_DIR=\n')
+                    return SimpleNamespace(stdout='export ROOTS_ARTIFACTS_DIR=\nexport QA_ASSETS_DIR=\nexport QA_ASSETS_REVISION=\n')
                 if command[:2] == ['docker', 'run']:
                     self.assertTrue(artifacts.is_dir())
                     self.assertIn(f'--mount=type=bind,src={artifacts},dst={artifacts}', command)
+                    self.assertIn(f'--mount=type=bind,src={shared_assets},dst={shared_assets},readonly', command)
+                    self.assertIn(f'QA_ASSETS_DIR={shared_assets}', env_file.read_text())
+                    self.assertIn('QA_ASSETS_REVISION=' + 'a' * 40, env_file.read_text())
                     self.assertIn(f'ROOTS_ARTIFACTS_DIR={artifacts}', env_file.read_text())
                     return SimpleNamespace(stdout='fixture-container\n')
                 if command[:2] == ['docker', 'exec'] and command[-1].endswith('/03_test_script.sh'):

@@ -60,7 +60,7 @@ class DynamicDustTest(BitcoinTestFramework):
         self.wait_until(lambda: node.getmempoolinfo()["loaded"])
         assert_equal(node.getmempoolentry(first_id)["fees"], first_fee)
         wallet.rescan_utxos()
-        with node.assert_debug_log(["Updating dust feerate to 100.000 sat/vB"]):
+        with node.assert_debug_log(["Updating dust feerate to 100.000 sat/vB"], timeout=1):
             node.mockscheduler(901)
         assert_equal(node.getmempoolentry(first_id)["fees"], first_fee)
         second = self.probe(wallet, value=100)
@@ -91,7 +91,7 @@ class DynamicDustTest(BitcoinTestFramework):
             assert_equal(fees["modified"], Decimal(100000 - 10900) / COIN)
         node.reconsiderblock(mined_hash)
         assert_equal(node.getrawmempool(), [])
-        with node.assert_debug_log(["Updating dust feerate to 3.000 sat/vB"]):
+        with node.assert_debug_log(["Updating dust feerate to 3.000 sat/vB"], timeout=1):
             node.mockscheduler(901)
         wallet.rescan_utxos()
         probe = self.probe(wallet, value=100)
@@ -120,7 +120,7 @@ class DynamicDustTest(BitcoinTestFramework):
         estimate = node.estimaterawfee(2, 0.8)["long"]["feerate"]
         expected = estimate * COIN * 3 / 1000
         assert expected > 3
-        with node.assert_debug_log([f"Updating dust feerate to {expected:.3f} sat/vB"]):
+        with node.assert_debug_log([f"Updating dust feerate to {expected:.3f} sat/vB"], timeout=1):
             node.mockscheduler(901)
         # The standardness snapshot must see publication too, while consensus
         # accepts a block containing the locally rejected transaction.
