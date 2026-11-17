@@ -44,8 +44,12 @@ an x86-64-v2 runner; target execution requirements follow the pinned SDK.
 SDK from those paths and uses its target-only CMake/pkg-config configuration.
 It builds with fixed parallelism 2 and installs into a new private directory.
 Application C/C++ compilation uses `-O2` in place of the SDK's `-Os`, retaining
-its other compile flags and strict floating-point semantics. Prebuilt SDK
+its security flags and strict floating-point semantics. Prebuilt SDK
 libraries retain their published build configuration.
+Executables explicitly link with `-static-pie -static-libgcc -static-libstdc++`.
+The SDK's `FORCE_STATIC` switch stays off to avoid adding ordinary `-static`
+startup selection to that PIE link mode. This preserves position-independent
+executables while keeping every runtime library static.
 Qt, IPC, USDT, tests and experimental kernel tools are disabled. SQLite wallets,
 ZeroMQ, embedded dependencies, the `bitcoin` launcher, `bitcoind`, `bitcoin-cli`,
 `bitcoin-tx`, `bitcoin-util` and `bitcoin-wallet` are included. No Cap'n Proto or
