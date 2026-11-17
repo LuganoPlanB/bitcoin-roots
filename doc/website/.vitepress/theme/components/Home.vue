@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
   <main class="roots-home" id="main-content">
     <section class="roots-signal" aria-labelledby="roots-title">
       <div class="roots-signal__message">
-        <p class="roots-signal__provenance">The Plan ₿ Foundation presents</p>
+        <p class="roots-signal__provenance">The Plan ₿ Foundation invites you to</p>
         <h1 id="roots-title">Run your own Bitcoin node</h1>
         <div class="roots-signal__introduction">
           <p>With Bitcoin Roots, your computer checks Bitcoin payments and blocks for itself.
