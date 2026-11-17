@@ -25,7 +25,7 @@ CHANGES = {
     "verifymessage": "Check a BIP322 simple message proof without loading a wallet.",
     "exportaddresskey": "Export the private keys your wallet holds for an address.",
     "sweepprivkeys": "Preview a sweep from private keys and authorize the reviewed transaction separately.",
-    "getmempoolinfo": "Read your node’s active relay settings in the policy field.",
+    "getmempoolinfo": "Read your node's active relay settings in the policy field.",
     "getpeerinfo": "See additional information about the current peer connection, including CPU use when available.",
     "disconnectnode": "Disconnect peers by subnet as well as by address or node ID.",
     "prioritisetransaction": "The dust check uses the active dust relay rate. Fee deltas that would overflow are rejected.",
