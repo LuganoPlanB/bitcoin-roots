@@ -1,4 +1,4 @@
-# Bitcoin Roots v32.1-roots.2 candidate
+# Bitcoin Roots v32.1-roots.3 candidate
 
 This is an unpublished candidate, not a release announcement. No public tag,
 downloadable package, deployment or publication is established by this text.
@@ -6,9 +6,9 @@ Source acceptance and release approval remain separate gates.
 
 The direct base is the exact official Bitcoin Core v32.1 commit
 `f0de87f040621468b956f01f526a43a010310501`. This maintenance candidate appends
-three reviewed Core PR ports to published
-[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
-(`f0393f2688656ba544b40fe508db909152201c18`), preserving that complete history.
+static headless musl release packaging to published
+[v32.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v32.1-roots.2),
+preserving that complete history and its three reviewed Core PR ports.
 Roots.1 already folds the complete released Roots v31 line through
 v31.1-roots.6 and its follow-up repairs into the owning semantic changes.
 Bitcoin Knots `29.3.knots20260507` is historical
@@ -16,7 +16,21 @@ feature provenance, not the direct base or a release dependency. Historical
 [v31.1-roots.6 notes](../../doc/release-notes/roots-v31.1-roots.6.md) are retained
 unchanged and do not qualify this candidate.
 
-## Changes since v32.1-roots.1
+## Changes since v32.1-roots.2
+
+- Add fully static, headless musl release targets for x86_64, ARM64, ARM
+  hard-float and RISC-V64 through pinned `dyne/musl-action` and SDK v2.6.0.
+  The additional assets are `bitcoin-roots-musl-x86_64.tar.gz`,
+  `bitcoin-roots-musl-arm_64.tar.gz`, `bitcoin-roots-musl-arm_hf.tar.gz`
+  and `bitcoin-roots-musl-riscv_64.tar.gz`.
+- Include the daemon, launcher, CLI, transaction/utility and SQLite wallet
+  tools with ZeroMQ. These packages omit Qt and multiprocess IPC. Packaging
+  rejects wrong-architecture or dynamically linked executables; the release
+  manifest/draft requires all nine packages. See the
+  [musl release profile](../../ci/release/README.md#static-headless-musl-packages)
+  for checks and runtime coverage limits. Actual builds remain a release gate.
+
+## Inherited from v32.1-roots.2
 
 - [Core PR #36872](https://github.com/bitcoin/bitcoin/pull/36872): select one
   fresh qa-assets revision per consuming Actions run and share verified unit
@@ -152,7 +166,7 @@ isolated regtest wrappers; optional-build and debug-only help omissions must
 not be interpreted as removed features. No old manual is reused as current help.
 
 Local maintenance, archive, synthetic-signing/draft and mocked transport tests
-do not establish hosted CI or actual five-platform builds. Full candidate,
+do not establish hosted CI or actual cross-platform builds. Full candidate,
 compatibility, integration and final accepted-SHA portable replay remain their
 own gates. Earlier source snapshots and binary results apply only to their
 recorded inputs; later source changes require renewed affected verification.
@@ -161,7 +175,8 @@ The portable patch is exported from the exact Core base and excludes
 `.github/**`. Local replay uses `git am -3 --keep-cr` with required commit
 signing and product blob/mode/symlink parity, while Core hosting files remain
 unchanged. Release machinery targets Linux x86_64/aarch64, macOS x86_64/arm64
-and Windows x86_64 packages. Package builds disable test execution and do not
+and Windows x86_64 packages, plus the four static headless musl targets above.
+Package builds disable source test suites and do not
 close source-verification gaps.
 
 Only a separately authorized tag push reaches required SHA512 manifest signing

@@ -1,0 +1,34 @@
+# Copyright (c) 2026 Plan-B Foundation
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+name: Musl PR builds
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/musl.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/reusable-musl-release.yml'
+      - 'ci/release/**'
+      - 'ci/test/**'
+      - 'cmake/**'
+      - 'depends/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: musl-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  musl:
+    uses: ./.github/workflows/reusable-musl-release.yml
+    with:
+      source-ref: ${{ github.event.pull_request.head.sha }}
+      release-tag: v32.1-roots.3
+      validate-release-source: false

@@ -64,14 +64,14 @@ class ReleaseVersionTest(unittest.TestCase):
             self.assertEqual(plist['CFBundleURLTypes'][0]['CFBundleURLSchemes'], ['bitcoin'])
             installer = (build / 'setup.nsi').read_text()
             self.assertIn('VIProductVersion 32.1.0.0', installer)
-            self.assertIn('VIAddVersionKey ProductVersion "32.1-roots.2"', installer)
+            self.assertIn('VIAddVersionKey ProductVersion "32.1-roots.3"', installer)
             self.assertIn('Name "Bitcoin Roots"', installer)
             result = subprocess.run(['c++', '-std=c++20', '-fsyntax-only', '-x', 'c++',
                 '-I' + str(build), '-I' + str(ROOT / 'src'), '-'],
                 input='#include <clientversion.h>\n#include <string_view>\n'
                       'static_assert(CLIENT_VERSION == 320100);\n'
                       'static_assert(std::string_view(CLIENT_NAME) == "Bitcoin Roots");\n'
-                      'static_assert(std::string_view(CLIENT_VERSION_STRING) == "32.1-roots.2");\n',
+                      'static_assert(std::string_view(CLIENT_VERSION_STRING) == "32.1-roots.3");\n',
                 capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -91,7 +91,7 @@ class ReleaseVersionTest(unittest.TestCase):
             return result, version.read_text() if version.exists() else None
 
     def test_explicit_v32_roots_tag_is_compiled_without_git_metadata(self):
-        for tag in ['v32.1-roots.1', 'v32.1-roots.2', 'v32.1-roots.6']:
+        for tag in ['v32.1-roots.1', 'v32.1-roots.2', 'v32.1-roots.3', 'v32.1-roots.6']:
             result, version = self.configure(tag)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(version, tag[1:])
@@ -105,7 +105,7 @@ class ReleaseVersionTest(unittest.TestCase):
     def test_default_product_version_preserves_numeric_and_wire_identity(self):
         result, version = self.configure()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(version, '32.1-roots.2')
+        self.assertEqual(version, '32.1-roots.3')
         config = (ROOT / 'CMakeLists.txt').read_text()
         for value in ['set(CLIENT_NAME "Bitcoin Roots")', 'set(CLIENT_VERSION_MAJOR 32)',
                       'set(CLIENT_VERSION_MINOR 1)', 'set(CLIENT_VERSION_BUILD 0)',
@@ -113,10 +113,17 @@ class ReleaseVersionTest(unittest.TestCase):
             self.assertIn(value, config)
         self.assertIn('UA_NAME("Satoshi")', (ROOT / 'src/clientversion.cpp').read_text())
 
-    def test_five_platforms_readonly_rehearsal_and_tag_only_signed_new_draft(self):
+    def test_nine_platforms_readonly_rehearsal_and_tag_only_signed_new_draft(self):
         workflow = (ROOT / '.github/workflows/release.yml').read_text()
         for platform in ['linux-x86_64', 'linux-aarch64', 'darwin-x86_64', 'darwin-arm64', 'windows-x86_64']:
             self.assertIn('bitcoin-roots-' + platform, workflow)
+        musl_workflow = (ROOT / '.github/workflows/reusable-musl-release.yml').read_text()
+        for arch in ['x86_64', 'arm_64', 'arm_hf', 'riscv_64']:
+            self.assertIn('arch: ' + arch, musl_workflow)
+        self.assertIn('bitcoin-roots-musl-${MUSL_ARCH}.tar.gz', musl_workflow)
+        self.assertIn('uses: ./.github/workflows/reusable-musl-release.yml', workflow)
+        self.assertIn('linux-release, musl-release, windows-release, macos-release', workflow)
+        self.assertIn('"$PUBLIC_KEY_FILE" "$RELEASE_TAG" 9', workflow)
         before, publish = workflow.split('  publish-release:', 1)
         self.assertNotIn('secrets.', before)
         self.assertIn('permissions:\n  contents: read', before)

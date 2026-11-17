@@ -57,13 +57,16 @@ class CreateCIDraftTest(unittest.TestCase):
                               env={**os.environ, 'PATH': f'{f.tools}:{os.environ["PATH"]}',
                                    'DRAFT_TEST_REMOTE': str(f.repository), 'DRAFT_TEST_RECORD': str(f.record), **environment})
 
-    def test_actual_signed_ci_draft_creates_exact_eight_assets_with_provenance(self):
+    def test_actual_signed_ci_draft_creates_exact_twelve_assets_with_provenance(self):
         template = (ROOT / 'contrib/release/release-notes.md').read_text()
         self.fixture.notes.write_text(template)
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         record = json.loads(self.fixture.record.read_text())
-        self.assertEqual(len(record['assets']), 8)
+        self.assertEqual(len(record['assets']), 12)
+        self.assertIn('All 9 platform packages were built from', record['notes'])
+        for arch in ('x86_64', 'arm_64', 'arm_hf', 'riscv_64'):
+            self.assertIn(f'bitcoin-roots-musl-{arch}.tar.gz', record['assets'])
         self.assertIn('SHA512SUMS.asc', record['assets'])
         self.assertIn(self.fingerprint, record['notes'])
         self.assertIn(self.fixture.commit, record['notes'])

@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-"""Create one signed CI draft from this run's validated five-platform outputs."""
+"""Create one signed CI draft from this run's validated release outputs."""
 
 import argparse
 import importlib.util
@@ -39,7 +39,7 @@ def verify_signature(manifest, signature, public_key, fingerprint, home):
 def create(args):
     expected = {*draft.PACKAGE_NAMES, f'bitcoin-roots-{args.tag[1:]}.patch', 'SHA512SUMS', 'SHA512SUMS.asc'}
     if not args.assets.is_dir() or args.assets.is_symlink() or set(p.name for p in args.assets.iterdir()) != expected:
-        raise ValueError('Signed CI draft requires exactly eight release assets')
+        raise ValueError(f'Signed CI draft requires exactly {len(expected)} release assets')
     for path in args.assets.iterdir():
         if path.is_symlink() or not path.is_file() or not path.stat().st_size:
             raise ValueError('Release asset must be a nonempty regular file')
@@ -55,7 +55,7 @@ def create(args):
         template = args.notes.read_text()
         notes = temporary / 'notes.md'
         notes.write_text(template + '\n## CI build and signing provenance\n\n'
-                         f'All five platform packages were built from `{args.commit}` in '
+                         f'All {len(draft.PACKAGE_NAMES)} platform packages were built from `{args.commit}` in '
                          f'[GitHub Actions run {args.run_id}](https://github.com/{args.repository}/actions/runs/{args.run_id}). '
                          'Packages include the project COPYING file.\n\n'
                          f'`SHA512SUMS.asc` signs the SHA512 manifest with release key `{args.fingerprint}`. '

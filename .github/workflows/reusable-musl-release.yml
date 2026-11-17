@@ -1,0 +1,137 @@
+# Copyright (c) 2026 Plan-B Foundation
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+name: Static headless musl packages
+
+on:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact source ref to build
+        required: true
+        type: string
+      release-tag:
+        description: Roots version to compile and use as archive root
+        required: true
+        type: string
+      release-commit:
+        description: Canonical commit for an authorized release rehearsal
+        default: ''
+        type: string
+      release-event:
+        description: Release source validation event
+        default: ''
+        type: string
+      validate-release-source:
+        description: Require canonical release source validation (disabled only for PR builds)
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_SOURCE_REF: ${{ inputs.source-ref }}
+  RELEASE_TAG: ${{ inputs.release-tag }}
+  RELEASE_COMMIT: ${{ inputs.release-commit }}
+
+jobs:
+  musl-release:
+    name: Static musl ${{ matrix.arch }} release (headless)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            sha256: 67629e48c83942e2ce74cfd79b58eda1c7100d5a6c4bc937e69b450670a45a97
+          - arch: arm_64
+            sha256: 12325c21c16b9362b0346a4527d38066cea61ae0c5bd80221b7abecbfda1187c
+          - arch: arm_hf
+            sha256: 3cde751caa29fb73db8abb73874072763f93fe803e839a98dad079d5522061fd
+          - arch: riscv_64
+            sha256: 1553017a3eeb23c6ad0a0444000b0fec0ce9c4b0a2199a17c2c84cf034d00d21
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SOURCE_REF }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare and validate release source
+        if: inputs.validate-release-source
+        run: |
+          set -Eeuo pipefail
+          ci/release/prepare-release-source.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "${{ inputs.release-event }}"
+
+      - name: Set up verified musl toolchain
+        id: musl
+        uses: dyne/musl-action@fe1d1871b096824ddb7aa158f68dd63dabdc9586
+        with:
+          target_arch: ${{ matrix.arch }}
+          version: v2.6.0
+          sha256: ${{ matrix.sha256 }}
+
+      - name: Build static headless binaries
+        env:
+          CC: ${{ steps.musl.outputs.CC }}
+          CXX: ${{ steps.musl.outputs.CXX }}
+          MUSL_ARCH: ${{ matrix.arch }}
+        run: |
+          set -Eeuo pipefail
+          ci/release/build-musl.sh "$MUSL_ARCH" \
+            "${RUNNER_TEMP}/musl-build" "${RUNNER_TEMP}/musl-install"
+
+      - name: Smoke test native musl binaries
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -Eeuo pipefail
+          datadir="$(mktemp -d "${RUNNER_TEMP}/musl-smoke.XXXXXX")"
+          trap 'rm -rf -- "$datadir"' EXIT
+          "${RUNNER_TEMP}/musl-install/bin/bitcoin" --help > /dev/null
+          for binary in bitcoin-tx bitcoin-util; do
+            "${RUNNER_TEMP}/musl-install/bin/${binary}" -help > /dev/null
+          done
+          for binary in bitcoind bitcoin-cli bitcoin-wallet; do
+            "${RUNNER_TEMP}/musl-install/bin/${binary}" -datadir="$datadir" -regtest -help > /dev/null
+          done
+          "${RUNNER_TEMP}/musl-install/bin/bitcoin-wallet" -datadir="$datadir" -regtest -wallet=smoke create
+          "${RUNNER_TEMP}/musl-install/bin/bitcoind" -datadir="$datadir" -regtest -version | grep -F -- "${RELEASE_TAG#v}"
+
+      - name: Package static headless binaries
+        env:
+          MUSL_ARCH: ${{ matrix.arch }}
+        run: |
+          set -Eeuo pipefail
+          install_dir="${RUNNER_TEMP}/musl-install"
+          python3 ci/release/validate-musl.py "$install_dir" "$MUSL_ARCH"
+          archive_root="$(python3 ci/release/archive.py root-name)"
+          package_dir="${RUNNER_TEMP}/release-packages"
+          mkdir -p "$package_dir"
+          python3 ci/release/archive.py stage-copying "$install_dir"
+          archive="${package_dir}/bitcoin-roots-musl-${MUSL_ARCH}.tar.gz"
+          tar -C "$install_dir" --transform "flags=r;s|^\.|${archive_root}|" -czf "$archive" .
+          python3 ci/release/archive.py validate "$archive" "$archive_root" --copying COPYING
+
+      - name: Retain failed musl build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failure-musl-${{ matrix.arch }}-${{ env.RELEASE_TAG }}
+          path: |
+            ${{ runner.temp }}/musl-build/CMakeCache.txt
+            ${{ runner.temp }}/musl-build/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/musl-build/build.log
+          if-no-files-found: warn
+
+      - name: Upload unsigned release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitcoin-roots-musl-${{ matrix.arch }}-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/release-packages/
+          if-no-files-found: error
+          retention-days: 30
