@@ -2,7 +2,7 @@
 title: "getmempoolinfo"
 description: "Returns details on the active state of the TX memory pool."
 rpcCategory: "blockchain"
-rootsChange: "Read your node’s active relay settings in the policy field."
+rootsChange: "Read your node's active relay settings in the policy field."
 ---
 
 [RPC reference](./) · blockchain
@@ -17,7 +17,7 @@ bitcoin-cli getmempoolinfo
 
 **New or changed in Roots**
 
-Read your node’s active relay settings in the policy field.
+Read your node's active relay settings in the policy field.
 
 ## How it works
 
