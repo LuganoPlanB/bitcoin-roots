@@ -222,7 +222,7 @@ test("workflow serializes current-main discovery through deploy, gates expensive
         assert.match(section, /github\.repository == 'LuganoPlanB\/bitcoin-roots'/);
         assert.match(section, /github\.ref == 'refs\/heads\/main'/);
     }
-    for (const name of ["Check out the Plan B", "Set up Node.js\n", "Install website", "Test website",
+    for (const name of ["Set up Node.js\n", "Install website", "Test website",
         "Restore verified", "Fetch and verify", "Build website", "Add validated", "Upload GitHub"]) {
         const step = build.split(/\n      - name: /).find((step) => step.startsWith(name));
         assert.ok(step, name);
@@ -255,31 +255,34 @@ test("documentation test workflow runs on ordinary pull requests with read-only 
     assert.match(workflow, /cancel-in-progress: true/);
 });
 
-test("documentation test workflow checks out immutable PR and sibling theme sources without stored credentials", async () => {
+test("documentation test workflow checks out the immutable PR without stored credentials", async () => {
     const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/test-docs.yml", import.meta.url)), "utf8");
     const steps = workflow.split(/\n      - name: /).slice(1);
     const roots = steps.find((step) => step.startsWith("Check out Bitcoin Roots\n"));
-    const theme = steps.find((step) => step.startsWith("Check out the Plan B Vite theme\n"));
     assert.ok(roots);
-    assert.ok(theme);
-    for (const checkout of [roots, theme]) {
-        assert.match(checkout, /uses: actions\/checkout@v6/);
-        assert.match(checkout, /persist-credentials: false/);
-    }
+    assert.match(roots, /uses: actions\/checkout@v6/);
+    assert.match(roots, /persist-credentials: false/);
     assert.match(roots, /repository: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \}\}/);
     assert.match(roots, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
     assert.match(roots, /path: bitcoin-roots\n/);
-    assert.match(theme, /repository: LuganoPlanB\/vite-theme/);
-    assert.match(theme, /ref: b969923b3407fb85a46cf45a8e18385d239cf79e/);
-    assert.match(theme, /path: vite-theme\n/);
+});
+
+test("the locked theme matches the revision recorded in the Pages receipt", async () => {
+    const workflow = await readFile(new URL("../../../../.github/workflows/deploy-docs.yml", import.meta.url), "utf8");
+    const lock = JSON.parse(await readFile(new URL("../../package-lock.json", import.meta.url), "utf8"));
+    const revision = workflow.match(/THEME_REVISION: ([a-f0-9]{40})\n/);
+    assert.ok(revision);
+    const theme = lock.packages["node_modules/lugano-planb-vite-theme"];
+    assert.equal(theme.resolved, `https://codeload.github.com/LuganoPlanB/vite-theme/tar.gz/${revision[1]}`);
+    assert.match(theme.integrity, /^sha512-/);
 });
 
 test("documentation test workflow runs the locked website suite and production-base static build only", async () => {
     const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/test-docs.yml", import.meta.url)), "utf8");
     const steps = workflow.split(/\n      - name: /).slice(1);
-    assert.equal(steps.length, 6);
+    assert.equal(steps.length, 5);
     assert.deepEqual([...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]),
-        ["actions/checkout@v6", "actions/checkout@v6", "actions/setup-node@v6"]);
+        ["actions/checkout@v6", "actions/setup-node@v6"]);
     const node = steps.find((step) => step.startsWith("Set up Node.js\n"));
     assert.ok(node);
     assert.match(node, /node-version: 24/);
