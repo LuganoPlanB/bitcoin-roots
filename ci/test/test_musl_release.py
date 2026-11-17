@@ -189,6 +189,12 @@ class MuslReleaseTest(unittest.TestCase):
                                  '-DWITH_ZMQ=ON', '-DBUILD_WALLET_TOOL=ON', '-DBUILD_TESTS=OFF',
                                  '-DCLIENT_VERSION_TAG=v32.1-roots.3'):
                     self.assertIn(expected, arguments)
+                for language in ('C', 'CXX'):
+                    flags = next(arg.split('=', 1)[1].split() for arg in arguments
+                                 if arg.startswith(f'-DCMAKE_{language}_FLAGS='))
+                    self.assertIn('-O2', flags)
+                    self.assertNotIn('-Os', flags)
+                    self.assertNotIn('-ffast-math', flags)
                 calls.unlink()
                 shutil.rmtree(build)
                 # The fixture simulates cmake --install creating the payload.
