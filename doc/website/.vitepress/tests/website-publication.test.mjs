@@ -19,7 +19,7 @@ const asset = (name = "bitcoin-roots-29.4-roots.1.patch", extra = {}) => ({ id: 
 const release = (extra = {}) => ({ id: 1, tag_name: tag, draft: false, prerelease: false,
     published_at: date, updated_at: date, name: "Roots", body: "Notes", target_commitish: "roots/29.4",
     html_url: `https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/${tag}`, assets: [asset()], ...extra });
-const revisions = { siteRevision: "a".repeat(40), themeRevision: "b".repeat(40), base: "/bitcoin-roots/" };
+const revisions = { rpcRelease: { tag, digest: `sha256:${"a".repeat(64)}` }, siteRevision: "a".repeat(40), themeRevision: "b".repeat(40), base: "/bitcoin-roots/" };
 const api = (entries) => async (page) => page === 1 ? entries : [];
 const snapshot = (entries = [release()], extra = {}) => publicationSnapshot({ ...revisions, api: api(entries), ...extra });
 async function directories(t) {
@@ -296,4 +296,10 @@ test("documentation test workflow runs the locked website suite and production-b
     }
     assert.match(workflow, /DOCS_BASE: \/bitcoin-roots\//);
     assert.match(workflow, /timeout-minutes: 15/);
+});
+
+test("a different stable RPC source invalidates the deployed receipt", async () => {
+    const receipt = publicationReceipt(await snapshot());
+    const rpcRelease = { ...revisions.rpcRelease, digest: `sha256:${"c".repeat(64)}` };
+    assert.equal(needsPublication(await snapshot([release()], { rpcRelease }), receipt), true);
 });

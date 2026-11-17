@@ -1,3 +1,4 @@
+import { defineAsyncComponent } from "vue";
 import DefaultTheme from "vitepress/theme";
 import "lugano-planb-vite-theme/theme.css";
 import "./custom.css";
@@ -12,5 +13,6 @@ export default {
     app.component("ComparisonTable", ComparisonTable);
     app.component("DocumentationIndex", DocumentationIndex);
     app.component("Home", Home);
+    app.component("RpcIndex", defineAsyncComponent(() => import("./components/RpcIndex.vue")));
   },
 };

@@ -28,3 +28,18 @@ npm run preview
 Later builds can reuse the downloaded data. Run `npm run releases:prepare`
 again to pick up new releases. See [Website release inputs](RELEASE-INPUTS.md)
 for the GitHub Pages base path and release verification details.
+
+## Refresh the RPC reference
+
+The command pages work offline in a local preview. To refresh them from the
+latest stable release on x86-64 Linux, use Python 3.11 or later.
+
+```sh
+python3 scripts/rpc-reference.py
+```
+
+The script verifies the Linux package against GitHub’s release digest and runs
+`getopenrpcinfo` and `help <command>` on an isolated regtest node. Pages builds
+refresh the same URLs when the stable release changes. When reviewing a new
+release, check the short Core comparison notes in `scripts/rpc-reference.py`
+for changes to existing commands as well as new ones.

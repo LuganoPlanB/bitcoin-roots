@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { withBase } from "vitepress";
+
 defineProps<{ detailed?: boolean }>();
 
 const overview = [
@@ -12,11 +14,11 @@ const overview = [
 const details = [
   { feature: "Data in transactions", core: "Allows multiple OP_RETURN outputs within the data limit.", roots: "By default, allows one OP_RETURN output and up to 83 bytes of recognized data in total, including data in inputs." },
   { feature: "Replacing transactions", core: "Uses full replace-by-fee policy.", roots: "Adds a replacement policy selector (-mempoolreplacement) and a fee-replacement checkbox when sending." },
-  { feature: "Inspecting the mempool", core: "getmempoolinfo reports size, fees and memory use.", roots: "The same command also reports the local policy settings in effect." },
+  { feature: "Inspecting the mempool", core: "getmempoolinfo reports size, fees and memory use.", roots: "The same command also reports the local policy settings in effect.", command: "getmempoolinfo" },
   { feature: "Choosing coins to spend", core: "Coin control lets you select individual outputs.", roots: "Also shows whether an address was reused and how much an output is worth after the fee to spend it." },
   { feature: "Message signing RPCs", core: "signmessage and verifymessage use compact signatures for legacy P2PKH addresses.", roots: "The same calls also support BIP322 simple proofs for native P2WPKH, P2WSH and Taproot (P2TR) addresses. Verification needs no wallet." },
-  { feature: "Sweeping a private key", core: "No built-in sweep dialog.", roots: "Preview a transfer from a supported private key into your wallet, then decide whether to broadcast it." },
-  { feature: "Access to spending keys", core: "Wallet permissions and unlock rules apply.", roots: "Also disables key-disclosure commands by default. They require an explicit startup option (--allow-dangerous-rpc)." },
+  { feature: "Sweeping a private key", core: "No built-in sweep dialog.", roots: "Preview a transfer from a supported private key into your wallet, then decide whether to broadcast it.", command: "sweepprivkeys" },
+  { feature: "Access to spending keys", core: "Wallet permissions and unlock rules apply.", roots: "Also disables key-disclosure commands by default. They require an explicit startup option (--allow-dangerous-rpc).", command: "exportaddresskey" },
   { feature: "Reconstructing blocks", core: "Limits the number of extra transactions kept for compact blocks.", roots: "Also limits how much memory those transactions use. The default is 10 MB." },
 ];
 </script>
@@ -36,7 +38,9 @@ const details = [
         <tr v-for="row in detailed ? details : overview" :key="row.feature">
           <th scope="row">{{ row.feature }}</th>
           <td>{{ row.core }}</td>
-          <td>{{ row.roots }}</td>
+          <td>{{ row.roots }}
+            <a v-if="'command' in row" :href="withBase('/documentation/rpc/' + row.command)">{{ row.command }}</a>
+          </td>
         </tr>
       </tbody>
     </table>

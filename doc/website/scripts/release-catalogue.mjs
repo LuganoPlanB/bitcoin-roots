@@ -144,8 +144,21 @@ export async function discoverReleases({ api, token, maxPages = 1000 } = {}) {
   throw new Error("Release pagination limit exceeded; catalogue incomplete");
 }
 
-export async function fetchReleasePage(page, { token, fetchImpl = fetch, timeoutMs = 30000, maxBytes = 8 * 1024 * 1024 } = {}) {
+export async function fetchReleasePage(page, options) {
   requireValue(Number.isSafeInteger(page) && page > 0, "Invalid page number");
+  return fetchReleaseMetadata(`${releasesEndpoint}?per_page=100&page=${page}`, options);
+}
+
+export async function fetchLatestRpcRelease(options) {
+  const release = await fetchReleaseMetadata(`${releasesEndpoint}/latest`, options);
+  requireValue(release.draft === false && release.prerelease === false, "Expected latest stable Roots release");
+  const tag = validateTag(release.tag_name);
+  const archive = selectAsset(release.assets, "bitcoin-roots-linux-x86_64.tar.gz", tag);
+  requireValue(archive?.digest, "Latest release needs a digest for the Linux package");
+  return { tag, digest: archive.digest };
+}
+
+async function fetchReleaseMetadata(url, { token, fetchImpl = fetch, timeoutMs = 30000, maxBytes = 8 * 1024 * 1024 } = {}) {
   requireValue(token === undefined || (typeof token === "string" && token.length > 0
     && token.length <= 4096 && !/[^\x21-\x7e]/.test(token)), "Invalid GitHub releases API token");
   // Credentials are explicit and confined to this fixed, nonredirecting GET.
@@ -156,7 +169,7 @@ export async function fetchReleasePage(page, { token, fetchImpl = fetch, timeout
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let failure = "GitHub release discovery request failed";
   try {
-    const response = await fetchImpl(`${releasesEndpoint}?per_page=100&page=${page}`, {
+    const response = await fetchImpl(url, {
       method: "GET", redirect: "error", signal: controller.signal,
       headers,
     });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverReleases, fetchReleasePage, repository } from "./release-catalogue.mjs";
+import { discoverReleases, fetchLatestRpcRelease, fetchReleasePage, repository } from "./release-catalogue.mjs";
 import { defaultInputDir, prepareReleases } from "./prepare-releases.mjs";
 
 const schemaVersion = 1;
@@ -18,7 +18,7 @@ function revisions({ siteRevision, themeRevision, base }) {
 
 // The complete normalized catalogue includes missing patches and checksum /
 // signature identities. Release edits are hashed too, without logging bodies.
-export async function publicationSnapshot({ siteRevision, themeRevision, base, api = fetchReleasePage }) {
+export async function publicationSnapshot({ siteRevision, themeRevision, base, rpcRelease, api = fetchReleasePage }) {
     revisions({ siteRevision, themeRevision, base });
     const metadata = new Map();
     const catalogue = await discoverReleases({ api: async (page) => {
@@ -32,7 +32,7 @@ export async function publicationSnapshot({ siteRevision, themeRevision, base, a
         }
         return batch;
     } });
-    const inputs = { schemaVersion, repository, siteRevision, themeRevision, base, catalogue,
+    const inputs = { schemaVersion, repository, siteRevision, themeRevision, base, catalogue, rpcRelease,
         releaseMetadataDigest: digest([...catalogue.releases, ...(catalogue.unsupportedReleases ?? [])].map((release) => metadata.get(release.id))) };
     return { ...inputs, fingerprint: digest(inputs) };
 }
@@ -40,7 +40,8 @@ export async function publicationSnapshot({ siteRevision, themeRevision, base, a
 function validateSnapshot(snapshot) {
     revisions(snapshot);
     const { fingerprint, ...inputs } = snapshot;
-    if (snapshot.schemaVersion !== schemaVersion || snapshot.repository !== repository
+    if (!/^sha256:[0-9a-f]{64}$/.test(snapshot.rpcRelease?.digest) || !snapshot.rpcRelease.tag
+        || snapshot.schemaVersion !== schemaVersion || snapshot.repository !== repository
         || snapshot.catalogue?.repository !== repository || !Array.isArray(snapshot.catalogue?.releases)
         || !/^[a-f0-9]{64}$/.test(snapshot.releaseMetadataDigest)
         || fingerprint !== digest(inputs)) throw new Error("Invalid publication snapshot");
@@ -135,7 +136,8 @@ async function main() {
     const [command, ...args] = process.argv.slice(2);
     if (command === "check" && args.length === 0) {
         const { snapshot, changed } = await checkPublication({ siteRevision: process.env.SITE_REVISION,
-            themeRevision: process.env.THEME_REVISION, base: process.env.DOCS_BASE, siteUrl: process.env.PAGES_URL });
+            themeRevision: process.env.THEME_REVISION, base: process.env.DOCS_BASE, siteUrl: process.env.PAGES_URL,
+            rpcRelease: await fetchLatestRpcRelease() });
         if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,
             `changed=${changed}\nfingerprint=${snapshot.fingerprint}\n`);
         console.log(`Public inventory: ${snapshot.catalogue.releases.length} supported releases, ${snapshot.catalogue.unsupportedReleases?.length ?? 0} other entries; publication ${changed ? "required" : "unchanged"}.`);
