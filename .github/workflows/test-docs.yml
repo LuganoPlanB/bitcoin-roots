@@ -26,14 +26,6 @@ jobs:
           path: bitcoin-roots
           persist-credentials: false
 
-      - name: Check out the Plan B Vite theme
-        uses: actions/checkout@v6
-        with:
-          repository: LuganoPlanB/vite-theme
-          ref: b969923b3407fb85a46cf45a8e18385d239cf79e
-          path: vite-theme
-          persist-credentials: false
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:

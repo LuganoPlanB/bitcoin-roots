@@ -1,14 +1,9 @@
 # Website release inputs
 
-Use Node.js 24 (the workflow version; the package minimum is 20), a clean Roots
-checkout or snapshot, and a sibling `vite-theme` checkout pinned to
-`b969923b3407fb85a46cf45a8e18385d239cf79e`. The layout is
-`<workspace>/bitcoin-roots/doc/website` and `<workspace>/vite-theme`; the theme
-is a local file dependency. Confirm the theme revision from the Roots root,
-then install the website dependencies once:
+Use Node.js 24 and a clean Roots checkout or snapshot. From the repository
+root, install the locked website dependencies, including the pinned Plan ₿ theme.
 
 ```sh
-git -C ../vite-theme rev-parse HEAD
 cd doc/website
 npm ci
 ```
