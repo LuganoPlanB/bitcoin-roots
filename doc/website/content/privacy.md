@@ -10,7 +10,7 @@ When you use the Roots wallet, your own node checks for incoming payments. You d
 
 ## Who can see my connection?
 
-Any peer you connect to directly can see your IP address. Roots v32.1-roots.2 uses encrypted connections with peers that support them, but encryption still leaves your IP visible to the peer.
+Any peer you connect to directly can see your IP address. Roots uses encrypted connections with peers that support them, but encryption still leaves your IP visible to the peer.
 
 ### Connect through Tor
 

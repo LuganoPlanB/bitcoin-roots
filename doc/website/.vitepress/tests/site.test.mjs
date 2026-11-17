@@ -147,11 +147,13 @@ test("primary navigation includes the two editorial routes", async () => {
 
 test("the first-run guide links the five published packages and both screenshots", async () => {
   const guide = await readFile(resolve(siteRoot, "content/getting-started.md"), "utf8");
+  const latest = "https://github.com/LuganoPlanB/bitcoin-roots/releases/latest";
+  assert.ok(guide.includes(`](${latest})`));
   for (const asset of [
     "darwin-arm64.zip", "darwin-x86_64.zip", "windows-x86_64.zip",
     "linux-aarch64.tar.gz", "linux-x86_64.tar.gz",
   ]) {
-    assert.ok(guide.includes(`/releases/download/v32.1-roots.2/bitcoin-roots-${asset})`));
+    assert.ok(guide.includes(`](${latest}/download/bitcoin-roots-${asset})`));
   }
   for (const image of ["pruning.png", "first-sync.png"]) {
     assert.ok(guide.includes(`](./images/${image})`));
