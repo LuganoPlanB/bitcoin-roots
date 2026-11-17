@@ -22,7 +22,8 @@ class CandidateDocumentationTest(unittest.TestCase):
     def test_preservation_ids_and_current_candidate_state(self):
         catalog = (ROOT / 'doc/roots-features.md').read_text()
         self.assertEqual(set(re.findall(r'^\| `([a-z-]+)`', catalog, re.MULTILINE)), STABLE_IDS)
-        for name in ['README.md', 'doc/roots-features.md', 'doc/wallet-privacy.md', 'contrib/release/release-notes.md']:
+        for name in ['doc/roots-v32-port-review.md', 'doc/roots-features.md',
+                     'doc/wallet-privacy.md', 'contrib/release/release-notes.md']:
             text = (ROOT / name).read_text()
             self.assertIn('v32.1', text, name)
             self.assertIn('unpublished', text, name)
