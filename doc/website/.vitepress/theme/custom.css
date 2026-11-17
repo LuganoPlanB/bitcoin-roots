@@ -207,27 +207,12 @@ body {
 
 .roots-signal {
   display: grid;
-  grid-template-columns: minmax(24rem, 1.06fr) minmax(22rem, 0.94fr);
-  grid-template-areas: "message editorial";
-  gap: clamp(2.5rem, 5vh, 4.5rem) clamp(3rem, 7vw, 7rem);
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 5rem);
   align-items: center;
-  min-height: calc(100svh - var(--vp-nav-height));
   max-width: var(--roots-max-width);
   margin: 0 auto;
-  padding: clamp(3.5rem, 7vh, 6rem) var(--roots-gutter) clamp(2.5rem, 5vh, 4rem);
-}
-
-.roots-signal__message {
-  position: relative;
-  z-index: 1;
-  grid-area: message;
-}
-
-.roots-signal__logo {
-  display: block;
-  width: clamp(4.25rem, 6vw, 5.5rem);
-  height: auto;
-  margin: 0 0 1.5rem;
+  padding: clamp(2.5rem, 5vw, 4.5rem) var(--roots-gutter);
 }
 
 .roots-signal h1 {
@@ -311,21 +296,10 @@ body {
   color: var(--vp-c-brand-1) !important;
 }
 
-.roots-signal__editorial {
-  grid-area: editorial;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: clamp(23rem, 43vh, 29rem);
-  padding: clamp(1.5rem, 3vw, 2.5rem) 0;
-  border-top: 1px solid color-mix(in srgb, var(--planb-color-accent) 42%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--planb-color-accent) 24%, transparent);
-}
-
-.roots-signal__provenance {
+.roots-signal p.roots-signal__provenance {
+  margin-bottom: 1.15rem;
   color: var(--vp-c-brand-1);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -333,24 +307,45 @@ body {
 
 .roots-signal__identity {
   display: grid;
-  grid-template-columns: minmax(8rem, 0.42fr) minmax(0, 1fr);
-  gap: clamp(1.25rem, 3vw, 2.5rem);
-  align-items: end;
+  justify-items: center;
+  gap: 0.75rem;
+  margin: 0;
 }
 
-.roots-signal__identity img {
-  display: block;
+.roots-signal__mark {
+  position: relative;
+  width: clamp(12rem, 24vw, 20rem);
+  aspect-ratio: 1;
+}
+
+.roots-signal__mark img,
+.roots-signal__player {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  max-width: 11rem;
-  height: auto;
+  height: 100%;
 }
 
-.roots-signal__identity p {
+.roots-signal__player {
+  visibility: hidden;
+}
+
+.roots-signal__player.is-ready {
+  visibility: visible;
+}
+
+.roots-signal__identity figcaption {
   color: var(--planb-color-accent-strong);
-  font-size: clamp(1.8rem, 3vw, 2.75rem);
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.04;
+  font-size: clamp(1rem, 1.45vw, 1.35rem);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.roots-signal + .roots-library {
+  padding-top: clamp(2rem, 3vw, 3rem);
+  border-top: 1px solid color-mix(in srgb, var(--planb-color-accent) 30%, transparent);
 }
 
 .roots-validation,
@@ -1178,27 +1173,6 @@ body {
 }
 
 @media (max-width: 960px) {
-  .roots-signal {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "message"
-      "editorial";
-    gap: 3rem;
-    min-height: auto;
-  }
-
-  .roots-signal h1 {
-    max-width: 11ch;
-  }
-
-  .roots-signal__editorial {
-    min-height: 21rem;
-  }
-
-  .roots-signal__identity {
-    grid-template-columns: minmax(7rem, 0.3fr) minmax(0, 1fr);
-  }
-
   .roots-validation__steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1257,47 +1231,42 @@ body {
   }
 
   .roots-signal {
-    grid-template-areas:
-      "provenance"
-      "message"
-      "identity";
-    gap: 2.5rem;
-    padding-top: 3rem;
-  }
-
-  .roots-signal__editorial {
-    display: contents;
-  }
-
-  .roots-signal__provenance {
-    grid-area: provenance;
-    padding-top: 1.35rem;
-    border-top: 1px solid color-mix(in srgb, var(--planb-color-accent) 42%, transparent);
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
+    padding-block: 2rem 1.5rem;
   }
 
   .roots-signal h1 {
-    font-size: clamp(3.05rem, 15vw, 4.5rem);
+    font-size: clamp(2.85rem, 10vw, 4.25rem);
   }
 
-  .roots-signal__editorial {
-    min-height: 0;
-    padding: 1.35rem 0;
+  .roots-signal__introduction {
+    margin-top: 1rem;
+  }
+
+  .roots-signal .roots-actions {
+    margin-top: 1.25rem;
+    flex-direction: row;
+  }
+
+  .roots-signal .roots-action {
+    width: auto;
   }
 
   .roots-signal__identity {
-    grid-area: identity;
-    grid-template-columns: minmax(5rem, 0.32fr) minmax(0, 1fr);
-    gap: 1rem;
-    padding-bottom: 1.35rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--planb-color-accent) 24%, transparent);
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-items: start;
+    gap: 1.5rem;
   }
 
-  .roots-signal__identity img {
-    max-width: 7rem;
+  .roots-signal__mark {
+    width: clamp(7rem, 28vw, 11rem);
   }
 
-  .roots-signal__identity p {
-    font-size: clamp(1.6rem, 7.5vw, 2.35rem);
+  .roots-signal__identity figcaption {
+    font-size: 1.15rem;
+    text-align: left;
   }
 
   .roots-validation__steps {
@@ -1409,18 +1378,6 @@ body {
 
   .roots-close .roots-actions {
     width: 100%;
-  }
-}
-
-@media (min-width: 961px) and (max-height: 760px) {
-  .roots-signal {
-    min-height: auto;
-    padding-top: 3.5rem;
-    padding-bottom: 3.5rem;
-  }
-
-  .roots-signal__editorial {
-    min-height: 23rem;
   }
 }
 

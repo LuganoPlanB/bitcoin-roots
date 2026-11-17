@@ -1,12 +1,57 @@
 <script setup lang="ts">
 import { withBase } from "vitepress";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import type { AnimationItem } from "lottie-web";
 import rootsLogo from "../../../content/src/qt/res/src/bitcoinroots-logo.svg";
+
+const logoHost = ref<HTMLDivElement>();
+const logoReady = ref(false);
+let player: AnimationItem | undefined;
+let motion: MediaQueryList | undefined;
+
+function showStaticLogo() {
+  logoReady.value = false;
+  player?.destroy();
+  player = undefined;
+}
+
+onMounted(async () => {
+  if (!window.matchMedia || !window.SVGSVGElement) return;
+  motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (motion.matches) return;
+  motion.addEventListener?.("change", showStaticLogo);
+  try {
+    const { default: lottie } = await import("lottie-web/build/player/lottie_light");
+    if (!logoHost.value || motion.matches) return;
+    player = lottie.loadAnimation({
+      container: logoHost.value,
+      renderer: "svg",
+      path: withBase("/bitcoin-roots.lottie.json"),
+      loop: false,
+      autoplay: false,
+    });
+    player.addEventListener("DOMLoaded", () => {
+      logoReady.value = true;
+      player?.play();
+    });
+    player.addEventListener("data_failed", showStaticLogo);
+    player.addEventListener("error", showStaticLogo);
+  } catch {
+    showStaticLogo();
+  }
+});
+
+onBeforeUnmount(() => {
+  motion?.removeEventListener?.("change", showStaticLogo);
+  showStaticLogo();
+});
 </script>
 
 <template>
   <main class="roots-home" id="main-content">
     <section class="roots-signal" aria-labelledby="roots-title">
       <div class="roots-signal__message">
+        <p class="roots-signal__provenance">The Plan ₿ Foundation presents</p>
         <h1 id="roots-title">Run your own Bitcoin node</h1>
         <div class="roots-signal__introduction">
           <p>With Bitcoin Roots, your computer checks Bitcoin payments and blocks for itself.
@@ -27,13 +72,13 @@ import rootsLogo from "../../../content/src/qt/res/src/bitcoinroots-logo.svg";
         </div>
       </div>
 
-      <div class="roots-signal__editorial">
-        <p class="roots-signal__provenance">THE PLAN ₿ FOUNDATION PRESENTS</p>
-        <div class="roots-signal__identity">
-          <img :src="rootsLogo" alt="" aria-hidden="true">
-          <p>Connected to the trunk. Conservative in policy. Neutral in consensus.</p>
+      <figure class="roots-signal__identity">
+        <div class="roots-signal__mark" aria-hidden="true">
+          <div ref="logoHost" class="roots-signal__player" :class="{ 'is-ready': logoReady }"></div>
+          <img v-show="!logoReady" class="roots-signal__fallback" :src="rootsLogo" alt="" width="512" height="512">
         </div>
-      </div>
+        <figcaption>Connected to the trunk.<br>Conservative in policy.<br>Neutral in consensus.</figcaption>
+      </figure>
     </section>
 
     <section class="roots-library" aria-labelledby="library-title">
