@@ -3,6 +3,7 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { filterCommands } from "../theme/components/rpc-filter.mjs";
 
 import { documentationCount, documentationGroups } from "../generated/catalog.mjs";
 
@@ -71,7 +72,10 @@ test("new editorial copy avoids prohibited claims and punctuation", async () => 
 });
 
 test("website-owned navigation only targets published pages", async () => {
+  const rpcFiles = await readdir(resolve(siteRoot, "content/documentation/rpc"));
   const availableRoutes = new Set([
+    "/documentation/rpc/",
+    ...rpcFiles.filter(name => name.endsWith(".md")).map(name => "/documentation/rpc/" + name.slice(0, -3)),
     "/",
     "/bitcoin-roots.lottie.json",
     "/compare",
@@ -84,6 +88,7 @@ test("website-owned navigation only targets published pages", async () => {
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
   const websiteFiles = [
+    ".vitepress/theme/components/DocumentationIndex.vue",
     ".vitepress/theme/components/Home.vue",
     "content/compare.md",
     "content/getting-started.md",
@@ -199,4 +204,16 @@ test("Compare presents Core and Roots at two levels of detail", async () => {
   assert.match(table, /<th scope="row">/);
   assert.match(table, /role="region"/);
   assert.match(table, /tabindex="0"/);
+});
+
+test("RPC search combines descriptions, category and Roots changes", () => {
+  const commands = [
+    { name: "signmessage", category: "wallet", description: "Make a BIP322 proof.", change: "SegWit" },
+    { name: "verifymessage", category: "util", description: "Check a BIP322 proof.", change: "SegWit" },
+    { name: "signmessagewithprivkey", category: "util", description: "Legacy signature.", change: "" },
+  ];
+  assert.deepEqual(filterCommands(commands, "  BIP322 proof ", "", true), commands.slice(0, 2));
+  assert.deepEqual(filterCommands(commands, "MESSAGE", "util", true), [commands[1]]);
+  assert.deepEqual(filterCommands(commands, "legacy", "wallet", false), []);
+  assert.deepEqual(filterCommands(commands, "", "", false), commands);
 });

@@ -7,3 +7,4 @@ node_modules/
 .impeccable/review/
 .playwright-cli/
 output/
+.vitepress/rpc-cache/

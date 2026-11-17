@@ -29,7 +29,8 @@ const visibleCount = computed(() => filteredGroups.value.reduce(
       <div>
         <h1>Documentation</h1>
         <p>
-          Find a guide by topic, or search by title or file name.
+          Browse the <a :href="withBase('/documentation/rpc/')">RPC command reference</a>
+          or find a guide by topic, title or file name.
         </p>
       </div>
       <p class="roots-atlas__count">
