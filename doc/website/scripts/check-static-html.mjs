@@ -25,7 +25,7 @@ export async function checkDocumentationRoutes(groups, outputDirectory) {
 
 const pages = {
   "privacy.html": ["Who can see my connection?", "private broadcasting"],
-  "index.html": ['class="roots-home"', "Run your own Bitcoin node", "Get started", "Compare with Core"],
+  "index.html": ['class="roots-home"', "Run your own Bitcoin node", "Get started", "Compare with Core", 'class="roots-signal__fallback"'],
   "principles.html": ["Every node checks the blocks", "You choose what your node relays"],
   "compare.html": ["At a glance", "A closer look", "Disk space", "Choosing coins to spend", "--allow-dangerous-rpc", "BIP322 simple proofs", "signmessage", "verifymessage"],
   "getting-started.html": ["Windows ZIP", "Apple silicon ZIP", "Linux ARM64 archive", "Let the first sync run"],

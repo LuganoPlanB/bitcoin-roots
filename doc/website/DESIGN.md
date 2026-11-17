@@ -116,7 +116,7 @@ the active point of choice.
 - White-first civic clarity with a complete dark alternative.
 - Asymmetric persuasive surfaces paired with disciplined reading layouts.
 - Source paths and technical data remain visible and legible.
-- A static first viewport that pairs the operator proposition with Plan ₿
+- A compact first viewport that pairs the operator proposition with Plan ₿
   attribution and the Bitcoin Roots identity.
 
 ## Colors
@@ -166,7 +166,7 @@ propositions to compact technical reference through scale and weight alone.
 - **Body:** regular-weight copy at a relaxed 1.68 line-height and readable measure.
 - **Label:** compact uppercase metadata with restrained tracking.
 - **Attribution:** compact uppercase Plan ₿ provenance above the hero identity.
-- **Identity:** tightly set logo tagline within the static hero editorial block.
+- **Identity:** a compact three-line tagline beside or below the Roots mark.
 - **Reading Display:** a narrower fluid title for long-form Principles and Compare pages.
 
 **The Plain Source Rule.** Monospace identifies literal paths, code, or measured
@@ -175,12 +175,9 @@ state; it never acts as a generic technical costume.
 ## Layout
 
 Persuasive surfaces use a centered 1240px field with fluid gutters and asymmetric
-columns. The homepage begins with the operator proposition on the left and a
-static editorial identity on the right: the requested Plan ₿ attribution sits
-above the Bitcoin Roots logo and tagline. At 960px major pairs stack. At 720px
-the hero reading order becomes attribution, proposition, then logo/tagline;
-signal, boundary, library, and atlas structures also become a single readable
-sequence. Actions become full-width below 420px.
+columns. In the hero, the Plan ₿ attribution leads into the heading and actions
+on the left. The Roots mark sits above its tagline on the right. Content sets
+the height. Below 720px the mark and tagline sit side by side beneath the actions.
 
 Long-form Principles and Compare content keeps the VitePress reading frame,
 uses a 56rem container and a 72ch prose measure. Compare alone expands its
@@ -237,17 +234,14 @@ mobile keeps search and the menu in the familiar theme layout.
 
 ### Editorial Signal
 
-The hero pairs the operator proposition with a static Plan ₿ editorial identity.
-The attribution eyebrow reads as provenance, while the Bitcoin Roots logo and
-tagline form one identity block. The following four-step verification sequence
-uses literal ordering, fine rules, and restrained accent numerals; neither the
-hero nor the sequence cycles or advances over time.
+Keep the heading, introduction and Get started action together. A fine rule
+separates the hero from the guides below.
 
 ### Root Mark
 
-Use the supplied Bitcoin Roots SVG as a static identity asset in the hero,
-lineage, and closing surfaces. The homepage contains no Lottie section and does
-not load or run the legacy Lottie asset.
+The hero plays the supplied Roots Lottie once and holds its final frame.
+The supplied SVG occupies the same space while the player loads, when playback
+is unavailable, and for readers who prefer reduced motion.
 
 ### Comparison Table
 
@@ -282,4 +276,4 @@ polite live result count plus a recoverable empty state.
 - **Don't** scatter gold, shadows, or motion across document collections.
 - **Don't** use speculative coin art, terminal cosplay, or security-theatre chrome.
 - **Don't** turn the atlas into a repeated icon-card grid.
-- **Don't** reintroduce Lottie or timed animation into the static homepage identity.
+- **Don't** loop the homepage animation.
