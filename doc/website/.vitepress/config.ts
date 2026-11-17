@@ -10,7 +10,7 @@ const htmlTags = new Set([
   "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i", "img", "input", "kbd",
   "label", "li", "main", "mark", "nav", "ol", "p", "picture", "pre", "s", "samp", "section", "small", "source", "span",
   "strong", "sub", "summary", "sup", "table", "tbody", "td", "template", "tfoot", "th",
-  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex", "comparisontable",
+  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex", "comparisontable", "rpcindex",
 ]);
 
 function makeLegacyMarkdownVueSafe(rendered: string) {

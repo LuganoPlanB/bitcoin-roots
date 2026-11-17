@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCatalogue, discoverReleases, expectedPatchName, fetchReleasePage, serializeCatalogue } from "../../scripts/release-catalogue.mjs";
+import { createCatalogue, discoverReleases, expectedPatchName, fetchLatestRpcRelease, fetchReleasePage, serializeCatalogue } from "../../scripts/release-catalogue.mjs";
 
 const date = "2026-10-01T12:00:00Z";
 const release = (tag = "v29.4-roots.1", id = 1, extra = {}) => ({
@@ -197,4 +197,16 @@ test("request, stream and JSON exceptions are redacted; authenticated bounds rem
   await assert.rejects(fetchReleasePage(1, { token, timeoutMs: 5,
     fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error(token)))),
   }), /timed out/);
+});
+
+test("the RPC source follows GitHub's stable alias and requires the package digest", async () => {
+  const tag = "v32.1-roots.2";
+  const binary = asset(tag, "bitcoin-roots-linux-x86_64.tar.gz");
+  const resolve = data => fetchLatestRpcRelease({ fetchImpl: async url => {
+    assert.equal(url, "https://api.github.com/repos/LuganoPlanB/bitcoin-roots/releases/latest");
+    return Response.json(data);
+  } });
+  assert.deepEqual(await resolve(release(tag, 1, { assets: [binary] })), { tag, digest: binary.digest });
+  await assert.rejects(resolve(release(tag, 1, { prerelease: true })), /stable Roots release/);
+  await assert.rejects(resolve(release(tag)), /digest/);
 });

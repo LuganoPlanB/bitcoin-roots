@@ -18,6 +18,6 @@ A node’s *mempool* holds transactions waiting for confirmation. Each node deci
 
 <ComparisonTable detailed />
 
-For example, you can sign a note to show someone that you control a receiving address without sending any bitcoin. Your wallet needs the keys and scripts required to sign for that address. The recipient can check the note with `verifymessage`. See [how to sign and verify a message](/doc/wallet-privacy#sign-and-verify-a-message) for the supported proofs and their limits.
+Use [`signmessage`](/documentation/rpc/signmessage) to prove you control a supported address without spending any bitcoin. Anyone can check the proof with [`verifymessage`](/documentation/rpc/verifymessage).
 
 This comparison covers [Bitcoin Core v32.1](https://github.com/bitcoin/bitcoin/tree/v32.1) and [Bitcoin Roots v32.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v32.1-roots.2). For exact settings and limits, see the [Core policy options](https://github.com/bitcoin/bitcoin/blob/v32.1/src/init.cpp) and the [Roots feature catalogue](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.2/doc/roots-features.md).

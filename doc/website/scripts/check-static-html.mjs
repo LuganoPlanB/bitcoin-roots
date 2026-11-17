@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,6 +44,25 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
   }
 
+  const rpcDirectory = "documentation/rpc";
+  const files = (await readdir(resolve(websiteRoot, "content", rpcDirectory)))
+    .filter(name => name.endsWith(".md") && name !== "index.md");
+  const index = await readFile(resolve(outputDirectory, rpcDirectory, "index.html"), "utf8");
+  const base = process.env.DOCS_BASE || "/";
+  assert.ok(files.length > 0 && index.includes("New or changed in Roots"));
+  for (const file of files) {
+    const name = file.slice(0, -3);
+    const page = await readFile(resolve(outputDirectory, rpcDirectory, name + ".html"), "utf8");
+    assert.ok(index.includes(`href="${base}${rpcDirectory}/${name}"`), `Missing RPC link: ${name}`);
+    for (const section of ["bitcoin-cli", 'id="arguments"', 'id="return-value"']) {
+      assert.ok(page.includes(section), `${name} missing ${section}`);
+    }
+  }
+  const compare = await readFile(resolve(outputDirectory, "compare.html"), "utf8");
+  for (const name of ["signmessage", "verifymessage", "getmempoolinfo", "sweepprivkeys", "exportaddresskey"]) {
+    assert.ok(compare.includes(`href="${base}${rpcDirectory}/${name}"`), `Missing Compare link: ${name}`);
+  }
+  console.log(`Verified ${files.length} linked RPC command pages.`);
   console.log(`Verified all ${routeCount} catalogue documentation routes.`);
   console.log("Verified server-rendered content in the homepage, Get started, Principles, Compare, and Privacy HTML.");
 }
