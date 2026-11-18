@@ -35,3 +35,20 @@ add_test(NAME roots_gui_provider_contracts
     --provider-source "${ROOTS_GUI_PROVIDER_SOURCE}"
     --bips "${ROOTS_GUI_PROVIDER_SOURCE}/../bips-provider-vectors")
 set_tests_properties(roots_gui_provider_contracts PROPERTIES LABELS "roots-gui.protocol" TIMEOUT 60)
+
+option(ROOTS_GUI_DOCUMENT_FUZZ "Build the isolated Clang ASan/UBSan transaction parser fuzz target" OFF)
+if(ROOTS_GUI_DOCUMENT_FUZZ)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "The document fuzzer requires Clang's libFuzzer")
+  endif()
+  add_executable(roots_gui_document_fuzz document_fuzz.cpp
+    ../../adapters/protocol/transaction.cpp ../../adapters/protocol/public_wallet.cpp ../../domain/money.cpp ../../domain/workflow.cpp)
+  target_compile_features(roots_gui_document_fuzz PRIVATE cxx_std_20)
+  target_include_directories(roots_gui_document_fuzz PRIVATE ../..)
+  target_include_directories(roots_gui_document_fuzz SYSTEM PRIVATE "${ROOTS_GUI_PROVIDER_SOURCE}/include")
+  target_compile_options(roots_gui_document_fuzz PRIVATE -g -fno-omit-frame-pointer -fsanitize=fuzzer,address,undefined)
+  target_link_options(roots_gui_document_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+  target_link_libraries(roots_gui_document_fuzz PRIVATE
+    "${ROOTS_GUI_PROVIDER_BUILD}/src/libwallycore.a"
+    "${ROOTS_GUI_PROVIDER_BUILD}/src/secp256k1/lib/libsecp256k1.a")
+endif()

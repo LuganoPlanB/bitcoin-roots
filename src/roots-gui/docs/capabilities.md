@@ -9,6 +9,7 @@ unspent, complete or available. Fixture registrations are planned coverage.
 | --- | --- | --- |
 | Chain, node, balances, history, addresses, coins, fees | Required RPC | RPC observations; method/argument unsupported, wallet disabled/unloaded, pruned data, authentication, stale/offline each remain distinct |
 | Create/load/restore/import wallet | Required when daemon supports corresponding operation | Wallet service; remote-path distinction and stateful cancellation reconciliation |
+| Wallet history rescan | Required with proven named height arguments | One wallet per operation; inspect pruned bounds and review the explicit block range |
 | Receiving offline | Required bounded public-data route | Receive service; only a previously reserved pool with visible provenance, otherwise no reserved offline address |
 | Unsigned offline construction, PSBT0/2 inspect/merge/export/finalize | Required for supported policies | Standalone protocol adapter; exact policy/provider support, never Core-internal fallback |
 | Signing | Required daemon/external PSBT routes | Explicit approval; daemon walletprocesspsbt true/false or validated external import; no local private custody |
@@ -40,8 +41,21 @@ metadata plus current wallet/chain/lock evidence; missing evidence stays Unknown
 
 Send Selected pins every exact outpoint and reason into an inspectable draft.
 Explicit fresh preflight may acquire an owned GUI-instance reservation; it is
-not daemon exclusion or funding approval. Wallet creation/import, receiving
-allocation, construction/funding, signing and broadcasting remain later services
-and report unavailability. The classifications above are release requirements,
-not claims that those future services are already implemented. Explorer access
+not daemon exclusion or funding approval. Wallet creation and opening require
+a verified connection and explicit wallet selection or name. Public descriptor
+or extended-key import opens a verified watch-only wallet. Compatible daemon
+wallet restore and backup use explicitly confirmed paths on the daemon host.
+Receive can explicitly allocate the next address or build a bounded offline
+pool when the verified daemon supports allocation. The offline pool consumes each
+reserved entry once from the same wallet scope. Advanced Settings verifies and
+rescans an explicit block range for the selected daemon wallet. Wallet birth
+time, keypool counts, and descriptor derivation ranges are read-only daemon
+observations. Stopping the local wait leaves an unconfirmed scan record. A fresh
+check and explicit acknowledgment are required before choosing another rescan.
+Offline drafts use exact pinned public prevouts, cached policy evidence and
+explicit fees to prepare unsigned PSBTs. The local service checks externally
+supplied signatures against the actual transaction and can finalize supported
+satisfied policies. Current funding, daemon signing and broadcasting require
+their later services.
+Explorer access
 requires deliberate permission; no refresh/restored draft replays an action.

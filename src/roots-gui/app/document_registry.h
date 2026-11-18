@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "ui/components/controls.h"
+#include "adapters/protocol/transaction.h"
+#include "adapters/protocol/offline_draft.h"
 #include <map>
 namespace roots::gui::app {
 enum class Section { Transactions,Send,Receive,Addresses,UTXOs,Settings };
@@ -36,8 +38,24 @@ struct CoinPresentation {
     uint64_t metadata_revision{};bool metadata_loaded{}; // acknowledgement never recovered
 };
 struct ObservedTransaction {WalletBinding wallet;Hash256 txid;bool operator==(const ObservedTransaction&) const=default;};
-struct PinnedCoin {Outpoint outpoint;std::optional<Money> value;std::string script,pinned_reason,current_reason;};
-struct CoinDraft {WalletBinding wallet;std::vector<PinnedCoin> inputs;}; // public data; no reservation/validation authority
+struct PinnedCoin {
+    Outpoint outpoint;
+    std::optional<Money> value;
+    std::string script,pinned_reason,current_reason;
+    std::optional<protocol::OfflineCoinProof> offline;
+};
+struct CoinDraft {
+    WalletBinding wallet;
+    std::vector<PinnedCoin> inputs;
+    std::optional<protocol::OfflineChange> offline_change;
+    bool observed_unavailable{}; // last explicit exact wallet revalidation denied this pinned set
+}; // public data; no reservation/validation authority
+enum class DocumentRepresentation { Source, WireHex };
+struct ImportedDocument {
+    std::shared_ptr<const protocol::TransactionDocument> parsed;
+    protocol::DisplayNetwork network;
+    DocumentRepresentation representation{DocumentRepresentation::Source};
+};
 enum class DocumentKind { Wallet,Transaction };
 enum class ObservationState { Offline,Loading,Empty,Error,Stale,Locked };
 struct Document {
@@ -55,6 +73,7 @@ struct Document {
     CoinPresentation coins;
     std::optional<CoinDraft> coin_draft;
     std::optional<ObservedTransaction> observed_transaction;
+    std::optional<ImportedDocument> imported;
     bool Dirty() const;
     SectionState& Current() { return kind==DocumentKind::Wallet?sections.at(size_t(section)):transaction; }
     const SectionState& Current() const { return kind==DocumentKind::Wallet?sections.at(size_t(section)):transaction; }
@@ -65,6 +84,7 @@ class DocumentRegistry {
 public:
     uint64_t OpenWallet(std::string,WalletBinding,bool complete);
     uint64_t OpenTransaction(std::string);
+    uint64_t OpenImportedDocument(ImportedDocument);
     // Existing references can focus at capacity; 0 reports the ordinary32-view limit.
     uint64_t OpenObservedTransaction(ObservedTransaction);
     bool Activate(uint64_t);

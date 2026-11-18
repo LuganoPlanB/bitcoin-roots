@@ -56,7 +56,15 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
     for(auto& drop:host.TakeDroppedPaths()) {
         const auto& area=workspace.native_drop_target;
         if(workspace.actions.kind==ui::shell::DocumentDialog::None && workspace.documents.Documents().empty() && area.w>0 && drop.x>=area.x && drop.x<area.x+area.w && drop.y>=area.y && drop.y<area.y+area.h) {
-            if(drop.paths.size()==1)ui::shell::BeginImport(workspace,drop.paths.front());
+            if(drop.paths.size()==1) {
+                const auto hint=app::ClassifyImportPath(drop.paths.front());
+                const bool transaction=hint.formats.size()==1 && (hint.formats.front()==app::ImportFormat::PSBT
+                    || hint.formats.front()==app::ImportFormat::RawTransaction);
+                if (requests.LocalDocuments() && transaction) {
+                    if (!ui::shell::BeginLocalDocument(workspace,requests,ui::shell::LocalDocumentMode::File,drop.paths.front()))
+                        workspace.notice="The local document view is busy, or the workspace is hidden.";
+                } else ui::shell::BeginImport(workspace,drop.paths.front());
+            }
             else workspace.notice="Import one public file at a time; no files were read.";
         }
     }
@@ -69,9 +77,10 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         app::Availability CanSubmit(const app::Request& request) const override {
             if(CopyRequest(request) && fallback.Recovery() && fallback.Recovery()->Locked())return {false,"Workspace is locked."};
             if(!CopyRequest(request))return fallback.CanSubmit(request);
-            const bool money=std::holds_alternative<ui::components::CopyAmount>(*request.component);
+            const auto* identifier=std::get_if<ui::components::CopyIdentifier>(&*request.component);
+            const bool sensitive=!identifier || identifier->sensitive;
             const auto* doc=state.documents.Find(request.document);
-            const bool available=host.InputState().clipboard && (!request.document || (doc && state.documents.ActiveId()==request.document && doc->observation!=app::ObservationState::Locked)) && (!money || (!state.privacy.hidden && !state.semantic_hide_toggle));
+            const bool available=host.InputState().clipboard && (!request.document || (doc && state.documents.ActiveId()==request.document && doc->observation!=app::ObservationState::Locked)) && (!sensitive || (!state.privacy.hidden && !state.semantic_hide_toggle));
             return {available,available?"":"Native clipboard is unavailable for this view/value."};
         }
         app::Receipt Submit(const app::Request& request) override {
@@ -79,7 +88,7 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
             if(!CopyRequest(request))return fallback.Submit(request);
             if(!CanSubmit(request).available)return {false,"Copy unavailable; clipboard unchanged."};
             const auto* identifier=std::get_if<ui::components::CopyIdentifier>(&*request.component);
-            const bool copied=identifier?host.Input().Copy(identifier->value):host.Input().Copy(std::get<ui::components::CopyAmount>(*request.component).value.btc(),true);
+            const bool copied=identifier?host.Input().Copy(identifier->value,identifier->sensitive):host.Input().Copy(std::get<ui::components::CopyAmount>(*request.component).value.btc(),true);
             return {copied,copied?"Copied to the native clipboard.":host.InputState().notice};
         }
         bool CurrentHistoryAction(const RequestContext& context,const Hash256& txid,bool current,uint64_t generation,uint64_t sequence) const {
@@ -99,12 +108,16 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         }
         app::HostObservations Observe() const override{return fallback.Observe();}
         ConnectionService* Connection() override{return fallback.Connection();}
+        WalletLifecycle* Wallets() override{return fallback.Wallets();}
+        TransactionDocuments* LocalDocuments() const override{return fallback.LocalDocuments();}
+        RescanService* Rescanning() override{return fallback.Rescanning();}
+        ReceiveService* Receiving() override{return fallback.Receiving();}
         AddressService* Addresses() override{return fallback.Addresses();}
         RefreshService* Refresh() override{return fallback.Refresh();}
         app::RecoverySession* Recovery() override{return fallback.Recovery();}
     } native(host,workspace,requests);
     auto facts=ui::shell::DrawWorkspace(workspace,native,theme,appearance);
-    if(requests.Recovery() && requests.Recovery()->Locked()){if(auto* connection=requests.Connection())connection->SetPrivacyLocked(true);if(auto* refresh=requests.Refresh())refresh->PrivacyLock();if(auto* addresses=requests.Addresses())addresses->PrivacyLock();}
+    if(requests.Recovery() && requests.Recovery()->Locked()){if(auto* connection=requests.Connection())connection->SetPrivacyLocked(true);if(auto* refresh=requests.Refresh())refresh->PrivacyLock();if(auto* addresses=requests.Addresses())addresses->PrivacyLock();if(auto* wallets=requests.Wallets())wallets->Cancel();if(auto* receive=requests.Receiving())receive->Cancel();if(auto* scan=requests.Rescanning())scan->Cancel();if(auto* docs=requests.LocalDocuments())docs->Cancel();}
     const auto native_notice=host.InputState().notice;if(!native_notice.empty())workspace.notice=native_notice;
     if(facts.appearance_requested>=0)host.SetAppearance(facts.appearance_requested);
     return facts;
@@ -131,13 +144,21 @@ int Run()
     struct ShellRequests final:app::Requests {
         NativeHost* host{};ui::components::SemanticExchange* semantics{};
         app::RecoverySession* recovery{};app::DocumentRegistry* documents{};
+        mutable TransactionDocuments local_documents;
+        TransactionDocuments* LocalDocuments() const override{return &local_documents;}
         rpc::CookieCredentials credentials;
         rpc::Transport transport{credentials};
         AddressService addresses{[this](const RefreshIdentity& id,const std::vector<std::string>& known,std::stop_token stop){return FetchAddresses(transport,id,stop,{},known);}};
         AddressService* Addresses() override{return &addresses;}
         RefreshService refresh{[this](const RefreshRequest& value,std::stop_token stop){return FetchRefresh(transport,value,stop);}};
         ConnectionService connection{[this](const ServerCandidate& value,std::stop_token stop){return ProbeCapabilities(transport,value,stop);},[this](bool value){refresh.SetOffline(value,RefreshMonotonicMs());addresses.SetOffline(value);}};
+        WalletLifecycle wallets{[this](const WalletOperation& operation,std::stop_token stop){return RunWalletOperation(transport,operation,stop);}};
         ConnectionService* Connection() override{return &connection;}
+        WalletLifecycle* Wallets() override{return &wallets;}
+        RescanService rescan{[this](const ScanRequest& request,std::stop_token stop){return FetchScan(transport,request,stop);}};
+        RescanService* Rescanning() override{return &rescan;}
+        ReceiveService receive{[this](const ReceiveRequest& request,std::stop_token stop){return FetchReceive(transport,request,stop);}};
+        ReceiveService* Receiving() override{return &receive;}
         RefreshService* Refresh() override{return &refresh;}
         app::RecoverySession* Recovery() override{return recovery;}
         app::Receipt OpenExplorer(const app::ExplorerRequest& request) override {
@@ -149,7 +170,7 @@ int Run()
             return {accepted,accepted?"Browser open requested once; the explorer receives the selected public transaction and browser/network identity.":"Browser open failed. No automatic retry; the selected transaction is retained."};
         }
         app::HostObservations Observe() const override {if(recovery && recovery->Locked()){app::HostObservations value;value.connection={app::ServiceState::Locked,"GUI privacy lock; daemon work already accepted cannot be cancelled remotely."};return value;}return app::ConnectionObservations(connection,refresh);}
-        app::Availability CanSubmit(const app::Request& request) const override {if(request.command==app::Command::Refresh && documents && documents->Active() && documents->Active()->section==app::Section::Addresses && !addresses.Available())return {false,"Read-only descriptor inventory is unavailable for this wallet/profile or offline."};return {request.command==app::Command::Quit || request.command==app::Command::Server || request.command==app::Command::Preferences || (request.command==app::Command::SaveDraft && recovery && recovery->Enabled() && !recovery->Pending() && documents && documents->Find(request.document)) || (request.command==app::Command::Refresh && connection.Active() && !connection.Offline()),app::MissingDependency(request.command)};}
+        app::Availability CanSubmit(const app::Request& request) const override {if(request.command==app::Command::Refresh && documents && documents->Active() && documents->Active()->section==app::Section::Addresses && !addresses.Available())return {false,"Read-only descriptor inventory is unavailable for this wallet/profile or offline."};return {request.command==app::Command::Quit || request.command==app::Command::Server || request.command==app::Command::Preferences || request.command==app::Command::Introduction || request.command==app::Command::NewWallet || request.command==app::Command::OpenWallet || request.command==app::Command::ExportWallet || (request.command==app::Command::SaveDraft && recovery && recovery->Enabled() && !recovery->Pending() && documents && documents->Find(request.document)) || (request.command==app::Command::Refresh && connection.Active() && !connection.Offline()),app::MissingDependency(request.command)};}
         app::Receipt Submit(const app::Request& request) override {
             if(request.command==app::Command::SaveDraft){const bool ok=CanSubmit(request).available && recovery->Checkpoint(*documents);return {ok,ok?"Public draft saved locally; no transaction action was performed.":"Recovery save failed; document retained."};}
             if(request.command==app::Command::Quit){if(recovery && recovery->Enabled() && !recovery->Locked() && !recovery->Pending() && !recovery->Checkpoint(*documents))return {false,"Recovery save failed; keep this window open and retry."};semantics->Close();host->RequestClose();return {true,{}};}
@@ -163,9 +184,14 @@ int Run()
     else if(const auto* home=std::getenv("HOME");home && std::filesystem::path(home).is_absolute())recovery_file=std::filesystem::path(home)/".local/share/roots-gui/metadata.sqlite";
     app::RecoverySession recovery(recovery_file);recovery.Start();
     requests.recovery=&recovery;requests.documents=&workspace.documents;
+    if(!recovery.Pending() && !recovery.Locked())ui::shell::BeginOnboarding(workspace,ui::shell::OnboardingPage::Introduction,requests);
     struct SemanticLifetime {ui::components::SemanticExchange& exchange;~SemanticLifetime(){exchange.Close();}} lifetime{workspace.presentation.exchange};
     requests.semantics=&workspace.presentation.exchange;
     options.accessibility=&workspace.presentation.exchange;
+    options.before_close=[&workspace] {
+        const auto ids=workspace.documents.CloseTargets(workspace.documents.ActiveId(),false,true);
+        return ui::shell::AllowPolicyClose(workspace,ids) && ui::shell::SaveReceiveLabelsBeforeClose(workspace,ids);
+    };
     NativeHost host(options,nullptr,[&](const imkit::Theme& theme,const ui::BootstrapAppearance& appearance) {
         DrawShellFrame(*requests.host,workspace,requests,theme,appearance);
     });

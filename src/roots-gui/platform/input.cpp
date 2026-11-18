@@ -146,6 +146,20 @@ std::optional<std::string> NativeInput::Paste(uint32_t id,std::string_view value
     if(start<0 || end<start || size_t(end)>value.size() || value.size()-size_t(end-start)+request->text.size()>=capacity){impl->status.notice="Clipboard text does not fit this field; draft retained.";impl->CancelPaste();return {};}
     auto result=std::move(request->text);request.reset();++impl->status.pastes;impl->status.notice.clear();return result;
 }
+bool NativeInput::RequestInspection(uint32_t id)
+{
+    impl->Owner();
+    if (!id || !impl->status.clipboard || impl->paste) return false;
+    EnterEditor(id, false);
+    impl->RequestPaste();
+    LeaveEditor();
+    return InspectionPending(id);
+}
+bool NativeInput::InspectionPending(uint32_t id) const
+{
+    impl->Owner();
+    return impl->paste && impl->paste->target == id;
+}
 bool NativeInput::FileChooserAvailable() const {impl->Owner();return impl->status.file_dialog && !impl->closing && !impl->jobs && (!impl->process || impl->waited);}
 bool NativeInput::NativeDialogActive() const {impl->Owner();return impl->process && !impl->closing && impl->choice.outcome==c::NativeOutcome::Pending;}
 uint64_t NativeInput::ChooseFile(std::string_view initial,bool save){return impl->Choose(initial,save);}
@@ -154,6 +168,8 @@ InputStatus NativeInput::Status() const {impl->Owner();auto status=impl->status;
 bool NativeInput::Close(){return impl->Close();}
 #else
 struct NativeInput::Impl {InputStatus status;};
+bool NativeInput::RequestInspection(uint32_t){return false;}
+bool NativeInput::InspectionPending(uint32_t) const{return false;}
 void NativeInput::PrivacyLock(){Privacy(true);}
 bool NativeInput::NativeDialogActive() const{return false;}
 NativeInput::NativeInput(GLFWwindow*):impl(std::make_shared<Impl>()){}

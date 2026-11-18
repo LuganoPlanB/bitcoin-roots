@@ -56,6 +56,7 @@ add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp c
   ../../app/document_registry.cpp ../../app/recovery.cpp ../../app/commands.cpp ../../app/connection_observations.cpp ../../app/history_workspace.cpp ../../app/coin_inventory.cpp ../../app/coin_controls.cpp ../../ui/shell/coin_actions.cpp ../../ui/shell/coins.cpp ../../ui/shell/history.cpp ../../ui/shell/addresses.cpp ../../ui/shell/workspace.cpp ../../ui/shell/document_actions.cpp ../../ui/shell/recovery.cpp ../../ui/shell/privacy.cpp ../../ui/shell/command_routes.cpp ../../ui/shell/activity.cpp ../../domain/workflow.cpp)
 target_include_directories(roots_gui_engine_tests PRIVATE ../..)
 target_link_libraries(roots_gui_engine_tests PRIVATE roots_gui_test_engine roots_gui_test_imkit roots_gui_core)
+target_sources(roots_gui_engine_tests PRIVATE ../../ui/shell/onboarding.cpp ../../ui/shell/receive.cpp ../../ui/shell/settings.cpp ../../ui/shell/advanced.cpp ../../ui/shell/transaction_document.cpp ../../ui/shell/offline_builder.cpp onboarding_tests.cpp)
 add_executable(roots_gui_preference_models preferences_model.cpp ../../application/preferences.cpp)
 add_executable(roots_gui_theme_tests ../theme/theme_tests.cpp ../../ui/theme/tokens.cpp ../../ui/theme/theme.cpp ../../ui/theme/appearance.cpp)
 target_include_directories(roots_gui_theme_tests PRIVATE ../..)
@@ -126,6 +127,8 @@ add_test(NAME roots_gui.engine.semantics COMMAND roots_gui_engine_tests "roots.s
 set_tests_properties(roots_gui.engine.semantics PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
 add_test(NAME roots_gui.engine.server COMMAND roots_gui_engine_tests "roots.server" "${CMAKE_CURRENT_BINARY_DIR}/server.xml" 1)
 set_tests_properties(roots_gui.engine.server PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+add_test(NAME roots_gui.engine.wallet_onboarding COMMAND roots_gui_engine_tests "roots.wallet_onboarding" "${CMAKE_CURRENT_BINARY_DIR}/wallet-onboarding.xml" 3)
+set_tests_properties(roots_gui.engine.wallet_onboarding PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
 
 add_test(NAME roots_gui.engine.history COMMAND roots_gui_engine_tests "roots.history" "${CMAKE_CURRENT_BINARY_DIR}/history.xml" 12)
 set_tests_properties(roots_gui.engine.history PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")

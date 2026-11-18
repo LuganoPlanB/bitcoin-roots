@@ -18,6 +18,10 @@ struct NativeInputPort {
     virtual void EnterEditor(uint32_t,bool sensitive)=0;
     virtual void LeaveEditor()=0;
     virtual std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t)=0;
+    // One-shot clipboard inspection without an ImGui edit buffer. Use the
+    // same owner, scope, capacity and cancellation rules as ordinary paste.
+    virtual bool RequestInspection(uint32_t) {return false;}
+    virtual bool InspectionPending(uint32_t) const {return false;}
     virtual bool FileChooserAvailable() const=0;
     virtual bool NativeDialogActive() const { return false; }
     virtual uint64_t ChooseFile(std::string_view initial,bool save=false)=0;

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/shell/workspace.h"
+#include "app/history_workspace.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,18 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
     s.invocation->accepted=true;s.notice.clear();
     if((id==a::Command::LockCurrent || id==a::Command::LockAll) && s.recovery){s.invocation->accepted=RequestPrivacyLock(s);return;}
     if(id==a::Command::Recovery && s.recovery){s.recovery_dialog.open=true;s.recovery_dialog.initialFocus=true;return;}
+    if (host.Wallets()) {
+        OnboardingPage page = OnboardingPage::None;
+        switch (id) {
+        case a::Command::Introduction: page = OnboardingPage::Introduction; break;
+        case a::Command::OpenWallet: page = OnboardingPage::Open; break;
+        case a::Command::NewWallet: page = OnboardingPage::Create; break;
+        case a::Command::ImportWallet: page = OnboardingPage::Import; break;
+        case a::Command::ExportWallet: page = OnboardingPage::Backup; break;
+        default: break;
+        }
+        if (page != OnboardingPage::None) { BeginOnboarding(s,page,host); return; }
+    }
     if((id==a::Command::Server || id==a::Command::Preferences) && host.Connection()) {OpenServer(s.server,*host.Connection());s.invocation->dispatched=true;return;}
     if(id==a::Command::LoadingLog){s.drawer=Drawer::Activity;s.drawer_focus=true;return;}
     if(id>=a::Command::Transactions && id<=a::Command::Settings) {
@@ -35,9 +48,34 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
     if(id==a::Command::AppearanceSystem || id==a::Command::AppearanceLight || id==a::Command::AppearanceDark) {
         f.appearance_requested=id==a::Command::AppearanceSystem?2:id==a::Command::AppearanceDark?1:0;return;
     }
-    if(id==a::Command::CloseTab){BeginClose(s,s.documents.ActiveId());return;}
+    if(id==a::Command::CloseTab){s.invocation->accepted=BeginClose(s,s.documents.ActiveId());return;}
+    if(id==a::Command::Quit){
+        const auto ids=s.documents.CloseTargets(s.documents.ActiveId(),false,true);
+        if(!AllowPolicyClose(s,ids) || !SaveReceiveLabelsBeforeClose(s,ids)){
+            s.invocation->accepted=false;
+            return;
+        }
+    }
     if(id==a::Command::RenameWallet){BeginRename(s,s.documents.ActiveId());return;}
     if(id==a::Command::DeleteWallet){BeginDelete(s,s.documents.ActiveId());return;}
+    if(host.LocalDocuments()) {
+        if (id==a::Command::TransactionFile || id==a::Command::TransactionText || id==a::Command::SaveTransaction) {
+            const auto mode=id==a::Command::TransactionFile ? LocalDocumentMode::File
+                : id==a::Command::TransactionText ? LocalDocumentMode::Text : LocalDocumentMode::Save;
+            s.invocation->accepted=BeginLocalDocument(s,host,mode);
+            return;
+        }
+        if (id==a::Command::TransactionHex) {
+            auto* doc=s.documents.Active();
+            if (doc && doc->imported) {
+                auto& rep=doc->imported->representation;
+                rep=rep==a::DocumentRepresentation::Source ? a::DocumentRepresentation::WireHex : a::DocumentRepresentation::Source;
+                ++s.imported_views[doc->id].revision;
+                s.invocation->accepted=true;
+                return;
+            }
+        }
+    }
     if(id==a::Command::ImportWallet){BeginImport(s);return;}
     if(id==a::Command::SeparateWindows){s.notice="Separate wallet windows are unavailable: this native backend has one context/thread owner. The tab, drafts and selection remain here.";return;}
     const auto* d=s.documents.Active();const auto receipt=host.Submit({id,d?d->id:0,d?d->section:a::Section::Transactions,{}});
@@ -235,17 +273,17 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         for(float y=0;y<height;y+=dash+gap){const float end=std::min(height,y+dash);draw->AddLine({pos.x,pos.y+y},{pos.x,pos.y+end},color,scale);draw->AddLine({pos.x+width-1,pos.y+y},{pos.x+width-1,pos.y+end},color,scale);}
         ImGui::TextUnformatted("Bitcoin Roots");
         ImGui::TextWrapped("Drop a public wallet or transaction file");s.presentation.Annotate("drop-hint","Open public documents","Drop a public wallet or transaction file");
-        const char* services=host.Connection() && host.Connection()->Active()?"Backend connected. See Status for dated observations. Public document import is unavailable.":"New, Open or Import a public document. Daemon and import services are currently unavailable.";
+        const char* services=host.Connection() && host.Connection()->Active() && !host.Connection()->Offline()?"Open a loaded daemon wallet, or create a wallet on the connected node.":host.Wallets()?"Offline public workspace. Use Help → Introduction to configure a node when needed.":"New, Open or Import a public document. Daemon and import services are currently unavailable.";
         ImGui::TextWrapped("%s",services);s.presentation.Annotate("drop-services","Document services",services);
         const float action_width=std::max(1.F,(ImGui::GetContentRegionAvail().x-2*ImGui::GetStyle().ItemSpacing.x)/3);
         const bool create=theme::ActionButton("New",imkit::ActionVariant::Secondary,{action_width,32*scale},theme);f.document_actions["new"]=Last(create);const auto create_ax=s.presentation.Interact("New wallet",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus,!CommandAvailability(s,a::Command::NewWallet,host).available);
         ImGui::SameLine();const bool open=theme::ActionButton("Open",imkit::ActionVariant::Primary,{action_width,32*scale},theme);f.primary=Last(open);const auto open_ax=s.presentation.Interact("Open wallet",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus,!CommandAvailability(s,a::Command::OpenWallet,host).available);
-        ImGui::SameLine();if(s.focus_empty){ImGui::SetKeyboardFocusHere();s.focus_empty=false;}const bool import=theme::ActionButton("Import",imkit::ActionVariant::Secondary,{action_width,32*scale},theme);f.document_actions["open-import"]=Last(import);const auto import_ax=s.presentation.Interact("Import public file",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus);
+        ImGui::SameLine();if(s.focus_empty){ImGui::SetKeyboardFocusHere();s.focus_empty=false;}const bool import=theme::ActionButton("Import",imkit::ActionVariant::Secondary,{action_width,32*scale},theme);f.document_actions["open-import"]=Last(import);const auto import_ax=s.presentation.Interact(host.Wallets()?"Import wallet":"Import public file",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus);
         if(s.reveal_empty_focus && f.document_actions.at("open-import").focused){ImGui::SetNavCursorVisible(true);s.reveal_empty_focus=false;}
-        if(create)Execute(s,a::Command::NewWallet,host,f);if(open)Execute(s,a::Command::OpenWallet,host,f);if(import)BeginImport(s);
+        if(create)Execute(s,a::Command::NewWallet,host,f);if(open)Execute(s,a::Command::OpenWallet,host,f);if(import)Execute(s,a::Command::ImportWallet,host,f);
         if(create_ax)s.presentation.Defer(*create_ax,[&s,&host,&f,create](const c::SemanticRequest&){if(create)return s.invocation && s.invocation->accepted;Execute(s,a::Command::NewWallet,host,f);return s.invocation && s.invocation->accepted;});
         if(open_ax)s.presentation.Defer(*open_ax,[&s,&host,&f,open](const c::SemanticRequest&){if(open)return s.invocation && s.invocation->accepted;Execute(s,a::Command::OpenWallet,host,f);return s.invocation && s.invocation->accepted;});
-        if(import_ax)s.presentation.Defer(*import_ax,[&s,import](const c::SemanticRequest&){if(!import)BeginImport(s);return true;});
+        if(import_ax)s.presentation.Defer(*import_ax,[&s,&host,&f,import](const c::SemanticRequest&){if(!import)Execute(s,a::Command::ImportWallet,host,f,true);return s.invocation && s.invocation->accepted;});
         s.presentation.EndGroup();ImGui::EndChild();ImGui::PopStyleVar();
         if(ImGui::BeginDragDropTarget()) {
             if(const auto* payload=ImGui::AcceptDragDropPayload("ROOTS_GUI_PUBLIC_IMPORT_PATH")) {
@@ -254,8 +292,29 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         }
         ImGui::EndChild();ImGui::PopStyleVar();return;
     }
-    if(d->history.enabled || d->observed_transaction || d->coin_draft){
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{8*scale,4*scale});ImGui::PushID(std::to_string(d->id).c_str());if(d->coin_draft)DrawCoinDraft(s,host,f,theme,scale);else if(d->observed_transaction)DrawObservedTransaction(s,f,theme,scale);else if(d->section==a::Section::Transactions)DrawHistory(s,host,f,theme,scale);else if(d->section==a::Section::Addresses)DrawAddresses(s,host,f,theme,scale);else if(d->section==a::Section::UTXOs)DrawCoins(s,host,f,theme,scale);else {ImGui::TextUnformatted(a::SectionNames[size_t(d->section)]);ImGui::TextWrapped("This wallet section is not available yet. Use Transactions for dated read-only observations.");s.presentation.Annotate("wallet-section-unavailable","Wallet section","Unavailable; use Transactions for read-only observations");}ImGui::PopID();ImGui::PopStyleVar();
+    if(HasReceiveLabelError(s,d->section==a::Section::Receive && host.Receiving()?d->id:0)){
+        const char* note="An unsaved Receive label is retained. Return to its Receive tab to review it.";
+        ImGui::TextWrapped("%s",note);
+        s.presentation.Annotate("receive-retained","Receive label status",note,c::ax::SemanticRole::Alert);
+    }
+    if(d->history.enabled || d->observed_transaction || d->coin_draft || d->imported){
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{8*scale,4*scale});
+        ImGui::PushID(std::to_string(d->id).c_str());
+        if(d->imported) DrawImportedDocument(s,host,f,theme,scale);
+        else if(d->coin_draft) DrawCoinDraft(s,host,f,theme,scale);
+        else if(d->observed_transaction) DrawObservedTransaction(s,f,theme,scale);
+        else if(d->section==a::Section::Transactions) DrawHistory(s,host,f,theme,scale);
+        else if(d->section==a::Section::Addresses) DrawAddresses(s,host,f,theme,scale);
+        else if(d->section==a::Section::Receive && host.Receiving()) DrawReceive(s,host,f,theme,scale);
+        else if(d->section==a::Section::UTXOs) DrawCoins(s,host,f,theme,scale);
+        else if(d->section==a::Section::Settings && host.Wallets()) DrawPolicySettings(s,host,f,theme,scale);
+        else {
+            ImGui::TextUnformatted(a::SectionNames[size_t(d->section)]);
+            ImGui::TextWrapped("This wallet section is not available yet. Use Transactions for dated read-only observations.");
+            s.presentation.Annotate("wallet-section-unavailable","Wallet section","Unavailable; use Transactions for read-only observations");
+        }
+        ImGui::PopID();
+        ImGui::PopStyleVar();
         ImGui::EndChild();ImGui::PopStyleVar();return;
     }
     const bool wallet=d->kind==a::DocumentKind::Wallet;const auto section=d->section;auto& state=d->Current();
@@ -342,18 +401,27 @@ Layout Measure(ImVec2 origin,ImVec2 size,float scale,float menu_height)
 }
 std::string SemanticScope(const State& s) {
     std::string scope=std::to_string(s.documents.ActiveId())+":"+std::to_string(s.semantic_hide_toggle)+":"+std::to_string(s.privacy.hidden)+":"+std::to_string(int(s.actions.kind))+":"+std::to_string(s.actions.target)+":"+std::to_string(int(s.drawer))+":"+std::to_string(s.close_tab_popup)+":"+std::to_string(s.close_document_popup)+":"+std::to_string(s.semantic_menu_open)+":"+std::to_string(s.semantic_context)+":"+std::to_string(s.semantic_context_revision);
+    scope+=":"+std::to_string(int(s.local_document.mode))+":"+std::to_string(s.local_document.context.generation)
+        +":"+std::to_string(s.local_document.revision);
+    if(const auto view=s.imported_views.find(s.documents.ActiveId());view!=s.imported_views.end())
+        scope+=":"+std::to_string(view->second.revision);
+    if(const auto draft=s.offline_builders.find(s.documents.ActiveId());draft!=s.offline_builders.end())
+        scope+=":"+std::to_string(draft->second.revision);
     for(const auto& d:s.documents.Documents())scope+=":"+std::to_string(d.id)+","+std::to_string(int(d.section))+","+std::to_string(int(d.observation))+","+std::to_string(d.complete)+","+std::to_string(d.name.size())+","+std::to_string(d.draft_revision.value);
     for(const auto& d:s.documents.Documents())if(d.history.enabled)scope+=":"+std::to_string(d.history.query_revision)+","+std::to_string(d.history.metadata_revision)+","+d.history.selected+","+std::to_string(d.history.sort)+","+std::to_string(d.history.descending)+","+d.history.filter;
     if(const auto* d=s.documents.Active();d && d->history.enabled)for(const auto& [key,draft]:d->history.drafts)scope+=":"+key+":"+std::to_string(draft.draft.size())+":"+draft.draft;
     for(const auto& [id,h]:s.histories)scope+=":"+std::to_string(id)+","+std::to_string(h.observed)+","+std::to_string(h.generation)+","+std::to_string(h.sequence);
     for(const auto& d:s.documents.Documents())if(d.history.enabled)scope+=":"+d.addresses.selected+","+std::to_string(d.addresses.group)+","+std::to_string(d.addresses.hide_empty_used)+","+std::to_string(d.addresses.transactions)+","+std::to_string(d.addresses.split);
+    if(const auto r=s.receives.find(s.documents.ActiveId());r!=s.receives.end())scope+=":"+std::to_string(r->second.revision);
+    if(const auto settings=s.settings.find(s.documents.ActiveId());settings!=s.settings.end())scope+=":"+std::to_string(settings->second.revision);
+    if(const auto advanced=s.advanced.find(s.documents.ActiveId());advanced!=s.advanced.end())scope+=":"+std::to_string(advanced->second.revision);
     for(const auto& [id,a]:s.addresses)scope+=":"+std::to_string(id)+","+std::to_string(a.generation)+","+std::to_string(a.sequence)+","+std::to_string(a.history_sequence);
     for(const auto& d:s.documents.Documents())if(d.history.enabled){scope+=":"+d.coins.focused+","+std::to_string(d.coins.by_value)+","+std::to_string(d.coins.descending)+","+std::to_string(d.coins.metadata_revision);for(const auto& key:d.coins.selected)scope+=":"+key;for(const auto& [key,draft]:d.coins.drafts)scope+=":"+key+":"+draft.draft;}
     for(const auto& [id,c]:s.coins)scope+=":"+std::to_string(id)+","+std::to_string(c.generation)+","+std::to_string(c.sequence)+","+std::to_string(c.observed)+","+std::to_string(c.chart_group)+","+std::to_string(c.chain_current);
     for(const auto& [id,error]:s.coin_draft_errors)scope+=":"+std::to_string(id)+":"+error;scope+=":"+std::to_string(s.coin_controls.Revision());for(const auto& d:s.documents.Documents())if(d.coin_draft){scope+=":"+std::to_string(d.id)+","+std::to_string(d.draft_revision.value);for(const auto& p:d.coin_draft->inputs)scope+=":"+app::CoinKey(p.outpoint)+":"+p.current_reason;}
     const auto& o=s.observations;size_t bytes=o.last_success.size()+o.error.size();for(const auto* observation:{&o.devices,&o.proxy,&o.updates,&o.network,&o.connection,&o.activity})bytes+=observation->detail.size();
     for(const auto& task:o.tasks)bytes+=task.title.size()+task.detail.size();for(const auto& line:o.log)bytes+=line.size();
-    return scope+":"+std::to_string(o.tasks.size())+":"+std::to_string(o.log.size())+":"+std::to_string(bytes)+":"+std::to_string(components::native_input && components::native_input->NativeDialogActive())+":"+std::to_string(s.server.dialog.open)+":"+std::to_string(s.server.scope_revision)+":"+std::to_string(s.server.scope_session)+":"+std::to_string(s.recovery_dialog.open)+":"+std::to_string(s.recovery && s.recovery->Pending())+":"+std::to_string(s.recovery && s.recovery->Locked())+":"+std::to_string(s.recovery?s.recovery->Gate().Epoch().value:0)+":"+std::to_string(s.lock_panel.setup);
+    return scope+":"+std::to_string(o.tasks.size())+":"+std::to_string(o.log.size())+":"+std::to_string(bytes)+":"+std::to_string(components::native_input && components::native_input->NativeDialogActive())+":"+std::to_string(s.server.dialog.open)+":"+std::to_string(s.server.scope_revision)+":"+std::to_string(s.server.scope_session)+":"+std::to_string(s.recovery_dialog.open)+":"+std::to_string(s.recovery && s.recovery->Pending())+":"+std::to_string(s.recovery && s.recovery->Locked())+":"+std::to_string(s.recovery?s.recovery->Gate().Epoch().value:0)+":"+std::to_string(s.lock_panel.setup)+":"+std::to_string(s.onboarding.revision);
 }
 Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const BootstrapAppearance& appearance,ImVec2 work_size)
 {
@@ -371,7 +439,10 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     // commands; this one-shot transition never steals focus on later frames.
     if(locked && (s.previous_document!=active_id || !s.previous_locked))RestoreDocumentFocus(s,active_id);
     s.previous_document=active_id;s.previous_locked=locked;
-    Facts f;s.native_drop_target={};s.observations=host.Observe();s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
+    BeginReceiveLabelFrame(s);PollReceive(s,host);PollPolicySettings(s,host);PollAdvancedSettings(s,host);
+    std::erase_if(s.imported_views,[&](const auto& item){return !s.documents.Find(item.first);});
+    std::erase_if(s.offline_builders,[&](const auto& item){const auto* doc=s.documents.Find(item.first);return !doc || !doc->coin_draft;});
+    Facts f;s.native_drop_target={};s.observations=host.Observe();s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open || s.onboarding.dialog.open || s.local_document.dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
     if(work_size.x<=0 || work_size.y<=0)work_size=vp->WorkSize;
     ImGui::SetNextWindowPos(vp->WorkPos);ImGui::SetNextWindowSize(work_size);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
     ImGui::Begin("Bitcoin Roots###workspace",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoDocking);
@@ -385,10 +456,13 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     DrawStatus(s,f,theme,scale);DrawActivityDrawer(s,f,theme,scale,&host);
     DrawDocumentDialog(s,host,f,theme,scale);
     DrawRecoveryDialog(s,f,theme,scale);}
+    DrawOnboarding(s,host,f,theme,scale);
+    DrawLocalDocumentDialog(s,host,f,theme,scale);
     if(auto* connection=host.Connection())f.server=DrawServer(s.server,*connection,s.presentation,theme,scale);
     DrawPrivacyPanel(s,host,f,theme,scale);
+    if(s.recovery && s.recovery->Locked() && s.onboarding.page!=OnboardingPage::None)RetireOnboarding(s,host);
     ImGui::EndDisabled();
-    ImGui::End();ImGui::PopStyleVar();FinishHistoryLabelFrame(s,host);FinishCoinFrame(s,host);s.presentation.Seal();
+    ImGui::End();ImGui::PopStyleVar();FinishHistoryLabelFrame(s,host);FinishCoinFrame(s,host);s.presentation.Seal();FinishReceiveLabelFrame(s);
     if(s.recovery)s.recovery->SetPresentation(s.semantic_hide_toggle?!s.privacy.hidden:s.privacy.hidden,s.unit);
     if(s.recovery && s.recovery->Enabled() && !s.recovery->Locked() && !s.recovery->Pending() && !s.recovery->Checkpoint(s.documents))s.notice="Public recovery was not saved: "+s.recovery->Error()+". Previous snapshot retained.";
     if(components::native_input)components::native_input->Privacy(s.privacy.hidden || s.semantic_hide_toggle);return f;

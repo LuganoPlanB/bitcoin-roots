@@ -1,0 +1,85 @@
+// Copyright (c) 2026 Plan-B Foundation
+// Distributed under the MIT software license, see the accompanying COPYING file.
+#pragma once
+#include "adapters/protocol/public_wallet.h"
+#include "domain/model.h"
+#include <map>
+#include <memory>
+#include <set>
+#include <stop_token>
+
+namespace roots::gui::protocol {
+inline constexpr size_t MAX_TRANSACTION_WIRE = 65536;
+inline constexpr size_t MAX_TRANSACTION_SOURCE = MAX_TRANSACTION_WIRE*2+64;
+inline constexpr size_t MAX_TRANSACTION_IO = 1024;
+enum class DocumentFormat { RawBinary, RawHex, PsbtBinary, PsbtBase64, PublicDescriptor };
+enum class DisplayNetwork { Unknown, Mainnet, Testnet, Testnet4, Signet, Regtest };
+enum class PrevoutEvidence { Unknown, Supplied, TxidMatched, Conflict };
+enum class DocumentError { None, Empty, Limit, Format, Malformed, Duplicate, UnsupportedVersion, NetworkRequired, PublicDescriptor, Cancelled };
+
+struct TransactionInput {
+    Outpoint outpoint;
+    uint32_t sequence{};
+    std::optional<Money> previous_value;
+    std::string previous_script;
+    PrevoutEvidence evidence{PrevoutEvidence::Unknown};
+};
+struct TransactionOutput {
+    Money value;
+    std::string script;
+    bool operator==(const TransactionOutput&) const = default;
+};
+struct PsbtPolicy {
+    std::optional<uint32_t> sighash;
+    std::set<uint32_t> signature_modes;
+    std::map<std::string,std::string> scripts; // standardized script commitments, never key-origin claims
+};
+struct TransactionInspection {
+    uint32_t version{};
+    std::optional<uint32_t> locktime;
+    std::optional<Hash256> txid; // actual raw transaction only
+    std::vector<TransactionInput> inputs;
+    std::vector<TransactionOutput> outputs;
+    std::optional<Money> fee;
+    bool witness{}, coinbase{};
+};
+struct TransactionDocument {
+    DocumentFormat format{};
+    std::string source; // original bytes, including any text whitespace or container field ordering
+    std::string wire;   // decoded binary for transactions; never a provider reserialization
+    std::optional<uint32_t> psbt_version;
+    std::optional<TransactionInspection> transaction;
+    std::optional<PublicWalletPreview> descriptor;
+    std::vector<PsbtPolicy> input_policy, output_policy;
+    std::optional<uint8_t> modifiable;
+    size_t psbt_entries{};
+    ~TransactionDocument();
+};
+struct DocumentResult {
+    std::shared_ptr<const TransactionDocument> document;
+    DocumentError error{DocumentError::None};
+    std::optional<uint32_t> unsupported_version;
+};
+DocumentResult ParseTransactionDocument(std::string_view, DisplayNetwork, std::stop_token = {}, bool text_only = false);
+std::string_view DocumentFormatName(DocumentFormat);
+std::string DocumentErrorMessage(const DocumentResult&);
+std::string_view DocumentNetworkName(DisplayNetwork);
+std::string_view DocumentChain(DisplayNetwork);
+DisplayNetwork DocumentNetwork(const NetworkIdentity&);
+std::string TransactionHex(std::string_view);
+std::string TransactionBase64(std::string_view);
+std::optional<std::string> DecodeTransactionBase64(std::string_view, size_t maximum);
+std::optional<std::string> OutputAddress(std::string_view script_hex, DisplayNetwork);
+std::optional<std::string> AddressScript(std::string_view address, DisplayNetwork);
+std::optional<std::string> MergePsbtMaps(const TransactionDocument& target, const TransactionDocument& supplied);
+std::optional<Hash256> TransactionCommitment(const TransactionDocument&);
+// Returns the first policy or transaction change. Independent of format and map order.
+// For an external signature subset, omitted fields can be supplied by the fixed working document.
+std::string CompareTransactionReview(const TransactionDocument&, const TransactionDocument&, bool allow_omissions = false);
+std::optional<uint32_t> ReviewSighash(const TransactionDocument&, size_t input);
+bool VerifyOutputAddress(std::string_view address, std::string_view script_hex, DisplayNetwork);
+
+// An exact match to a proved script says only that this script is in the
+// supplied wallet's public policy. It does not establish the output's intent.
+bool MatchesPublicPolicy(std::string_view script_hex, DisplayNetwork, const PublicWalletPreview&);
+}

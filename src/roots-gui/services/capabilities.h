@@ -55,6 +55,7 @@ public:
     void Poll();
     void Cancel();
     bool Apply();
+    bool AdoptWallet(BackendCapabilities, uint64_t expected_session, uint64_t expected_revision);
     bool SetOffline(bool);
     void SetPrivacyLocked(bool);
     bool PrivacyLocked() const{return privacy_locked;}

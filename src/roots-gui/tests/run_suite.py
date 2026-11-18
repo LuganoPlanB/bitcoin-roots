@@ -17,10 +17,10 @@ import xml.etree.ElementTree as ET
 from support.runtime import evidence_directory,write_json
 
 SUITES={
- 'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts',*[f'roots_gui.{x}' for x in ['connection.models','refresh.models','history.model','history.workspace','history.states','address.models','coin.models','coin.controls','storage.schema','storage.protected','storage.conversion','storage.recovery']]}),
+ 'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts','roots_gui.wallet_import.models','roots_gui.receive.models','roots_gui.settings.models','roots_gui.keystore.models','roots_gui.rescan.models','roots_gui.protocol.documents','roots_gui.protocol.offline_draft',*[f'roots_gui.{x}' for x in ['connection.models','refresh.models','history.model','history.workspace','history.states','address.models','coin.models','coin.controls','storage.schema','storage.protected','storage.conversion','storage.recovery']]}),
  'rpc':('rpc',{'roots_gui.connection.models','roots_gui.refresh.models',*[f'roots_gui.rpc.{x}' for x in ['fake_http','scratch','json','transport','capabilities','refresh','history','history_bounds','addresses']]}),
- 'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker',*[f'roots_gui.engine.{x}' for x in ['preferences','bootstrap','appearance','components','privacy','shell','documents','commands','semantics','server','history','addresses','coins','coin_controls']],*[f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls']],*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
- 'regtest':('regtest',{'roots_gui.regtest.owned','roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls']]}),
+ 'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker',*[f'roots_gui.engine.{x}' for x in ['preferences','bootstrap','appearance','components','privacy','shell','documents','commands','semantics','server','history','addresses','coins','coin_controls','wallet_onboarding']],*[f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls','wallet_onboarding']],*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
+ 'regtest':('regtest',{'roots_gui.regtest.owned','roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding']]}),
  'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts','roots_gui.theme.native_gallery','roots_gui.theme.native_appearance','roots_gui.theme.native_components','roots_gui.theme.native_shell','roots_gui.theme.native_shell_appearance','roots_gui.theme.native_documents','roots_gui.theme.native_commands','roots_gui.theme.native_semantics'}),
  'boundary':('boundary',{'roots_gui.boundary.actual','roots_gui.boundary.rejections','roots_gui.build_contract',*[f'roots_gui.runner.{x}' for x in ['failure','unknown','count','undrained','timeout']]}),
 }
@@ -28,7 +28,11 @@ ACCESSIBILITY={f'roots_gui.accessibility.{x}' for x in ['native','transport','in
 # The full Linux/explicit-owned-daemon profile is the public aggregate contract.
 # Native journeys have separate evidence gates; exclude their repeated matrices
 # from the deterministic aggregate rather than converting them into skips.
-NATIVE_UI={f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls']}
+for native in ('wallet_import','receive','settings_policy','keystore','advanced','offline_draft'):
+ for group in ('ui','regtest'):
+  SUITES[group][1].add(f'roots_gui.theme.{native}')
+SUITES["ui"][1].add("roots_gui.theme.offline_documents")
+NATIVE_UI={f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_documents','offline_draft']}
 INVENTORY=set().union(*(expected for _,expected in SUITES.values()),ACCESSIBILITY)
 APPLICABLE=set().union(*(SUITES[x][1] for x in ['model','rpc','ui','regtest','boundary']))-NATIVE_UI
 SUITES['applicable']=('roots-gui',APPLICABLE)
@@ -41,8 +45,8 @@ def configured_suites(build):
   if line and not line.startswith(('#','//')) and '=' in line and ':' in line.split('=',1)[0]:
    key,value=line.split('=',1);cache[key.split(':',1)[0]]=value
  roots=bool(cache.get('ROOTS_GUI_TEST_ROOTS_DAEMON'))
- omitted=set()
- if not roots:omitted={'roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls']]}
+ omitted=set() if sys.platform.startswith("linux") else {"roots_gui.protocol.documents","roots_gui.protocol.offline_draft","roots_gui.theme.offline_documents","roots_gui.theme.offline_draft"}
+ if not roots:omitted|={'roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
  if not roots and not cache.get('ROOTS_GUI_TEST_CORE_DAEMON'):omitted.add('roots_gui.regtest.owned')
  return {name:(label,expected-omitted) for name,(label,expected) in SUITES.items()},INVENTORY-omitted,roots
 

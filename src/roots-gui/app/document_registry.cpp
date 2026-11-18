@@ -20,6 +20,17 @@ uint64_t DocumentRegistry::OpenTransaction(std::string name)
     if(!next)throw std::overflow_error("document identity exhausted");
     const auto id=next++;documents.push_back(Document{id,DocumentKind::Transaction,std::move(name),std::nullopt});documents.back().original_name=documents.back().name;Activate(id);return id;
 }
+uint64_t DocumentRegistry::OpenImportedDocument(ImportedDocument imported)
+{
+    if (documents.size()>=32 || !next || next==UINT64_MAX || !imported.parsed) return 0;
+    const auto name=imported.parsed->descriptor ? "Public descriptor" : imported.parsed->psbt_version
+        ? "PSBT v"+std::to_string(*imported.parsed->psbt_version) : "Raw transaction";
+    const auto id=OpenTransaction(name);
+    auto* document=Find(id);
+    document->imported=std::move(imported);
+    document->transaction.note=ui::components::Edit("");
+    return id;
+}
 uint64_t DocumentRegistry::OpenObservedTransaction(ObservedTransaction reference){for(const auto& d:documents)if(d.observed_transaction==reference){const auto id=d.id;Activate(id);return id;}if(documents.size()>=32)return 0;const auto id=OpenTransaction("Transaction "+reference.txid.hex().substr(0,12));auto* d=Find(id);d->observed_transaction=std::move(reference);d->transaction.note=ui::components::Edit("");return id;}
 bool DocumentRegistry::Navigate(Section section)
 {
@@ -84,7 +95,7 @@ bool DocumentRegistry::RestorePublic(std::vector<Document> restored,uint64_t act
 void DocumentRegistry::Conceal()
 {
     const auto wipe=[](std::string& s){if(!s.empty())sodium_memzero(s.data(),s.size());s.clear();};
-    for(auto& d:documents){wipe(d.name);wipe(d.original_name);wipe(d.history.filter);wipe(d.history.selected);for(auto& [id,draft]:d.history.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.history.drafts.clear();d.history.expanded.clear();for(auto& [key,draft]:d.coins.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.coins=CoinPresentation();if(d.coin_draft){for(auto& p:d.coin_draft->inputs){wipe(p.script);wipe(p.pinned_reason);wipe(p.current_reason);}d.coin_draft.reset();}for(auto* s:{&d.transaction,&d.sections[0],&d.sections[1],&d.sections[2],&d.sections[3],&d.sections[4],&d.sections[5]}){sodium_memzero(s->note.text.data(),s->note.text.size());wipe(s->note.saved);wipe(s->note.error);wipe(s->note.last_attempt);if(s->note.external_buffer)wipe(*s->note.external_buffer);s->selection.selected.clear();s->selection.focused.reset();}d.selected_coins.clear();d.excluded_coins.clear();}
+    for(auto& d:documents){wipe(d.name);wipe(d.original_name);wipe(d.history.filter);wipe(d.history.selected);for(auto& [id,draft]:d.history.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.history.drafts.clear();d.history.expanded.clear();for(auto& [key,draft]:d.coins.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.coins=CoinPresentation();if(d.coin_draft){for(auto& p:d.coin_draft->inputs){wipe(p.script);wipe(p.pinned_reason);wipe(p.current_reason);if(p.offline){wipe(p.offline->previous_hex);wipe(p.offline->descriptor);wipe(p.offline->redeem_script);wipe(p.offline->witness_script);}}if(d.coin_draft->offline_change)wipe(d.coin_draft->offline_change->descriptor);d.coin_draft.reset();}for(auto* s:{&d.transaction,&d.sections[0],&d.sections[1],&d.sections[2],&d.sections[3],&d.sections[4],&d.sections[5]}){sodium_memzero(s->note.text.data(),s->note.text.size());wipe(s->note.saved);wipe(s->note.error);wipe(s->note.last_attempt);if(s->note.external_buffer)wipe(*s->note.external_buffer);s->selection.selected.clear();s->selection.focused.reset();}d.selected_coins.clear();d.excluded_coins.clear();}
     documents.clear();active=0;
 }
 DocumentRegistry PublicFixtureDocuments()

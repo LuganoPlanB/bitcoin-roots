@@ -33,7 +33,10 @@ public:
     Receipt FreezeAddress(const Document&,const RefreshView&,const AddressView&,std::string_view key,bool freeze,RecoverySession&);
     bool AddressFrozen(const Document&,const RefreshView&,const DerivedAddress&,RecoverySession&);
     struct PinResult {uint64_t document{};std::string reason;};
-    PinResult Pin(DocumentRegistry&,uint64_t wallet_document,const std::set<std::string>&,const CoinInventory*);
+    PinResult Pin(DocumentRegistry&,uint64_t wallet_document,const std::set<std::string>&,const CoinInventory*,
+                  const RefreshView* = nullptr, RecoverySession* = nullptr, std::optional<protocol::OfflineChange> = {});
+    bool AllowsOfflineDraft(const Document&, const DocumentRegistry&, const RefreshView*, RecoverySession*);
+
     Receipt RequestPreflight(DocumentRegistry&,uint64_t,RecoverySession&,RefreshService&,int64_t now);
     Receipt Release(uint64_t document,std::optional<uint64_t> expected_owner={},RefreshService* =nullptr);
     std::optional<uint64_t> Owner(uint64_t document) const;

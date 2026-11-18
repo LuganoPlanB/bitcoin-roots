@@ -4,6 +4,7 @@
 #include "adapters/storage/schema.h"
 #include "adapters/storage/protected_file.h"
 #include "adapters/rpc/json.h"
+#include "adapters/protocol/public_wallet.h"
 #include <sqlite3.h>
 #include <algorithm>
 #include <charconv>
@@ -90,7 +91,7 @@ ScopeRow FindScope(sqlite3* db,const Scope& s,bool create){
     if(!q.Row())return {};ScopeRow r{q.Int(0),Counter(q.Int(1)),q.Text(2)};Require(r.id>0 && Text(r.display,1024),Error::Corrupt);Require(!q.Row(),Error::Corrupt);return r;
 }
 void ValidateSchema(sqlite3* db,int version){
-    std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);
+    std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);if(version>=4)expected.emplace(schema::V4);if(version>=5)for(auto sql:schema::V5)expected.emplace(sql);if(version>=6)expected.emplace(schema::V6);
     // GLOB keeps '_' literal: sqliteX... is an ordinary user object and must
     // reach the exact-schema check, unlike SQLite's reserved sqlite_ objects.
     Statement q(db,"SELECT type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'");
@@ -127,7 +128,12 @@ void Initialize(sqlite3* db,OpenOptions options){
     Exec(db,"PRAGMA max_page_count="+std::to_string(options.max_pages));Transaction tx(db,true);auto v=Scalar(db,"PRAGMA user_version");
     if(v==0){Require(Scalar(db,"PRAGMA application_id")==0 && Scalar(db,"SELECT count(*) FROM sqlite_schema")==0,Error::Schema);for(auto sql:schema::V1)Exec(db,sql);Exec(db,"PRAGMA application_id="+std::to_string(schema::ApplicationId));Exec(db,"PRAGMA user_version=1");v=1;}
     Require(Scalar(db,"PRAGMA application_id")==schema::ApplicationId && v>=1 && v<=schema::Version,Error::Schema);ValidateSchema(db,int(v));
-    if(v==1){Exec(db,schema::V2);Exec(db,"PRAGMA user_version=2");v=2;}if(v==2){Exec(db,schema::V3);Exec(db,"PRAGMA user_version=3");}ValidateSchema(db,schema::Version);
+    if(v==1){Exec(db,schema::V2);Exec(db,"PRAGMA user_version=2");v=2;}
+    if(v==2){Exec(db,schema::V3);Exec(db,"PRAGMA user_version=3");v=3;}
+    if(v==3){Exec(db,schema::V4);Exec(db,"PRAGMA user_version=4");v=4;}
+    if(v==4){for(auto sql:schema::V5)Exec(db,sql);Exec(db,"PRAGMA user_version=5");v=5;}
+    if(v==5){Exec(db,schema::V6);Exec(db,"PRAGMA user_version=6");}
+    ValidateSchema(db,schema::Version);
     {Statement q(db,"PRAGMA foreign_key_check");Require(!q.Row(),Error::Corrupt);}tx.Commit();
 }
 CleansedBytes Serialize(sqlite3* db){sqlite3_int64 size{};auto* memory=sqlite3_serialize(db,"main",&size,0);if(!memory || size<=0 || uint64_t(size)>ProtectedFile::MaxBytes){if(memory){if(size>0)sodium_memzero(memory,size);sqlite3_free(memory);}throw Failure{Error::Resource};}CleansedBytes result;try{result.bytes.assign(memory,memory+size);}catch(...){sodium_memzero(memory,size);sqlite3_free(memory);throw;}sodium_memzero(memory,size);sqlite3_free(memory);return result;}
@@ -203,6 +209,221 @@ Result<uint64_t> MetadataStore::SaveRecovery(const RecoveryRecord& r){return Wri
     Require(Counter(Scalar(db,"SELECT coalesce((SELECT revision FROM recovery WHERE slot=1),0)"))==r.revision,Error::Conflict);
     Statement q(db,"INSERT INTO recovery VALUES(1,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,enabled=excluded.enabled,public_documents=excluded.public_documents");q.Bind(1,int64_t(r.revision+1));q.Bind(2,int64_t(r.enabled));q.Bind(3,r.public_documents);q.Done();tx.Commit();return r.revision+1;
 });}
+namespace {
+constexpr size_t MAX_RECENT_WALLETS = 16;
+std::vector<Scope> RecentWallets(sqlite3* db)
+{
+    Statement query(db, "SELECT backend,genesis,wallet,position FROM recent_wallets ORDER BY position");
+    std::vector<Scope> wallets;
+    while (query.Row()) {
+        auto genesis = Hash256::Parse(query.Text(1));
+        Require(genesis && wallets.size() < MAX_RECENT_WALLETS && query.Int(3) == int64_t(wallets.size()), Error::Corrupt);
+        Scope scope{query.Text(0), {*genesis}, query.Text(2)};
+        Require(Valid(scope), Error::Corrupt);
+        wallets.push_back(std::move(scope));
+    }
+    return wallets;
+}
+}
+Result<std::vector<Scope>> MetadataStore::LoadRecentWallets()
+{
+    return Run([&] { return RecentWallets(db); });
+}
+Result<Done> MetadataStore::RememberWallet(const Scope& scope)
+{
+    return Write([&] {
+        Require(Valid(scope));
+        Transaction tx(db, true);
+        auto wallets = RecentWallets(db);
+        if (!wallets.empty() && wallets.front() == scope) return Done{};
+        std::erase(wallets, scope);
+        wallets.insert(wallets.begin(), scope);
+        if (wallets.size() > MAX_RECENT_WALLETS) wallets.pop_back();
+        Exec(db, "DELETE FROM recent_wallets");
+        for (size_t position = 0; position < wallets.size(); ++position) {
+            Statement insert(db, "INSERT INTO recent_wallets VALUES(?,?,?,?)");
+            insert.Bind(1, wallets[position].backend);
+            insert.Bind(2, wallets[position].network.genesis.hex());
+            insert.Bind(3, wallets[position].daemon_wallet);
+            insert.Bind(4, int64_t(position));
+            insert.Done();
+        }
+        tx.Commit();
+        return Done{};
+    });
+}
+namespace {
+struct ReceiveState { uint64_t serial{}; int pending{}; };
+
+ReceiveState ReadReceiveState(sqlite3* db, int64_t scope)
+{
+    Statement query(db, "SELECT serial,pending FROM receive_state WHERE scope=?");
+    query.Bind(1, scope);
+    if (!query.Row()) return {};
+    const auto serial = Counter(query.Int(0));
+    const auto mode = query.Int(1);
+    Require(serial && mode >= 0 && mode <= 2 && !query.Row(), Error::Corrupt);
+    return {serial, int(mode)};
+}
+
+ReceivePool ReadReceivePool(sqlite3* db, int64_t scope, ReceiveState state)
+{
+    Statement query(db, "SELECT count(*),coalesce(sum(queued),0) FROM receive_addresses WHERE scope=?");
+    query.Bind(1, scope);
+    Require(query.Row(), Error::Corrupt);
+    const auto count = Counter(query.Int(0)), queued = Counter(query.Int(1));
+    Require(!query.Row() && count <= ReceivePool::MAX_RECORDS && queued <= ReceivePool::MAX_RESERVED && queued <= count, Error::Corrupt);
+    return {state.pending ? state.serial : 0, size_t(queued), size_t(count)};
+}
+
+bool BoundReceiveTarget(const Scope& scope, const ReceiveTarget& target)
+{
+    return protocol::ReceiveChain(scope.network.genesis.hex()) == target.chain && !target.index && protocol::VerifyReceiveTarget(target);
+}
+}
+namespace {
+struct RescanState {
+    uint64_t serial{};
+    std::optional<ScanRange> range;
+};
+RescanState ReadRescanState(sqlite3* db, int64_t wallet)
+{
+    Statement query(db, "SELECT serial,first,last FROM rescan_state WHERE scope=?");
+    query.Bind(1, wallet);
+    if (!query.Row()) return {};
+    RescanState state{Counter(query.Int(0)), {}};
+    if (query.Type(1) != SQLITE_NULL) state.range = ScanRange{query.Int(1), query.Int(2)};
+    Require(state.serial && (state.range ? query.Type(2) != SQLITE_NULL && state.range->Valid() : query.Type(2) == SQLITE_NULL) && !query.Row(), Error::Corrupt);
+    return state;
+}
+}
+Result<std::optional<PendingRescan>> MetadataStore::LoadRescan(const Scope& scope)
+{
+    return Run([&]() -> std::optional<PendingRescan> {
+        const auto state = ReadRescanState(db, FindScope(db, scope, false).id);
+        if (!state.range) return {};
+        return PendingRescan{state.serial, *state.range};
+    });
+}
+Result<uint64_t> MetadataStore::BeginRescan(const Scope& scope, ScanRange range)
+{
+    return Write([&] {
+        Require(range.Valid() && !protocol::ReceiveChain(scope.network.genesis.hex()).empty());
+        Transaction tx(db, true);
+        const auto wallet = FindScope(db, scope, true).id;
+        const auto state = ReadRescanState(db, wallet);
+        Require(!state.range, Error::Conflict);
+        Require(state.serial < uint64_t(std::numeric_limits<int64_t>::max()), Error::Full);
+        Statement write(db, "INSERT INTO rescan_state VALUES(?,?,?,?) ON CONFLICT(scope) DO UPDATE SET serial=excluded.serial,first=excluded.first,last=excluded.last");
+        write.Bind(1, wallet);
+        write.Bind(2, int64_t(state.serial + 1));
+        write.Bind(3, range.first);
+        write.Bind(4, range.last);
+        write.Done();
+        tx.Commit();
+        return state.serial + 1;
+    });
+}
+Result<Done> MetadataStore::FinishRescan(const Scope& scope, uint64_t ticket)
+{
+    return Write([&] {
+        Transaction tx(db, true);
+        const auto wallet = FindScope(db, scope, false).id;
+        const auto state = ReadRescanState(db, wallet);
+        Require(state.range && state.serial == ticket, Error::Conflict);
+        Statement write(db, "UPDATE rescan_state SET first=NULL,last=NULL WHERE scope=?");
+        write.Bind(1, wallet);
+        write.Done();
+        tx.Commit();
+        return Done{};
+    });
+}
+
+Result<ReceivePool> MetadataStore::LoadReceivePool(const Scope& scope)
+{
+    return Run([&] {
+        Transaction tx(db, false);
+        const auto wallet = FindScope(db, scope, false).id;
+        const auto pool = ReadReceivePool(db, wallet, ReadReceiveState(db, wallet));
+        tx.Commit();
+        return pool;
+    });
+}
+Result<uint64_t> MetadataStore::BeginReceive(const Scope& scope, bool reserve)
+{
+    return Write([&] {
+        Require(!protocol::ReceiveChain(scope.network.genesis.hex()).empty());
+        Transaction tx(db, true);
+        const auto wallet = FindScope(db, scope, true).id;
+        const auto state = ReadReceiveState(db, wallet);
+        const auto pool = ReadReceivePool(db, wallet, state);
+        Require(!pool.pending, Error::Conflict);
+        Require(pool.retained < ReceivePool::MAX_RECORDS && (!reserve || pool.available < ReceivePool::MAX_RESERVED)
+            && state.serial < uint64_t(std::numeric_limits<int64_t>::max()), Error::Full);
+        Statement write(db, "INSERT INTO receive_state VALUES(?,?,?) ON CONFLICT(scope) DO UPDATE SET serial=excluded.serial,pending=excluded.pending");
+        write.Bind(1, wallet);
+        write.Bind(2, int64_t(state.serial + 1));
+        write.Bind(3, int64_t(reserve ? 2 : 1));
+        write.Done();
+        tx.Commit();
+        return state.serial + 1;
+    });
+}
+Result<Done> MetadataStore::FinishReceive(const Scope& scope, uint64_t ticket, const std::optional<ReceiveTarget>& address)
+{
+    return Write([&] {
+        Require(ticket && (!address || BoundReceiveTarget(scope, *address)));
+        Transaction tx(db, true);
+        const auto wallet = FindScope(db, scope, false).id;
+        const auto state = ReadReceiveState(db, wallet);
+        Require(state.pending && state.serial == ticket, Error::Conflict);
+        if (address) {
+            Statement check(db, "SELECT 1 FROM receive_addresses WHERE scope=? AND (address=? OR script=?)");
+            check.Bind(1, wallet);
+            check.Bind(2, address->address);
+            check.Bind(3, address->script);
+            Require(!check.Row(), Error::Conflict);
+            Statement write(db, "INSERT INTO receive_addresses VALUES(?,?,?,?,?,?,?,?)");
+            write.Bind(1, wallet);
+            write.Bind(2, int64_t(ticket));
+            write.Bind(3, address->address);
+            write.Bind(4, address->script);
+            write.Bind(5, address->descriptor);
+            write.Bind(6, address->path);
+            write.Bind(7, address->observed_ms);
+            write.Bind(8, int64_t(state.pending == 2));
+            write.Done();
+        }
+        Statement finish(db, "UPDATE receive_state SET pending=0 WHERE scope=?");
+        finish.Bind(1, wallet);
+        finish.Done();
+        tx.Commit();
+        return Done{};
+    });
+}
+Result<ReceiveTarget> MetadataStore::ConsumeReceive(const Scope& scope)
+{
+    return Write([&] {
+        Transaction tx(db, true);
+        const auto wallet = FindScope(db, scope, false).id;
+        Statement read(db, "SELECT serial,address,script,descriptor,key_path,observed FROM receive_addresses WHERE scope=? AND queued=1 ORDER BY serial LIMIT 1");
+        read.Bind(1, wallet);
+        Require(read.Row(), Error::NotFound);
+        const auto serial = Counter(read.Int(0));
+        const auto state = ReadReceiveState(db, wallet);
+        ReceiveTarget result{read.Text(1), read.Text(2), read.Text(3), read.Text(4),
+            std::string(protocol::ReceiveChain(scope.network.genesis.hex())), {}, read.Int(5)};
+        Require(serial && serial <= state.serial && (!state.pending || serial != state.serial)
+            && BoundReceiveTarget(scope, result), Error::Corrupt);
+        Require(!read.Row(), Error::Corrupt);
+        Statement issue(db, "UPDATE receive_addresses SET queued=0 WHERE scope=? AND serial=?");
+        issue.Bind(1, wallet);
+        issue.Bind(2, int64_t(serial));
+        issue.Done();
+        tx.Commit();
+        return result;
+    });
+}
 Result<Profile> MetadataStore::LoadProfile(std::string_view id){return Run([&]{
     Require(Id(id));Statement q(db,"SELECT revision,genesis,wallet,host,port,tls,ca,proxy,proxy_host,proxy_port,credential_ref FROM profiles WHERE id=?");q.Bind(1,id);Require(q.Row(),Error::NotFound);Profile p;p.id=id;p.revision=Counter(q.Int(0));auto& c=p.candidate;c.expected_genesis=q.Text(1);if(q.Type(2)!=SQLITE_NULL)c.wallet=q.Text(2);auto& v=c.connection;
     const auto port=q.Int(4),proxy=q.Int(7),proxy_port=q.Int(9);Require(port>0 && port<=65535 && proxy>=0 && proxy<=2 && proxy_port>0 && proxy_port<=65535,Error::Corrupt);

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "adapters/storage/metadata.h"
+#include "adapters/protocol/public_wallet.h"
 #include "adapters/storage/schema.h"
 #include <sqlite3.h>
 #include <fstream>
@@ -43,15 +44,106 @@ void Persistence(const std::filesystem::path& path){
     auto malformed=profile;malformed.candidate.connection.credential.reference=std::string(1,char(255));Check(store->SaveProfile(malformed).error==s::Error::Invalid);
     auto malformed_provenance=p;malformed_provenance.context.backend=*BackendSessionId::Make(std::string(1,char(255)));Check(store->SaveObservation(scope,"balance",malformed_provenance,{}).error==s::Error::Invalid);
     bool denied{};std::thread foreign([&]{denied=store->Load(scope).error==s::Error::WrongThread && store->Save(scope,m).error==s::Error::WrongThread;});foreign.join();Check(denied);
+    Check(Take(store->LoadRecentWallets()).empty());
+    for(int i=0;i<20;++i)Take(store->RememberWallet(Scope("backend",'1',"recent-"+std::to_string(i))));
+    const auto unnamed=Scope("backend",'2',"");
+    Take(store->RememberWallet(unnamed));Take(store->RememberWallet(unnamed));
     store.reset();store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(scope))==m && Take(store->LoadWorkspace())==w && Take(store->LoadProfile(profile.id))==profile);Check(Take(store->LoadObservation(scope,"balance")).amount==cache.amount);
+    const auto recents=Take(store->LoadRecentWallets());Check(recents.size()==16 && recents.front()==unnamed && recents.back().daemon_wallet=="recent-5");
+    Check(store->RememberWallet(Scope("backend",'1',"invalid\nname")).error==s::Error::Invalid && Take(store->LoadRecentWallets())==recents);
     Raw raw(path);Check(raw.Number("SELECT typeof(amount)='integer' FROM drafts WHERE document='a-min'")==1);Check(raw.Number("SELECT typeof(revision)='text' FROM drafts WHERE document='a-min'")==1);Check(raw.Number("SELECT count(*) FROM sqlite_schema WHERE name LIKE '%account%' OR name LIKE '%seed%' OR name LIKE '%private_key%' OR name LIKE '%password%'")==0);
 }
 int64_t VersionOne(const std::filesystem::path& path){Raw raw(path);raw.Exec("BEGIN IMMEDIATE");for(auto sql:s::schema::V1)raw.Exec(sql);raw.Exec("PRAGMA application_id="+std::to_string(s::schema::ApplicationId));raw.Exec("PRAGMA user_version=1");raw.Exec("INSERT INTO scopes VALUES(1,'backend','"+std::string(64,'1')+"','wallet/札幌',7,'Preserved display')");raw.Exec("INSERT INTO labels VALUES(1,0,'public-address','Preserved label')");raw.Exec("COMMIT");return raw.Number("PRAGMA page_count");}
 void Migrations(const std::filesystem::path& path){VersionOne(path);auto store=Take(s::MetadataStore::Open(path));const auto m=Take(store->Load(Scope()));Check(m.revision==7 && m.display_name=="Preserved display" && m.labels[0].text=="Preserved label");Check(store->LoadObservation(Scope(),"new-cache").error==s::Error::NotFound);store.reset();
     {Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);Check(raw.Number("PRAGMA application_id")==s::schema::ApplicationId);Check(raw.Number("SELECT count(*) FROM observations")==0);Check(raw.Number("SELECT count(*) FROM recovery")==0);}
     store=Take(s::MetadataStore::Open(path));Take(store->SaveObservation(Scope(),"existing-cache",ProvenanceFor(Scope()),Money::Satoshis(9)));store.reset();
-    {Raw raw(path);raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
-    store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==m);Check(Take(store->LoadObservation(Scope(),"existing-cache")).amount==Money::Satoshis(9));Check(!Take(store->LoadRecovery()).enabled);store.reset();Raw raw(path);Check(raw.Number("PRAGMA user_version")==3);
+    {Raw raw(path);raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
+    store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==m);Check(Take(store->LoadObservation(Scope(),"existing-cache")).amount==Money::Satoshis(9));Check(!Take(store->LoadRecovery()).enabled);store.reset();Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);
+}
+void ReceiveReservations(const std::filesystem::path& path)
+{
+    auto store = Take(s::MetadataStore::Open(path));
+    const s::Scope scope{"backend",{*Hash256::Parse("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")},""};
+    auto other = scope;
+    other.daemon_wallet = "another-wallet";
+    const auto preview = protocol::PreviewPublicWallet(protocol::PublicImportKind::Descriptor,
+        "wpkh(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)", "regtest");
+    Check(preview.preview.has_value());
+    const auto& descriptor = preview.preview->descriptors.front();
+    const ReceiveTarget receive{descriptor.address,descriptor.script,descriptor.descriptor,"m/0/1","regtest",{},1700000000000};
+    const auto ticket = Take(store->BeginReceive(scope,true));
+    auto second = Take(s::MetadataStore::Open(path));
+    Check(second->BeginReceive(scope,false).error == s::Error::Conflict);
+    Check(second->FinishReceive(other,ticket,receive).error == s::Error::Conflict);
+    Check(second->FinishReceive(scope,ticket+1,receive).error == s::Error::Conflict);
+    auto forged = receive;
+    forged.chain = "test";
+    Check(second->FinishReceive(scope,ticket,forged).error == s::Error::Invalid);
+    Check(Take(second->LoadReceivePool(scope)).pending == ticket);
+    Check(Take(second->LoadReceivePool(other)).pending == 0);
+    second.reset();
+    store.reset();
+    store = Take(s::MetadataStore::Open(path));
+    Check(Take(store->LoadReceivePool(scope)).pending == ticket);
+    Check(store->BeginReceive(scope,true).error == s::Error::Conflict);
+    Take(store->FinishReceive(scope,ticket,receive));
+    Check(Take(store->LoadReceivePool(scope)).available == 1);
+    Check(store->ConsumeReceive(other).error == s::Error::NotFound);
+
+    auto protected_store = Take(store->Protect("disposable-fixture-password"));
+    store.reset();
+    Check(!std::filesystem::exists(path) && protected_store->Protected());
+    Check(Take(protected_store->ConsumeReceive(scope)) == receive);
+    protected_store.reset();
+    protected_store = Take(s::MetadataStore::OpenProtected(path,"disposable-fixture-password"));
+    Check(Take(protected_store->LoadReceivePool(scope)).available == 0);
+    Check(protected_store->ConsumeReceive(scope).error == s::Error::NotFound);
+    const auto newer = Take(protected_store->BeginReceive(scope,true));
+    Check(newer > ticket && protected_store->FinishReceive(scope,newer,receive).error == s::Error::Conflict);
+    Check(Take(protected_store->LoadReceivePool(scope)).pending == newer);
+    Take(protected_store->FinishReceive(scope,newer,{}));
+    Check(Take(protected_store->LoadReceivePool(scope)).pending == 0);
+}
+void RescanTickets(const std::filesystem::path& path)
+{
+    auto store = Take(s::MetadataStore::Open(path));
+    const s::Scope first{"backend",{*Hash256::Parse("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")},""};
+    auto second = first;
+    second.daemon_wallet="another-wallet";
+    store.reset();
+    {
+        Raw raw(path);
+        raw.Exec("DROP TABLE rescan_state");
+        raw.Exec("PRAGMA user_version=5");
+    }
+    store=Take(s::MetadataStore::Open(path));
+    Check(!Take(store->LoadRescan(first)) && !Take(store->LoadRescan(second)));
+    Check(store->BeginRescan(first,{8,6}).error==s::Error::Invalid);
+    const auto pending=PendingRescan{Take(store->BeginRescan(first,{6,8})),{6,8}};
+    auto concurrent=Take(s::MetadataStore::Open(path));
+    Check(concurrent->BeginRescan(first,{6,8}).error==s::Error::Conflict);
+    Check(!Take(concurrent->LoadRescan(second)));
+    Check(concurrent->FinishRescan(second,pending.ticket).error==s::Error::Conflict);
+    Check(concurrent->FinishRescan(first,pending.ticket+1).error==s::Error::Conflict);
+    Check(Take(concurrent->LoadRescan(first))==pending);
+    const auto other=Take(concurrent->BeginRescan(second,{1,2}));
+    Take(concurrent->FinishRescan(second,other));
+    Check(Take(concurrent->LoadRescan(first))==pending);
+    concurrent.reset();
+    store.reset();
+    store=Take(s::MetadataStore::Open(path));
+    Check(Take(store->LoadRescan(first))==pending);
+    auto protected_store=Take(store->Protect("disposable-fixture-password"));
+    store.reset();
+    protected_store.reset();
+    protected_store=Take(s::MetadataStore::OpenProtected(path,"disposable-fixture-password"));
+    Check(Take(protected_store->LoadRescan(first))==pending);
+    Take(protected_store->FinishRescan(first,pending.ticket));
+    const auto newer=Take(protected_store->BeginRescan(first,{6,8}));
+    Check(newer>pending.ticket);
+    Check(protected_store->FinishRescan(first,pending.ticket).error==s::Error::Conflict);
+    Take(protected_store->FinishRescan(first,newer));
+    Check(!Take(protected_store->LoadRescan(first)) && !Take(protected_store->LoadRescan(second)));
 }
 // Intercept only the sync/close methods on the real pinned SQLite VFS. Other
 // methods use their original file allocation and implementation. No product hook.
@@ -123,7 +215,7 @@ int main(int argc,char** argv){
     try{
         const std::string mode=argv[1];const std::filesystem::path path=argv[2];
         if(mode=="actor"){Actor(path);return 0;}
-        if(mode=="persistence")Persistence(path);else if(mode=="migrations")Migrations(path);else if(mode=="rollback")Rollback(path);else if(mode=="disk-full")DiskFull(path);else if(mode=="corruption")Corruption(path);else if(mode=="schema-collision")SchemaCollision(path);else return 2;
+        if(mode=="persistence")Persistence(path);else if(mode=="migrations")Migrations(path);else if(mode=="rollback")Rollback(path);else if(mode=="disk-full")DiskFull(path);else if(mode=="corruption")Corruption(path);else if(mode=="schema-collision")SchemaCollision(path);else if(mode=="receive-reservations")ReceiveReservations(path);else if(mode=="rescan-tickets")RescanTickets(path);else return 2;
         std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"checks\":"<<checks<<",\"sqliteVersion\":\""<<sqlite3_libversion()<<"\",\"openConnectionsSettled\":true}\n";
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

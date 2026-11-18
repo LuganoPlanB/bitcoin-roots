@@ -20,18 +20,30 @@ app::Availability CommandAvailability(const State& s,app::Command command,const 
     const bool transaction=d && d->kind==a::DocumentKind::Transaction;
     if(s.recovery && s.recovery->Locked())return command==a::Command::Quit?host.CanSubmit({command}):app::Availability{false,"Workspace is locked."};
     if(s.recovery && (command==a::Command::LockCurrent || command==a::Command::LockAll))return {true,{}};
-    if(s.actions.kind!=DocumentDialog::None || s.server.dialog.open || s.recovery_dialog.open || s.lock_panel.setup)return {false,"Finish or cancel the current dialog first."};
+    if(s.actions.kind!=DocumentDialog::None || s.local_document.dialog.open || s.local_document.close_pending || s.server.dialog.open || s.onboarding.dialog.open || s.recovery_dialog.open || s.lock_panel.setup)return {false,"Finish or cancel the current dialog first."};
     if(command==a::Command::Recovery)return {s.recovery!=nullptr,"Local public recovery storage is unavailable."};
     if(command>=a::Command::Transactions && command<=a::Command::Settings)return {wallet,wallet?"":"Select a wallet document to navigate its sections."};
     switch(command) {
+    case a::Command::ExportWallet:
+        if (!wallet) return {false,"Select a wallet tab before backing it up."};
+        break;
     case a::Command::CloseTab:return {d!=nullptr,d?"":"No document is open to close."};
     case a::Command::RenameWallet:case a::Command::DeleteWallet:return {wallet,wallet?"":"Select a wallet tab for this wallet command."};
     case a::Command::ImportWallet:case a::Command::Units:case a::Command::HideAmounts:
     case a::Command::AppearanceSystem:case a::Command::AppearanceLight:case a::Command::AppearanceDark:case a::Command::LoadingLog:return {true,{}};
     case a::Command::SeparateWindows:return {false,"Separate wallet windows are unavailable: this native backend has one context/thread owner. The tab, drafts and selection remain here."};
-    case a::Command::SaveTransaction:case a::Command::ShowQR:case a::Command::TransactionHex:
+    case a::Command::TransactionFile:case a::Command::TransactionText:
+        if (host.LocalDocuments()) return {!s.privacy.hidden && !s.semantic_hide_toggle && !(s.recovery && s.recovery->Pending())
+            && s.documents.Documents().size()<32 && !host.LocalDocuments()->Busy(),"Unlock and reveal the workspace, or close an existing document."};
+        break;
+    case a::Command::SaveTransaction:case a::Command::TransactionHex:
+        if (d && d->imported && host.LocalDocuments())
+            return {!s.privacy.hidden && !s.semantic_hide_toggle && (command!=a::Command::TransactionHex || !d->imported->parsed->wire.empty()),
+                "This representation is unavailable while workspace details are hidden or there are no transaction bytes."};
+        [[fallthrough]];
+    case a::Command::ShowQR:
         if(!transaction)return {false,"Select a transaction document for this command."};break;
-    case a::Command::ExportWallet:case a::Command::LockCurrent:case a::Command::SearchCurrent:case a::Command::Summaries:
+    case a::Command::LockCurrent:case a::Command::SearchCurrent:case a::Command::Summaries:
         if(!wallet)return {false,"Select a wallet document for this command."};break;
     case a::Command::LockAll:case a::Command::SearchAll:
         if(std::none_of(s.documents.Documents().begin(),s.documents.Documents().end(),[](const auto& item){return item.kind==a::DocumentKind::Wallet;}))return {false,"Open a wallet document for this command."};break;

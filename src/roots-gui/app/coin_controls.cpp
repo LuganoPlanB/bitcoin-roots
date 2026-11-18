@@ -37,12 +37,94 @@ Receipt CoinControls::FreezeOutpoints(const Document& d,const RefreshView& v,con
 std::optional<std::string> CoinControls::AddressTarget(const DerivedAddress& a){auto digest=Digest(a.script);auto descriptor=Hash256::Parse(a.descriptor_id);if(!digest || !descriptor || descriptor->hex()!=a.descriptor_id || a.index>0x7fffffff || a.key!=a.descriptor_id+":"+std::to_string(a.index))return {};auto key="a1:"+a.descriptor_id+":"+std::to_string(a.index)+":"+*digest+":"+a.address;return ParseAddress(key)?std::optional(key):std::nullopt;}
 Receipt CoinControls::FreezeAddress(const Document& d,const RefreshView& v,const AddressView& a,std::string_view key,bool freeze,RecoverySession& r){auto* m=StateFor(d,v,r);if(!m || !m->valid || !v.chain_current || !a.current || !a.snapshot || !a.snapshot->stable || !a.identity || *a.identity!=*v.identity || a.snapshot->context!=v.identity->context || a.snapshot->wallet!=d.binding->DaemonWallet() || a.snapshot->tip!=v.ledger->Tip())return {false,"Address freeze needs current verified public descriptor ownership; nothing saved."};auto row=std::find_if(a.snapshot->rows.begin(),a.snapshot->rows.end(),[&](const auto& row){return row.key==key;});if(row==a.snapshot->rows.end())return {false,"Exact public address identity disappeared; nothing saved."};auto target=AddressTarget(*row);if(!target)return {false,"Unsupported public address freeze identity; nothing saved."};auto next=m->acknowledged.freezes;if(freeze){storage::Target t{storage::TargetKind::Address,*target};if(std::find(next.begin(),next.end(),t)==next.end())next.push_back(std::move(t));}else{auto exact=ParseAddress(*target);std::erase_if(next,[&](const auto& t){auto a=t.kind==storage::TargetKind::Address?ParseAddress(t.key):std::nullopt;return a && exact && a->script==exact->script && a->address==exact->address;});}return Save(r,*m,std::move(next));}
 bool CoinControls::AddressFrozen(const Document& d,const RefreshView& v,const DerivedAddress& address,RecoverySession& r){auto* m=StateFor(d,v,r);auto target=AddressTarget(address);if(!m || !m->valid || !target)return false;auto exact=ParseAddress(*target);return std::any_of(m->acknowledged.freezes.begin(),m->acknowledged.freezes.end(),[&](const auto& t){auto saved=t.kind==storage::TargetKind::Address?ParseAddress(t.key):std::nullopt;return saved && saved->script==exact->script && saved->address==exact->address;});}
-CoinControls::PinResult CoinControls::Pin(DocumentRegistry& docs,uint64_t wallet_id,const std::set<std::string>& selected,const CoinInventory* inventory){auto* wallet=docs.Find(wallet_id);if(!wallet || !wallet->binding || selected.empty() || selected.size()>4096)return {0,"Choose exact outpoints; no draft created."};if(docs.Documents().size()>=32)return {0,"You have 32 open documents. Close a tab, then retry. Exact selection retained."};CoinDraft packet{*wallet->binding,{}};std::vector<Outpoint> pins;for(const auto& key:selected){auto point=ParseCoinKey(key);if(!point)return {0,"Invalid selected identity; no partial draft created."};PinnedCoin input{*point,{},"","Unknown: no current owned inventory evidence","Unvalidated; explicit fresh preflight required"};if(inventory && inventory->Rows().contains(key)){const auto& row=inventory->Rows().at(key);input.value=row.value;input.script=row.script;input.pinned_reason=row.reason;}packet.inputs.push_back(std::move(input));pins.push_back(*point);}const auto id=docs.OpenTransaction("Pinned coin draft");auto* draft=docs.Find(id);draft->coin_draft=std::move(packet);draft->selected_coins=std::move(pins);draft->draft_revision={1};draft->transaction.note=ui::components::Edit("");messages[id]="Every selected outpoint is pinned, including unavailable/Unknown inputs. Explicit validation required; funding service unavailable.";++revision;return {id,messages[id]};}
+CoinControls::PinResult CoinControls::Pin(DocumentRegistry& docs,uint64_t wallet_id,const std::set<std::string>& selected,
+    const CoinInventory* inventory,const RefreshView* view,RecoverySession* recovery,std::optional<protocol::OfflineChange> change)
+{
+    auto* wallet=docs.Find(wallet_id);
+    if (!wallet || !wallet->binding || selected.empty() || selected.size()>4096)
+        return {0,"Choose exact outpoints; no draft created."};
+    if (docs.Documents().size()>=32) return {0,"You have 32 open documents. Close a tab, then retry. Exact selection retained."};
+    CoinDraft packet{*wallet->binding,{}};
+    const auto network=protocol::DocumentNetwork(wallet->binding->network);
+    const bool capture=inventory && recovery && view && Bound(*wallet,*view,*recovery) && view->chain_current
+        && !view->offline && inventory->Context()==view->identity->context && inventory->Sequence()==view->history_sequence
+        && selected.size()<=protocol::MAX_OFFLINE_INPUTS;
+    if (capture) packet.offline_change=std::move(change);
+    std::vector<Outpoint> pins;
+    size_t remaining=protocol::MAX_OFFLINE_PREVIOUS*2;
+    for (const auto& key:selected) {
+        auto point=ParseCoinKey(key);
+        if (!point) return {0,"Invalid selected identity; no partial draft created."};
+        PinnedCoin input{*point,{},"","Unknown: no current owned inventory evidence","Unvalidated; explicit fresh preflight required"};
+        if (inventory && inventory->Rows().contains(key)) {
+            const auto& row=inventory->Rows().at(key);
+            input.value=row.value;
+            input.script=row.script;
+            input.pinned_reason=row.reason;
+            if (capture && row.eligible==true) {
+                const auto tx=view->ledger->Rows().find(point->txid.hex());
+                const auto coin=std::ranges::find(view->ledger->Coins(),*point,&HistoryCoin::outpoint);
+                if (coin!=view->ledger->Coins().end() && tx!=view->ledger->Rows().end()
+                    && tx->second.previous_hex.size()<=remaining) {
+                    protocol::OfflineCoinProof proof{tx->second.previous_hex,coin->descriptor,coin->redeem_script,
+                        coin->witness_script,view->ledger->Observed()};
+                    if (protocol::ValidOfflineCoin({*point,input.value,input.script,proof},network)) {
+                        remaining-=proof.previous_hex.size();
+                        input.offline=std::move(proof);
+                    }
+                }
+            }
+        }
+        packet.inputs.push_back(std::move(input));
+        pins.push_back(*point);
+    }
+    const auto id=docs.OpenTransaction("Pinned coin draft");
+    auto* draft=docs.Find(id);
+    draft->coin_draft=std::move(packet);
+    draft->selected_coins=std::move(pins);
+    draft->draft_revision={1};
+    draft->transaction.note=ui::components::Edit("");
+    messages[id]="Every selected outpoint is pinned, including unavailable or Unknown inputs.";
+    ++revision;
+    return {id,messages[id]};
+}
+
+bool CoinControls::AllowsOfflineDraft(const Document& draft,const DocumentRegistry& docs,const RefreshView* view,RecoverySession* recovery)
+{
+    if (!SameSet(draft) || draft.coin_draft->observed_unavailable || !recovery || recovery->Locked()) return false;
+    const auto& packet=*draft.coin_draft;
+    auto local=recovery->HistoryMetadata(HistoryMetadataScope(packet.wallet));
+    if (!local) return false;
+    for (const auto& pin:packet.inputs) {
+        auto script=Digest(pin.script);
+        if (!pin.offline || !script) return false;
+        for (const auto& target:local.value->freezes) {
+            if (target.kind==storage::TargetKind::Output && target.key==CoinKey(pin.outpoint)) return false;
+            if (target.kind==storage::TargetKind::Address) {
+                const auto frozen=ParseAddress(target.key);
+                if (!frozen || frozen->script==*script) return false;
+            }
+        }
+        for (const auto& [id,lease]:leases)
+            if (id!=draft.id && lease.wallet==packet.wallet && std::ranges::find(lease.keys,CoinKey(pin.outpoint))!=lease.keys.end())
+                return false;
+    }
+    const auto* wallet=RegisteredWallet(docs,packet.wallet);
+    if (!wallet || !view || view->offline || !view->chain_current || !Bound(*wallet,*view,*recovery)) return true;
+    auto policy=Policy(*wallet,*view,*recovery,draft.id);
+    CoinInventory inventory(view->identity->context,wallet->binding->DaemonWallet());
+    if (!policy || !inventory.Apply(*view->ledger,view->history_sequence,view->chain_current,&*policy)) return false;
+    for (const auto& pin:packet.inputs) {
+        const auto row=inventory.Rows().find(CoinKey(pin.outpoint));
+        if (row==inventory.Rows().end() || row->second.eligible!=true || pin.value!=row->second.value || pin.script!=row->second.script) return false;
+    }
+    return true;
+}
 std::optional<uint64_t> CoinControls::Owner(uint64_t id) const {auto i=leases.find(id);return i==leases.end()?std::nullopt:std::optional(i->second.token);}
 std::string CoinControls::DraftStatus(uint64_t id) const {auto i=messages.find(id);return i==messages.end()?"Restored/public pinned draft: no reservation or validation authority. Explicit fresh validation required.":i->second;}
 Receipt CoinControls::Release(uint64_t id,std::optional<uint64_t> expected,RefreshService* refresh){auto i=leases.find(id);if(expected && (i==leases.end() || i->second.token!=*expected))return {false,"Reservation owner mismatch; no owner released."};if(i!=leases.end())leases.erase(i);if(pending && pending->document==id){if(refresh && refresh->View().generation==pending->generation)refresh->Cancel(RefreshMonotonicMs());pending.reset();}messages[id]="Own GUI reservation/preflight released. Exact public pins retained; daemon locks untouched.";++revision;return {true,messages[id]};}
 void CoinControls::PrivacyLock(){leases.clear();pending.reset();metadata.clear();messages.clear();++revision;}
 Receipt CoinControls::RequestPreflight(DocumentRegistry& docs,uint64_t id,RecoverySession& recovery,RefreshService& refresh,int64_t now){auto* draft=docs.Find(id);if(recovery.Locked() || !draft || !SameSet(*draft))return {false,"Pinned draft changed or locked. No validation or reservation acquired."};const auto* wallet=RegisteredWallet(docs,draft->coin_draft->wallet);auto v=refresh.View();if(!wallet || !Bound(*wallet,v,recovery) || v.offline || v.busy)return {false,"Preflight needs this exact verified online wallet, idle read service and current draft. Pins retained."};if(pending){messages[pending->document]="Preflight superseded; no automatic retry or funding.";pending.reset();}if(!refresh.RequestNow(now))return {false,"Fresh read unavailable; pins retained, funding denied."};const auto generation=refresh.View().generation;pending=Pending{id,draft->draft_revision,*v.identity,generation,v.history_sequence,now>INT64_MAX-30000?INT64_MAX:now+30000};messages[id]="Validating exact pins with a fresh read-only wallet/daemon-lock observation; no funding or transaction RPC.";for(auto& input:draft->coin_draft->inputs)input.current_reason="Awaiting fresh preflight; exact original pin retained";refresh.Tick(now);++revision;return {true,messages[id]};}
-void CoinControls::Complete(DocumentRegistry& docs,uint64_t id,const Document& wallet,const RefreshView& v,RecoverySession& recovery){auto* draft=docs.Find(id);if(!draft || !SameSet(*draft))return;Reload(wallet,v,recovery);auto policy=Policy(wallet,v,recovery,id);CoinInventory inventory(v.identity->context,wallet.binding->DaemonWallet());inventory.Apply(*v.ledger,v.history_sequence,v.chain_current,policy?&*policy:nullptr);bool eligible=true;std::vector<std::string> keys;for(auto& input:draft->coin_draft->inputs){const auto key=CoinKey(input.outpoint);keys.push_back(key);auto row=inventory.Rows().find(key);if(row==inventory.Rows().end()){input.current_reason=std::find(v.ledger->DaemonLocked().begin(),v.ledger->DaemonLocked().end(),input.outpoint)!=v.ledger->DaemonLocked().end()?"Unavailable: external daemon lock; this GUI does not own/release it":"Unavailable: absent from fresh wallet inventory (spent, missing or unknown). Exact pin retained";eligible=false;}else{input.current_reason=row->second.reason;if(!row->second.eligible || !*row->second.eligible)eligible=false;if((input.value && *input.value!=row->second.value) || (!input.script.empty() && input.script!=row->second.script)){input.current_reason="Unavailable: pinned value/script changed; no substitution";eligible=false;}}}if(!eligible){Release(id);messages[id]="Preflight denied: one or more exact pins unavailable/Unknown. Every identity/reason retained; no funding.";return;}if(!next_owner){messages[id]="Reservation identity exhausted; pins retained, funding unavailable.";return;}leases.insert_or_assign(id,Lease{next_owner++,id,draft->draft_revision,v.identity->context,*wallet.binding,std::move(keys)});messages[id]="Exact inputs locally reserved by this draft after fresh preflight. Funding service unavailable; no funding/sign/broadcast action performed.";++revision;}
+void CoinControls::Complete(DocumentRegistry& docs,uint64_t id,const Document& wallet,const RefreshView& v,RecoverySession& recovery){auto* draft=docs.Find(id);if(!draft || !SameSet(*draft))return;Reload(wallet,v,recovery);auto policy=Policy(wallet,v,recovery,id);CoinInventory inventory(v.identity->context,wallet.binding->DaemonWallet());inventory.Apply(*v.ledger,v.history_sequence,v.chain_current,policy?&*policy:nullptr);bool eligible=true;std::vector<std::string> keys;for(auto& input:draft->coin_draft->inputs){const auto key=CoinKey(input.outpoint);keys.push_back(key);auto row=inventory.Rows().find(key);if(row==inventory.Rows().end()){input.current_reason=std::find(v.ledger->DaemonLocked().begin(),v.ledger->DaemonLocked().end(),input.outpoint)!=v.ledger->DaemonLocked().end()?"Unavailable: external daemon lock; this GUI does not own/release it":"Unavailable: absent from fresh wallet inventory (spent, missing or unknown). Exact pin retained";eligible=false;}else{input.current_reason=row->second.reason;if(!row->second.eligible || !*row->second.eligible)eligible=false;if((input.value && *input.value!=row->second.value) || (!input.script.empty() && input.script!=row->second.script)){input.current_reason="Unavailable: pinned value/script changed; no substitution";eligible=false;}}}if(!eligible){if(v.chain_current && v.ledger->InventoryAvailable())draft->coin_draft->observed_unavailable=true;Release(id);messages[id]="Preflight denied: one or more exact pins unavailable/Unknown. Every identity/reason retained; no funding.";return;}if(!next_owner){messages[id]="Reservation identity exhausted; pins retained, funding unavailable.";return;}leases.insert_or_assign(id,Lease{next_owner++,id,draft->draft_revision,v.identity->context,*wallet.binding,std::move(keys)});messages[id]="Exact inputs locally reserved by this draft after fresh preflight. Funding service unavailable; no funding/sign/broadcast action performed.";++revision;}
 void CoinControls::Sync(DocumentRegistry& docs,RecoverySession* recovery,RefreshService* refresh,int64_t now){if(!recovery || recovery->Locked()){if(!leases.empty() || pending || !metadata.empty())PrivacyLock();return;}for(auto i=leases.begin();i!=leases.end();){auto* draft=docs.Find(i->first);const auto* wallet=RegisteredWallet(docs,i->second.wallet);bool keep=draft && SameSet(*draft) && draft->draft_revision==i->second.revision && wallet && i->second.context.lock_epoch==recovery->Gate().Epoch();if(keep && refresh){auto v=HistoryForDocument(*wallet,*refresh,recovery->Gate().Epoch());const auto selected=refresh->View();keep=v && v->identity && !v->offline && selected.identity && selected.identity->context==i->second.context && v->identity->context==i->second.context;}if(!keep){messages[i->first]="Own reservation retired after close/revision/wallet/epoch change; public pins need fresh validation.";i=leases.erase(i);++revision;}else ++i;}std::erase_if(messages,[&](const auto& m){return !docs.Find(m.first);});if(!pending || !refresh)return;const auto request=*pending;auto* draft=docs.Find(request.document);auto v=refresh->View();const Document* wallet=draft && draft->coin_draft?RegisteredWallet(docs,draft->coin_draft->wallet):nullptr;if(!draft || draft->draft_revision!=request.revision || !SameSet(*draft) || !wallet || !Bound(*wallet,v,*recovery) || !v.identity || *v.identity!=request.identity || v.generation!=request.generation || v.offline || now>request.deadline){pending.reset();if(v.generation==request.generation)refresh->Cancel(now);messages[request.document]="Preflight cancelled by document/profile/privacy/offline/deadline change; no reservation or funding.";if(draft && draft->coin_draft)for(auto& input:draft->coin_draft->inputs)input.current_reason="Unknown: preflight cancelled; explicit retry required";++revision;return;}if(v.busy)return;if(v.history_sequence<=request.sequence || !v.chain_current || v.errors[2]!=rpc::Error::None){pending.reset();for(auto& p:draft->coin_draft->inputs)p.current_reason="Unknown: fresh preflight read failed or did not advance; pin retained";messages[request.document]="Preflight denied: fresh read incomplete/failed. Explicit retry required; no funding.";++revision;return;}pending.reset();Complete(docs,request.document,*wallet,v,*recovery);}
 }

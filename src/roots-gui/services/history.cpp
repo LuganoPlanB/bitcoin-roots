@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "services/history.h"
+#include "adapters/protocol/offline_draft.h"
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -66,6 +67,11 @@ std::optional<HistoryTransaction> NormalizeHistoryTransaction(const J& j,std::st
             }
             Need(tx.io.size()<=max_details);
         }
+        if (const auto* raw=j.Find("hex"); raw && raw->kind==J::Kind::String
+            && raw->text.size()<=protocol::MAX_OFFLINE_PREVIOUS*2
+            && !raw->text.empty() && raw->text.size()%2==0
+            && std::ranges::all_of(raw->text,[](unsigned char c){return (c>='0' && c<='9') || (c>='a' && c<='f');}))
+            tx.previous_hex=raw->text;
         return tx;
     }catch(...){return {};}
 }
@@ -90,7 +96,13 @@ HistoryFetch FetchHistory(rpc::Transport& transport,const ServerCandidate& profi
         if(inventory_supported){
             auto inventory=call("listunspent","{\"minconf\":0,\"include_unsafe\":true,\"query_options\":{\"include_immature_coinbase\":true,\"maximumCount\":"+std::to_string(limits.coins+1)+"}}");if(!inventory)return {{},error};
             const auto& entries=Array(&*inventory,limits.coins+1);batch.limited=entries.size()>limits.coins;std::set<std::string> outputs;
-            for(size_t i=0;i<std::min(entries.size(),limits.coins);++i){const auto& row=entries[i];auto hash=Hash(row.Find("txid"));const auto n=Integer(row.Find("vout")),confirmations=Integer(row.Find("confirmations"));Need(n>=0 && uint64_t(n)<=UINT32_MAX && confirmations>=0);HistoryCoin coin{{hash,uint32_t(n)},Amount(row.Find("amount")).value,confirmations,Boolean(row.Find("safe")),Boolean(row.Find("solvable")),false};Need(coin.amount.sats()>=0 && outputs.insert(Key(coin.outpoint)).second);if(const auto* used=row.Find("reused"))coin.reused=Boolean(used);ids.insert(hash.hex());if(const auto* script=row.Find("scriptPubKey"))coin.script=Text(script,10000);if(const auto* address=row.Find("address"))coin.address=Text(address,1024);if(const auto* label=row.Find("label"))coin.label=Text(label,4096);if(const auto* spendable=row.Find("spendable"))coin.daemon_spendable=Boolean(spendable);batch.coins.push_back(std::move(coin));}
+            for(size_t i=0;i<std::min(entries.size(),limits.coins);++i){const auto& row=entries[i];auto hash=Hash(row.Find("txid"));const auto n=Integer(row.Find("vout")),confirmations=Integer(row.Find("confirmations"));Need(n>=0 && uint64_t(n)<=UINT32_MAX && confirmations>=0);HistoryCoin coin{{hash,uint32_t(n)},Amount(row.Find("amount")).value,confirmations,Boolean(row.Find("safe")),Boolean(row.Find("solvable")),false};Need(coin.amount.sats()>=0 && outputs.insert(Key(coin.outpoint)).second);if(const auto* used=row.Find("reused"))coin.reused=Boolean(used);ids.insert(hash.hex());if(const auto* script=row.Find("scriptPubKey"))coin.script=Text(script,10000);if(const auto* address=row.Find("address"))coin.address=Text(address,1024);if(const auto* label=row.Find("label"))coin.label=Text(label,4096);if(const auto* spendable=row.Find("spendable"))coin.daemon_spendable=Boolean(spendable);const auto public_string=[&](const char* key,size_t bound) {
+                    const auto* field=row.Find(key);
+                    return field && field->kind==J::Kind::String && field->text.size()<=bound ? field->text : std::string{};
+                };
+                coin.descriptor=public_string("desc",4096);coin.redeem_script=public_string("redeemScript",10000);
+                coin.witness_script=public_string("witnessScript",10000);
+                batch.coins.push_back(std::move(coin));}
             batch.inventory_available=!batch.limited;
         }
         if(locks_supported){auto locked=call("listlockunspent");if(!locked)return {{},error};std::set<std::string> unique;for(const auto& row:Array(&*locked,limits.coins)){auto h=Hash(row.Find("txid"));auto n=Integer(row.Find("vout"));Need(n>=0 && uint64_t(n)<=UINT32_MAX);Outpoint p{h,uint32_t(n)};Need(unique.insert(Key(p)).second);batch.daemon_locked.push_back(p);}batch.locks_available=true;}
@@ -109,6 +121,15 @@ bool HistoryLedger::SetPolicy(HistoryPolicy next){
 bool HistoryLedger::Apply(const HistoryBatch& batch,uint64_t seq,int64_t date){
     if(batch.context!=context || batch.daemon_wallet!=daemon_wallet || seq<=sequence || date<=0 || batch.height<0 || batch.height>INT32_MAX)return false;
     try{auto copy=*this;std::set<std::string> unique;for(const auto& tx:batch.transactions){Need(unique.insert(tx.txid.hex()).second);const auto previous=copy.rows.find(tx.txid.hex());const bool removed=tx.removed_event || (previous!=copy.rows.end() && previous->second.removed_event);copy.rows.insert_or_assign(tx.txid.hex(),tx);auto& accepted=copy.rows.at(tx.txid.hex());accepted.removed_event=removed;if(accepted.confirmations<0 && batch.stable){const auto height=batch.height+accepted.confirmations+1;if(height>=0)accepted.conflict_height=height;}}Need(copy.rows.size()<=limits.ledger);size_t details{};for(const auto& [id,tx]:copy.rows){Need(tx.details.size()+tx.io.size()<=limits.entries-details);details+=tx.details.size()+tx.io.size();}for(auto& [id,tx]:copy.rows)if(tx.state==HistoryState::Confirmed && tx.block_height && batch.height>=*tx.block_height)tx.confirmations=batch.height-*tx.block_height+1;else if(tx.conflict_height && batch.height>=*tx.conflict_height)tx.confirmations=-(batch.height-*tx.conflict_height+1);
+        // Keep only bounded candidate prevouts that belong to current observed coins.
+        // The offline pin revalidates the bytes, exact output, and descriptor.
+        size_t remaining=512*1024;
+        std::set<std::string> funded;
+        for (const auto& coin:batch.coins) funded.insert(coin.outpoint.txid.hex());
+        for (auto& [id,row]:copy.rows) {
+            if (!funded.contains(id) || row.previous_hex.size()>remaining) row.previous_hex.clear();
+            else remaining-=row.previous_hex.size();
+        }
         Need(batch.daemon_locked.size()<=limits.coins);std::set<std::string> locks;for(const auto& p:batch.daemon_locked)Need(locks.insert(Key(p)).second);copy.tip=batch.lastblock;copy.totals.rpc=batch.balances;copy.coins=batch.coins;copy.inventory_available=batch.inventory_available;copy.daemon_locked=batch.daemon_locked;copy.locks_available=batch.locks_available;copy.limited=batch.limited;copy.scanning=batch.scanning;copy.pruned=batch.pruned;copy.stable=batch.stable;copy.full_seen=copy.full_seen || (batch.full_query && !batch.limited);copy.sequence=seq;copy.observed=date;if(!copy.Recalculate())return false;*this=std::move(copy);return true;}catch(...){return false;}
 }
 std::vector<std::string> HistoryLedger::Revisit() const {std::vector<std::string> ids;for(const auto& [id,tx]:rows)if(tx.state==HistoryState::Pending || tx.state==HistoryState::Immature || ((tx.state==HistoryState::Conflicted || tx.state==HistoryState::Replaced) && tx.confirmations>=0))ids.push_back(id);return ids;}

@@ -7,7 +7,7 @@
 namespace roots::gui::ui::shell {
 namespace {
 void ClearPassword(PrivacyPanel& panel){sodium_memzero(panel.password.data(),panel.password.size());sodium_memzero(panel.confirm.data(),panel.confirm.size());for(auto* pending:{&panel.external_password,&panel.external_confirm}){if(*pending && !(*pending)->empty())sodium_memzero((*pending)->data(),(*pending)->size());pending->reset();}panel.reveal=false;}
-void Retire(State& s){s.histories.clear();s.addresses.clear();s.coins.clear();s.coin_controls.PrivacyLock();s.coin_draft_errors.clear();s.registered_session=0;s.privacy.hidden=true;s.notice.clear();s.drawer=Drawer::None;s.recovery_dialog.open=false;s.close_recovery_popup=true;s.actions=DocumentActions();s.close_document_popup=true;s.server=ServerPanel();s.server.close_pending=true;if(components::native_input)components::native_input->PrivacyLock();s.lock_panel.focus=true;}
+void Retire(State& s){s.histories.clear();s.addresses.clear();s.receives.clear();s.settings.clear();s.advanced.clear();s.imported_views.clear();s.offline_builders.clear();s.local_document=LocalDocumentPanel{};s.local_document.close_pending=true;s.coins.clear();s.coin_controls.PrivacyLock();s.coin_draft_errors.clear();s.registered_session=0;s.privacy.hidden=true;s.notice.clear();s.drawer=Drawer::None;s.recovery_dialog.open=false;s.close_recovery_popup=true;s.actions=DocumentActions();s.close_document_popup=true;s.server=ServerPanel();s.server.close_pending=true;if(components::native_input)components::native_input->PrivacyLock();s.lock_panel.focus=true;}
 }
 bool RequestPrivacyLock(State& s)
 {

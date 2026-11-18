@@ -4,6 +4,8 @@
 #include "application/preferences.h"
 #include "services/capabilities.h"
 #include "domain/model.h"
+#include "domain/receive.h"
+#include "domain/rescan.h"
 #include <filesystem>
 #include <memory>
 #include <thread>
@@ -60,6 +62,11 @@ struct OpenOptions { int busy_ms{100}; int max_pages{65536}; };
 // A bounded public-document codec owns the contents. This record is never a
 // command queue; restoring it grants no RPC capability or transaction approval.
 struct RecoveryRecord { uint64_t revision{}; bool enabled{}; std::string public_documents; };
+struct ReceivePool {
+    static constexpr size_t MAX_RESERVED = 8, MAX_RECORDS = 4096;
+    uint64_t pending{};
+    size_t available{}, retained{};
+};
 class ProtectedFile;class FileGuard;
 // Synchronous owner-thread adapter for an explicitly supplied private local
 // file. A worker must own its connection; no implicit files or RPC operations.
@@ -80,6 +87,15 @@ public:
     Result<uint64_t> SaveWorkspace(const Workspace&);
     Result<RecoveryRecord> LoadRecovery();
     Result<uint64_t> SaveRecovery(const RecoveryRecord&); // atomic CAS, disabled => no documents
+    Result<std::vector<Scope>> LoadRecentWallets();
+    Result<Done> RememberWallet(const Scope&); // merge recency under the writer transaction
+    Result<ReceivePool> LoadReceivePool(const Scope&);
+    Result<uint64_t> BeginReceive(const Scope&, bool reserve);
+    Result<Done> FinishReceive(const Scope&, uint64_t ticket, const std::optional<ReceiveTarget>&);
+    Result<ReceiveTarget> ConsumeReceive(const Scope&);
+    Result<std::optional<PendingRescan>> LoadRescan(const Scope&);
+    Result<uint64_t> BeginRescan(const Scope&, ScanRange);
+    Result<Done> FinishRescan(const Scope&, uint64_t ticket);
     Result<Profile> LoadProfile(std::string_view id);
     Result<uint64_t> SaveProfile(const Profile&); // secure-store references only
     Result<Done> SaveObservation(const Scope&, std::string_view key, const Provenance&, std::optional<Money>);

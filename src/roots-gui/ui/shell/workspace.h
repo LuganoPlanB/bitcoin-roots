@@ -9,6 +9,10 @@
 #include "ui/server.h"
 #include "app/recovery.h"
 #include "services/refresh.h"
+#include "services/wallet_lifecycle.h"
+#include "services/receive.h"
+#include "services/rescan.h"
+#include "services/transaction_documents.h"
 #include <map>
 #include <utility>
 namespace roots::gui::ui::shell {
@@ -59,6 +63,109 @@ struct CoinRuntime {
     uint64_t generation{},sequence{},file_dialog{};int64_t observed{};
     int chart_group{};bool reveal{},chain_current{},open_actions{};uint64_t policy_revision{};std::string error,export_data,export_scope;
 };
+enum class OnboardingPage { None, Introduction, Open, Create, Import, Backup };
+enum class WalletImportMethod { Choose, Descriptor, ExtendedKey, Restore, RecoveryWords, Hardware, Foreign };
+struct OnboardingPanel {
+    OnboardingPage page{OnboardingPage::None};
+    imkit::DialogState dialog;
+    bool close_pending{}, listed{}, directory_verified{};
+    uint64_t revision{}, session{}, profile_revision{}, document{};
+    LockEpoch epoch;
+    components::Edit name;
+    std::vector<DaemonWalletEntry> wallets;
+    std::vector<storage::Scope> recent;
+    std::optional<DaemonWalletEntry> selected;
+    std::string error;
+    WalletImportMethod import_method{WalletImportMethod::Choose};
+    components::Edit daemon_path;
+    std::optional<protocol::PublicWalletPreview> preview;
+    bool clipboard_pending{}, path_reviewed{}, policy_review{};
+};
+enum class ReceiveSource { Daemon, Reservation, Inventory };
+struct ReceiveSelection {
+    ReceiveTarget target;
+    ReceiveSource source;
+    bool operator==(const ReceiveSelection&) const = default;
+};
+struct ReceiveRuntime {
+    std::optional<storage::Scope> scope;
+    std::optional<ReceiveSelection> selection;
+    components::Edit label;
+    uint64_t label_revision{}, revision{};
+    LockEpoch label_epoch;
+    std::optional<ReceiveRequest> inspection;
+    std::string status;
+    bool label_loaded{}, label_active{}, label_seen_active{};
+};
+enum class SignerSource { None, Connected, Airgapped, Daemon, WatchOnly, Descriptor };
+struct SignerDraft {
+    protocol::PublicSigner key;
+    SignerSource source;
+};
+struct SignerClipboard {
+    size_t slot{};
+    uint64_t revision{}, session{}, profile_revision{};
+    LockEpoch epoch;
+    SignerSource source;
+};
+struct PolicySettings {
+    std::optional<app::WalletBinding> binding;
+    std::optional<SavedWalletPolicy> saved;
+    std::optional<protocol::PublicWalletPreview> material, staged;
+    std::optional<std::map<size_t,SignerDraft>> signer_drafts;
+    std::optional<SignerClipboard> signer_clipboard;
+    SignerSource signer_source{SignerSource::None};
+    bool inspect_keystores{}, inspect_advanced{}, account_service{};
+    std::string signer_error;
+    protocol::ScriptTemplate script{protocol::ScriptTemplate::NativeSegwit};
+    int required{1}, signers{1};
+    size_t saved_branch{}, signer_tab{};
+    uint64_t revision{}, saved_session{};
+    int64_t saved_observed_ms{};
+    bool multisig{}, sorted{true}, dirty{}, clipboard_pending{}, clipboard_change{};
+    std::string invalid, status;
+};
+struct AdvancedSettings {
+    std::optional<RefreshIdentity> identity;
+    uint64_t profile_revision{}, revision{};
+    std::optional<ScanObservation> observation;
+    std::optional<ScanReview> review;
+    std::optional<PendingRescan> checked_pending;
+    ScanRange range;
+    bool show_ranges{};
+    std::string status;
+};
+enum class LocalDocumentMode { None, File, Text, Save, Merge };
+struct LocalDocumentPanel {
+    LocalDocumentMode mode{LocalDocumentMode::None};
+    imkit::DialogState dialog;
+    LocalDocumentContext context;
+    protocol::DisplayNetwork network{protocol::DisplayNetwork::Unknown};
+    std::array<char,4097> path{};
+    std::optional<std::string> edited_path;
+    components::TextPosition cursor;
+    uint64_t file_dialog{}, revision{};
+    bool close_pending{},clipboard_pending{};
+    std::string error;
+};
+struct OfflineBuilder {
+    components::Edit address{""}, amount{""}, fee{""};
+    std::string error;
+    bool open{}, use_change{};
+    uint64_t revision{};
+};
+struct ImportedView {
+    size_t input{}, output{}, bytes_page{};
+    bool inspect_inputs{};
+    uint64_t revision{};
+    std::optional<app::WalletBinding> wallet;
+    std::set<std::string> policy_scripts; // verified public cache only; never recovered as ownership
+    std::optional<protocol::OfflineReviewEvidence> review_evidence;
+    std::shared_ptr<const protocol::TransactionDocument> reviewed;
+    std::optional<Hash256> review_commitment;
+    std::optional<size_t> proved_change_output;
+    std::string review_status;
+};
 struct State {
     app::CoinControls coin_controls;
     std::map<uint64_t,std::string> coin_draft_errors;
@@ -66,6 +173,11 @@ struct State {
     uint64_t registered_session{};
     std::map<uint64_t,HistoryRuntime> histories;
     std::map<uint64_t,AddressRuntime> addresses;
+    std::map<uint64_t,ReceiveRuntime> receives;
+    std::map<uint64_t,PolicySettings> settings;
+    std::optional<uint64_t> policy_read;
+    std::map<uint64_t,AdvancedSettings> advanced;
+    std::optional<std::pair<uint64_t,ScanAction>> pending_scan;
     std::map<uint64_t,CoinRuntime> coins;
     app::DocumentRegistry documents;
     components::AmountPrivacy privacy;
@@ -92,6 +204,11 @@ struct State {
     bool close_document_popup{};
     uint64_t semantic_context{},semantic_context_revision{};
     ServerPanel server;
+    OnboardingPanel onboarding;
+    LocalDocumentPanel local_document;
+    uint64_t local_document_generation{};
+    std::map<uint64_t,ImportedView> imported_views;
+    std::map<uint64_t,OfflineBuilder> offline_builders;
     app::RecoverySession* recovery{}; // borrowed owner-thread application service
     imkit::DialogState recovery_dialog;
     bool recovery_prompted{},close_recovery_popup{};
@@ -129,10 +246,11 @@ struct Facts {
     float drawer_scroll{},drawer_scroll_max{};
     bool drawer_visible{},grid_escape{},activity_hovered{},activity_held{};
     ServerFacts server;
+    std::map<std::string,components::ItemFacts> onboarding,local_document,transaction_document;
     std::map<std::string,components::ItemFacts> history;
     std::vector<std::string> history_order;
     std::map<std::string,components::ItemFacts> coin;std::vector<std::string> coin_order;
-    std::map<std::string,components::ItemFacts> address;
+    std::map<std::string,components::ItemFacts> address,receive,settings,advanced;
     std::array<Rect,2> address_tables;
     std::array<size_t,2> address_counts{};
 
@@ -143,13 +261,28 @@ app::Availability CommandAvailability(const State&,app::Command,const app::Reque
 void DrawStatus(State&,Facts&,const imkit::Theme&,float);
 void DrawActivityDrawer(State&,Facts&,const imkit::Theme&,float,app::Requests* =nullptr);
 void RestoreDocumentFocus(State&,uint64_t desired);
-void BeginClose(State&,uint64_t,bool others=false,bool all=false);
+bool BeginClose(State&,uint64_t,bool others=false,bool all=false);
 void BeginRename(State&,uint64_t);
 void BeginDelete(State&,uint64_t);
 void BeginImport(State&,std::string_view source={});
 void ClosePendingDocumentPopup(State&);
 void DrawDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawRecoveryDialog(State&,Facts&,const imkit::Theme&,float);
+bool OpenLocalData(State&,std::shared_ptr<const protocol::TransactionDocument>,protocol::DisplayNetwork,std::string& error);
+void DrawOfflineBuilder(State&,app::Requests&,Facts&,const imkit::Theme&);
+bool BeginLocalDocument(State&,app::Requests&,LocalDocumentMode,std::string_view local_path={});
+void DrawLocalDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawImportedDocument(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void BeginOnboarding(State&,OnboardingPage,app::Requests&);
+void DrawOnboarding(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawPolicySettings(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void PollPolicySettings(State&,app::Requests&);
+void PollAdvancedSettings(State&,app::Requests&);
+void DrawAdvancedSettings(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawAccountService(State&,app::Requests&,Facts&,const imkit::Theme&);
+void PolicyWalletApplied(State&,uint64_t previous,uint64_t created,const protocol::PublicWalletPreview&,uint64_t session);
+bool AllowPolicyClose(State&,std::span<const uint64_t>);
+void RetireOnboarding(State&,app::Requests&);
 bool RequestPrivacyLock(State&);
 void DrawPrivacyPanel(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawTabActions(State&,app::Requests&,Facts&,uint64_t,const imkit::Theme&);
@@ -163,6 +296,13 @@ void DrawCoinActions(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawAddressActions(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawCoins(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawAddresses(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void PollReceive(State&,app::Requests&);
+void BeginReceiveLabelFrame(State&);
+void FinishReceiveLabelFrame(State&);
+bool SaveReceiveLabelsBeforeClose(State&,std::span<const uint64_t>);
+bool HasReceiveLabelError(const State&,uint64_t except);
+void DrawReceive(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawReceiveTo(State&,app::Requests&,Facts&,const imkit::Theme&,const AddressView&,std::string_view key);
 void FinishHistoryLabelFrame(State&,app::Requests&);
 void DrawHistory(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawObservedTransaction(State&,Facts&,const imkit::Theme&,float);

@@ -10,6 +10,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
+#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -27,7 +29,9 @@
 
 int main(int argc, char **argv)
 {
-    if (argc < 2) { fprintf(stderr, "usage: offline_exec COMMAND [ARG ...]\n"); return 2; }
+    const int unix_only = argc >= 2 && strcmp(argv[1], "--unix-only") == 0;
+    const int command = unix_only ? 2 : 1;
+    if (argc <= command) { fprintf(stderr, "usage: offline_exec [--unix-only] COMMAND [ARG ...]\n"); return 2; }
     struct sock_filter filter[] = {
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, HOST_ARCH, 1, 0),
@@ -46,12 +50,29 @@ int main(int argc, char **argv)
 #endif
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     };
-    const struct sock_fprog program = {sizeof(filter) / sizeof(filter[0]), filter};
+    struct sock_filter display_filter[] = {
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, HOST_ARCH, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+        BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x40000000, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_socket, 0, 3),
+        /* Only unix-domain sockets are needed for the owned native display. */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    const struct sock_fprog program = {
+        unix_only ? sizeof(display_filter)/sizeof(display_filter[0]) : sizeof(filter)/sizeof(filter[0]),
+        unix_only ? display_filter : filter
+    };
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) ||
         prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program)) {
         perror("offline seccomp unavailable"); return 125;
     }
-    execvp(argv[1], argv + 1);
+    execvp(argv[command], argv + command);
     perror("offline command exec");
     return 126;
 }

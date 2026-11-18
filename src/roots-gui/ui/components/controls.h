@@ -10,7 +10,7 @@
 #include <span>
 #include <variant>
 namespace roots::gui::ui::components {
-struct CopyIdentifier { std::string id, value; };
+struct CopyIdentifier { std::string id, value; bool sensitive{}; };
 struct CopyAmount { std::string id; Money value; };
 struct CommitAmount { std::string id; Money value; };
 struct CommitFee { std::string id; FeeRate value; };

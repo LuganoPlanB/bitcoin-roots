@@ -41,8 +41,22 @@ integer reads, including signed extremes and null/unknown values. No financial
 value passes through double. Transaction/output validation remains the domain's
 responsibility; a stored editor value is not an approved spend.
 
-Version1 owns user metadata; version2 adds an independent observation table,
-and version3 adds an atomic, opt-in public recovery record.
+Version 1 owns user metadata, version 2 adds an independent observation table,
+and version 3 adds an atomic, opt-in public recovery record. Version 4 retains
+the 16 most recently verified wallet identities in the same metadata store.
+A writer merges recency inside an immediate transaction. The list survives
+restart and follows the store's encryption and lock. It stores only the public
+origin identifier, genesis and exact wallet name. A recent entry supplies no
+credentials, connection, daemon mutation or automatic reopening.
+Version 5 adds wallet-scoped receive attempts and a pool of up to eight
+verified public addresses. The attempt is recorded before an explicit daemon
+allocation. Its serial is checked when acknowledging success or clearing an
+uncertain attempt. Offline consumption marks one reserved address issued in
+the same store transaction before displaying it. Issued records prevent
+duplicate reservations. Each scope keeps up to 4,096 allocation records and
+blocks further allocations at that bound. These records follow the store's
+encryption and lock and carry no replay authority.
+
 Schema creation/migration and version changes commit together. Application ID,
 exact known schema, quick integrity check and foreign keys fail closed for
 corrupt, foreign or future stores. Failures never recreate/delete an existing
@@ -70,3 +84,13 @@ The durability policy follows SQLite's [atomic commit documentation](https://www
 [pragmas](https://www.sqlite.org/pragma.html) and
 [exact integer bindings](https://www.sqlite.org/c3ref/bind_blob.html), checked
 against the bundled public header. No library upgrade or installation is needed.
+
+## Wallet rescan records
+
+Schema version 6 stores at most one pending rescan range and a monotonic ticket
+per backend, genesis and exact daemon wallet. Admission commits that record
+before dispatch. The owner uses the metadata path's private rescan guard to
+serialize dispatch and acknowledgment across GUI instances sharing the store.
+The record survives restart and protection with the rest of the metadata.
+Opening a recovered workspace never dispatches a scan. An unconfirmed result
+requires a fresh wallet check and explicit acknowledgment before another review.

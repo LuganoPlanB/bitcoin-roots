@@ -24,7 +24,7 @@ def sat(value):
 class ReadOnlyProxy:
     """Observe only public RPC method/params; never retain auth or raw bodies."""
     allowed={'getnetworkinfo','getblockchaininfo','getblockhash','getwalletinfo','help','getopenrpcinfo','listdescriptors','deriveaddresses','getdescriptorinfo','getaddressinfo','getbalances','listsinceblock','gettransaction','listunspent','listlockunspent'}
-    def __init__(self,node,disconnect_flag=None,before_read=None):
+    def __init__(self,node,disconnect_flag=None,before_read=None,after_read=None):
         self.node=node;self.events=[];self.failure=False
         proxy=self
         class Handler(BaseHTTPRequestHandler):
@@ -48,7 +48,10 @@ class ReadOnlyProxy:
                 connection=http.client.HTTPConnection('127.0.0.1',node.port,timeout=15)
                 try:
                     connection.request('POST',self.path,json.dumps(request),{'Authorization':self.headers.get('Authorization',''),'Content-Type':'application/json'})
-                    response=connection.getresponse();body=response.read();self.send_response(response.status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+                    response=connection.getresponse();body=response.read()
+                    if after_read:
+                        after_read(method, self.path, params, response.status, body)
+                    self.send_response(response.status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
                 except (OSError,http.client.HTTPException):
                     try:self.send_error(502)
                     except OSError:pass

@@ -34,7 +34,7 @@ class Actor:
         return dict(argv=self.argv,events=self.events,exit=self.process.returncode,settled=self.process.poll() is not None,forcedTermination=forced,stderr=error)
 
 def main():
-    cases=['persistence','migrations','rollback','disk-full','corruption','schema-collision','concurrent-instances']
+    cases=['persistence','migrations','rollback','disk-full','corruption','schema-collision','concurrent-instances','receive-reservations','rescan-tickets']
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--binary',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--case',choices=cases,action='append');args=p.parse_args();selected=args.case or cases
     if len(set(selected))!=len(selected):p.error('duplicate selected case')
     out=evidence_directory(args.output);records=[]

@@ -51,11 +51,23 @@ public:
     bool Protect(DocumentRegistry&,std::string_view password); // explicit protection + opt-in recovery
     bool Lock(DocumentRegistry&);
     bool Unlock(std::string_view password,DocumentRegistry&,bool choose_latest=false,bool preserve_other_copy=false);
+    bool CanAdmitPublicDocuments(const DocumentRegistry&) const;
     bool Checkpoint(DocumentRegistry&);
     bool Close(DocumentRegistry&,std::span<const uint64_t>);
     bool Clear(DocumentRegistry&,uint64_t);
     bool RecoverLast(DocumentRegistry&);
     storage::Result<storage::Metadata> HistoryMetadata(const storage::Scope&);
+    storage::Result<std::vector<storage::Scope>> RecentWallets();
+    storage::Result<storage::Done> RememberWallet(const storage::Scope&);
+    storage::Result<std::shared_ptr<storage::FileGuard>> RescanLease();
+    storage::Result<std::optional<PendingRescan>> PendingScan(const storage::Scope&);
+    storage::Result<uint64_t> BeginScan(const storage::Scope&, ScanRange);
+    storage::Result<storage::Done> FinishScan(const storage::Scope&, uint64_t ticket);
+    storage::Result<storage::ReceivePool> ReceivePool(const storage::Scope&);
+    storage::Result<uint64_t> BeginReceive(const storage::Scope&, bool reserve);
+    storage::Result<storage::Done> FinishReceive(const storage::Scope&, uint64_t ticket, const std::optional<ReceiveTarget>& = {});
+    storage::Result<ReceiveTarget> ConsumeReceive(const storage::Scope&);
+    storage::Result<uint64_t> SaveReceiveLabel(const storage::Scope&, std::string_view address, std::string label, uint64_t expected_revision);
     storage::Result<uint64_t> SaveCoinFreezes(const storage::Scope&,const std::vector<storage::Target>&,uint64_t expected_revision);
     storage::Result<uint64_t> SaveOutputLabel(const storage::Scope&,const Outpoint&,std::string,uint64_t expected_revision);
     storage::Result<uint64_t> SaveHistoryLabel(const storage::Scope&,const Hash256&,std::string,uint64_t expected_revision);

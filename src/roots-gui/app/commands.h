@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "app/document_registry.h"
-namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; }
+namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; }
 namespace roots::gui::app {
 class RecoverySession;
 enum class Menu { File,View,Tools,Help };
@@ -50,6 +50,10 @@ struct Requests {
     virtual Receipt FeeDraft(const FeeDraftRequest&) {return {false,"Fee drafts are unavailable until the transaction draft service is connected. No transaction action was performed."};}
     virtual Receipt OpenExplorer(const ExplorerRequest&) {return {false,"External explorer is unavailable for this network/host. No external request was made."};}
     virtual ConnectionService* Connection() {return nullptr;}
+    virtual WalletLifecycle* Wallets() {return nullptr;}
+    virtual TransactionDocuments* LocalDocuments() const {return nullptr;}
+    virtual RescanService* Rescanning() {return nullptr;}
+    virtual ReceiveService* Receiving() {return nullptr;}
     virtual AddressService* Addresses() {return nullptr;}
     virtual RefreshService* Refresh() {return nullptr;}
     virtual RecoverySession* Recovery() {return nullptr;}

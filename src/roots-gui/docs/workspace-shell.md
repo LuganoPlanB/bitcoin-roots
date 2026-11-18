@@ -169,8 +169,59 @@ PSBT, raw transaction and public descriptor candidates; JSON/text require an
 explicit choice where ambiguous. Unsupported hints remain disabled. A typed
 request includes the exact owned source and selected format; a future import
 service must validate contents/network and return actual document data. No
-acknowledgement alone manufactures an imported wallet. New/Open currently name
-the missing daemon-wallet service. No private-key/seed input is parsed or held.
+acknowledgement alone manufactures an imported wallet. No private-key or seed
+input is parsed or held.
+
+An empty launch presents the Introduction unless the workspace needs recovery
+or unlocking. Continue offline enters the public-document workspace without a
+server or transport activity. Local and Remote open the tested connection form.
+Remote surfaces who can observe RPC activity and starts with TLS selected for
+a new profile. Indexing has an explicit unavailable choice while no history
+index service is configured. Help → Introduction reopens these choices.
+
+New and Open use the verified daemon connection. Opening lists loaded wallets
+and, when the daemon supports it, its wallet directory. An explicitly selected
+unloaded wallet can be loaded on that daemon. The unnamed wallet retains its
+empty RPC identity and a distinct display label. Wallet names from the daemon
+are separate from GUI file-picker paths. Creation takes a portable single
+filename component and rejects an existing name. A verified new wallet opens
+Settings. The daemon generates and holds keys.
+
+The wallet service verifies the network and directory state before a mutation
+and checks exact wallet identity before opening a tab. Cancellation stops
+local waiting. A daemon may have accepted the action already. An explicit
+read-only wallet-list refresh and successful verification of the loaded wallet
+can reconcile the result. The GUI never automatically repeats the action or
+unloads the wallet. Recent identities are local and can be reopened only through
+the current verified connection and a new Open action.
+
+Import Wallet accepts public descriptors and standard xpub/tpub keys through
+explicit clipboard inspection. Only validated public preview data is retained.
+The preview shows the daemon network, literal signer expressions, policy,
+derived sample script and address. Supported descriptors cover P2PKH, native
+and nested SegWit, standard multisig up to 15 keys and Taproot key path.
+Multipath, Taproot trees and recovery secrets need a different service.
+An extended key uses the displayed Native SegWit branches 0 and 1. Its encoding
+distinguishes mainnet from the test-network family without identifying a
+particular test network. The active verified genesis still binds the operation.
+
+The daemon confirms the exact public descriptor before the GUI submits a
+watch-only wallet creation. Import scans from genesis on an unpruned node.
+Ranged import requests indices 0–99. The daemon can extend its active keypool.
+The GUI checks the daemon's resulting
+wallet identity and verifies each branch against an observed script and
+descriptor before opening the tab. A long scan may outlive the five-minute RPC
+wait. A possibly partial result requires explicit inspection on the daemon.
+
+Export Wallet and Daemon wallet backup use a reviewed absolute daemon-host
+filename. The GUI sends a path and never reads or uploads the wallet file.
+Backup can replace an existing file and can contain private recovery data.
+Keep that file protected on its host. A public descriptor preserves viewing
+policy and derivation. Preserve signer recovery material separately. GUI-only
+labels, frozen preferences and drafts remain in the local metadata store.
+Restore checks compatibility on the daemon. Its backup contents are unknown
+before the daemon opens it, and the GUI verifies the restored wallet's exact
+identity before adding a tab.
 
 GLFW's native drop callback copies bounded borrowed paths on the owning thread.
 Production drains that queue into the same chooser only for one file dropped
@@ -274,3 +325,60 @@ its built-in cursor paint is locally transparent before drawing the shared cue.
 Actual pixel checks cover left/right/top/bottom, full hit/strip metrics and real
 target focus. The pre-correction clipped cue and intermediate duplicate native
 cursor are retained as failing evidence; no gap/stroke threshold is weakened.
+
+Receive shows the full address, script, descriptor and wallet-reported
+derivation. Receive To opens the exact selected eligible receive address
+from current public inventory. Get Next Address allocates on the connected
+daemon. Reserve one for offline explicitly allocates and saves one verified
+address with its wallet identity. Use reserved address offline issues one
+stored address and marks it consumed before display. Navigation, inspecting
+inventory and refreshing history do not allocate addresses.
+
+An interrupted allocation can still complete on the daemon. Check daemon
+wallet reverifies the wallet and network. Check the wallet's address history
+before clearing the local attempt. Clearing it leaves any daemon allocation
+in place. A fresh allocation requires a new explicit action.
+
+Last used remains Unknown without current wallet evidence of an output to the
+same script. The label is local and the copied URI uses the saved label.
+Enter and leaving the editor save the exact address label. If a write conflicts,
+the view retains the draft and shows the failure. Close and address replacement
+wait for the draft to be saved. Reload the stored label and press Enter to retry.
+The QR area identifies its unavailable service. Device verification requires
+a proved daemon signer operation. Reusable addresses have separate support.
+
+Wallet Settings can ask the current verified daemon for its saved public
+descriptors. The editor stages script and threshold changes using checked
+public signer expressions. Single signature defaults to native SegWit.
+Supported multisig templates use between two and 15 signers with a valid
+threshold. Taproot is available for single-signature key-path policies.
+Paste a public descriptor to edit its policy. The editor verifies a supplied
+checksum and shows the canonical descriptor. Enter an optional change
+descriptor separately. The Keystores view inspects public signers and stages public keys per slot.
+
+Revert returns to the saved view without asking the daemon to change anything.
+Export saved copies the acknowledged supported descriptors, even while a
+different policy is staged. Review Apply shows the proposed descriptor and
+its consequences before creating a separately named watch-only wallet. The
+original wallet and its tab keep their binding and saved policy. The daemon
+scans from genesis and needs an unpruned source. A failed or interrupted
+request can leave a partially configured new wallet. Inspect the daemon's
+wallet list before choosing another action.
+
+Staging stays with the wallet tab while navigating. Closing a view with staged
+changes returns to Settings so the user can finish or revert them.
+
+Keystores offers connected signer, airgapped signer, daemon software and
+watch-only sources. Daemon software keys stay with their daemon. Connected
+discovery requires the daemon external-signer service. Airgapped and watch-only
+sources accept an explicit public clipboard paste. The slot shows its type,
+display label, supplied origin fingerprint and derivation, and canonical public
+key. A missing origin stays unreported. Key replacement accepts a full public
+key expression. An extended key without a suffix stages receive branch
+`/0/*`, shown before Apply. Slot labels are display names.
+
+Compatible Bitcoin [SLIP-0132 public headers](https://github.com/satoshilabs/slips/blob/master/slip-0132.md)
+normalize to xpub or tpub after checksum, network and curve-key verification.
+Their script hints must match the staged policy. Duplicate detection compares
+the public point and chain code. Scan and display routes name their QR
+decoder and encoder requirements. No seed, PIN or private-key input is offered.

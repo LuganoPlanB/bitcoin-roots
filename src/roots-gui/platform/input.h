@@ -29,6 +29,8 @@ public:
     void EnterEditor(uint32_t,bool) override;
     void LeaveEditor() override;
     std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t) override;
+    bool RequestInspection(uint32_t) override;
+    bool InspectionPending(uint32_t) const override;
     bool FileChooserAvailable() const override;
     bool NativeDialogActive() const override;
     uint64_t ChooseFile(std::string_view,bool save=false) override;

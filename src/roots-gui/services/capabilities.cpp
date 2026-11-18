@@ -44,11 +44,17 @@ bool Properties(const J& schema, std::string prefix, std::set<std::string>& name
         // Union variants do not prove that a constraint is universally valid.
         // Nested argument support is retained only in direct properties.
     }
+    const auto* type = schema.Find("type");
+    if (type && type->kind == J::Kind::String && type->text == "array") {
+        if (const auto* items = schema.Find("items"); items && items->kind == J::Kind::Object) {
+            if (!Properties(*items, prefix, names, depth + 1)) return false;
+        }
+    }
     return names.size() <= 1024;
 }
 bool IsWalletMethod(std::string_view name)
 {
-    for (const auto* method : {"getwalletinfo", "getbalances", "listsinceblock", "gettransaction", "listunspent", "listlockunspent", "listdescriptors", "getaddressinfo", "getnewaddress", "walletcreatefundedpsbt", "walletprocesspsbt", "psbtbumpfee", "lockunspent", "walletdisplayaddress", "setlabel", "walletlock", "walletpassphrase", "importdescriptors"}) if (name == method) return true;
+    for (const auto* method : {"getwalletinfo", "getbalances", "listsinceblock", "gettransaction", "listunspent", "listlockunspent", "listdescriptors", "getaddressinfo", "getnewaddress", "walletcreatefundedpsbt", "walletprocesspsbt", "psbtbumpfee", "lockunspent", "walletdisplayaddress", "setlabel", "walletlock", "walletpassphrase", "importdescriptors", "backupwallet", "rescanblockchain"}) if (name == method) return true;
     return false;
 }
 bool ReadSchema(const J& value, BackendCapabilities& result)
@@ -240,6 +246,19 @@ bool ConnectionService::Apply()
         auto replacement = tested; // prepare fully before replacing working state
         active.swap(replacement); ++session; tested.reset(); tested_revision = 0; return true;
     } catch (...) { return false; } // working profile survives allocation failure
+}
+bool ConnectionService::AdoptWallet(BackendCapabilities wallet, uint64_t expected_session, uint64_t expected_revision)
+{
+    if (std::this_thread::get_id() != owner || privacy_locked || offline || Busy() || !active
+        || expected_session != session || expected_revision != revision || session == std::numeric_limits<uint64_t>::max()
+        || !wallet.CanApply() || wallet.wallet != WalletAvailability::Available || wallet.descriptors != true
+        || !wallet.candidate.wallet || wallet.candidate.connection != active->candidate.connection
+        || wallet.candidate.expected_genesis != active->candidate.expected_genesis || wallet.genesis != active->genesis) return false;
+    active = std::move(wallet);
+    ++session;
+    tested.reset();
+    tested_revision = 0;
+    return true;
 }
 void ConnectionService::SetPrivacyLocked(bool value)
 {

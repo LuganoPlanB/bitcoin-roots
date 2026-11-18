@@ -5,7 +5,7 @@
 #include <string_view>
 namespace roots::gui::storage::schema {
 inline constexpr int ApplicationId=0x52475549;
-inline constexpr int Version=3;
+inline constexpr int Version=6;
 // Version1 owns user metadata. Version2 adds an independent observation cache.
 // Exact definitions also identify supported schemas; unknown schemas fail closed.
 inline constexpr std::array<std::string_view,8> V1{
@@ -20,4 +20,10 @@ inline constexpr std::array<std::string_view,8> V1{
 };
 inline constexpr std::string_view V2="CREATE TABLE observations(scope INTEGER NOT NULL REFERENCES scopes(id),key TEXT NOT NULL,backend_session TEXT NOT NULL,wallet_id TEXT NOT NULL,document TEXT NOT NULL,revision TEXT NOT NULL,epoch TEXT NOT NULL,source_freshness INTEGER NOT NULL CHECK(source_freshness BETWEEN 0 AND 4),observed_ms INTEGER NOT NULL CHECK(observed_ms>0),height INTEGER,amount INTEGER,PRIMARY KEY(scope,key)) STRICT";
 inline constexpr std::string_view V3="CREATE TABLE recovery(slot INTEGER PRIMARY KEY CHECK(slot=1),revision INTEGER NOT NULL CHECK(revision>0),enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),public_documents TEXT NOT NULL) STRICT";
+inline constexpr std::string_view V4="CREATE TABLE recent_wallets(backend TEXT NOT NULL,genesis TEXT NOT NULL,wallet TEXT NOT NULL,position INTEGER NOT NULL UNIQUE CHECK(position BETWEEN 0 AND 15),PRIMARY KEY(backend,genesis,wallet)) STRICT";
+inline constexpr std::array<std::string_view,2> V5{
+    "CREATE TABLE receive_state(scope INTEGER PRIMARY KEY REFERENCES scopes(id),serial INTEGER NOT NULL CHECK(serial>0),pending INTEGER NOT NULL CHECK(pending IN(0,1,2))) STRICT",
+    "CREATE TABLE receive_addresses(scope INTEGER NOT NULL REFERENCES receive_state(scope),serial INTEGER NOT NULL CHECK(serial>0),address TEXT NOT NULL,script TEXT NOT NULL,descriptor TEXT NOT NULL,key_path TEXT NOT NULL,observed INTEGER NOT NULL CHECK(observed>0),queued INTEGER NOT NULL CHECK(queued IN(0,1)),PRIMARY KEY(scope,serial),UNIQUE(scope,address)) STRICT"
+};
+inline constexpr std::string_view V6="CREATE TABLE rescan_state(scope INTEGER PRIMARY KEY REFERENCES scopes(id),serial INTEGER NOT NULL CHECK(serial>0),first INTEGER,last INTEGER,CHECK((first IS NULL AND last IS NULL) OR (first IS NOT NULL AND last IS NOT NULL AND first>=0 AND last>=first AND last<=2147483647))) STRICT";
 }

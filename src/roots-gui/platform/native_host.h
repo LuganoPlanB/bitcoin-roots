@@ -24,6 +24,7 @@ struct NativeOptions {
     // Supplying a reader does not manufacture UI flags or change OS settings.
     std::function<std::optional<bool>()> system_appearance_reader;
     ui::components::SemanticExchange* accessibility{}; // Owner-lifetime association, never a borrowed tree.
+    std::function<bool()> before_close; // Optional owner-thread acknowledgement of pending local edits.
 };
 struct NativeFrame {
     int iteration{}, rendered_frames{}, width{}, height{}, framebuffer_width{}, framebuffer_height{};

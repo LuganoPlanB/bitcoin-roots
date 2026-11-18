@@ -188,7 +188,10 @@ struct NativeHost::Impl {
             if(accessibility)accessibility->Pump();
             auto facts = Facts();
             if (observer) observer->Idle(*host, facts);
-            if (glfwWindowShouldClose(window)) break;
+            if (glfwWindowShouldClose(window)) {
+                if (!options.before_close || options.before_close()) break;
+                glfwSetWindowShouldClose(window, GLFW_FALSE);
+            }
             facts = Facts();
             if (facts.iconified || facts.framebuffer_width <= 0 || facts.framebuffer_height <= 0) {
                 if(input){input->BeginFrame();input->EndFrame();}

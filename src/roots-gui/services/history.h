@@ -34,6 +34,7 @@ struct HistoryTransaction {
     std::vector<HistoryIO> io;bool decoded_available{}; // public references/values only; no executable transaction bytes
     HistoryState state{HistoryState::Pending};
     bool generated{},removed_event{};
+    std::string previous_hex; // bounded public bytes already returned with gettransaction
     std::optional<Money> running_balance; // total incl. immature; Unknown unless reconciled
 };
 struct HistoryCoin {
@@ -43,6 +44,7 @@ struct HistoryCoin {
     bool safe{},solvable{},reused{};
     std::string script;
     std::string address,label;std::optional<bool> daemon_spendable; // observed, never inferred custody
+    std::string descriptor,redeem_script,witness_script;
 };
 struct HistoryBalances {
     Money trusted{Money::Satoshis(0)},pending{Money::Satoshis(0)},immature{Money::Satoshis(0)},nonmempool{Money::Satoshis(0)};
@@ -70,7 +72,7 @@ struct HistoryBatch {
 };
 struct HistoryFetch {std::optional<HistoryBatch> batch;rpc::Error error{rpc::Error::None};};
 // Called only by the existing read-only refresh worker, after identity checks.
-// It owns no daemon process and stores no executable transaction/command data.
+// It owns no daemon process. Bounded previous-transaction bytes are observations, never executable requests.
 HistoryFetch FetchHistory(rpc::Transport&,const ServerCandidate&,const RequestContext&,
     const rpc::Json& since,const HistoryBalances& before,std::string_view tip,
     bool full_query,bool scanning,bool pruned,bool inventory_supported,

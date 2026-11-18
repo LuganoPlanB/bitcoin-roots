@@ -39,7 +39,7 @@ bool ApplyDocumentAction(State& s,a::Requests& host,std::string_view id,bool nat
     if(id=="save-close" && x.kind==DocumentDialog::Close){
         for(auto key:x.close_ids){const auto* doc=s.documents.Find(key);if(!doc){x.error="Document set changed; cancel and try again.";return false;}
             if(doc->Dirty()){const a::Request request{a::Command::SaveDraft,key,doc->section,{}};const auto available=host.CanSubmit(request);if(!available.available){x.error=available.reason.empty()?"Draft persistence became unavailable; all views remain open.":available.reason;return false;}const auto receipt=host.Submit(request);if(!receipt.accepted){x.error=receipt.reason.empty()?"Draft persistence service is unavailable; all views remain open.":receipt.reason;return false;}}}
-        if(!CloseViews(s,x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;
+        if(!SaveReceiveLabelsBeforeClose(s,x.close_ids) || !CloseViews(s,x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;
     }
     if(id=="discard-close" && x.kind==DocumentDialog::Close){if(!CloseViews(s,x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;}
     if(id=="apply-name" && x.kind==DocumentDialog::Rename){
@@ -79,9 +79,9 @@ bool ApplyTabAction(State& s,a::Requests& host,uint64_t id,std::string_view labe
     if(label=="Move Right")return s.documents.Move(id,1);
     if(label=="Rename / Icon"){BeginRename(s,id);return s.actions.kind==DocumentDialog::Rename;}
     if(label=="Reset Name / Icon"){const auto name=d->original_name;const auto receipt=host.Submit({a::Command::DocumentMetadata,id,d->section,{},name,0});if(receipt.accepted){s.documents.Rename(id,name);s.documents.SetIcon(id,0);}else s.notice=receipt.reason;return receipt.accepted;}
-    if(label=="Close"){BeginClose(s,id);return true;}
-    if(label=="Close Others"){BeginClose(s,id,true);return true;}
-    if(label=="Close All"){BeginClose(s,id,false,true);return true;}
+    if(label=="Close")return BeginClose(s,id);
+    if(label=="Close Others")return BeginClose(s,id,true);
+    if(label=="Close All")return BeginClose(s,id,false,true);
     if(d->kind!=a::DocumentKind::Wallet)return false;
     if(label=="Lock Wallet"){if(s.recovery)return RequestPrivacyLock(s);const auto receipt=host.Submit({a::Command::LockCurrent,id,d->section,{}});s.notice=receipt.reason;return receipt.accepted;}
     if(label=="Delete Wallet..."){BeginDelete(s,id);return s.actions.kind==DocumentDialog::Delete;}
@@ -89,12 +89,13 @@ bool ApplyTabAction(State& s,a::Requests& host,uint64_t id,std::string_view labe
     return false;
 }
 }
-void BeginClose(State& s,uint64_t id,bool others,bool all)
+bool BeginClose(State& s,uint64_t id,bool others,bool all)
 {
-    const auto ids=s.documents.CloseTargets(id,others,all);if(ids.empty())return;
+    const auto ids=s.documents.CloseTargets(id,others,all);if(ids.empty())return false;
+    if(!AllowPolicyClose(s,ids) || !SaveReceiveLabelsBeforeClose(s,ids))return false;
     const bool dirty=std::any_of(ids.begin(),ids.end(),[&](auto key){return s.documents.Find(key)->Dirty();});
-    if(!dirty){if(!CloseViews(s,ids))s.notice=s.actions.error;RestoreDocumentFocus(s,s.documents.ActiveId());return;}
-    Begin(s,DocumentDialog::Close,id);s.actions.close_ids=ids;
+    if(!dirty){const bool closed=CloseViews(s,ids);if(!closed)s.notice=s.actions.error;RestoreDocumentFocus(s,s.documents.ActiveId());return closed;}
+    Begin(s,DocumentDialog::Close,id);s.actions.close_ids=ids;return true;
 }
 void BeginRename(State& s,uint64_t id)
 {

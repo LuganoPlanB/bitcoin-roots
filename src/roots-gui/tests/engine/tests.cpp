@@ -26,6 +26,7 @@ void RegisterCommandTests(ImGuiTestEngine*);
 void RegisterDocumentTests(ImGuiTestEngine*);
 void RegisterShellTests(ImGuiTestEngine*);
 void RegisterServerTests(ImGuiTestEngine*);
+void RegisterWalletOnboardingTests(ImGuiTestEngine*);
 void RegisterHistoryTests(ImGuiTestEngine*);
 void RegisterAddressTests(ImGuiTestEngine*);
 void RegisterCoinTests(ImGuiTestEngine*);
@@ -40,6 +41,7 @@ void RegisterHeadlessTests(ImGuiTestEngine* engine)
     RegisterDocumentTests(engine);
     RegisterCommandTests(engine);
     RegisterServerTests(engine);
+    RegisterWalletOnboardingTests(engine);
     RegisterHistoryTests(engine);
     RegisterAddressTests(engine);
     RegisterCoinTests(engine);
