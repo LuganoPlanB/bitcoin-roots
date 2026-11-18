@@ -83,3 +83,82 @@ sighash modes, script policies and modification permissions. Map order and
 opaque metadata do not change that commitment. A relevant change rejects the
 merge and shows why the local review was revoked. Merge still operates on the
 working PSBT version and retains the original source bytes.
+
+## Transaction workbench
+
+Choose Overview, Inputs or Outputs in the structure pane. Large transactions
+use numbered pages. Overview shows the exact output total, script distribution,
+transaction version and locktime. The input amount and fee stay Unknown when
+matching previous-output evidence is incomplete. An output worth zero
+satoshis still shows its exact value.
+
+Input and output details identify scripts, timing constraints and any available
+wallet evidence. Previous-output data supplied in a PSBT is labelled separately
+from an amount or script matched to the actual previous transaction ID. An
+independently saved internal change proof establishes intent without asserting
+address allocation or live spendability. Spending history requires current
+observations for the exact wallet and network. Missing observations leave it
+Unknown.
+
+Show wire hex opens the byte drawer. Original source keeps the exact submitted
+text or binary bytes. Decoded PSBT shows the binary container, including opaque
+fields. Raw wire shows transaction bytes, including any scriptSig or witness.
+Derived unsigned is a separate PSBT serialization without final scriptSig or
+witness. Each byte field maps only to the active representation. Base64 source
+text cannot directly map binary fields. Switch to Decoded PSBT to see their
+offsets.
+
+Copy renders the selected bytes as hexadecimal text. Save writes the exact
+selected bytes, or the complete active representation when no range is
+selected, to a new file. Save original still writes the exact source. A raw
+transaction can show its txid and wtxid. A PSBT can show an unsigned
+commitment while the signed transaction ID remains Unknown.
+
+## Review and approval for signing
+
+Signing review shows the exact wallet, ordered payments, independently proved
+change, inputs, fee and locktime. It separates the requested funding rate from
+the final fee rate, which requires a signed transaction size. A PSBT without
+independent payment and wallet evidence can be inspected and exported. Open
+Wallet starts the ordinary wallet chooser so you can select the exact wallet.
+
+Record signing review and Approve for signing are separate actions. Approving
+records consent for the exact reviewed transaction, source bytes and wallet
+proofs in the current workspace session. A changed output, draft revision,
+proof, wallet, policy or lock/session context retires that review. Export and
+public recovery preserve the transaction bytes. Review and approval need
+fresh actions after restart.
+
+Advanced sighash explains which inputs and outputs a signature covers. An
+explicit Taproot ALL request needs a separate acknowledgement. Unsupported,
+unknown or conflicting sighash modes block approval. The workbench currently
+has no transaction signer or broadcast action.
+
+## Editing a transaction
+
+Edit transaction opens local fields for unsigned raw transactions and fixed
+unsigned PSBT v0 or v2 documents. Return to editing retires an existing
+review and approval before any changes. Apply validates the whole edit and
+opens a separate working document. Later edits update that working document
+while the original source and its PSBT records stay available in their own
+tab. A failed edit leaves both the source and pending fields intact.
+
+The editor changes supported versions (1 through 3 for raw and PSBTv0, or 2 and
+3 for the pinned PSBTv2 provider), unsigned 32-bit locktime and sequence
+fields, and exact whole-satoshi output values. An input outpoint or
+output script can be replaced when its PSBT map has no attached records that
+would be detached. Move earlier and Move later, or Ctrl+Up and Ctrl+Down,
+move the selected transaction row and its complete PSBT map together.
+Signed, finalized, conflicting, or actively negotiated documents remain
+read-only. Input-required PSBT locktime cannot be overridden by changing the
+fallback. The editor describes height or timestamp constraints without
+claiming present maturity.
+
+Header changes and reorder can preserve exact independent payment evidence
+within the session when every matched input and output still agrees and
+intended change has a unique matched output. A fresh explicit review and
+approval are still required. Changed amounts, addresses, inputs or imported
+negotiations without independent intent can be exported for inspection.
+Prepare a new proved Send draft before seeking approval for those payments.
+Public recovery preserves applied original and working bytes. It restores
+neither staged fields nor signing approval.

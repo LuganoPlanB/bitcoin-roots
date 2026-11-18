@@ -11,6 +11,7 @@
 #include <chrono>
 #include <set>
 #include <map>
+#include <utility>
 
 namespace roots::gui::protocol {
 namespace {
@@ -127,33 +128,63 @@ void MoneyTotal(uint64_t& total, uint64_t amount)
     Require(amount<=MAX_MONEY-total);
     total+=amount;
 }
-bool WitnessStack(Reader& r)
+void Mark(std::vector<InspectionField>* fields,std::string name, size_t start, const Reader& r,size_t base)
 {
+    if (fields) fields->push_back({std::move(name),{base+start,r.Offset()-start}});
+}
+bool WitnessStack(Reader& r,std::vector<InspectionField>* fields=nullptr,size_t base=0)
+{
+    const auto start=r.Offset();
     const auto items=r.Compact(MAX_STACK);
-    for (uint64_t j=0;j<items;++j) r.Vector(MAX_TRANSACTION_WIRE);
+    Mark(fields,"Witness item count",start,r,base);
+    for (uint64_t j=0;j<items;++j) {
+        const auto length=r.Compact(MAX_TRANSACTION_WIRE);
+        const auto item=r.Offset();
+        r.Take(size_t(length));
+        if (fields) Mark(fields,"Witness item "+std::to_string(j+1),item,r,base);
+    }
     return items!=0;
 }
 struct TxShape {size_t inputs{},outputs{};bool witness{},coinbase{};};
-TxShape CheckTx(Bytes bytes, const Budget& budget, bool unsigned_psbt)
+TxShape CheckTx(Bytes bytes,const Budget& budget,bool unsigned_psbt,InspectionLayout* layout=nullptr,size_t base=0)
 {
     Reader r(bytes);
+    auto* header=layout ? &layout->header : nullptr;
     r.LE(4);
+    Mark(header,"Version",0,r,base);
+    auto count_start=r.Offset();
     auto inputs=r.Compact(MAX_TRANSACTION_IO);
     bool witness{};
     if (!unsigned_psbt && !inputs) {
         Require(r.LE(1)==1);
+        Mark(header,"Witness marker and flag",count_start,r,base);
+        count_start=r.Offset();
         inputs=r.Compact(MAX_TRANSACTION_IO);
         witness=true;
     }
+    Mark(header,"Input count",count_start,r,base);
+    if (layout) layout->inputs.resize(inputs);
     Require(unsigned_psbt || inputs>0);
     std::set<std::pair<Bytes,uint32_t>> seen;
     bool coinbase{};
     for (uint64_t i=0;i<inputs;++i) {
         budget.Check();
+        auto* fields=layout ? &layout->inputs[i] : nullptr;
+        auto start=r.Offset();
         const auto hash=r.Take(32);
+        Mark(fields,"Previous transaction ID (wire order)",start,r,base);
+        start=r.Offset();
         const auto index=uint32_t(r.LE(4));
-        const auto script=r.Vector(MAX_SCRIPT);
+        Mark(fields,"Previous output index",start,r,base);
+        start=r.Offset();
+        const auto length=r.Compact(MAX_SCRIPT);
+        Mark(fields,"scriptSig length",start,r,base);
+        start=r.Offset();
+        const auto script=r.Take(size_t(length));
+        Mark(fields,"scriptSig",start,r,base);
+        start=r.Offset();
         r.LE(4);
+        Mark(fields,"Sequence",start,r,base);
         Require(seen.emplace(hash,index).second,Error::Duplicate);
         if (unsigned_psbt) Require(script.empty());
         if (NullHash(hash) && index==UINT32_MAX) {
@@ -161,23 +192,36 @@ TxShape CheckTx(Bytes bytes, const Budget& budget, bool unsigned_psbt)
             coinbase=true;
         }
     }
+    count_start=r.Offset();
     const auto outputs=r.Compact(MAX_TRANSACTION_IO);
+    Mark(header,"Output count",count_start,r,base);
+    if (layout) layout->outputs.resize(outputs);
     Require(unsigned_psbt || outputs>0);
     uint64_t total{};
     for (uint64_t i=0;i<outputs;++i) {
         budget.Check();
+        auto* fields=layout ? &layout->outputs[i] : nullptr;
+        auto start=r.Offset();
         MoneyTotal(total,r.LE(8));
-        r.Vector(MAX_SCRIPT);
+        Mark(fields,"Output amount",start,r,base);
+        start=r.Offset();
+        const auto length=r.Compact(MAX_SCRIPT);
+        Mark(fields,"scriptPubKey length",start,r,base);
+        start=r.Offset();
+        r.Take(size_t(length));
+        Mark(fields,"scriptPubKey",start,r,base);
     }
     if (witness) {
         bool nonempty{};
         for (uint64_t i=0;i<inputs;++i) {
             budget.Check();
-            nonempty=WitnessStack(r) || nonempty;
+            nonempty=WitnessStack(r,layout ? &layout->inputs[i] : nullptr,base) || nonempty;
         }
         Require(nonempty);
     }
+    const auto lock_start=r.Offset();
     r.LE(4);
+    Mark(header,"Locktime",lock_start,r,base);
     Require(r.Empty());
     return {size_t(inputs),size_t(outputs),witness,coinbase};
 }
@@ -198,10 +242,35 @@ struct MapShape {
     std::optional<TxShape> transaction;
     std::optional<size_t> inputs, outputs;
     std::vector<PsbtPolicy> input_policy, output_policy;
+    InspectionLayout layout;
+    std::vector<std::optional<ByteSpan>> full_previous;
     std::optional<uint8_t> modifiable;
     uint32_t version{};
     size_t entries{};
 };
+std::string PsbtFieldName(MapKind kind,uint64_t type)
+{
+    using Names=std::initializer_list<std::pair<uint64_t,std::string_view>>;
+    const auto name=[type](Names names) {
+        for (const auto& [key,label]:names) if (type==key) return label;
+        return std::string_view{};
+    };
+    const auto known=kind==MapKind::Global ? name({{0,"Embedded unsigned transaction"},{1,"Global extended public key"},
+        {2,"Transaction version"},{3,"Fallback locktime"},{4,"Input count"},{5,"Output count"},
+        {6,"Transaction modifiable flags"},{0xfb,"PSBT version"}})
+        : kind==MapKind::Input ? name({{0,"Full previous transaction"},{1,"Witness previous-output data"},
+            {2,"Partial signature"},{3,"Requested sighash"},{4,"Redeem script"},{5,"Witness script"},
+            {6,"Public key derivation"},{7,"Final scriptSig"},{8,"Final serialized witness"},
+            {0x0e,"Previous transaction ID (wire order)"},{0x0f,"Previous output index"},{0x10,"Sequence"},
+            {0x11,"Required time locktime"},{0x12,"Required height locktime"},{0x13,"Taproot key-path signature"},
+            {0x14,"Taproot script-path signature"},{0x15,"Taproot leaf script and version"},
+            {0x16,"Taproot public key derivation"},{0x17,"Taproot internal key"},{0x18,"Taproot merkle root"}})
+        : name({{0,"Redeem script"},{1,"Witness script"},{2,"Public key derivation"},{3,"Output amount"},
+            {4,"scriptPubKey"},{5,"Taproot internal key"},{6,"Taproot tree"},{7,"Taproot public key derivation"}});
+    if (!known.empty()) return std::string(known);
+    if (type==0xfc) return "Proprietary field";
+    return "Opaque field type "+std::to_string(type);
+}
 void CheckTapPath(Bytes value)
 {
     Reader r(value);
@@ -231,13 +300,16 @@ void CheckTapTree(Bytes value)
     }
     Require(pending==1 && depths[0]==0);
 }
-void CheckMap(Reader& r, MapShape& shape, MapKind map, const Budget& budget, PsbtPolicy* policy = nullptr)
+void CheckMap(Reader& r,MapShape& shape,MapKind map,const Budget& budget,
+    std::vector<InspectionField>& fields,PsbtPolicy* policy=nullptr,std::optional<ByteSpan>* previous=nullptr)
 {
     std::set<Bytes> seen;
     for (;;) {
         budget.Check();
+        const auto start=r.Offset();
         const auto key=r.Vector(MAX_TRANSACTION_WIRE);
         if (key.empty()) return;
+        const ByteSpan key_bytes{r.Offset()-key.size(),key.size()};
         Require(++shape.entries<=MAX_FIELDS,Error::Limit);
         Require(seen.insert(key).second,Error::Duplicate);
         Reader key_reader(key);
@@ -247,9 +319,14 @@ void CheckMap(Reader& r, MapShape& shape, MapKind map, const Budget& budget, Psb
             key_reader.Compact(); // proprietary subtype; payload is deliberately opaque
         }
         const auto value=r.Vector(MAX_TRANSACTION_WIRE);
+        const auto prefix=PsbtFieldName(map,type);
+        const auto value_offset=r.Offset()-value.size();
+        fields.push_back({prefix+" (serialized PSBT entry)",{start,r.Offset()-start}});
+        fields.push_back({prefix+" (key)",key_bytes});
+        fields.push_back({prefix,{value_offset,value.size()}});
         if (map==MapKind::Global) {
             if (type==0xfb && key_reader.Empty()) shape.version=uint32_t(OneLE(value,4));
-            if (type==0 && key_reader.Empty()) shape.transaction=CheckTx(value,budget,true);
+            if (type==0 && key_reader.Empty()) shape.transaction=CheckTx(value,budget,true,&shape.layout,value_offset);
             if (type==1) {
                 // PSBT global extended keys are public BIP32 serializations.
                 Require(key.size()==79 && (key[46]==2 || key[46]==3));
@@ -258,22 +335,31 @@ void CheckMap(Reader& r, MapShape& shape, MapKind map, const Budget& budget, Psb
             if (type==5 && key_reader.Empty()) shape.outputs=size_t(OneCompact(value,MAX_TRANSACTION_IO));
             if (type==6 && key_reader.Empty()) shape.modifiable=uint8_t(OneLE(value,1));
         } else if (map==MapKind::Input) {
+            if ((type == 7 || type == 8) && key_reader.Empty()) policy->final_fields = true;
+            if (type==2 || type==0x13 || type==0x14) policy->signature_fields=true;
             if (type==3 && key_reader.Empty()) policy->sighash=uint32_t(OneLE(value,4));
             if (type==2 && !value.empty()) policy->signature_modes.insert(uint8_t(value.back()));
             if ((type==0x13 || type==0x14) && (value.size()==64 || value.size()==65))
                 policy->signature_modes.insert(value.size()==64 ? 0 : uint8_t(value.back()));
             if (type==4 || type==5 || type==0x15 || type==0x17 || type==0x18)
                 policy->scripts.emplace(key,value);
-            if (type==0 && key_reader.Empty()) CheckTx(value,budget,false);
+            if (type==0 && key_reader.Empty()) {
+                CheckTx(value,budget,false);
+                *previous=ByteSpan{value_offset,value.size()};
+            }
             if (type==1 && key_reader.Empty()) {
                 Reader output(value);
                 Require(output.LE(8)<=MAX_MONEY);
-                output.Vector(MAX_SCRIPT);
+                Mark(&fields,"Supplied previous amount",0,output,value_offset);
+                const auto length=output.Compact(MAX_SCRIPT);
+                const auto output_script=output.Offset();
+                output.Take(size_t(length));
+                Mark(&fields,"Supplied previous scriptPubKey",output_script,output,value_offset);
                 Require(output.Empty());
             }
             if (type==8 && key_reader.Empty()) {
                 Reader witness(value);
-                WitnessStack(witness);
+                WitnessStack(witness,&fields,value_offset);
                 Require(witness.Empty());
             }
             if (type==0x16) CheckTapPath(value);
@@ -291,7 +377,8 @@ MapShape CheckPsbt(Bytes wire,const Budget& budget)
     Reader r(wire);
     Require(r.Take(PSBT_MAGIC.size())==PSBT_MAGIC);
     MapShape shape;
-    CheckMap(r,shape,MapKind::Global,budget);
+    shape.layout.header.push_back({"PSBT magic",{0,PSBT_MAGIC.size()}});
+    CheckMap(r,shape,MapKind::Global,budget,shape.layout.header);
     if (shape.version!=0 && shape.version!=2) return shape;
     if (shape.version==0) {
         Require(bool(shape.transaction));
@@ -301,8 +388,13 @@ MapShape CheckPsbt(Bytes wire,const Budget& budget)
     Require(shape.inputs && shape.outputs);
     shape.input_policy.resize(*shape.inputs);
     shape.output_policy.resize(*shape.outputs);
-    for (auto& input:shape.input_policy) CheckMap(r,shape,MapKind::Input,budget,&input);
-    for (auto& output:shape.output_policy) CheckMap(r,shape,MapKind::Output,budget,&output);
+    shape.layout.inputs.resize(*shape.inputs);
+    shape.layout.outputs.resize(*shape.outputs);
+    shape.full_previous.resize(*shape.inputs);
+    for (size_t i=0;i<*shape.inputs;++i)
+        CheckMap(r,shape,MapKind::Input,budget,shape.layout.inputs[i],&shape.input_policy[i],&shape.full_previous[i]);
+    for (size_t i=0;i<*shape.outputs;++i)
+        CheckMap(r,shape,MapKind::Output,budget,shape.layout.outputs[i],&shape.output_policy[i]);
     Require(r.Empty());
     return shape;
 }
@@ -334,7 +426,7 @@ void DetailPrevout(TransactionInput& in,const wally_psbt_input& data)
 }
 void ReadTx(TransactionDocument& document,const Budget& budget)
 {
-    const auto shape=CheckTx(document.wire,budget,false);
+    const auto shape=CheckTx(document.wire,budget,false,&document.wire_layout);
     wally_tx* raw{};
     const auto parsed=wally_tx_from_bytes(Data(document.wire),document.wire.size(),WALLY_TX_FLAG_USE_WITNESS,&raw);
     Tx tx(raw,&wally_tx_free);
@@ -344,11 +436,17 @@ void ReadTx(TransactionDocument& document,const Budget& budget)
     data.locktime=tx->locktime;
     data.txid=Txid(*tx);
     Require(data.txid.has_value());
+    std::array<unsigned char,32> witness_id{};
+    if (wally_sha256d(Data(document.wire),document.wire.size(),witness_id.data(),witness_id.size())==WALLY_OK) {
+        std::ranges::reverse(witness_id);
+        data.wtxid=Hash256::Parse(TransactionHex(Data(witness_id.data(),witness_id.size())));
+    }
     data.witness=shape.witness;
     data.coinbase=shape.coinbase;
     for (size_t i=0;i<tx->num_inputs;++i) {
         budget.Check();
         const auto& input=tx->inputs[i];
+        data.script_sig|=input.script_len!=0;
         data.inputs.push_back({{InputHash(input.txhash),input.index},input.sequence});
     }
     for (size_t i=0;i<tx->num_outputs;++i) {
@@ -368,16 +466,26 @@ void ReadPsbt(TransactionDocument& document, MapShape shape,const Budget& budget
     document.psbt_version=shape.version;
     document.psbt_entries=shape.entries;
     document.modifiable=shape.modifiable;
+    document.wire_layout=std::move(shape.layout);
     document.input_policy=std::move(shape.input_policy);
     document.output_policy=std::move(shape.output_policy);
     Require(shape.version || psbt->tx);
     data.version=shape.version==0 ? psbt->tx->version : psbt->tx_version;
     if (!shape.version) data.locktime=psbt->tx->locktime;
-    else {
-        wally_tx* witness_free{};
-        const auto extracted=wally_psbt_extract(psbt.get(),WALLY_PSBT_EXTRACT_NON_FINAL,&witness_free);
-        Tx tx(witness_free,&wally_tx_free);
-        if (extracted==WALLY_OK && tx) data.locktime=tx->locktime;
+    wally_tx* witness_free{};
+    const auto extracted=wally_psbt_extract(psbt.get(),WALLY_PSBT_EXTRACT_NON_FINAL,&witness_free);
+    Tx tx(witness_free,&wally_tx_free);
+    if (extracted==WALLY_OK && tx) {
+        if (shape.version) data.locktime=tx->locktime;
+        size_t size{},written{};
+        if (wally_tx_get_length(tx.get(),0,&size)==WALLY_OK && size>0 && size<=MAX_TRANSACTION_WIRE) {
+            std::string unsigned_wire(size,'\0');
+            if (wally_tx_to_bytes(tx.get(),0,reinterpret_cast<unsigned char*>(unsigned_wire.data()),size,&written)==WALLY_OK
+                && written==size) {
+                CheckTx(unsigned_wire,budget,true,&document.unsigned_layout);
+                document.unsigned_wire=std::move(unsigned_wire);
+            }
+        }
     }
     std::set<std::pair<std::string,uint32_t>> distinct;
     uint64_t total_in{},total_out{};
@@ -390,6 +498,15 @@ void ReadPsbt(TransactionDocument& document, MapShape shape,const Budget& budget
                                legacy ? legacy->sequence : part.sequence};
         Require(distinct.emplace(input.outpoint.txid.hex(),input.outpoint.index).second,Error::Duplicate);
         DetailPrevout(input,part);
+        if (input.evidence==PrevoutEvidence::TxidMatched && shape.full_previous[i]) {
+            const auto span=*shape.full_previous[i];
+            InspectionLayout previous;
+            CheckTx(Bytes(document.wire).substr(span.offset,span.length),budget,false,&previous,span.offset);
+            for (const auto& field:previous.outputs.at(input.outpoint.index)) {
+                if (field.name=="Output amount" || field.name=="scriptPubKey")
+                    document.wire_layout.inputs[i].push_back({"Matched previous "+field.name,field.bytes});
+            }
+        }
         matched &= input.evidence==PrevoutEvidence::TxidMatched;
         if (input.evidence==PrevoutEvidence::TxidMatched) MoneyTotal(total_in,uint64_t(input.previous_value->sats()));
         data.inputs.push_back(std::move(input));
@@ -422,6 +539,51 @@ TransactionDocument::~TransactionDocument()
 {
     if (!source.empty()) wally_bzero(source.data(),source.size());
     if (!wire.empty()) wally_bzero(wire.data(),wire.size());
+    if (!unsigned_wire.empty()) wally_bzero(unsigned_wire.data(),unsigned_wire.size());
+}
+std::string_view InspectionBuffer(const TransactionDocument& doc,InspectionBytes representation)
+{
+    if (representation==InspectionBytes::Source) return doc.source;
+    if (representation==InspectionBytes::Wire) return doc.wire;
+    return doc.unsigned_wire;
+}
+std::string_view InspectionBufferName(const TransactionDocument& doc,InspectionBytes representation)
+{
+    if (representation==InspectionBytes::Source) {
+        switch (doc.format) {
+        case DocumentFormat::RawHex: return "Original source · transaction hex text";
+        case DocumentFormat::RawBinary: return "Original source · raw transaction bytes";
+        case DocumentFormat::PsbtBase64: return "Original source · PSBT Base64 text";
+        case DocumentFormat::PsbtBinary: return "Original source · binary PSBT bytes";
+        case DocumentFormat::PublicDescriptor: return "Original source · descriptor text";
+        }
+    }
+    if (representation==InspectionBytes::Unsigned) return "Derived unsigned transaction bytes · no final scriptSig or witness";
+    if (doc.psbt_version) return "Wire hex · decoded PSBT container bytes";
+    return "Wire hex · supplied raw transaction bytes";
+}
+std::span<const InspectionField> InspectionFields(const TransactionDocument& doc,
+    InspectionBytes representation,InspectionNode node,size_t index)
+{
+    const auto& layout=representation==InspectionBytes::Unsigned ? doc.unsigned_layout : doc.wire_layout;
+    if (node==InspectionNode::Overview) return layout.header;
+    const auto& group=node==InspectionNode::Input ? layout.inputs : layout.outputs;
+    return index<group.size() ? std::span<const InspectionField>(group[index]) : std::span<const InspectionField>{};
+}
+std::optional<ByteSpan> InspectionSpan(const TransactionDocument& doc,InspectionBytes representation,ByteSpan range)
+{
+    if (representation==InspectionBytes::Source) {
+        if (doc.format==DocumentFormat::PsbtBase64 || doc.format==DocumentFormat::PublicDescriptor) return {};
+        if (doc.format==DocumentFormat::RawHex) {
+            if (range.offset>doc.wire.size() || range.length>doc.wire.size()-range.offset) return {};
+            const auto trimmed=Trim(doc.source);
+            const auto leading=size_t(trimmed.data()-doc.source.data());
+            range={leading+2*range.offset,2*range.length};
+        }
+    }
+    const auto buffer=InspectionBuffer(doc,representation);
+    if (range.offset>buffer.size() || range.length>buffer.size()-range.offset) return {};
+    return range;
 }
 std::string TransactionHex(Bytes bytes)
 {
@@ -758,5 +920,250 @@ bool MatchesPublicPolicy(Bytes script_hex,DisplayNetwork network,const PublicWal
 {
     return !script_hex.empty() && VerifyPublicPreview(policy,DocumentChain(network))
         && std::ranges::any_of(policy.descriptors,[&](const auto& branch){return branch.script==script_hex;});
+}
+
+std::string TransactionEditBlock(const TransactionDocument& document)
+{
+    if (!document.transaction || document.transaction->inputs.empty() || document.transaction->outputs.empty())
+        return "Editing requires a complete unsigned transaction with inputs and outputs.";
+    const auto& tx=*document.transaction;
+    if (tx.coinbase || tx.witness || tx.script_sig || std::ranges::any_of(document.input_policy,[](const auto& policy){
+        return policy.final_fields || policy.signature_fields;
+    })) return "Transactions with scriptSig, witness, signatures, final fields or a coinbase input are read-only.";
+    if (!tx.locktime || document.modifiable.value_or(0))
+        return "A conflicting locktime or active PSBT negotiation flags prevent local editing. The original remains available.";
+    if (std::ranges::any_of(tx.inputs,[](const auto& input){return input.evidence==PrevoutEvidence::Conflict;}))
+        return "Conflicting previous-output proofs prevent local editing.";
+    return {};
+}
+
+namespace {
+void PutLE(std::string& out,uint64_t value,unsigned size)
+{
+    for (unsigned i=0;i<size;++i) out+=char(uint8_t(value>>(8*i)));
+}
+std::string LE(uint64_t value,unsigned size)
+{
+    std::string out;
+    PutLE(out,value,size);
+    return out;
+}
+void PutCompact(std::string& out,size_t size)
+{
+    if (size<253) out+=char(size);
+    else if (size<=UINT16_MAX) {out+=char(253);PutLE(out,size,2);}
+    else {out+=char(254);PutLE(out,size,4);}
+}
+void PutVector(std::string& out,Bytes bytes)
+{
+    PutCompact(out,bytes.size());
+    out+=bytes;
+}
+std::string WireHash(const Outpoint& point)
+{
+    auto decoded=*Unhex(point.txid.hex(),32);
+    std::ranges::reverse(decoded);
+    return decoded;
+}
+std::string UnsignedWire(const TransactionInspection& tx)
+{
+    std::string result;
+    PutLE(result,tx.version,4);
+    PutCompact(result,tx.inputs.size());
+    for (const auto& input:tx.inputs) {
+        result+=WireHash(input.outpoint);
+        PutLE(result,input.outpoint.index,4);
+        result+='\0'; // unsigned scriptSig
+        PutLE(result,input.sequence,4);
+    }
+    PutCompact(result,tx.outputs.size());
+    for (const auto& output:tx.outputs) {
+        PutLE(result,uint64_t(output.value.sats()),8);
+        PutVector(result,output.script.empty() ? std::string{} : *Unhex(output.script,MAX_SCRIPT));
+    }
+    PutLE(result,*tx.locktime,4);
+    return result;
+}
+struct EditMap {
+    struct Entry {Bytes key,encoded;};
+    std::vector<Entry> entries;
+    std::map<uint8_t,std::string> changes;
+
+    explicit EditMap(Reader& reader)
+    {
+        for (;;) {
+            const auto start=reader.Offset();
+            const auto key=reader.Vector(MAX_TRANSACTION_WIRE);
+            if (key.empty()) break;
+            reader.Vector(MAX_TRANSACTION_WIRE);
+            entries.push_back({key,reader.Range(start)});
+        }
+    }
+    bool Contains(uint8_t type) const
+    {
+        return std::ranges::any_of(entries,[type](const auto& field){return field.key.size()==1 && uint8_t(field.key.front())==type;});
+    }
+    bool Only(std::initializer_list<uint8_t> allowed) const
+    {
+        return std::ranges::all_of(entries,[allowed](const auto& field) {
+            return field.key.size()==1 && std::ranges::find(allowed,uint8_t(field.key.front()))!=allowed.end();
+        });
+    }
+    void Write(std::string& out) const
+    {
+        std::set<uint8_t> written;
+        const auto write=[&](uint8_t type,const std::string& value) {
+            out+=char(1);
+            out+=char(type);
+            PutVector(out,value);
+            written.insert(type);
+        };
+        for (const auto& field:entries) {
+            const auto change=field.key.size()==1 ? changes.find(uint8_t(field.key.front())) : changes.end();
+            if (change==changes.end()) out+=field.encoded;
+            else write(change->first,change->second);
+        }
+        for (const auto& [type,value]:changes) if (!written.contains(type)) write(type,value);
+        out+='\0';
+    }
+};
+template<class T> void MoveItem(std::vector<T>& items,size_t source,size_t destination)
+{
+    if (source<destination) std::rotate(items.begin()+source,items.begin()+source+1,items.begin()+destination+1);
+    else if (source>destination) std::rotate(items.begin()+destination,items.begin()+source,items.begin()+source+1);
+}
+std::string EditedSource(const TransactionDocument& original,std::string wire)
+{
+    switch (original.format) {
+    case DocumentFormat::RawHex: return TransactionHex(wire);
+    case DocumentFormat::PsbtBase64: return TransactionBase64(wire);
+    default: return wire;
+    }
+}
+}
+
+EditedTransaction EditTransaction(const TransactionDocument& original,DisplayNetwork network,const TransactionEdit& edit)
+{
+    const auto fail=[](std::string error){return EditedTransaction{{},{},std::move(error)};};
+    if (auto reason=TransactionEditBlock(original);!reason.empty()) return fail(std::move(reason));
+    try {
+        auto planned=*original.transaction;
+        const bool version2=original.psbt_version==2;
+        std::optional<EditMap> header;
+        std::vector<EditMap> inputs,outputs;
+        if (original.psbt_version) {
+            Reader reader(original.wire);
+            Require(reader.Take(PSBT_MAGIC.size())==PSBT_MAGIC);
+            header.emplace(reader);
+            for (size_t i=0;i<planned.inputs.size();++i) inputs.emplace_back(reader);
+            for (size_t i=0;i<planned.outputs.size();++i) outputs.emplace_back(reader);
+            Require(reader.Empty());
+        }
+        std::string changed;
+        const auto mark=[&](std::string_view field){if (!changed.empty()) changed+=", ";changed+=field;};
+        if (edit.version && *edit.version!=planned.version) {
+            if (*edit.version<(version2 ? 2U : 1U) || *edit.version>3)
+                return fail(version2 ? "This PSBTv2 provider supports editing to transaction version 2 or 3."
+                    : "Editable transaction versions are 1, 2 and 3.");
+            planned.version=*edit.version;
+            if (version2) header->changes[2]=LE(planned.version,4);
+            mark("transaction version");
+        }
+        if (edit.locktime && edit.locktime!=planned.locktime) {
+            if (version2 && std::ranges::any_of(inputs,[](const auto& map){return map.Contains(0x11) || map.Contains(0x12);}))
+                return fail("An input-required PSBT locktime cannot be replaced by changing the fallback locktime.");
+            planned.locktime=*edit.locktime;
+            if (version2) header->changes[3]=LE(*planned.locktime,4);
+            mark("locktime");
+        }
+        if (const auto& input=edit.input) {
+            if (input->index>=planned.inputs.size()) return fail("The selected input no longer exists.");
+            auto& changed_input=planned.inputs[input->index];
+            if (input->previous!=changed_input.outpoint) {
+                if (original.psbt_version && !(version2 ? inputs[input->index].Only({0x0e,0x0f,0x10}) : inputs[input->index].entries.empty()))
+                    return fail("This input has attached metadata or proofs. Replacing its outpoint would detach them.");
+                if (input->previous.index==UINT32_MAX && input->previous.txid.hex()==std::string(64,'0'))
+                    return fail("A coinbase outpoint cannot be assigned here.");
+                changed_input.outpoint=input->previous;
+                if (version2) {
+                    inputs[input->index].changes[0x0e]=WireHash(input->previous);
+                    inputs[input->index].changes[0x0f]=LE(input->previous.index,4);
+                }
+                mark("input "+std::to_string(input->index+1)+" outpoint");
+            }
+            if (input->sequence!=changed_input.sequence) {
+                changed_input.sequence=input->sequence;
+                if (version2) inputs[input->index].changes[0x10]=LE(input->sequence,4);
+                mark("input "+std::to_string(input->index+1)+" sequence");
+            }
+        }
+        if (const auto& output=edit.output) {
+            if (output->index>=planned.outputs.size()) return fail("The selected output no longer exists.");
+            auto& item=planned.outputs[output->index];
+            const auto& replacement=output->replacement;
+            if (replacement.value.sats()<0 || uint64_t(replacement.value.sats())>MAX_MONEY)
+                return fail("Use whole satoshis within the Bitcoin monetary range.");
+            if (replacement.value!=item.value) {
+                if (version2) outputs[output->index].changes[3]=LE(uint64_t(replacement.value.sats()),8);
+                mark("output "+std::to_string(output->index+1)+" amount");
+            }
+            if (replacement.script!=item.script) {
+                if (original.psbt_version && !(version2 ? outputs[output->index].Only({3,4}) : outputs[output->index].entries.empty()))
+                    return fail("This output has attached metadata. Its script cannot be replaced safely.");
+                const auto script=Unhex(replacement.script,MAX_SCRIPT);
+                if (!script || TransactionHex(*script)!=replacement.script)
+                    return fail("Provide a supported address or exact lowercase script hex.");
+                if (version2) outputs[output->index].changes[4]=*script;
+                mark("output "+std::to_string(output->index+1)+" script");
+            }
+            item=replacement;
+        }
+        if (const auto& order=edit.reorder) {
+            const auto [group,from,to]=*order;
+            const bool in=group==InspectionNode::Input;
+            const auto count=in ? planned.inputs.size() : planned.outputs.size();
+            if (group==InspectionNode::Overview || from>=count || to>=count || from==to)
+                return fail("Select a current input or output and a different position.");
+            if (in) {
+                MoveItem(planned.inputs,from,to);
+                if (header) MoveItem(inputs,from,to);
+            } else {
+                MoveItem(planned.outputs,from,to);
+                if (header) MoveItem(outputs,from,to);
+            }
+            mark(in ? "input order" : "output order");
+        }
+        if (changed.empty()) return fail("No material transaction fields changed.");
+        uint64_t total{};
+        for (const auto& output:planned.outputs) MoneyTotal(total,uint64_t(output.value.sats()));
+        std::string wire;
+        if (header) {
+            if (!version2) header->changes[0]=UnsignedWire(planned);
+            wire=PSBT_MAGIC;
+            header->Write(wire);
+            for (const auto& map:inputs) map.Write(wire);
+            for (const auto& map:outputs) map.Write(wire);
+        } else wire=UnsignedWire(planned);
+        if (wire.size()>MAX_TRANSACTION_WIRE) return fail("The edited transaction exceeds the size limit.");
+        auto checked=ParseTransactionDocument(EditedSource(original,std::move(wire)),network);
+        if (!checked.document) return fail(DocumentErrorMessage(checked));
+        const auto& result=*checked.document->transaction;
+        if (result.version!=planned.version || result.locktime!=planned.locktime || result.outputs!=planned.outputs
+            || !std::ranges::equal(result.inputs,planned.inputs,[](const auto& a,const auto& b){
+                return a.outpoint==b.outpoint && a.sequence==b.sequence;
+            })) return fail("The edited bytes do not match the requested fields.");
+        uint64_t known{};
+        const bool matched=std::ranges::all_of(result.inputs,[&](const auto& input) {
+            if (input.evidence!=PrevoutEvidence::TxidMatched || !input.previous_value) return false;
+            MoneyTotal(known,uint64_t(input.previous_value->sats()));
+            return true;
+        });
+        if (matched && total>known) return fail("The outputs exceed the matched previous-output total.");
+        return {std::move(checked.document),std::move(changed),{}};
+    } catch (Error) {
+        return fail("The edit exceeds transaction bounds or the monetary limit.");
+    } catch (const std::bad_alloc&) {
+        return fail("The edit could not fit in available resources.");
+    }
 }
 }

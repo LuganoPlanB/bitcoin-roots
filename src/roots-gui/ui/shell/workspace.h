@@ -1,8 +1,12 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
+#include "app/signing_review.h"
 #include "app/commands.h"
 #include "services/addresses.h"
+#include "services/funding.h"
+#include "services/fees.h"
+#include "services/send_batch.h"
 #include "app/coin_inventory.h"
 #include "app/coin_controls.h"
 #include "ui/bootstrap.h"
@@ -19,11 +23,14 @@ namespace roots::gui::ui::shell {
 struct Rect { float x{},y{},w{},h{}; };
 struct Layout { Rect menus,tabs,rail,content,status,accounts;bool compact{}; };
 Layout Measure(ImVec2 origin,ImVec2 size,float scale,float menu_height);
-enum class DocumentDialog { None,Close,Rename,Delete,Import };
+enum class DocumentDialog { None,Close,Rename,Delete,Import,ClearSend };
 struct DocumentActions {
     DocumentDialog kind{DocumentDialog::None};
     imkit::DialogState dialog;
     uint64_t target{},return_focus{};
+    DraftRevision send_revision{};
+    LockEpoch send_epoch{};
+    std::optional<uint64_t> send_owner;
     std::vector<uint64_t> close_ids;
     components::Edit name;
     int icon{},format{-1};
@@ -135,7 +142,24 @@ struct AdvancedSettings {
     bool show_ranges{};
     std::string status;
 };
-enum class LocalDocumentMode { None, File, Text, Save, Merge };
+struct InspectionOwner {
+    uint64_t id{},session{},profile{};
+    DraftRevision draft;
+    LockEpoch epoch;
+    bool offline{};
+    protocol::DisplayNetwork network;
+    app::DocumentRepresentation representation;
+    std::shared_ptr<const protocol::TransactionDocument> content;
+    std::optional<app::WalletBinding> wallet;
+    bool operator==(const InspectionOwner&) const=default;
+};
+struct InspectionExport {
+    InspectionOwner owner;
+    protocol::InspectionBytes representation;
+    uint64_t view_revision{};
+    std::optional<protocol::ByteSpan> selection;
+};
+enum class LocalDocumentMode { None, File, Text, Save, Merge, SaveInspection };
 struct LocalDocumentPanel {
     LocalDocumentMode mode{LocalDocumentMode::None};
     imkit::DialogState dialog;
@@ -147,6 +171,8 @@ struct LocalDocumentPanel {
     uint64_t file_dialog{}, revision{};
     bool close_pending{},clipboard_pending{};
     std::string error;
+    std::optional<InspectionOwner> owner;
+    std::optional<InspectionExport> inspection;
 };
 struct OfflineBuilder {
     components::Edit address{""}, amount{""}, fee{""};
@@ -155,8 +181,6 @@ struct OfflineBuilder {
     uint64_t revision{};
 };
 struct ImportedView {
-    size_t input{}, output{}, bytes_page{};
-    bool inspect_inputs{};
     uint64_t revision{};
     std::optional<app::WalletBinding> wallet;
     std::set<std::string> policy_scripts; // verified public cache only; never recovered as ownership
@@ -165,6 +189,104 @@ struct ImportedView {
     std::optional<Hash256> review_commitment;
     std::optional<size_t> proved_change_output;
     std::string review_status;
+    std::optional<std::pair<uint64_t,DraftRevision>> offline_review_origin;
+    std::optional<InspectionOwner> inspection_owner;
+    std::weak_ptr<const protocol::TransactionDocument> selected_document;
+    protocol::InspectionNode node{protocol::InspectionNode::Overview};
+    protocol::InspectionNode tree_group{protocol::InspectionNode::Input};
+    protocol::InspectionBytes bytes{protocol::InspectionBytes::Source};
+    size_t index{},tree_page{},field_page{},bytes_page{};
+    bool hex{};
+    std::optional<protocol::ByteSpan> selection;
+    std::string selection_label;
+    std::string inspection_status;
+};
+struct TransactionEditor {
+    InspectionOwner owner;
+    uint64_t generation{};
+    protocol::InspectionNode node{protocol::InspectionNode::Overview};
+    size_t index{};
+    components::Edit version,locktime,outpoint,sequence,amount;
+    std::vector<char> destination;
+    std::string saved_destination;
+    std::optional<std::string> external_destination;
+    std::string status;
+};
+struct EditedOrigin {
+    uint64_t id{};
+    DraftRevision revision;
+    std::weak_ptr<const protocol::TransactionDocument> content;
+    std::string affected;
+};
+struct SigningView {
+    bool open{},advanced{};
+    size_t output_page{},input_page{};
+};
+struct SendView {
+    uint64_t document{}, recipient{};
+    std::array<std::string, 3> edit_values;
+    bool wallet_destinations{};
+    struct Funds {
+        RequestContext context;
+        uint64_t generation{}, sequence{}, policy_revision{};
+        DraftRevision draft;
+        std::optional<Money> value;
+    };
+    std::optional<Funds> funds;
+};
+struct BatchBinding {
+    uint64_t document,session,profile_revision;
+    DraftRevision revision;
+    LockEpoch epoch;
+    app::WalletBinding wallet;
+    bool offline;
+    bool operator==(const BatchBinding&) const=default;
+};
+struct BatchEditor {
+    BatchBinding binding;
+    uint64_t generation{},revision{};
+    SendRecipients work;
+    std::optional<BatchValidation> checked;
+    bool file_panel{};
+    size_t page{};
+    uint64_t file_dialog{};
+    std::array<char,4097> path{};
+    std::optional<std::string> path_edit;
+    struct External { uint64_t row; RecipientField field; std::string text; };
+    std::optional<External> external;
+    std::string status;
+};
+struct FlowView {
+    bool open{}, table{}, expanded{}, choose_change{};
+    size_t input_first{}, output_first{}, change_index{};
+    std::optional<FlowKey> selected;
+};
+struct FundingView {
+    std::optional<FundingScope> scope;
+    std::shared_ptr<const FundingPreview> preview;
+    FlowView flow;
+    std::string rate_shown, status;
+    uint64_t document{}, revision{};
+    bool expanded{}, creating{};
+    std::optional<uint64_t> create_owner;
+};
+struct FeeView {
+    std::optional<FeeContext> owner;
+    std::optional<FeeScope> pending, quoted, packaged;
+    std::optional<FeeObservation> target, mempool, recent;
+    FeeHistory history;
+    FeeRead tab{FeeRead::Target};
+    int64_t next_sample{};
+    size_t sample{}, block{};
+    uint64_t revision{};
+    int range{};
+    bool open{}, recording{}, scheduled{};
+    std::string status;
+};
+struct DraftFeeTerms {
+    std::optional<uint32_t> rate;
+    int64_t quote_observation{};
+    bool below_minimum{};
 };
 struct State {
     app::CoinControls coin_controls;
@@ -208,7 +330,20 @@ struct State {
     LocalDocumentPanel local_document;
     uint64_t local_document_generation{};
     std::map<uint64_t,ImportedView> imported_views;
+    app::SigningReviews signing_reviews;
+    std::map<uint64_t,SigningView> signing_views;
+    std::map<uint64_t,TransactionEditor> transaction_edits;
+    std::map<uint64_t,EditedOrigin> edited_origins;
+    uint64_t transaction_edit_generation{}, transaction_edit_revision{};
+    uint64_t signing_revision{};
     std::map<uint64_t,OfflineBuilder> offline_builders;
+    SendView send_view;
+    FundingView funding;
+    FeeView fees;
+    std::optional<BatchEditor> batch;
+    std::optional<BatchBinding> send_analysis;
+    std::unique_ptr<BatchFileRead> batch_read;
+    uint64_t batch_generation{},batch_read_generation{},batch_read_revision{};
     app::RecoverySession* recovery{}; // borrowed owner-thread application service
     imkit::DialogState recovery_dialog;
     bool recovery_prompted{},close_recovery_popup{};
@@ -251,6 +386,11 @@ struct Facts {
     std::vector<std::string> history_order;
     std::map<std::string,components::ItemFacts> coin;std::vector<std::string> coin_order;
     std::map<std::string,components::ItemFacts> address,receive,settings,advanced;
+    std::map<std::string,components::ItemFacts> send;
+    std::map<std::string,components::ItemFacts> batch;
+    std::map<std::string,components::ItemFacts> funding;
+    std::map<std::string,components::ItemFacts> flow;
+    std::map<std::string,components::ItemFacts> fee;
     std::array<Rect,2> address_tables;
     std::array<size_t,2> address_counts{};
 
@@ -270,9 +410,44 @@ void DrawDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawRecoveryDialog(State&,Facts&,const imkit::Theme&,float);
 bool OpenLocalData(State&,std::shared_ptr<const protocol::TransactionDocument>,protocol::DisplayNetwork,std::string& error);
 void DrawOfflineBuilder(State&,app::Requests&,Facts&,const imkit::Theme&);
+void DrawSendRecipients(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool DrawBatchOrAnalysis(State&,app::Requests&,Facts&,const imkit::Theme&);
+void PollBatch(State&,app::Requests&);
+void RetireBatch(State&);
+void RetireSendView(State&);
+void DrawFunding(State&,app::Requests&,Facts&,const imkit::Theme&);
+std::shared_ptr<const FundingPreview> CurrentFundingPreview(State&,app::Requests&);
+void DrawTransactionFlow(State&,app::Requests&,Facts&,const imkit::Theme&,std::function<bool()> current);
+void PollFunding(State&,app::Requests&);
+void RetireFunding(State&);
+const app::Document* ActiveSendDraft(const State&);
+void DrawFeePanel(State&,app::Requests&,Facts&,const imkit::Theme&);
+void PollFees(State&,app::Requests&);
+void RetireFees(State&);
+void SuspendFeeRecording(State&,app::Requests&);
+DraftFeeTerms FeeTerms(const State&, const app::Document&, const FeeContext&, std::string_view tip);
+bool BeginClearSend(State&,uint64_t);
+bool CanClearSend(const State&,uint64_t);
+bool ConfirmClearSend(State&,app::Requests&);
 bool BeginLocalDocument(State&,app::Requests&,LocalDocumentMode,std::string_view local_path={});
 void DrawLocalDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawImportedDocument(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+std::optional<InspectionOwner> CurrentInspectionOwner(const State&,app::Requests&);
+bool ValidInspectionExport(const State&,app::Requests&,const InspectionExport&);
+bool ToggleTransactionHex(State&,app::Requests&);
+bool IsSigningCommand(app::Command);
+app::Availability SigningCommandAvailability(State&,app::Requests&,const app::Request&);
+app::Receipt DispatchSigningCommand(State&,app::Requests&,const app::Request&);
+const app::SigningApproval* CurrentSigningApproval(State&,app::Requests&,uint64_t);
+void PollSigningReviews(State&,app::Requests&);
+void RevokeSigningReview(State&,uint64_t,std::string);
+bool DrawSigningReview(State&,app::Requests&,Facts&,const imkit::Theme&);
+bool IsTransactionEditCommand(app::Command);
+app::Availability TransactionEditAvailability(State&,app::Requests&,const app::Request&);
+app::Receipt DispatchTransactionEdit(State&,app::Requests&,const app::Request&);
+bool DrawTransactionEditor(State&,app::Requests&,Facts&,const imkit::Theme&);
+void PollTransactionEditors(State&,app::Requests&);
+void DrawTransactionWorkbench(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void BeginOnboarding(State&,OnboardingPage,app::Requests&);
 void DrawOnboarding(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawPolicySettings(State&,app::Requests&,Facts&,const imkit::Theme&,float);

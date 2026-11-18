@@ -32,7 +32,21 @@ for native in ('wallet_import','receive','settings_policy','keystore','advanced'
  for group in ('ui','regtest'):
   SUITES[group][1].add(f'roots_gui.theme.{native}')
 SUITES["ui"][1].add("roots_gui.theme.offline_documents")
+SUITES["ui"][1].update({"roots_gui.engine.send", "roots_gui.engine.transaction_flow", "roots_gui.theme.send", "roots_gui.theme.funding", "roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"})
+SUITES["model"][1].update({"roots_gui.send.models", "roots_gui.fees.models"})
+SUITES["model"][1].add("roots_gui.batch.models")
+SUITES["ui"][1].update({"roots_gui.engine.batch", "roots_gui.theme.batch_live"})
+SUITES["ui"][1].add("roots_gui.engine.workbench")
+SUITES["ui"][1].update({"roots_gui.engine.signing_review","roots_gui.theme.review_live"})
+SUITES["ui"][1].update({"roots_gui.engine.transaction_edit","roots_gui.theme.edit_live"})
+SUITES["model"][1].add("roots_gui.protocol.transaction_edit")
+for group in ("rpc", "regtest"):
+ SUITES[group][1].add("roots_gui.rpc.funding")
 NATIVE_UI={f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_documents','offline_draft']}
+NATIVE_UI.update({"roots_gui.theme.send", "roots_gui.theme.funding", "roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"})
+NATIVE_UI.add("roots_gui.theme.batch_live")
+NATIVE_UI.add("roots_gui.theme.review_live")
+NATIVE_UI.add("roots_gui.theme.edit_live")
 INVENTORY=set().union(*(expected for _,expected in SUITES.values()),ACCESSIBILITY)
 APPLICABLE=set().union(*(SUITES[x][1] for x in ['model','rpc','ui','regtest','boundary']))-NATIVE_UI
 SUITES['applicable']=('roots-gui',APPLICABLE)
@@ -45,8 +59,9 @@ def configured_suites(build):
   if line and not line.startswith(('#','//')) and '=' in line and ':' in line.split('=',1)[0]:
    key,value=line.split('=',1);cache[key.split(':',1)[0]]=value
  roots=bool(cache.get('ROOTS_GUI_TEST_ROOTS_DAEMON'))
- omitted=set() if sys.platform.startswith("linux") else {"roots_gui.protocol.documents","roots_gui.protocol.offline_draft","roots_gui.theme.offline_documents","roots_gui.theme.offline_draft"}
- if not roots:omitted|={'roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
+ omitted=set() if sys.platform.startswith("linux") else {"roots_gui.protocol.documents","roots_gui.protocol.offline_draft","roots_gui.theme.offline_documents","roots_gui.theme.offline_draft","roots_gui.theme.send","roots_gui.theme.funding","roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"}
+ if not roots:omitted|={'roots_gui.rpc.history','roots_gui.rpc.funding','roots_gui.theme.funding_live','roots_gui.theme.create_live','roots_gui.theme.fees_live','roots_gui.theme.flow_live',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
+ if not roots or not sys.platform.startswith("linux"):omitted.update({'roots_gui.theme.batch_live','roots_gui.theme.review_live','roots_gui.theme.edit_live'})
  if not roots and not cache.get('ROOTS_GUI_TEST_CORE_DAEMON'):omitted.add('roots_gui.regtest.owned')
  return {name:(label,expected-omitted) for name,(label,expected) in SUITES.items()},INVENTORY-omitted,roots
 

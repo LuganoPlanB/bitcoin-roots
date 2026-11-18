@@ -86,3 +86,34 @@ reasons. Current observations, validation receipts, live reservation owners and
 automatic requests are never recovered. Versions1–4 remain readable. Unlocking a
 restarted protected store still requires a separate deliberate Restore decision.
 Clear/close retain these public drafts through the existing recovery archive.
+
+Version 8 also preserves Send recipient drafts, including the staged Pay to
+field, applied address, local label, explicit amount unit, stable recipient
+identities and one Max intent. Recovery checks the applied addresses against the
+document's network and keeps the editors offline. It restores no funding
+observation, reservation or execution authority. Versions 1–7 remain readable.
+
+Version 9 also retains the public fee-rate editor text. Restoring it requires
+a new deliberate funding preview after the wallet, policy and coins have been
+verified. Earlier recipient snapshots still open offline.
+
+Version 10 preserves a created unsigned PSBT's original bytes, source draft
+revision, exact fee, full matched prevouts and any internal change descriptor.
+Recovery opens the public inspection offline. Current spendability and change
+allocation still require fresh evidence.
+
+Clear Send confirms before resetting recipients, coin choices and fee settings.
+Session Recovery can restore the last cleared Send at a new revision while
+preserving other tabs and their edits. With recovery disabled, that copy stays
+in memory until quit. Recovery restores public pins without a reservation,
+funding preview or Create action.
+
+Version 11 also preserves the Send fee target and manual override text.
+Fee observations and recorded charts last for the current session and require
+the matching verified node and wallet. Restoring a target requires a fresh
+observation or a valid manual rate before requesting an unsigned preview.
+
+Version 12 retains a specific change preference by public descriptor and
+index. Recovery re-derives its address on the recorded network. A fresh
+authenticated descriptor observation is required before the address can be
+used in another preview. Clear Send resets the preference with the draft.

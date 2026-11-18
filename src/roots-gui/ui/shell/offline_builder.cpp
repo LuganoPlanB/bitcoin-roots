@@ -74,6 +74,7 @@ bool Construct(State& state,app::Requests& host,uint64_t id)
     auto result=protocol::ConstructOfflineDraft(request);
     if (!result.document) return rejected(std::move(result.error));
     auto binding=cached.wallet;
+    const auto origin=std::pair{id,doc->draft_revision};
     if (!OpenLocalData(state,std::move(result.document),request.network,editor.error)) {
         ++editor.revision;
         return false;
@@ -81,6 +82,7 @@ bool Construct(State& state,app::Requests& host,uint64_t id)
     auto& review=state.imported_views[state.documents.ActiveId()];
     review.wallet=std::move(binding);
     review.review_evidence=std::move(result.review_evidence);
+    review.offline_review_origin=origin;
     state.notice="Unsigned PSBT from cached public data. Verify current spendability before any later transaction action.";
     return true;
 }

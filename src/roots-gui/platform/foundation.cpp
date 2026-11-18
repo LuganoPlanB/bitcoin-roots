@@ -75,6 +75,8 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         NativeRequests(NativeHost& h,ui::shell::State& s,app::Requests& f):host(h),state(s),fallback(f){}
         bool CopyRequest(const app::Request& request) const {return request.component && (std::holds_alternative<ui::components::CopyIdentifier>(*request.component) || std::holds_alternative<ui::components::CopyAmount>(*request.component));}
         app::Availability CanSubmit(const app::Request& request) const override {
+            if(ui::shell::IsSigningCommand(request.command))return ui::shell::SigningCommandAvailability(state,fallback,request);
+            if(ui::shell::IsTransactionEditCommand(request.command))return ui::shell::TransactionEditAvailability(state,fallback,request);
             if(CopyRequest(request) && fallback.Recovery() && fallback.Recovery()->Locked())return {false,"Workspace is locked."};
             if(!CopyRequest(request))return fallback.CanSubmit(request);
             const auto* identifier=std::get_if<ui::components::CopyIdentifier>(&*request.component);
@@ -84,6 +86,8 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
             return {available,available?"":"Native clipboard is unavailable for this view/value."};
         }
         app::Receipt Submit(const app::Request& request) override {
+            if(ui::shell::IsSigningCommand(request.command))return ui::shell::DispatchSigningCommand(state,fallback,request);
+            if(ui::shell::IsTransactionEditCommand(request.command))return ui::shell::DispatchTransactionEdit(state,fallback,request);
             if(fallback.Recovery() && fallback.Recovery()->Locked() && request.command!=app::Command::Quit)return {false,"Workspace is locked; request discarded."};
             if(!CopyRequest(request))return fallback.Submit(request);
             if(!CanSubmit(request).available)return {false,"Copy unavailable; clipboard unchanged."};
@@ -112,12 +116,14 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         TransactionDocuments* LocalDocuments() const override{return fallback.LocalDocuments();}
         RescanService* Rescanning() override{return fallback.Rescanning();}
         ReceiveService* Receiving() override{return fallback.Receiving();}
+        FundingService* Funding() override{return fallback.Funding();}
+        FeeService* Fees() override{return fallback.Fees();}
         AddressService* Addresses() override{return fallback.Addresses();}
         RefreshService* Refresh() override{return fallback.Refresh();}
         app::RecoverySession* Recovery() override{return fallback.Recovery();}
     } native(host,workspace,requests);
     auto facts=ui::shell::DrawWorkspace(workspace,native,theme,appearance);
-    if(requests.Recovery() && requests.Recovery()->Locked()){if(auto* connection=requests.Connection())connection->SetPrivacyLocked(true);if(auto* refresh=requests.Refresh())refresh->PrivacyLock();if(auto* addresses=requests.Addresses())addresses->PrivacyLock();if(auto* wallets=requests.Wallets())wallets->Cancel();if(auto* receive=requests.Receiving())receive->Cancel();if(auto* scan=requests.Rescanning())scan->Cancel();if(auto* docs=requests.LocalDocuments())docs->Cancel();}
+    if(requests.Recovery() && requests.Recovery()->Locked()){if(auto* connection=requests.Connection())connection->SetPrivacyLocked(true);if(auto* refresh=requests.Refresh())refresh->PrivacyLock();if(auto* addresses=requests.Addresses())addresses->PrivacyLock();if(auto* wallets=requests.Wallets())wallets->Cancel();if(auto* receive=requests.Receiving())receive->Cancel();if(auto* scan=requests.Rescanning())scan->Cancel();if(auto* docs=requests.LocalDocuments())docs->Cancel();if(auto* funding=requests.Funding())funding->Cancel();if(auto* fees=requests.Fees())fees->Cancel();}
     const auto native_notice=host.InputState().notice;if(!native_notice.empty())workspace.notice=native_notice;
     if(facts.appearance_requested>=0)host.SetAppearance(facts.appearance_requested);
     return facts;
@@ -159,6 +165,10 @@ int Run()
         RescanService* Rescanning() override{return &rescan;}
         ReceiveService receive{[this](const ReceiveRequest& request,std::stop_token stop){return FetchReceive(transport,request,stop);}};
         ReceiveService* Receiving() override{return &receive;}
+        FundingService funding{[this](const FundingRequest& request,std::stop_token stop){return FetchFunding(transport,request,stop);}};
+        FundingService* Funding() override{return &funding;}
+        FeeService fees{[this](const FeeRequest& request,std::stop_token stop){return FetchFees(transport,request,stop);}};
+        FeeService* Fees() override{return &fees;}
         RefreshService* Refresh() override{return &refresh;}
         app::RecoverySession* Recovery() override{return recovery;}
         app::Receipt OpenExplorer(const app::ExplorerRequest& request) override {

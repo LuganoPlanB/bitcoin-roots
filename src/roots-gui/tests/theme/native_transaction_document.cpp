@@ -39,7 +39,7 @@ struct Observer final:platform::NativeObserver {
         key=reinterpret_cast<decltype(key)>(dlsym(xtst,"XTestFakeKeyEvent"));
         Check(motion && button && key,"owned native input entry points");
     }
-    ~Observer() override{if(display)XCloseDisplay(display);if(xtst)dlclose(xtst);}
+    ~Observer() override{if(clipboard_window)XDestroyWindow(display,clipboard_window);if(display)XCloseDisplay(display);if(xtst)dlclose(xtst);}
     Requests requests;
     shell::State state;
     shell::Facts facts;
@@ -53,6 +53,9 @@ struct Observer final:platform::NativeObserver {
     uint64_t binary_id{},hex_id{};
     bool lift{}, release{}, cleaned{};
     KeySym held{};
+    Window clipboard_window{};
+    Atom clipboard_property{},clipboard_utf8{};
+    uint64_t clipboard_before{};
     int stage{},delay{},checks{},frames{};
 
 
@@ -118,6 +121,42 @@ struct Observer final:platform::NativeObserver {
         Check(state.presentation.exchange.QueueNext(packet->generation,found->id,c::ax::SemanticAction::SetValue,std::move(value)).second
             ==c::ActionResult::Queued,"actual document accessibility input");
     }
+    void Press(std::string_view label)
+    {
+        const auto packet=state.presentation.exchange.Published();
+        const auto found=std::ranges::find_if(packet->nodes,[&](const auto& item){
+            return item.name==label && !item.state.disabled && c::ax::Supports(item.actions,c::ax::SemanticAction::Press);
+        });
+        Check(found!=packet->nodes.end(),"current accessible document control");
+        Check(state.presentation.exchange.QueueNext(packet->generation,found->id,c::ax::SemanticAction::Press).second
+            ==c::ActionResult::Queued,"actual document accessibility activation");
+    }
+    void ReadClipboard()
+    {
+        clipboard_window=XCreateSimpleWindow(display,DefaultRootWindow(display),0,0,1,1,0,0,0);
+        clipboard_property=XInternAtom(display,"ROOTS_WORKBENCH_TEST_BYTES",False);
+        clipboard_utf8=XInternAtom(display,"UTF8_STRING",False);
+        XConvertSelection(display,XInternAtom(display,"CLIPBOARD",False),clipboard_utf8,clipboard_property,clipboard_window,CurrentTime);
+        XFlush(display);
+    }
+    std::optional<std::string> Clipboard()
+    {
+        XEvent event;
+        if (!XCheckTypedWindowEvent(display,clipboard_window,SelectionNotify,&event)) return {};
+        Check(event.xselection.property==clipboard_property,"application owns and delivers clipboard bytes");
+        Atom type{};
+        int format{};
+        unsigned long count{},after{};
+        unsigned char* value{};
+        Check(XGetWindowProperty(display,clipboard_window,clipboard_property,0,32,True,clipboard_utf8,
+            &type,&format,&count,&after,&value)==Success && type==clipboard_utf8 && format==8 && !after && value,
+            "native clipboard UTF-8 payload retrieved");
+        std::string result(reinterpret_cast<char*>(value),count);
+        XFree(value);
+        XDestroyWindow(display,clipboard_window);
+        clipboard_window=0;
+        return result;
+    }
     std::string Read(const std::filesystem::path& name) const
     {
         std::ifstream stream(files/name,std::ios::binary);
@@ -139,6 +178,7 @@ struct Observer final:platform::NativeObserver {
                 return item.name.find(word)!=std::string::npos || item.value.find(word)!=std::string::npos;
             });
         };
+        if (stage>=11 && (!output || !output->valid)) return;
         switch (stage) {
         case 0:
             Control(XK_f);
@@ -193,30 +233,80 @@ struct Observer final:platform::NativeObserver {
             click("inspect-clipboard");
             break;
         case 11:
-            if (!doc || doc->id==binary_id || !doc->imported || panel.close_pending || !semantic("bcrt1")) return;
+            if (!doc || doc->id==binary_id || !doc->imported || panel.close_pending || !semantic("Raw witness transaction ID")) return;
             hex_id=doc->id;
             Check(doc->imported->parsed->source==Read("raw.txt") && doc->imported->parsed->transaction->outputs[0].value.sats()==1,
-                "raw text whitespace, exact value and network address");
-            Click(host,facts.transaction_document.at("representation"));
+                "exact raw text whitespace, witness and value");
+            Check(semantic("c694f12193d204e4bbf0308a28e5b291c0242189299c6910c2beaba0f0383cec")
+                && semantic("0e593fee5e6b7b912591f6afdd04035ce627f2b50c99c7504921ea15111efec3"),
+                "independently calculated txid and wtxid identify the supplied raw transaction");
+            Capture(frame,"workbench-overview");
+            Click(host,facts.transaction_document.at("input-0"));
             break;
         case 12:
-            if (!doc || doc->id!=hex_id || !semantic("Wire hex")) return;
-            Check(doc->imported->representation==app::DocumentRepresentation::WireHex,"selected active representation recorded");
-            Capture(frame,"offline-raw");
-            Control(XK_t);
+            if (!semantic("Input detail")) return;
+            Check(semantic("Previous amount and script: Unknown") && semantic("Spending history: Unknown")
+                && semantic("Witness item 1"),"exact raw witness and honest unknown previous data");
+            Capture(frame,"workbench-input");
+            Press("Transaction outputs");
             break;
         case 13:
+            if (!facts.transaction_document.contains("output-0")) return;
+            Press("Output 1");
+            break;
+        case 14:
+            if (!semantic("Output detail")) return;
+            Check(semantic("bcrt1") && semantic("0.00000001 BTC") && semantic("P2WPKH")
+                && semantic("Spending history: Unknown"),"raw amount, script classification, address encoding and unknown history");
+            Capture(frame,"workbench-output");
+            Press("Output amount");
+            break;
+        case 15:
+            if (!doc || doc->id!=hex_id || !semantic("Wire hex · supplied raw transaction bytes")) return;
+            Check(doc->imported->representation==app::DocumentRepresentation::WireHex,"selected active representation recorded");
+            Check(semantic("Offset 49 · 8 bytes") && semantic("0100000000000000"),"exact output number range is selected in witnessed wire");
+            Capture(frame,"workbench-hex");
+            clipboard_before=host.InputState().clipboard_writes;
+            Press("Copy selected bytes as hex");
+            break;
+        case 16:
+            if (host.InputState().clipboard_writes==clipboard_before) return;
+            ReadClipboard();
+            break;
+        case 17: {
+            const auto value=Clipboard();
+            if (!value) return;
+            Check(*value=="0100000000000000","received real exact selected hexadecimal X11 clipboard content");
+            std::ofstream(out/"copied-hex.txt")<<*value<<'\n';
+            Press("Save selected bytes");
+            break;
+        }
+        case 18:
+            if (!modal.contains("save-inspection") || !semantic("Local file path")) return;
+            Check(semantic("Offset 49 · 8 bytes"),"file dialog confirms frozen representation range");
+            Set("Local file path",(files/"wire-selection.bin").string());
+            break;
+        case 19:
+            if (!modal.contains("save-inspection") || modal.at("save-inspection").disabled) return;
+            click("save-inspection");
+            break;
+        case 20:
+            if (panel.dialog.open || panel.close_pending) return;
+            Check(Read("wire-selection.bin")==std::string("\x01\0\0\0\0\0\0\0",8),"atomic selected-byte export kept exact binary bytes");
+            Control(XK_t);
+            break;
+        case 21:
             if (!modal.contains("inspect-clipboard")) return;
             Check(host.Input().Copy(Read("future.txt")),"owned future-version fixture");
             click("inspect-clipboard");
             break;
-        case 14:
+        case 22:
             if (!semantic("Unsupported PSBT version 3")) return;
             Check(state.documents.Documents().size()==2 && doc && doc->id==hex_id,"unsupported version keeps existing workspace");
             Capture(frame,"offline-invalid");
             click("cancel");
             break;
-        case 15:
+        case 23:
             if (panel.dialog.open || panel.close_pending || requests.local.Busy()) return;
             Check(requests.recovery->Enable(state.documents),"explicit local public recovery");
             host.RequestClose();
@@ -285,7 +375,7 @@ int main(int argc,char** argv)
             active=&host;
             host.Run();
         }
-        observer.Check(observer.stage==16 && observer.cleaned,"complete offline native document journey");
+        observer.Check(observer.stage==24 && observer.frames==6 && observer.cleaned,"complete offline native document journey");
         std::ofstream out(observer.out/"result.json");
         out<<"{\"selected\":1,\"executed\":1,\"passed\":1,\"failed\":0,\"skipped\":0,\"checks\":"<<observer.checks
             <<",\"frames\":"<<observer.frames<<",\"teardown\":true,\"rpcPorts\":0}\n";

@@ -70,6 +70,8 @@ const char* StateName(ServiceState state)
 std::string MissingDependency(Command command)
 {
     if(const auto* spec=Spec(command);spec && *spec->dependency)return spec->dependency;
-    switch(command){case Command::DocumentMetadata:return "Wallet metadata adapter is unavailable.";case Command::SaveDraft:return "Draft persistence adapter is unavailable.";case Command::ImportSource:return "Public file import adapter is unavailable.";default:return "Command handler is unavailable.";}
+    switch(command){case Command::DocumentMetadata:return "Wallet metadata adapter is unavailable.";case Command::SaveDraft:return "Draft persistence adapter is unavailable.";case Command::ImportSource:return "Public file import adapter is unavailable.";
+    case Command::SignTransaction:return "A transaction signer is unavailable. Approval authorizes no action by itself.";
+    default:return "Command handler is unavailable.";}
 }
 }

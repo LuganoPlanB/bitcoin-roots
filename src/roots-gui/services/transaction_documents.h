@@ -36,5 +36,13 @@ private:
     std::jthread worker;
 };
 bool ValidLocalDocumentPath(std::string_view);
+struct PublicFileRead {
+    std::string bytes,error;
+    bool limited{},cancelled{};
+};
+// CSV requires a symlink-free path from the root. Legacy document routes keep
+// their established parent-directory handling and always refuse a symlink leaf.
+PublicFileRead ReadPublicFile(std::string_view,size_t,std::stop_token,bool strict_directories);
+std::string SavePublicFile(std::string_view,std::string_view,size_t,bool strict_directories);
 std::string SaveOriginalDocument(std::string_view path, const protocol::TransactionDocument&); // empty means durable success
 }

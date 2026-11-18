@@ -32,7 +32,14 @@ void DrawRecoveryDialog(State& s,Facts& f,const imkit::Theme& theme,float scale)
     }else{
         action("enable-recovery",s.recovery->Enabled()?"Save public workspace now":s.recovery->RetainedWorkspace()?"Replace saved workspace; enable recovery":"Enable public recovery",s.recovery->Error().empty(),[&s]{return s.recovery->Enabled()?s.recovery->Checkpoint(s.documents):s.recovery->Enable(s.documents);});
         const auto* d=s.documents.Active();const auto id=d?d->id:0;const bool unlocked=d && d->observation!=app::ObservationState::Locked;
-        action("clear-public-draft","Clear public draft (recoverable)",s.recovery->Enabled() && unlocked,[&s,id]{return s.recovery->Clear(s.documents,id);});
+        const bool is_send=d && d->SendWallet() && (d->coin_draft || d->section==app::Section::Send
+            || d->recipients.Dirty() || !d->funding_rate.empty() || d->funding_target || d->funding_change || !d->selected_coins.empty() || !d->excluded_coins.empty());
+        if(is_send)action("clear-public-draft","Clear Send",CanClearSend(s,id),[&s,id,finish]{return BeginClearSend(s,id) && finish();});
+        else action("clear-public-draft","Clear public draft (recoverable)",s.recovery->Enabled() && unlocked,[&s,id]{return s.recovery->Clear(s.documents,id);});
+        if(s.recovery->HasClearedSend())action("recover-send","Recover cleared Send",!d || unlocked,[&s,finish]{
+            if(!s.recovery->RecoverSend(s.documents)){s.notice="The cleared Send draft is retained. Finish editing its current draft or make room to reopen it.";return false;}
+            RestoreDocumentFocus(s,s.documents.ActiveId());return finish();
+        });
         action("recover-last","Recover last Clear / close",s.recovery->Enabled() && s.recovery->HasRecovery() && (!d || unlocked),[&s]{return s.recovery->RecoverLast(s.documents);});
         action("disable-recovery","Disable and forget saved recovery",s.recovery->Enabled(),[&s]{return s.recovery->Disable();});
     }

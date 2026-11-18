@@ -75,6 +75,15 @@ add_test(NAME roots_gui.rpc.history_bounds COMMAND "${Python3_EXECUTABLE}" -B
 set_tests_properties(roots_gui.rpc.history_bounds PROPERTIES TIMEOUT 20 LABELS "roots-gui;rpc;roots-gui.rpc")
 add_dependencies(roots_gui_rpc_tests roots_gui_history_bounds)
 if(ROOTS_GUI_TEST_ROOTS_DAEMON)
+  add_executable(roots_gui_funding_probe rpc/funding_probe.cpp)
+  target_link_libraries(roots_gui_funding_probe PRIVATE roots_gui_core)
+  add_test(NAME roots_gui.rpc.funding COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --binary "$<TARGET_FILE:roots_gui_funding_probe>"
+    --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --output "${CMAKE_CURRENT_BINARY_DIR}/funding-runs")
+  set_tests_properties(roots_gui.rpc.funding PROPERTIES TIMEOUT 95 LABELS "roots-gui;rpc;regtest;roots-gui.rpc;roots-gui.regtest")
+  add_dependencies(roots_gui_rpc_tests roots_gui_funding_probe)
+  add_dependencies(roots_gui_regtest_tests roots_gui_funding_probe)
+  add_dependencies(roots_gui_applicable_tests roots_gui_funding_probe)
   add_test(NAME roots_gui.rpc.history COMMAND "${Python3_EXECUTABLE}" -B
     "${CMAKE_CURRENT_SOURCE_DIR}/rpc/history_tests.py" --binary "$<TARGET_FILE:roots_gui_history_client>"
     --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --output "${CMAKE_CURRENT_BINARY_DIR}/history-runs")
@@ -111,13 +120,33 @@ add_test(NAME roots_gui.storage.recovery COMMAND "${Python3_EXECUTABLE}" -B
   "${CMAKE_CURRENT_SOURCE_DIR}/storage/recovery_runner.py" --binary "$<TARGET_FILE:roots_gui_recovery_tests>"
   --output "${CMAKE_CURRENT_BINARY_DIR}/recovery-runs")
 set_tests_properties(roots_gui.storage.recovery PROPERTIES TIMEOUT 60 LABELS "roots-gui;model;storage;roots-gui.model")
+add_executable(roots_gui_send_models model/send_recipients_tests.cpp)
+target_link_libraries(roots_gui_send_models PRIVATE roots_gui_ui roots_gui_core)
+add_test(NAME roots_gui.send.models COMMAND roots_gui_send_models)
+add_executable(roots_gui_batch_models model/send_batch_tests.cpp)
+target_link_libraries(roots_gui_batch_models PRIVATE roots_gui_core)
+add_test(NAME roots_gui.batch.models COMMAND "${Python3_EXECUTABLE}" -B
+  "${CMAKE_CURRENT_SOURCE_DIR}/model/send_batch_runner.py" "$<TARGET_FILE:roots_gui_batch_models>")
+set_tests_properties(roots_gui.batch.models PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;roots-gui.model")
+add_dependencies(roots_gui_model_tests roots_gui_batch_models)
+add_executable(roots_gui_transaction_edit_probe protocol/transaction_edit_probe.cpp)
+target_link_libraries(roots_gui_transaction_edit_probe PRIVATE roots_gui_core)
+add_test(NAME roots_gui.protocol.transaction_edit COMMAND roots_gui_transaction_edit_probe)
+set_tests_properties(roots_gui.protocol.transaction_edit PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;roots-gui.model")
+add_dependencies(roots_gui_model_tests roots_gui_transaction_edit_probe)
+add_dependencies(roots_gui_applicable_tests roots_gui_transaction_edit_probe)
+add_executable(roots_gui_fee_models model/fees_tests.cpp)
+target_link_libraries(roots_gui_fee_models PRIVATE roots_gui_ui roots_gui_core)
+add_test(NAME roots_gui.fees.models COMMAND roots_gui_fee_models)
+set_tests_properties(roots_gui.fees.models PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;roots-gui.model")
+set_tests_properties(roots_gui.send.models PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;roots-gui.model")
 target_link_libraries(roots_gui_store_tests PRIVATE roots_gui_core roots_gui_sqlite)
 add_test(NAME roots_gui.storage.schema COMMAND "${Python3_EXECUTABLE}" -B
   "${CMAKE_CURRENT_SOURCE_DIR}/storage/store_runner.py" --binary "$<TARGET_FILE:roots_gui_store_tests>"
   --output "${CMAKE_CURRENT_BINARY_DIR}/store-runs")
 set_tests_properties(roots_gui.storage.schema PROPERTIES TIMEOUT 60 LABELS "roots-gui;model;storage;roots-gui.model")
 add_dependencies(roots_gui_model_tests roots_gui_store_tests)
-add_dependencies(roots_gui_model_tests roots_gui_protected_tests roots_gui_recovery_tests)
+add_dependencies(roots_gui_model_tests roots_gui_protected_tests roots_gui_recovery_tests roots_gui_send_models roots_gui_fee_models)
 if(TARGET roots_gui_conversion_tests)
   add_dependencies(roots_gui_model_tests roots_gui_conversion_tests roots_gui_conversion_stop)
 endif()
@@ -191,7 +220,7 @@ add_dependencies(roots_gui_applicable_tests roots-gui roots_gui_engine_tests
   roots_gui_rpc_client roots_gui_rpc_json roots_gui_capability_client
   roots_gui_connection_models roots_gui_refresh_models roots_gui_refresh_client
   roots_gui_history_models roots_gui_history_client roots_gui_history_bounds
-  roots_gui_store_tests roots_gui_protected_tests roots_gui_recovery_tests
+  roots_gui_store_tests roots_gui_protected_tests roots_gui_recovery_tests roots_gui_send_models roots_gui_batch_models
   roots_gui_history_workspace_tests roots_gui_history_states_tests
   roots_gui_address_models roots_gui_address_probe roots_gui_coin_models roots_gui_coin_control_models)
 if(TARGET roots_gui_conversion_tests)
@@ -272,6 +301,54 @@ add_dependencies(roots_gui_model_tests roots_gui_coin_control_models)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_executable(roots_gui_document_offline_exec protocol/offline_exec.c)
+  add_test(NAME roots_gui.theme.send COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/theme/send_runner.py" --binary "$<TARGET_FILE:roots_gui_send_capture>"
+    --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>" --output "${CMAKE_CURRENT_BINARY_DIR}/send-native")
+  set_tests_properties(roots_gui.theme.send PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+  add_test(NAME roots_gui.theme.funding COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/theme/send_runner.py" --binary "$<TARGET_FILE:roots_gui_send_capture>"
+    --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>" --output "${CMAKE_CURRENT_BINARY_DIR}/funding-native" --funding)
+  set_tests_properties(roots_gui.theme.funding PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+  add_dependencies(roots_gui_ui_tests roots_gui_send_capture roots_gui_document_offline_exec roots-gui)
+  if(ROOTS_GUI_TEST_ROOTS_DAEMON)
+    add_test(NAME roots_gui.theme.funding_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/funding-live")
+    set_tests_properties(roots_gui.theme.funding_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.create_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --create --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/create-live")
+    set_tests_properties(roots_gui.theme.create_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.fees_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --fees --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/fees-live")
+    set_tests_properties(roots_gui.theme.fees_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.flow_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --flow --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/flow-live")
+    set_tests_properties(roots_gui.theme.flow_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.batch_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --batch --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/batch-live")
+    set_tests_properties(roots_gui.theme.batch_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.review_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --review --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/review-live")
+    set_tests_properties(roots_gui.theme.review_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.edit_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --edit --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/edit-live")
+    set_tests_properties(roots_gui.theme.edit_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+  endif()
   add_executable(roots_gui_transaction_probe protocol/document_probe.cpp)
   target_link_libraries(roots_gui_transaction_probe PRIVATE roots_gui_core)
   add_test(NAME roots_gui.protocol.documents COMMAND roots_gui_document_offline_exec "${Python3_EXECUTABLE}" -B

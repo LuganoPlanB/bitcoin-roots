@@ -58,6 +58,82 @@ lock does not issue daemon wallet-lock or unlock calls.
 
 ## Commands, presentation and effects
 
+Send's numbered recipient tabs retain independent Pay to, local Label and Amount
+fields. Use Enter or Apply destination to apply a plain address or a BIP 21
+request. A rejected URI leaves the applied address, label and amount intact,
+while staged text blocks the previous destination. Replacing an applied address
+clears its recipient-specific label, amount and Max intent before applying any
+values supplied by the new URI. Unit changes convert valid BTC and satoshi
+amounts exactly. Choosing Max moves that single intent to the selected recipient.
+It does not quote an amount.
+
+Wallet address uses a deliberately selected, previously verified Receive
+address from an open wallet on the authenticated origin and exact network. It
+does not allocate an address. Regular editor labels remain local. The QR
+control identifies the missing payment QR transport. Dust warnings based on the
+default 3,000 sat/kvB reference are labelled separately from current relay
+policy. A current scoped inventory can establish insufficient eligible funds
+for fixed amounts. Fees and funding remain Unknown until calculated. Pinned
+drafts can edit recipients separately from the existing offline builder.
+
+Funding preview takes an explicit sat/vB rate with up to three fractional
+digits. It requires a current authenticated wallet inventory and a public
+active internal descriptor. It uses eligible confirmed inputs only. An exact
+pin must still match its value and script and retain its local reservation.
+Unconfirmed ancestor fees remain Unknown. With local exclusions, the preview
+uses a deterministic eligible input set and disables daemon input additions.
+Otherwise the daemon may select confirmed inputs from the verified allowlist.
+Max uses the exact eligible set and subtracts the verified fee only from its
+own output.
+
+The preview supplies a descriptor-derived change address explicitly and
+disables daemon coin locks. It does not advance the change index. Before
+displaying totals, the GUI checks the unsigned PSBT's input and recipient
+identities, change script, exact amounts, fee bounds, current output values and
+wallet, chain and lock evidence. A later draft, wallet or observation change
+retires the preview.
+
+Create Transaction rechecks the accepted preview's exact inputs, recipients,
+fee and change with current read-only observations. It opens or focuses an
+unsigned PSBT document with the original bytes and matched public proofs.
+The source draft keeps its revision and any owned reservation. The document
+records the preview's replaceable sequence and unconfirmed change allocation.
+Signing, finalization and broadcast require independent actions.
+
+Efficiency delegates confirmed coin selection to the wallet when policy permits.
+Exact pins, Max and local restrictions constrain the inputs. Privacy selection
+requires a wallet strategy the current backend does not provide.
+
+Fee observations show `estimatesmartfee`'s requested and returned block
+targets, actual estimate or error, and the observed relay and mempool minimums.
+Rates convert exactly from BTC/kvB to sat/vB. Entered manual rates take
+precedence. An invalid manual rate prevents funding. A stale or changed
+effective fee retires the corresponding preview. For verified unsigned
+previews, a fee of at least 100,000 sats or 10% of the recipient total
+triggers a high-fee warning.
+
+Mempool recording samples the connected node every five minutes while the
+Send fee view remains open. The 2-hour and 24-hour views require actual
+coverage. The current sample reports virtual bytes in base-fee bands from a
+bounded `getrawmempool` snapshot. Complete selected ancestor sets use each
+transaction once. This gives an ancestor fee-to-vsize ratio and leaves the
+unsigned transaction's final size and package rate unknown. Recent summaries
+come from the current chain's last six blocks. Next-block estimates require
+a separately configured provider.
+
+Inspect transaction flow opens a diagram or table of the verified unsigned
+preview. Both use the same exact inputs, recipients, change and fee as the
+funding totals. Connector widths are fixed. Group navigation and the selection
+inspector expose full addresses, outpoints and values. Copy uses the local
+clipboard and respects Hide Amounts. Address QR requires the QR renderer.
+
+Exclude input changes the Send draft and retires the preview. An exact
+selection must keep at least one input, and a changed pinned draft requires
+fresh validation of the remaining pins. Change choices come from the wallet's
+verified active internal descriptors and their exact next indices. Selecting a
+choice records a draft preference. A new preview must verify it again, and
+allocation stays unconfirmed. Use default change clears a specific preference.
+
 The complete declared File/View/Tools/Help inventory is registered with primary
 modifier labels (Ctrl on Linux/Windows, Command placement retained for follow-on
 macOS work). Ctrl+1..6 routes sections; tabs work with keyboard activation and
@@ -382,3 +458,28 @@ normalize to xpub or tpub after checksum, network and curve-key verification.
 Their script hints must match the staged policy. Duplicate detection compares
 the public point and chain code. Scan and display routes name their QR
 decoder and encoder requirements. No seed, PIN or private-key input is offered.
+
+Send to Many stages a separate set of payments for the current Send draft.
+Resize the column headers and use Earlier rows or Later rows to navigate larger
+batches. Ctrl+Tab and Ctrl+Shift+Tab return focus to the document tab. Correct
+all row errors before Apply. Apply changes the recipients together and retires
+any earlier funding preview. Cancel discards the staged rows. The editor
+supports 1,024 payments. The live funding preview supports up to 64 recipients.
+
+Load a UTF-8 CSV with the header `Address,Amount,Label,Unit`. Use a Bitcoin
+address for the wallet's network, an exact amount or `Max`, a single-line local
+label and a unit of `BTC` or `sat`. Use `Max` on one row at most. Standard CSV
+double quoting handles commas and quotes. A quoted newline is parsed as part
+of its field and flagged if it violates the one-line payment field contract.
+Load stages the entire file for inspection. Export saves the validated staged
+rows to a new local file and preserves existing files.
+
+Exports use `Label (Roots text v1)` in the header and prefix formula-like
+cells and cells beginning with an apostrophe with one apostrophe. Importing
+that format reverses the encoding. Plain CSV preserves literal apostrophes.
+
+Transaction analysis uses the current verified unsigned funding preview for
+input linkage and script types. Address reuse checks exact recipient scripts
+against the wallet's current history. Gaps in the wallet observations can
+leave reuse unknown. Wallet history and input linkage alone cannot establish
+anonymity.

@@ -7,6 +7,7 @@
 #include <memory>
 #include <set>
 #include <stop_token>
+#include <span>
 
 namespace roots::gui::protocol {
 inline constexpr size_t MAX_TRANSACTION_WIRE = 65536;
@@ -33,20 +34,40 @@ struct PsbtPolicy {
     std::optional<uint32_t> sighash;
     std::set<uint32_t> signature_modes;
     std::map<std::string,std::string> scripts; // standardized script commitments, never key-origin claims
+    bool final_fields{};
+    bool signature_fields{};
 };
 struct TransactionInspection {
     uint32_t version{};
     std::optional<uint32_t> locktime;
     std::optional<Hash256> txid; // actual raw transaction only
+    std::optional<Hash256> wtxid; // hash of supplied raw wire, including any witness
     std::vector<TransactionInput> inputs;
     std::vector<TransactionOutput> outputs;
     std::optional<Money> fee;
     bool witness{}, coinbase{};
+    bool script_sig{};
 };
+struct ByteSpan {
+    size_t offset{},length{};
+    bool operator==(const ByteSpan&) const=default;
+};
+struct InspectionField {
+    std::string name;
+    ByteSpan bytes;
+};
+struct InspectionLayout {
+    std::vector<InspectionField> header;
+    std::vector<std::vector<InspectionField>> inputs,outputs;
+};
+enum class InspectionBytes { Source, Wire, Unsigned };
+enum class InspectionNode { Overview, Input, Output };
 struct TransactionDocument {
     DocumentFormat format{};
     std::string source; // original bytes, including any text whitespace or container field ordering
     std::string wire;   // decoded binary for transactions; never a provider reserialization
+    std::string unsigned_wire; // derived inspection serialization without final scripts/witness
+    InspectionLayout wire_layout,unsigned_layout;
     std::optional<uint32_t> psbt_version;
     std::optional<TransactionInspection> transaction;
     std::optional<PublicWalletPreview> descriptor;
@@ -55,6 +76,36 @@ struct TransactionDocument {
     size_t psbt_entries{};
     ~TransactionDocument();
 };
+std::string_view InspectionBuffer(const TransactionDocument&,InspectionBytes);
+std::string_view InspectionBufferName(const TransactionDocument&,InspectionBytes);
+std::span<const InspectionField> InspectionFields(const TransactionDocument&,InspectionBytes,InspectionNode,size_t index);
+std::optional<ByteSpan> InspectionSpan(const TransactionDocument&,InspectionBytes,ByteSpan);
+struct EditInput {
+    size_t index;
+    Outpoint previous;
+    uint32_t sequence;
+};
+struct EditOutput {
+    size_t index;
+    TransactionOutput replacement;
+};
+struct ReorderTransactionItem {
+    InspectionNode group;
+    size_t index;
+    size_t destination;
+};
+struct TransactionEdit {
+    std::optional<uint32_t> version, locktime;
+    std::optional<EditInput> input;
+    std::optional<EditOutput> output;
+    std::optional<ReorderTransactionItem> reorder;
+};
+struct EditedTransaction {
+    std::shared_ptr<const TransactionDocument> document;
+    std::string affected,error;
+};
+std::string TransactionEditBlock(const TransactionDocument&);
+EditedTransaction EditTransaction(const TransactionDocument&,DisplayNetwork,const TransactionEdit&);
 struct DocumentResult {
     std::shared_ptr<const TransactionDocument> document;
     DocumentError error{DocumentError::None};

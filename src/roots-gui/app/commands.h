@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "app/document_registry.h"
-namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; }
+namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; class FundingService; class FeeService; }
 namespace roots::gui::app {
 class RecoverySession;
 enum class Menu { File,View,Tools,Help };
@@ -11,7 +11,9 @@ enum class Command {
  Units,Decimal,Grouping,HideEmpty,AppearanceSystem,AppearanceLight,AppearanceDark,Camera,SeparateWindows,HideAmounts,LoadingLog,TransactionHex,Tray,LockCurrent,LockAll,SearchCurrent,SearchAll,Summaries,
  Transactions,Send,Receive,Addresses,UTXOs,Settings,Refresh,
  SignMessage,SendMany,Sweep,Contacts,Server,VerifyDownload,Hardware,PreventSleep,Restart,
- Introduction,Documentation,LogFile,Support,ReportIssue,About,Component,Primary,DocumentMetadata,SaveDraft,ImportSource,Recovery
+ Introduction,Documentation,LogFile,Support,ReportIssue,About,Component,Primary,DocumentMetadata,SaveDraft,ImportSource,Recovery,
+ ReviewForSigning,ApproveSigning,SignTransaction,
+ BeginTransactionEdit,ApplyTransactionEdit,CloseTransactionEdit
 };
 struct CommandSpec { Command id;Menu menu;const char* label;const char* shortcut;const char* dependency; };
 std::span<const CommandSpec> CommandInventory();
@@ -20,7 +22,8 @@ enum class ImportFormat { PublicWallet,Descriptor,PSBT,RawTransaction };
 struct ImportCandidate { std::string source;std::vector<ImportFormat> formats; };
 ImportCandidate ClassifyImportPath(std::string_view); // Hints only; service must validate contents.
 const char* FormatName(ImportFormat);
-struct Request { Command command;uint64_t document{};Section section{Section::Transactions};std::optional<ui::components::Command> component;std::string value;int option{}; };
+struct TransactionEditRequest { uint64_t generation{};DraftRevision revision;protocol::TransactionEdit fields; };
+struct Request { Command command;uint64_t document{};Section section{Section::Transactions};std::optional<ui::components::Command> component;std::string value;int option{};std::optional<TransactionEditRequest> edit; };
 struct Receipt { bool accepted{};std::string reason; };
 struct Availability {bool available{};std::string reason;};
 enum class ServiceState { Unavailable,Idle,Loading,Ready,Offline,Stale,Error,Locked };
@@ -54,6 +57,8 @@ struct Requests {
     virtual TransactionDocuments* LocalDocuments() const {return nullptr;}
     virtual RescanService* Rescanning() {return nullptr;}
     virtual ReceiveService* Receiving() {return nullptr;}
+    virtual FundingService* Funding() {return nullptr;}
+    virtual FeeService* Fees() {return nullptr;}
     virtual AddressService* Addresses() {return nullptr;}
     virtual RefreshService* Refresh() {return nullptr;}
     virtual RecoverySession* Recovery() {return nullptr;}

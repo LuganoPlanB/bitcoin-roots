@@ -16,7 +16,55 @@ a::DocumentRegistry Documents(){a::DocumentRegistry d;const NetworkIdentity netw
     d.Move(4,-1);d.Activate(2);return d;
 }
 void Same(const a::DocumentRegistry& actual,const a::DocumentRegistry& expected){auto x=a::EncodePublicSession({actual,{}}),y=a::EncodePublicSession({expected,{}});Check(x && y && *x==*y,"independent documents/revisions/coins/positions differ");for(const auto& d:actual.Documents())Check(d.observation==a::ObservationState::Offline,"restored document must be offline");}
+void SendClearContracts(const std::filesystem::path& path)
+{
+    auto documents=Documents();
+    const auto id=documents.ActiveId();
+    documents.Active()->funding_rate="2.125";
+    documents.Active()->funding_target=9;
+    const auto policy=protocol::PreviewPublicWallet(protocol::PublicImportKind::Descriptor,
+        "wpkh(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)","main");
+    const auto change=policy.preview ? DeriveFundingChange(policy.preview->descriptors.front().descriptor,0,
+        protocol::DisplayNetwork::Mainnet) : std::nullopt;
+    Check(change.has_value(),"independently derived public change fixture");
+    documents.Active()->binding->network={*Hash256::Parse("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")};
+    documents.Active()->funding_change=change;
+    const auto before=*documents.Active();
+    a::RecoverySession writer(path);
+    Check(writer.Enable(documents),"explicit Send recovery opt-in");
+    a::RecoverySession stale(path);
+    a::DocumentRegistry conflicted;
+    Check(stale.Start() && stale.Restore(conflicted),"stale Send snapshot loaded deliberately");
+    documents.Find(4)->transaction.note.SetDraft("Winning separate draft");
+    Check(writer.Checkpoint(documents),"winning Send recovery checkpoint");
+    const auto winning=Bytes(path);
+    Check(!stale.ClearSend(conflicted,id,before.draft_revision)
+        && conflicted.Active()->funding_rate=="2.125" && conflicted.Active()->funding_target==9
+        && conflicted.Active()->funding_change==change && !stale.HasClearedSend() && Bytes(path)==winning,
+        "Clear CAS failure keeps both current drafts and winning snapshot");
+    Check(writer.ClearSend(documents,id,before.draft_revision),"durable Send Clear acknowledged");
+    Check(documents.Active()->funding_rate.empty() && !documents.Active()->funding_target && !documents.Active()->funding_change
+        && documents.Active()->selected_coins.empty()
+        && documents.Active()->excluded_coins.empty() && documents.Active()->Current().note.draft()==before.Current().note.draft(),
+        "Send fields cleared independently of unrelated edits");
+    a::RecoverySession restarted(path);
+    a::DocumentRegistry restored;
+    Check(restarted.Start() && restarted.Pending() && restarted.Restore(restored) && restarted.HasClearedSend(),
+        "Clear archive survives restart without replay");
+    Check(restored.Active()->funding_rate.empty() && restored.Active()->selected_coins.empty() && !restored.Active()->funding_change,
+        "Cleared Send remains empty until explicit recovery");
+    restored.Find(4)->transaction.note.SetDraft("New separate edits after restart");
+    Check(restarted.RecoverSend(restored),"explicit Send recovery");
+    Check(restored.Active()->funding_rate==before.funding_rate && restored.Active()->funding_target==before.funding_target
+        && restored.Active()->funding_change==change
+        && restored.Active()->selected_coins==before.selected_coins
+        && restored.Active()->excluded_coins==before.excluded_coins
+        && restored.Active()->draft_revision.value>before.draft_revision.value
+        && restored.Find(4)->transaction.note.draft()=="New separate edits after restart" && !restarted.HasClearedSend(),
+        "Send recovery restores exact values and preserves other unsaved tabs");
+}
 void Contracts(const std::filesystem::path& p){
+    SendClearContracts(p.parent_path()/"send-clear.sqlite");
     auto documents=Documents();a::RecoverySession disabled(p);Check(disabled.Start() && !disabled.Enabled(),"default recovery must be off");Check(disabled.Checkpoint(documents) && !std::filesystem::exists(p),"opt-out must not create store or persist positions");
     disabled.SetPresentation(true,2);Check(disabled.Enable(documents),"enable explicit persistence");const auto expected=documents;const auto bytes=Bytes(p);
     a::RecoverySession reopened(p);a::DocumentRegistry empty;Check(reopened.Start() && reopened.Pending() && empty.Documents().empty(),"startup must only offer recovery");Check(Bytes(p)==bytes,"loading must preserve database bytes");Check(reopened.Restore(empty),"deliberate restore");Check(reopened.Hidden() && reopened.Unit()==2,"privacy and units restore with the same snapshot");Same(empty,expected);

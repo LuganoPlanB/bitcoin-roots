@@ -130,6 +130,87 @@ void Contracts()
     stopped.request_stop();
     Check(ParseTransactionDocument(psbt,DisplayNetwork::Mainnet,stopped.get_token()).error==DocumentError::Cancelled,"cancelled task");
 }
+ByteSpan Field(const protocol::TransactionDocument& doc,InspectionBytes bytes,InspectionNode node,
+    std::string_view name,size_t index=0)
+{
+    const auto fields=InspectionFields(doc,bytes,node,index);
+    const auto found=std::ranges::find_if(fields,[name](const auto& item){return name==item.name;});
+    if (found==fields.end()) throw std::runtime_error("inspection field missing: "+std::string(name));
+    return found->bytes;
+}
+void InspectionContracts()
+{
+    using Rep=InspectionBytes;
+    using Node=InspectionNode;
+    const auto raw=Bytes(HexTx());
+    const auto text="  "+HexTx()+"\r\n";
+    const auto decoded=ParseTransactionDocument(text,DisplayNetwork::Regtest).document;
+    Check(decoded && InspectionBuffer(*decoded,Rep::Source)==text && InspectionBuffer(*decoded,Rep::Wire)==raw,"distinct original text and binary wire");
+    Check(InspectionBufferName(*decoded,Rep::Source)!=InspectionBufferName(*decoded,Rep::Wire),"representations are labelled separately");
+    Check(decoded->transaction->txid->hex()=="c694f12193d204e4bbf0308a28e5b291c0242189299c6910c2beaba0f0383cec"
+        && decoded->transaction->wtxid==decoded->transaction->txid,"independently double-SHA256 checked legacy identifier and identical no-witness wire ID");
+    Check(Field(*decoded,Rep::Wire,Node::Overview,"Version")==ByteSpan{0,4},"raw version bytes");
+    Check(Field(*decoded,Rep::Wire,Node::Input,"Previous transaction ID (wire order)")==ByteSpan{5,32},"raw previous txid bytes");
+    Check(Field(*decoded,Rep::Wire,Node::Input,"Previous output index")==ByteSpan{37,4},"raw previous index bytes");
+    Check(Field(*decoded,Rep::Wire,Node::Input,"scriptSig")==ByteSpan{42,0},"empty input script is represented explicitly");
+    Check(Field(*decoded,Rep::Wire,Node::Input,"Sequence")==ByteSpan{42,4},"raw sequence bytes");
+    const auto amount=Field(*decoded,Rep::Wire,Node::Output,"Output amount");
+    Check(amount==ByteSpan{47,8} && raw.substr(amount.offset,amount.length)==Bytes("0100000000000000"),"known little-endian satoshi bytes");
+    Check(Field(*decoded,Rep::Wire,Node::Output,"scriptPubKey")==ByteSpan{56,22},"raw script bytes exclude length prefix");
+    Check(Field(*decoded,Rep::Wire,Node::Overview,"Locktime")==ByteSpan{78,4},"raw locktime bytes");
+    auto source=InspectionSpan(*decoded,Rep::Source,amount);
+    Check(source==ByteSpan{96,16} && text.substr(source->offset,source->length)=="0100000000000000","source maps exact ASCII bytes including leading spaces");
+    Check(!InspectionSpan(*decoded,Rep::Wire,{80,3}) && !InspectionSpan(*decoded,Rep::Source,{SIZE_MAX,2}),"malformed ranges rejected");
+    const auto segmented=raw.substr(0,4)+Bytes("0001")+raw.substr(4,raw.size()-8)+Bytes("010101")+raw.substr(raw.size()-4);
+    const auto witness=ParseTransactionDocument(segmented,DisplayNetwork::Regtest).document;
+    Check(witness && witness->transaction->txid==decoded->transaction->txid
+        && witness->transaction->wtxid->hex()=="0e593fee5e6b7b912591f6afdd04035ce627f2b50c99c7504921ea15111efec3","witness id includes the exact segregated bytes");
+    Check(Field(*witness,Rep::Wire,Node::Input,"Witness item 1")==ByteSpan{82,1}
+        && segmented[82]==1,"witness item maps without its compact length");
+    Check(Field(*witness,Rep::Wire,Node::Overview,"Locktime")==ByteSpan{83,4},"witness shifts locktime offsets correctly");
+    auto taproot=Bytes("01012b0100000000000000225120")+std::string(32,'q');
+    const auto psbt=PsbtV0(raw,taproot+Bytes("04fc0161000301aa02"));
+    auto binary=ParseTransactionDocument(psbt,DisplayNetwork::Regtest).document;
+    Check(binary && binary->transaction->inputs[0].evidence==PrevoutEvidence::Supplied
+        && !binary->transaction->fee && ReviewSighash(*binary,0)==0,"supplied Taproot previous script yields default mode and no known fee");
+    Check(binary->transaction->txid==std::nullopt && binary->transaction->wtxid==std::nullopt && TransactionCommitment(*binary).has_value(),"PSBT is not a signed identity");
+    const auto embedded=Field(*binary,Rep::Wire,Node::Input,"Sequence");
+    Check(embedded==ByteSpan{50,4},"PSBTv0 embedded input maps into the container at its own offset");
+    const auto opaque=Field(*binary,Rep::Wire,Node::Input,"Proprietary field");
+    Check(InspectionSpan(*binary,Rep::Source,opaque)==opaque && psbt.substr(opaque.offset,opaque.length)==Bytes("01aa02"),"opaque value remains exact");
+    const auto encoded=ParseTransactionDocument("  "+TransactionBase64(psbt)+"\r\n",DisplayNetwork::Regtest).document;
+    Check(encoded && !InspectionSpan(*encoded,Rep::Source,opaque) && InspectionSpan(*encoded,Rep::Wire,opaque)==opaque,"Base64 source refuses fictitious direct mapping");
+    Check(encoded->unsigned_wire==raw && Field(*encoded,Rep::Unsigned,Node::Input,"Sequence")==ByteSpan{42,4},"derived unsigned layout has independent coordinates");
+    Check(InspectionFields(*encoded,Rep::Unsigned,Node::Input,99).empty(),"missing input group stays unmapped");
+    auto spending=raw;
+    auto parent_hash=Bytes(decoded->transaction->txid->hex());
+    std::ranges::reverse(parent_hash);
+    spending.replace(5,32,parent_hash);
+    const auto by_txid=ParseTransactionDocument(PsbtV0(spending,Bytes("0100")+char(raw.size())+raw),
+        DisplayNetwork::Regtest).document;
+    Check(by_txid && by_txid->transaction->inputs[0].evidence==PrevoutEvidence::TxidMatched,
+        "full supplied transaction supplies independently matched previous output data");
+    Check(Field(*by_txid,Rep::Wire,Node::Input,"Matched previous Output amount")==ByteSpan{141,8}
+        && Field(*by_txid,Rep::Wire,Node::Input,"Matched previous scriptPubKey")==ByteSpan{150,22},
+        "matched previous amount and script map inside the original PSBT");
+    const auto version2=Bytes("70736274ff01fb040200000001020402000000010401010105010100010e20")+std::string(32,'\x11')
+        +Bytes("010f0400000000011004030040000001030801000000000000000104160014751e76e8199196d454941c45d1b3a323f1433bd600");
+    const auto v2=ParseTransactionDocument(version2,DisplayNetwork::Regtest).document;
+    Check(v2 && v2->psbt_version==2 && v2->transaction->inputs[0].sequence==0x00400003
+        && v2->transaction->locktime==0,"BIP370 sequence and locktime known");
+    const auto mapped=Field(*v2,Rep::Wire,Node::Input,"Sequence");
+    Check(mapped.offset!=42 && InspectionBuffer(*v2,Rep::Wire).substr(mapped.offset,mapped.length)==Bytes("03004000")
+        && v2->unsigned_wire.substr(42,4)==Bytes("03004000"),"PSBTv2 and derived wire field values match with independent spans");
+    std::string large="0200000001"+std::string(64,'1')+"0000000000fefffffffd0004";
+    for (size_t i=0;i<1024;++i) large+="0000000000000000016a";
+    large+="0065cd1d";
+    const auto many=ParseTransactionDocument(large,DisplayNetwork::Regtest).document;
+    Check(many && many->transaction->outputs.size()==1024 && many->transaction->outputs.back().value.sats()==0
+        && many->transaction->locktime==500000000,"large import distinguishes known zero and time lock");
+    Check(Field(*many,Rep::Wire,Node::Output,"Output amount",1023)==ByteSpan{10279,8},"large last output located directly");
+    large.replace(92,6,"fd0104");
+    Check(ParseTransactionDocument(large,DisplayNetwork::Regtest).error==DocumentError::Limit,"bounded large input count form");
+}
 void Files(const std::filesystem::path& root)
 {
     using namespace std::chrono_literals;
@@ -185,6 +266,9 @@ int main(int argc,char** argv)
         if (argc==1) {
             Contracts();
             std::cout<<"{\"passed\":true,\"checks\":"<<checks<<"}\n";
+            checks=0;
+            InspectionContracts();
+            std::cout<<"{\"passed\":true,\"inspectionChecks\":"<<checks<<"}\n";
         } else if (argc==3 && std::string_view(argv[1])=="--local") {
             Files(argv[2]);
             std::cout<<"{\"passed\":true,\"localChecks\":"<<checks<<"}\n";

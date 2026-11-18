@@ -8,6 +8,47 @@ namespace roots::gui::app {
 Document* DocumentRegistry::Find(uint64_t id) { for(auto& d:documents) if(d.id==id)return &d;return nullptr; }
 const Document* DocumentRegistry::Find(uint64_t id) const { for(const auto& d:documents) if(d.id==id)return &d;return nullptr; }
 bool DocumentRegistry::Activate(uint64_t id) { if(auto* d=Find(id)) { active=id;d->Current().restore_scroll=d->Current().restore_table=true;return true; }return false; }
+bool ValidCreatedFunding(const ImportedDocument& imported)
+{
+    if (!imported.funding || !imported.parsed) return false;
+    const auto& funding = *imported.funding;
+    const auto& parsed = *imported.parsed;
+    if (!funding.draft_document || funding.draft_document == UINT64_MAX || funding.fee.sats() < 0
+        || imported.network == protocol::DisplayNetwork::Unknown
+        || protocol::DocumentNetwork(funding.evidence.wallet.network) != imported.network
+        || parsed.format != protocol::DocumentFormat::PsbtBase64 || parsed.psbt_version != 2
+        || parsed.modifiable.value_or(0) || !parsed.transaction
+        || !protocol::TransactionCommitment(parsed)) return false;
+    const auto& tx = *parsed.transaction;
+    const auto& inputs = funding.evidence.inputs;
+    if (tx.version != 2 || tx.locktime != 0 || tx.coinbase || inputs.empty() || inputs.size() > 64
+        || inputs.size() != tx.inputs.size() || inputs.size() != parsed.input_policy.size()
+        || tx.outputs.empty() || tx.outputs.size() > 65 || (tx.fee && tx.fee != funding.fee)) return false;
+    std::set<std::string> seen;
+    constexpr int64_t max_money = 21000000LL * 100000000;
+    int64_t balance{};
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        const auto& proof = inputs[i];
+        const auto& input = tx.inputs[i];
+        const auto& policy = parsed.input_policy[i];
+        if (input.outpoint != proof.outpoint || input.sequence != 0xfffffffdU || policy.final_fields
+            || !policy.signature_modes.empty() || input.evidence == protocol::PrevoutEvidence::Conflict
+            || input.previous_value != proof.value || input.previous_script != proof.script
+            || !seen.insert(proof.outpoint.txid.hex() + ":" + std::to_string(proof.outpoint.index)).second
+            || !protocol::ValidOfflineCoin({proof.outpoint, proof.value, proof.script, proof.offline}, imported.network)
+            || !proof.value || proof.value->sats() <= 0 || proof.value->sats() > max_money - balance) return false;
+        balance += proof.value->sats();
+    }
+    for (const auto& output : tx.outputs) {
+        if (output.value.sats() <= 0 || balance < output.value.sats()) return false;
+        balance -= output.value.sats();
+    }
+    if (const auto& change = funding.evidence.offline_change) {
+        const auto derived = protocol::DerivePublicDescriptor(change->descriptor, protocol::DocumentChain(imported.network), change->index);
+        if (change->observed_ms <= 0 || !derived || tx.outputs.back().script != derived->script) return false;
+    }
+    return balance == funding.fee.sats();
+}
 uint64_t DocumentRegistry::OpenWallet(std::string name,WalletBinding binding,bool complete)
 {
     for(const auto& d:documents) if(d.kind==DocumentKind::Wallet && d.binding==binding) { const auto id=d.id;Activate(id);return id; }
@@ -40,6 +81,7 @@ bool DocumentRegistry::Navigate(Section section)
 }
 bool Document::Dirty() const
 {
+    if (recipients.Dirty() || !funding_rate.empty() || funding_target || funding_change) return true;
     if(coin_draft)return true;
     for(const auto& [key,draft]:coins.drafts)if(draft.dirty())return true;
     for(const auto& [id,draft]:history.drafts)if(draft.dirty())return true;
@@ -95,6 +137,30 @@ bool DocumentRegistry::RestorePublic(std::vector<Document> restored,uint64_t act
 void DocumentRegistry::Conceal()
 {
     const auto wipe=[](std::string& s){if(!s.empty())sodium_memzero(s.data(),s.size());s.clear();};
+    const auto wipe_proofs = [&](CoinDraft& draft) {
+        for (auto& pin : draft.inputs) {
+            wipe(pin.script);wipe(pin.pinned_reason);wipe(pin.current_reason);
+            if (pin.offline) {
+                wipe(pin.offline->previous_hex);wipe(pin.offline->descriptor);
+                wipe(pin.offline->redeem_script);wipe(pin.offline->witness_script);
+            }
+        }
+        if (draft.offline_change) wipe(draft.offline_change->descriptor);
+    };
+    for (auto& document : documents) {
+        wipe(document.funding_rate);
+        if (document.funding_change) {
+            wipe(document.funding_change->address);wipe(document.funding_change->script);
+            wipe(document.funding_change->descriptor);
+        }
+        if (document.imported && document.imported->funding) wipe_proofs(document.imported->funding->evidence);
+        for (auto& row : document.recipients.rows) {
+            wipe(row.pay_to);
+            wipe(row.address);
+            wipe(row.label);
+            wipe(row.amount);
+        }
+    }
     for(auto& d:documents){wipe(d.name);wipe(d.original_name);wipe(d.history.filter);wipe(d.history.selected);for(auto& [id,draft]:d.history.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.history.drafts.clear();d.history.expanded.clear();for(auto& [key,draft]:d.coins.drafts){wipe(draft.saved);wipe(draft.draft);wipe(draft.error);}d.coins=CoinPresentation();if(d.coin_draft){for(auto& p:d.coin_draft->inputs){wipe(p.script);wipe(p.pinned_reason);wipe(p.current_reason);if(p.offline){wipe(p.offline->previous_hex);wipe(p.offline->descriptor);wipe(p.offline->redeem_script);wipe(p.offline->witness_script);}}if(d.coin_draft->offline_change)wipe(d.coin_draft->offline_change->descriptor);d.coin_draft.reset();}for(auto* s:{&d.transaction,&d.sections[0],&d.sections[1],&d.sections[2],&d.sections[3],&d.sections[4],&d.sections[5]}){sodium_memzero(s->note.text.data(),s->note.text.size());wipe(s->note.saved);wipe(s->note.error);wipe(s->note.last_attempt);if(s->note.external_buffer)wipe(*s->note.external_buffer);s->selection.selected.clear();s->selection.focused.reset();}d.selected_coins.clear();d.excluded_coins.clear();}
     documents.clear();active=0;
 }

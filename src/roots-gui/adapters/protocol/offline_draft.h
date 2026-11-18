@@ -22,6 +22,7 @@ struct OfflineChange {
     std::string descriptor;
     uint32_t index{};
     int64_t observed_ms{};
+    bool operator==(const OfflineChange&) const=default;
 };
 struct OfflineRecipient {
     std::string address;
@@ -38,6 +39,7 @@ struct OfflineReviewInput {
     Outpoint point;
     Money value;
     std::string descriptor;
+    bool operator==(const OfflineReviewInput&) const=default;
 };
 struct OfflineReviewEvidence {
     DisplayNetwork network;
@@ -45,6 +47,7 @@ struct OfflineReviewEvidence {
     std::vector<TransactionOutput> recipients;
     Money fee;
     std::optional<OfflineChange> change;
+    bool operator==(const OfflineReviewEvidence&) const=default;
 };
 struct OfflineReview {
     std::optional<Hash256> commitment;

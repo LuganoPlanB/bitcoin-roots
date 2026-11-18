@@ -66,14 +66,8 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
             return;
         }
         if (id==a::Command::TransactionHex) {
-            auto* doc=s.documents.Active();
-            if (doc && doc->imported) {
-                auto& rep=doc->imported->representation;
-                rep=rep==a::DocumentRepresentation::Source ? a::DocumentRepresentation::WireHex : a::DocumentRepresentation::Source;
-                ++s.imported_views[doc->id].revision;
-                s.invocation->accepted=true;
-                return;
-            }
+            s.invocation->accepted=ToggleTransactionHex(s,host);
+            return;
         }
     }
     if(id==a::Command::ImportWallet){BeginImport(s);return;}
@@ -301,9 +295,21 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{8*scale,4*scale});
         ImGui::PushID(std::to_string(d->id).c_str());
         if(d->imported) DrawImportedDocument(s,host,f,theme,scale);
-        else if(d->coin_draft) DrawCoinDraft(s,host,f,theme,scale);
+        else if(d->coin_draft) {
+            const auto id = d->id;
+            DrawCoinDraft(s,host,f,theme,scale);
+            const auto* draft = s.documents.Active();
+            const auto builder = s.offline_builders.find(id);
+            if (draft && draft->id == id && draft->coin_draft
+                && (builder == s.offline_builders.end() || !builder->second.open)
+                && !s.privacy.hidden && ImGui::CollapsingHeader("Payment recipients")) {
+                DrawSendRecipients(s, host, f, theme, scale);
+            } else RetireSendView(s);
+        }
         else if(d->observed_transaction) DrawObservedTransaction(s,f,theme,scale);
         else if(d->section==a::Section::Transactions) DrawHistory(s,host,f,theme,scale);
+        else if(d->section==a::Section::Send && d->complete && d->observation!=a::ObservationState::Locked)
+            DrawSendRecipients(s,host,f,theme,scale);
         else if(d->section==a::Section::Addresses) DrawAddresses(s,host,f,theme,scale);
         else if(d->section==a::Section::Receive && host.Receiving()) DrawReceive(s,host,f,theme,scale);
         else if(d->section==a::Section::UTXOs) DrawCoins(s,host,f,theme,scale);
@@ -405,8 +411,14 @@ std::string SemanticScope(const State& s) {
         +":"+std::to_string(s.local_document.revision);
     if(const auto view=s.imported_views.find(s.documents.ActiveId());view!=s.imported_views.end())
         scope+=":"+std::to_string(view->second.revision);
+    scope+=":"+std::to_string(s.signing_revision);
+    scope+=":"+std::to_string(s.transaction_edit_revision);
     if(const auto draft=s.offline_builders.find(s.documents.ActiveId());draft!=s.offline_builders.end())
         scope+=":"+std::to_string(draft->second.revision);
+    if (const auto* d = s.documents.Active(); d && d->SendWallet())
+        scope += ":" + std::to_string(d->recipients.selected) + "," + std::to_string(s.send_view.wallet_destinations)
+            + "," + std::to_string(s.funding.revision) + "," + std::to_string(s.fees.revision);
+    scope+=":"+std::to_string(s.batch_generation)+","+std::to_string(s.batch?s.batch->revision:0)+","+std::to_string(s.batch.has_value())+","+std::to_string(s.send_analysis.has_value());
     for(const auto& d:s.documents.Documents())scope+=":"+std::to_string(d.id)+","+std::to_string(int(d.section))+","+std::to_string(int(d.observation))+","+std::to_string(d.complete)+","+std::to_string(d.name.size())+","+std::to_string(d.draft_revision.value);
     for(const auto& d:s.documents.Documents())if(d.history.enabled)scope+=":"+std::to_string(d.history.query_revision)+","+std::to_string(d.history.metadata_revision)+","+d.history.selected+","+std::to_string(d.history.sort)+","+std::to_string(d.history.descending)+","+d.history.filter;
     if(const auto* d=s.documents.Active();d && d->history.enabled)for(const auto& [key,draft]:d->history.drafts)scope+=":"+key+":"+std::to_string(draft.draft.size())+":"+draft.draft;
@@ -433,15 +445,33 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     if(s.semantic_hide_toggle){s.privacy.hidden=!s.privacy.hidden;s.semantic_hide_toggle=false;}
     if(components::native_input)components::native_input->Privacy(s.privacy.hidden);
     const auto* active=s.documents.Active();const auto active_id=active?active->id:0;
+    if (s.send_view.document && (!active || active_id != s.send_view.document || s.privacy.hidden
+        || (active->kind == app::DocumentKind::Wallet && active->section != a::Section::Send)))
+        RetireSendView(s);
     const bool locked=active && active->observation==app::ObservationState::Locked;
     // A retired body must leave a real focus target for keyboard/native readers.
     // Observe the model so external lock observations take the same path as UI
     // commands; this one-shot transition never steals focus on later frames.
     if(locked && (s.previous_document!=active_id || !s.previous_locked))RestoreDocumentFocus(s,active_id);
+    if (s.previous_document!=active_id || s.privacy.hidden || locked) {
+        const auto previous=s.imported_views.find(s.previous_document);
+        if (previous!=s.imported_views.end() && previous->second.inspection_owner) {
+            previous->second.inspection_owner.reset();
+            previous->second.selection.reset();
+            previous->second.selection_label.clear();
+            previous->second.inspection_status.clear();
+            ++previous->second.revision;
+        }
+    }
     s.previous_document=active_id;s.previous_locked=locked;
     BeginReceiveLabelFrame(s);PollReceive(s,host);PollPolicySettings(s,host);PollAdvancedSettings(s,host);
     std::erase_if(s.imported_views,[&](const auto& item){return !s.documents.Find(item.first);});
     std::erase_if(s.offline_builders,[&](const auto& item){const auto* doc=s.documents.Find(item.first);return !doc || !doc->coin_draft;});
+    PollBatch(s,host);
+    PollFees(s,host);
+    PollFunding(s,host);
+    PollTransactionEditors(s,host);
+    PollSigningReviews(s,host);
     Facts f;s.native_drop_target={};s.observations=host.Observe();s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open || s.onboarding.dialog.open || s.local_document.dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
     if(work_size.x<=0 || work_size.y<=0)work_size=vp->WorkSize;
     ImGui::SetNextWindowPos(vp->WorkPos);ImGui::SetNextWindowSize(work_size);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});

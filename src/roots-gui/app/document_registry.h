@@ -4,6 +4,8 @@
 #include "ui/components/controls.h"
 #include "adapters/protocol/transaction.h"
 #include "adapters/protocol/offline_draft.h"
+#include "services/funding_change.h"
+#include "services/send_recipients.h"
 #include <map>
 namespace roots::gui::app {
 enum class Section { Transactions,Send,Receive,Addresses,UTXOs,Settings };
@@ -50,12 +52,20 @@ struct CoinDraft {
     std::optional<protocol::OfflineChange> offline_change;
     bool observed_unavailable{}; // last explicit exact wallet revalidation denied this pinned set
 }; // public data; no reservation/validation authority
+struct CreatedFunding {
+    uint64_t draft_document;
+    DraftRevision draft_revision;
+    Money fee;
+    CoinDraft evidence;
+};
 enum class DocumentRepresentation { Source, WireHex };
 struct ImportedDocument {
     std::shared_ptr<const protocol::TransactionDocument> parsed;
     protocol::DisplayNetwork network;
     DocumentRepresentation representation{DocumentRepresentation::Source};
+    std::optional<CreatedFunding> funding;
 };
+bool ValidCreatedFunding(const ImportedDocument&);
 enum class DocumentKind { Wallet,Transaction };
 enum class ObservationState { Offline,Loading,Empty,Error,Stale,Locked };
 struct Document {
@@ -74,6 +84,15 @@ struct Document {
     std::optional<CoinDraft> coin_draft;
     std::optional<ObservedTransaction> observed_transaction;
     std::optional<ImportedDocument> imported;
+    SendRecipients recipients;
+    std::string funding_rate;
+    uint16_t funding_target{}; // zero selects Manual; any entered rate overrides a target
+    std::optional<FundingChange> funding_change;
+    const WalletBinding* SendWallet() const
+    {
+        if (binding) return &*binding;
+        return coin_draft ? &coin_draft->wallet : nullptr;
+    }
     bool Dirty() const;
     SectionState& Current() { return kind==DocumentKind::Wallet?sections.at(size_t(section)):transaction; }
     const SectionState& Current() const { return kind==DocumentKind::Wallet?sections.at(size_t(section)):transaction; }

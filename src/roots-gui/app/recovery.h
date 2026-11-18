@@ -5,7 +5,14 @@
 #include "adapters/storage/metadata.h"
 #include "services/session_gate.h"
 namespace roots::gui::app {
-struct PublicSession { DocumentRegistry documents; std::vector<Document> recoverable; bool hide_amounts{}; int unit{}; };
+bool MatchesSendDraft(const Document&,const ImportedDocument&); // exact ordered draft, independently saved inputs and change
+struct PublicSession {
+    DocumentRegistry documents;
+    std::vector<Document> recoverable;
+    bool hide_amounts{};
+    int unit{};
+    std::optional<Document> cleared_send;
+};
 std::optional<std::string> EncodePublicSession(const PublicSession&);
 std::optional<PublicSession> DecodePublicSession(std::string_view);
 // Owner-thread local persistence. There is deliberately no RPC/command port.
@@ -26,6 +33,8 @@ class RecoverySession {
     bool Open();
     bool LoadOpen();
     bool Commit(PublicSession&,bool enabled);
+    PublicSession Snapshot(const DocumentRegistry&) const;
+    bool SaveDocuments(DocumentRegistry&, const Document* unchanged_draft);
 public:
     explicit RecoverySession(std::filesystem::path p):path(std::move(p)){}
     bool Start(); // reads only an existing store, never restores documents
@@ -53,8 +62,12 @@ public:
     bool Unlock(std::string_view password,DocumentRegistry&,bool choose_latest=false,bool preserve_other_copy=false);
     bool CanAdmitPublicDocuments(const DocumentRegistry&) const;
     bool Checkpoint(DocumentRegistry&);
+    uint64_t CreateFunded(DocumentRegistry&, ImportedDocument, std::string& error);
     bool Close(DocumentRegistry&,std::span<const uint64_t>);
     bool Clear(DocumentRegistry&,uint64_t);
+    bool ClearSend(DocumentRegistry&, uint64_t, DraftRevision);
+    bool HasClearedSend() const { return saved.cleared_send.has_value(); }
+    bool RecoverSend(DocumentRegistry&);
     bool RecoverLast(DocumentRegistry&);
     storage::Result<storage::Metadata> HistoryMetadata(const storage::Scope&);
     storage::Result<std::vector<storage::Scope>> RecentWallets();
