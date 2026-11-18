@@ -23,6 +23,7 @@ public:
     void EndFrame();
     void BeginView(std::string_view) override;
     void Privacy(bool hidden) override;
+    void PrivacyLock() override;
     bool Copy(std::string_view,bool sensitive=false);
     const char* ClipboardForPaste();
     void EnterEditor(uint32_t,bool) override;

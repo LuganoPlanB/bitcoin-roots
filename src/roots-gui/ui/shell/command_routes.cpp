@@ -18,7 +18,10 @@ app::Availability CommandAvailability(const State& s,app::Command command,const 
 {
     namespace a=app;const auto* d=s.documents.Active();const bool wallet=d && d->kind==a::DocumentKind::Wallet;
     const bool transaction=d && d->kind==a::DocumentKind::Transaction;
-    if(s.actions.kind!=DocumentDialog::None)return {false,"Finish or cancel the current document dialog first."};
+    if(s.recovery && s.recovery->Locked())return command==a::Command::Quit?host.CanSubmit({command}):app::Availability{false,"Workspace is locked."};
+    if(s.recovery && (command==a::Command::LockCurrent || command==a::Command::LockAll))return {true,{}};
+    if(s.actions.kind!=DocumentDialog::None || s.server.dialog.open || s.recovery_dialog.open || s.lock_panel.setup)return {false,"Finish or cancel the current dialog first."};
+    if(command==a::Command::Recovery)return {s.recovery!=nullptr,"Local public recovery storage is unavailable."};
     if(command>=a::Command::Transactions && command<=a::Command::Settings)return {wallet,wallet?"":"Select a wallet document to navigate its sections."};
     switch(command) {
     case a::Command::CloseTab:return {d!=nullptr,d?"":"No document is open to close."};

@@ -25,6 +25,12 @@ void RegisterPrivacyTests(ImGuiTestEngine*);
 void RegisterCommandTests(ImGuiTestEngine*);
 void RegisterDocumentTests(ImGuiTestEngine*);
 void RegisterShellTests(ImGuiTestEngine*);
+void RegisterServerTests(ImGuiTestEngine*);
+void RegisterHistoryTests(ImGuiTestEngine*);
+void RegisterAddressTests(ImGuiTestEngine*);
+void RegisterCoinTests(ImGuiTestEngine*);
+void RegisterCoinControlTests(ImGuiTestEngine*);
+void RegisterAddressControlTests(ImGuiTestEngine*);
 void RegisterHeadlessTests(ImGuiTestEngine* engine)
 {
     RegisterSemanticTests(engine);
@@ -33,6 +39,12 @@ void RegisterHeadlessTests(ImGuiTestEngine* engine)
     RegisterShellTests(engine);
     RegisterDocumentTests(engine);
     RegisterCommandTests(engine);
+    RegisterServerTests(engine);
+    RegisterHistoryTests(engine);
+    RegisterAddressTests(engine);
+    RegisterCoinTests(engine);
+    RegisterCoinControlTests(engine);
+    RegisterAddressControlTests(engine);
     auto* test = IM_REGISTER_TEST(engine, "roots.preferences", "save_cancel_requests");
     test->SetVarsDataType<Fixture>();
     test->GuiFunc = [](ImGuiTestContext* ctx) {

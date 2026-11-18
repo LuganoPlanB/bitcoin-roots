@@ -58,10 +58,13 @@ class Step:
     disconnect:bool=False
     gate:threading.Event|None=None
     entered:threading.Event=field(default_factory=threading.Event)
+    headers:tuple=()
+    declared_length:int|None=None
+    request_check:object=None
 
 class FakeHttp:
     def __init__(self,steps):
-        self.steps=list(steps);self.records=[];self.active=0;self.completed=[];self.lock=threading.Lock();self.accepted=threading.Event();self.read_timeouts=0
+        self.steps=list(steps);self.records=[];self.active=0;self.completed=[];self.lock=threading.Lock();self.accepted=threading.Event();self.read_timeouts=0;self.check_failures=[]
         self.secret=secrets.token_urlsafe(24);self.auth='Basic '+base64.b64encode(('fixture:'+self.secret).encode()).decode()
         owner=self
         class Handler(BaseHTTPRequestHandler):
@@ -85,6 +88,9 @@ class FakeHttp:
                             if step:step.entered.set()
                         if not step:status=500;payload=b'Unscripted fixture request'
                         else:
+                            if step.request_check:
+                                try:step.request_check(self.path,body,self.headers)
+                                except AssertionError:owner.check_failures.append('request contract mismatch')
                             if step.gate and not step.gate.wait(2):raise TimeoutError('fixture gate deadline')
                             if step.disconnect:self.connection.shutdown(socket.SHUT_RDWR);return
                             status=step.status
@@ -96,7 +102,10 @@ class FakeHttp:
                         # No headers, raw request/response body, passwords, cookies or params.
                         owner.records.append(dict(method=method,request_id=rid,wallet= self.path.startswith('/wallet/'),status=status))
                         owner.completed.append(method)
-                    self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(payload)));self.end_headers();self.wfile.write(payload)
+                    self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(step.declared_length if step and step.declared_length is not None else len(payload)))
+                    if step:
+                        for key,value in step.headers:self.send_header(key,value)
+                    self.end_headers();self.wfile.write(payload)
                 except (BrokenPipeError,ConnectionResetError,TimeoutError,OSError):pass
                 finally:
                     with owner.lock:owner.active-=1

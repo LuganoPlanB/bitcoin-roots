@@ -75,7 +75,9 @@ void RegisterShellTests(ImGuiTestEngine* engine)
         for(int i=0;i<4;++i){ctx->ItemNavActivate(s.facts.menus[i]);ctx->KeyPress(ImGuiKey_Escape);}
         ctx->ItemNavActivate(s.facts.menus[0]);ctx->Yield(2);IM_CHECK(s.facts.menu_items.contains(a::Command::NewWallet));ctx->ItemNavActivate(s.facts.menu_items.at(a::Command::NewWallet));IM_CHECK(!s.requests.empty());IM_CHECK_EQ(s.requests.back().command,a::Command::NewWallet);
         ctx->KeyPress(ImGuiMod_Ctrl|ImGuiKey_N);IM_CHECK(!s.requests.empty());IM_CHECK_EQ(s.requests.back().command,a::Command::NewWallet);IM_CHECK(s.workspace.notice.find("daemon-wallet")!=std::string::npos);
-        const auto inventory=a::CommandInventory();std::set<int> ids;for(const auto& item:inventory)IM_CHECK(ids.insert(int(item.id)).second);IM_CHECK_EQ(inventory.size(),size_t(a::Command::About)+1);
+        const auto inventory=a::CommandInventory();std::set<int> ids,expected;for(const auto& item:inventory)IM_CHECK(ids.insert(int(item.id)).second);
+        for(int id=int(a::Command::NewWallet);id<=int(a::Command::About);++id)expected.insert(id);expected.insert(int(a::Command::Recovery));
+        IM_CHECK(ids==expected);IM_CHECK(a::Spec(a::Command::Recovery)->menu==a::Menu::File);
         auto binding=s.workspace.documents.Find(1)->binding.value();binding.wallet=*WalletId::Make("new-wallet");const auto id=s.workspace.documents.OpenWallet("New wallet",binding,false);ctx->Yield(2);
         IM_CHECK_EQ(s.workspace.documents.Active()->section,a::Section::Settings);ctx->KeyPress(ImGuiMod_Ctrl|ImGuiKey_2);ctx->Yield(2);
         IM_CHECK_EQ(s.workspace.documents.ActiveId(),id);IM_CHECK(s.facts.primary.disabled);IM_CHECK(!a::Dependency(*s.workspace.documents.Active(),a::Section::Send).empty());

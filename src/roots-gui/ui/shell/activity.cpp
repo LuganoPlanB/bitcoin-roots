@@ -68,7 +68,7 @@ void DrawStatus(State& s,Facts& f,const imkit::Theme& theme,float scale)
     if(status){s.drawer=Drawer::Services;s.drawer_focus=true;}if(status_ax)s.presentation.Defer(*status_ax,[&s,status](const c::SemanticRequest&){if(!status){s.drawer=Drawer::Services;s.drawer_focus=true;}return true;});
     ImGui::EndChild();ImGui::PopStyleColor();ImGui::PopStyleVar();
 }
-void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale)
+void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale,app::Requests* host)
 {
     if(s.drawer==Drawer::None)return;
     const float height=std::min(340*scale,f.layout.content.h*.7F);
@@ -86,14 +86,25 @@ void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale)
     if(focus)ImGui::SetScrollY(0);
     {const auto lo=ImGui::GetWindowDrawList()->GetClipRectMin(),hi=ImGui::GetWindowDrawList()->GetClipRectMax();f.drawer_body={lo.x,lo.y,hi.x-lo.x,hi.y-lo.y};}
     if(s.drawer==Drawer::Services) {
-        Signal(s,"devices","Devices",s.observations.devices,theme);Signal(s,"proxy","Proxy",s.observations.proxy,theme);Signal(s,"updates","Updates",s.observations.updates,theme);
-        Signal(s,"network","Network",s.observations.network,theme);Signal(s,"connection","Connection",s.observations.connection,theme);
+        if(auto* connection=host?host->Connection():nullptr) {
+            const bool offline=connection->Offline();const char* label=offline?"Go online":"Go offline";
+            const bool pressed=theme::ActionButton(offline?"Go online###connection-offline":"Go offline###connection-offline",imkit::ActionVariant::Secondary,{},theme);f.document_actions["offline"]=Last();
+            const auto apply=[&s,connection,offline,session=connection->Session(),revision=connection->Revision()]{if(connection->Session()!=session || connection->Revision()!=revision || connection->Offline()!=offline)return false;const bool ok=connection->SetOffline(!offline);s.server.scope_revision=connection->Revision();return ok;};
+            const bool applied=pressed && apply();
+            const auto external=s.presentation.Interact(label,components::ax::SemanticRole::Button,components::ax::SemanticAction::Press|components::ax::SemanticAction::Focus);
+            if(external)s.presentation.Defer(*external,[pressed,applied,apply](const components::SemanticRequest&){return pressed?applied:apply();});
+        }
+        Signal(s,"connection","Connection",s.observations.connection,theme);
         const std::string height_text=s.observations.backend_height && *s.observations.backend_height>=0?std::to_string(*s.observations.backend_height):"Unavailable";
         ImGui::Text("Backend height: %s",height_text.c_str());s.presentation.Annotate("backend-height","Backend height",height_text,imkit::accessibility::SemanticRole::Status);
         const auto last=s.observations.last_success.empty()?"Unavailable":Detail(s,s.observations.last_success);ImGui::TextWrapped("Last success: %s",last.c_str());
         s.presentation.Annotate("last-success","Last success",last,imkit::accessibility::SemanticRole::Status);
         const auto error=s.observations.error.empty()?"No error observation":Detail(s,s.observations.error);ImGui::TextWrapped("Error: %s",error.c_str());
         s.presentation.Annotate("connection-error","Connection error",error,imkit::accessibility::SemanticRole::Status);
+        const char* names[]{"Chain observations","Wallet observations","History observations"};
+        for(size_t i=0;i<s.observations.screen_observations.size();++i)if(!s.observations.screen_observations[i].detail.empty())Signal(s,names[i],names[i],s.observations.screen_observations[i],theme);
+        Signal(s,"network","Network",s.observations.network,theme);
+        Signal(s,"devices","Devices",s.observations.devices,theme);Signal(s,"proxy","Proxy",s.observations.proxy,theme);Signal(s,"updates","Updates",s.observations.updates,theme);
     } else if(s.drawer==Drawer::Activity) {
         Signal(s,"activity-feed","Activity feed",s.observations.activity,theme);
         if(s.observations.tasks.empty())ImGui::TextUnformatted(s.observations.activity.state==a::ServiceState::Ready?"No active background tasks.":"No activity observations available.");

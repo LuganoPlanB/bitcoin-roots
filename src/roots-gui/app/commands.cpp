@@ -20,6 +20,7 @@ constexpr CommandSpec inventory[]{
  ROUTE(RenameWallet,File,"Rename Wallet","","Wallet metadata service is unavailable."),
  ROUTE(DeleteWallet,File,"Delete Wallet","","Separate wallet deletion service is unavailable."),
  ROUTE(Preferences,File,"Preferences",",","Preferences service is unavailable in this shell."),
+ ROUTE(Recovery,File,"Session Recovery","","Local public recovery storage is unavailable."),
  ROUTE(CloseTab,File,"Close Tab","W",""),ROUTE(Quit,File,"Quit","",""),
  ROUTE(Units,View,"BTC / sats / automatic","B",""),ROUTE(Decimal,View,"Decimal Format","","Decimal format preference service is unavailable."),
  ROUTE(Grouping,View,"Address Grouping","","Address grouping service is unavailable."),ROUTE(HideEmpty,View,"Hide Empty Used Addresses","","Address view adapter is unavailable."),

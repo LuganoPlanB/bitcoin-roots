@@ -1,0 +1,229 @@
+// Copyright (c) 2026 Plan-B Foundation
+// Distributed under the MIT software license, see the accompanying COPYING file.
+#include "adapters/storage/metadata.h"
+#include "adapters/storage/schema.h"
+#include "adapters/storage/protected_file.h"
+#include "adapters/rpc/json.h"
+#include <sqlite3.h>
+#include <algorithm>
+#include <charconv>
+#include <chrono>
+#include <limits>
+#include <map>
+#include <set>
+#include <sodium.h>
+#if defined(__unix__)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+namespace roots::gui::storage {
+namespace {
+struct Failure { Error error; };
+void Require(bool ok,Error error=Error::Invalid){if(!ok)throw Failure{error};}
+void Check(int rc){
+    if(rc==SQLITE_OK)return;
+    switch(rc&255){
+    case SQLITE_BUSY:case SQLITE_LOCKED:throw Failure{Error::Busy};
+    case SQLITE_FULL:throw Failure{Error::Full};
+    case SQLITE_CORRUPT:case SQLITE_NOTADB:throw Failure{Error::Corrupt};
+    case SQLITE_NOMEM:case SQLITE_TOOBIG:throw Failure{Error::Resource};
+    case SQLITE_INTERRUPT:throw Failure{Error::Timeout};
+    case SQLITE_CONSTRAINT:case SQLITE_SCHEMA:case SQLITE_ERROR:throw Failure{Error::Schema};
+    default:throw Failure{Error::Io};
+    }
+}
+void Exec(sqlite3* db,std::string_view sql){Check(sqlite3_exec(db,std::string(sql).c_str(),nullptr,nullptr,nullptr));}
+class Statement {
+    sqlite3_stmt* stmt{};
+public:
+    Statement(sqlite3* db,std::string_view sql){Check(sqlite3_prepare_v2(db,sql.data(),int(sql.size()),&stmt,nullptr));}
+    ~Statement(){sqlite3_finalize(stmt);}
+    Statement(const Statement&)=delete;
+    void Bind(int i,std::string_view s){Check(sqlite3_bind_text(stmt,i,s.data(),int(s.size()),SQLITE_TRANSIENT));}
+    void Bind(int i,int64_t n){Check(sqlite3_bind_int64(stmt,i,n));}
+    void Null(int i){Check(sqlite3_bind_null(stmt,i));}
+    bool Row(){const int rc=sqlite3_step(stmt);if(rc==SQLITE_ROW)return true;if(rc==SQLITE_DONE)return false;Check(rc);return false;}
+    void Done(){Require(!Row(),Error::Schema);}
+    int Type(int i)const{return sqlite3_column_type(stmt,i);}
+    int64_t Int(int i)const{Require(Type(i)==SQLITE_INTEGER,Error::Corrupt);return sqlite3_column_int64(stmt,i);}
+    std::string Text(int i)const{Require(Type(i)==SQLITE_TEXT,Error::Corrupt);const auto* p=sqlite3_column_text(stmt,i);const int n=sqlite3_column_bytes(stmt,i);Require(p!=nullptr,Error::Resource);return std::string(reinterpret_cast<const char*>(p),size_t(n));}
+    std::optional<Money> Amount(int i)const{return Type(i)==SQLITE_NULL?std::nullopt:std::optional<Money>(Money::Satoshis(Int(i)));}
+};
+int64_t Scalar(sqlite3* db,std::string_view sql){Statement q(db,sql);Require(q.Row(),Error::Schema);const auto n=q.Int(0);Require(!q.Row(),Error::Schema);return n;}
+class Transaction {
+    sqlite3* db;bool committed{};
+public:
+    Transaction(sqlite3* d,bool write):db(d){Exec(db,write?"BEGIN IMMEDIATE":"BEGIN");}
+    ~Transaction(){if(!committed)sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);}
+    void Commit(){Exec(db,"COMMIT");committed=true;}
+};
+bool Text(std::string_view s,size_t max,bool empty=true,bool lines=false){return (empty || !s.empty()) && s.size()<=max && rpc::ValidUtf8(s) && std::none_of(s.begin(),s.end(),[&](unsigned char c){return c==127 || (c<32 && !(lines && (c=='\n' || c=='\t')));});}
+bool Id(std::string_view s){return Text(s,256,false);}
+bool Valid(const Scope& s){return Id(s.backend) && Text(s.daemon_wallet,1024) && Hash256::Parse(s.network.genesis.hex()).has_value();}
+bool Valid(const Target& t){
+    if(t.kind==TargetKind::Address)return Text(t.key,512,false);
+    if(t.kind==TargetKind::Transaction){const auto hash=Hash256::Parse(t.key);return hash && hash->hex()==t.key;}
+    if(t.kind!=TargetKind::Output || t.key.size()<66 || t.key[64]!=':')return false;
+    const auto hash=Hash256::Parse(t.key.substr(0,64));if(!hash || hash->hex()!=t.key.substr(0,64))return false;
+    uint32_t index{};const auto n=std::string_view(t.key).substr(65);const auto p=std::from_chars(n.data(),n.data()+n.size(),index);
+    return p.ec==std::errc{} && p.ptr==n.data()+n.size() && std::to_string(index)==n;
+}
+void Validate(const Metadata& m){
+    Require(m.revision<uint64_t(std::numeric_limits<int64_t>::max()) && Text(m.display_name,1024));
+    Require(m.labels.size()<=4096 && m.layouts.size()<=64 && m.widths.size()<=1024 && m.freezes.size()<=4096 && m.drafts.size()<=64);
+    std::set<std::pair<int,std::string>> labels,freezes;std::set<std::string> tables,drafts;std::set<std::pair<std::string,std::string>> widths;
+    for(const auto& l:m.labels)Require(Valid(l.target) && Text(l.text,4096,true,true) && labels.emplace(int(l.target.kind),l.target.key).second);
+    for(const auto& f:m.freezes)Require(Valid(f) && f.kind!=TargetKind::Transaction && freezes.emplace(int(f.kind),f.key).second);
+    for(const auto& t:m.layouts)Require(Id(t.table) && Id(t.sort_column) && tables.insert(t.table).second);
+    for(const auto& c:m.widths)Require(tables.contains(c.table) && Id(c.column) && c.width>=16 && c.width<=8192 && widths.emplace(c.table,c.column).second);
+    for(const auto& d:m.drafts)Require(Id(d.document) && Text(d.note,65536,true,true) && drafts.insert(d.document).second);
+}
+uint64_t Counter(int64_t n){Require(n>=0,Error::Corrupt);return uint64_t(n);}
+uint64_t Unsigned(std::string_view s){uint64_t n{};const auto p=std::from_chars(s.data(),s.data()+s.size(),n);Require(p.ec==std::errc{} && p.ptr==s.data()+s.size() && std::to_string(n)==s,Error::Corrupt);return n;}
+bool Bool(int64_t n){Require(n==0 || n==1,Error::Corrupt);return n==1;}
+struct ScopeRow {int64_t id{};uint64_t revision{};std::string display;};
+ScopeRow FindScope(sqlite3* db,const Scope& s,bool create){
+    Require(Valid(s));
+    if(create){Statement q(db,"INSERT INTO scopes(backend,genesis,wallet,revision,display_name) VALUES(?,?,?,0,'') ON CONFLICT(backend,genesis,wallet) DO NOTHING");q.Bind(1,s.backend);q.Bind(2,s.network.genesis.hex());q.Bind(3,s.daemon_wallet);q.Done();}
+    Statement q(db,"SELECT id,revision,display_name FROM scopes WHERE backend=? AND genesis=? AND wallet=?");q.Bind(1,s.backend);q.Bind(2,s.network.genesis.hex());q.Bind(3,s.daemon_wallet);
+    if(!q.Row())return {};ScopeRow r{q.Int(0),Counter(q.Int(1)),q.Text(2)};Require(r.id>0 && Text(r.display,1024),Error::Corrupt);Require(!q.Row(),Error::Corrupt);return r;
+}
+void ValidateSchema(sqlite3* db,int version){
+    std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);
+    // GLOB keeps '_' literal: sqliteX... is an ordinary user object and must
+    // reach the exact-schema check, unlike SQLite's reserved sqlite_ objects.
+    Statement q(db,"SELECT type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'");
+    while(q.Row()){Require(q.Text(0)=="table" && expected.erase(q.Text(1))==1,Error::Schema);}
+    Require(expected.empty(),Error::Schema);
+}
+void PrivateFile(const std::filesystem::path& path){
+    Require(path.is_absolute() && Text(path.string(),4096,false));
+#if defined(__unix__)
+    struct stat parent{};Require(lstat(path.parent_path().c_str(),&parent)==0 && S_ISDIR(parent.st_mode) && parent.st_uid==getuid() && (parent.st_mode&0077)==0,Error::Io);
+    const int fd=open(path.c_str(),O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK,0600);Require(fd>=0,Error::Io);
+    struct stat file{};const bool ok=fstat(fd,&file)==0 && S_ISREG(file.st_mode) && file.st_uid==getuid() && (file.st_mode&0077)==0;close(fd);Require(ok,Error::Io);
+#else
+    throw Failure{Error::Unsupported}; // native private-file qualification required
+#endif
+}
+struct Budget {
+    sqlite3* db;
+    std::chrono::steady_clock::time_point end{std::chrono::steady_clock::now()+std::chrono::seconds(2)};
+    explicit Budget(sqlite3* d):db(d){sqlite3_progress_handler(db,1000,[](void* p){return int(std::chrono::steady_clock::now()>static_cast<Budget*>(p)->end);},this);}
+    ~Budget(){sqlite3_progress_handler(db,0,nullptr,nullptr);}
+};
+void BindAmount(Statement& q,int i,std::optional<Money> value){if(value)q.Bind(i,value->sats());else q.Null(i);}
+Target ReadTarget(const Statement& q){const auto kind=q.Int(0);Require(kind>=0 && kind<=2,Error::Corrupt);return {TargetKind(kind),q.Text(1)};}
+void Initialize(sqlite3* db,OpenOptions options){
+    Require(options.busy_ms>=0 && options.busy_ms<=1000 && options.max_pages>=1 && options.max_pages<=65536);
+    Budget budget(db);Check(sqlite3_extended_result_codes(db,1));Check(sqlite3_busy_timeout(db,options.busy_ms));
+    for(const auto [option,value]:{std::pair{SQLITE_DBCONFIG_DEFENSIVE,1},{SQLITE_DBCONFIG_TRUSTED_SCHEMA,0},{SQLITE_DBCONFIG_DQS_DDL,0},{SQLITE_DBCONFIG_DQS_DML,0},{SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE,0},{SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE,0}})Check(sqlite3_db_config(db,option,value,nullptr));
+    sqlite3_limit(db,SQLITE_LIMIT_LENGTH,1024*1024);sqlite3_limit(db,SQLITE_LIMIT_SQL_LENGTH,65536);sqlite3_limit(db,SQLITE_LIMIT_ATTACHED,0);
+    {Statement q(db,"PRAGMA quick_check(1)");Require(q.Row() && q.Text(0)=="ok" && !q.Row(),Error::Corrupt);}
+    const auto app=Scalar(db,"PRAGMA application_id"),version=Scalar(db,"PRAGMA user_version");
+    Require((app==schema::ApplicationId && version>=1 && version<=schema::Version) || (app==0 && version==0 && Scalar(db,"SELECT count(*) FROM sqlite_schema")==0),Error::Schema);
+    Exec(db,"PRAGMA foreign_keys=ON");Exec(db,"PRAGMA journal_mode=DELETE");Exec(db,"PRAGMA synchronous=EXTRA");Exec(db,"PRAGMA temp_store=MEMORY");Exec(db,"PRAGMA secure_delete=ON");
+    Exec(db,"PRAGMA max_page_count="+std::to_string(options.max_pages));Transaction tx(db,true);auto v=Scalar(db,"PRAGMA user_version");
+    if(v==0){Require(Scalar(db,"PRAGMA application_id")==0 && Scalar(db,"SELECT count(*) FROM sqlite_schema")==0,Error::Schema);for(auto sql:schema::V1)Exec(db,sql);Exec(db,"PRAGMA application_id="+std::to_string(schema::ApplicationId));Exec(db,"PRAGMA user_version=1");v=1;}
+    Require(Scalar(db,"PRAGMA application_id")==schema::ApplicationId && v>=1 && v<=schema::Version,Error::Schema);ValidateSchema(db,int(v));
+    if(v==1){Exec(db,schema::V2);Exec(db,"PRAGMA user_version=2");v=2;}if(v==2){Exec(db,schema::V3);Exec(db,"PRAGMA user_version=3");}ValidateSchema(db,schema::Version);
+    {Statement q(db,"PRAGMA foreign_key_check");Require(!q.Row(),Error::Corrupt);}tx.Commit();
+}
+CleansedBytes Serialize(sqlite3* db){sqlite3_int64 size{};auto* memory=sqlite3_serialize(db,"main",&size,0);if(!memory || size<=0 || uint64_t(size)>ProtectedFile::MaxBytes){if(memory){if(size>0)sodium_memzero(memory,size);sqlite3_free(memory);}throw Failure{Error::Resource};}CleansedBytes result;try{result.bytes.assign(memory,memory+size);}catch(...){sodium_memzero(memory,size);sqlite3_free(memory);throw;}sodium_memzero(memory,size);sqlite3_free(memory);return result;}
+void Deserialize(sqlite3* db,std::span<const unsigned char> bytes){Require(!bytes.empty() && bytes.size()<=ProtectedFile::MaxBytes,Error::Resource);auto* memory=static_cast<unsigned char*>(sqlite3_malloc64(bytes.size()+32));Require(memory,Error::Resource);std::copy(bytes.begin(),bytes.end(),memory);std::fill_n(memory+bytes.size(),32,0);Check(sqlite3_deserialize(db,"main",memory,sqlite3_int64(bytes.size()),sqlite3_int64(bytes.size()+32),SQLITE_DESERIALIZE_FREEONCLOSE|SQLITE_DESERIALIZE_RESIZEABLE));/* FREEONCLOSE also frees the buffer on failure. */}
+}
+const char* ErrorName(Error e){switch(e){case Error::None:return "success";case Error::Invalid:return "invalid-metadata";case Error::Conflict:return "metadata-conflict";case Error::Busy:return "store-busy";case Error::Full:return "store-full";case Error::Corrupt:return "store-corrupt";case Error::Schema:return "unsupported-store-schema";case Error::Resource:return "store-resource-limit";case Error::Timeout:return "store-timeout";case Error::WrongThread:return "store-owner-thread";case Error::Unsupported:return "private-store-unavailable";case Error::NotFound:return "not-found";case Error::Authentication:return "password-or-protected-data-invalid";case Error::ConversionConflict:return "interrupted-conversion-conflict";case Error::ConversionBackupConflict:return "conversion-backup-conflict";default:return "store-io";}}
+template<class F> auto MetadataStore::Run(F&& fn)->Result<std::invoke_result_t<F>>{
+    if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};
+    try{Budget budget(db);return {fn(),Error::None};}catch(Failure e){return {{},e.error};}catch(const std::bad_alloc&){return {{},Error::Resource};}catch(...){return {{},Error::Io};}
+}
+MetadataStore::~MetadataStore(){sqlite3_close_v2(db);}
+template<class F> auto MetadataStore::Write(F&& fn)->Result<std::invoke_result_t<F>>{
+    if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};
+    if(migration_blocked){if(protection || !file_guard || !file_guard->Exclusive())return {{},Error::Busy};file_guard->Shared();migration_blocked=false;}
+    if(!protection){try{auto protected_path=file_path;protected_path += ".protected";if(std::filesystem::exists(protected_path))return {{},Error::Busy};}catch(...){return {{},Error::Io};}return Run(std::forward<F>(fn));}
+    try{auto before=Serialize(db);auto result=Run(std::forward<F>(fn));if(!result)return result;try{auto after=Serialize(db);const auto saved=protection->Save(after.bytes);Require(bool(saved),saved.error);return result;}catch(...){try{Deserialize(db,before.bytes);}catch(...){migration_blocked=true;}throw;}}catch(Failure e){return {{},e.error};}catch(...){return {{},Error::Resource};}
+}
+Result<std::unique_ptr<MetadataStore>> MetadataStore::Open(const std::filesystem::path& path,OpenOptions options){
+    try{
+        Require(path.is_absolute() && Text(path.string(),4096,false));
+        Require(options.busy_ms>=0 && options.busy_ms<=1000 && options.max_pages>=1 && options.max_pages<=65536);
+        auto store=std::unique_ptr<MetadataStore>(new MetadataStore);
+        auto guard=FileGuard::Open(path,false);Require(bool(guard),guard.error);store->file_guard=std::move(*guard.value);auto protected_path=path;protected_path += ".protected";Require(!std::filesystem::exists(protected_path),Error::Authentication);PrivateFile(path);store->file_path=path;
+        Check(sqlite3_open_v2(path.string().c_str(),&store->db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_NOMUTEX|SQLITE_OPEN_NOFOLLOW|SQLITE_OPEN_PRIVATECACHE,nullptr));
+        Initialize(store->db,options);
+        return {std::move(store),Error::None};
+    }catch(Failure e){return {{},e.error};}catch(const std::bad_alloc&){return {{},Error::Resource};}catch(...){return {{},Error::Io};}
+}
+Result<std::unique_ptr<MetadataStore>> MetadataStore::OpenProtected(const std::filesystem::path& path,std::string_view password,OpenOptions options,ConversionResolution resolution){
+    try{Require(path.is_absolute() && Text(path.string(),4096,false));auto store=std::unique_ptr<MetadataStore>(new MetadataStore);auto guard=FileGuard::Open(path,true);Require(bool(guard),guard.error);store->file_guard=std::move(*guard.value);store->file_path=path;auto encrypted=path;encrypted += ".protected";Require(std::filesystem::exists(encrypted),Error::Invalid);auto file=ProtectedFile::Open(encrypted,password);Require(bool(file),file.error);store->protection=std::move(*file.value);auto plain=store->protection->Read();Require(bool(plain),plain.error);Check(sqlite3_open_v2(":memory:",&store->db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX|SQLITE_OPEN_MEMORY,nullptr));if(!plain.value->bytes.empty())Deserialize(store->db,plain.value->bytes);Initialize(store->db,options);const auto finished=store->protection->FinishConversion(path,resolution);Require(bool(finished),finished.error);if(plain.value->bytes.empty()){auto bytes=Serialize(store->db);const auto written=store->protection->Save(bytes.bytes);Require(bool(written),written.error);}return {std::move(store),Error::None};}catch(Failure e){return {{},e.error};}catch(...){return {{},Error::Io};}
+}
+Result<std::unique_ptr<MetadataStore>> MetadataStore::Protect(std::string_view password){
+    if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};
+    try{Require(!protection && file_guard && !migration_blocked,Error::Invalid);if(!file_guard->Exclusive()){migration_blocked=true;return {{},Error::Busy};}auto encrypted=file_path;encrypted += ".protected";Require(!std::filesystem::exists(encrypted),Error::Conflict);auto bytes=Serialize(db);auto file=ProtectedFile::Open(encrypted,password);Require(bool(file),file.error);auto result=std::unique_ptr<MetadataStore>(new MetadataStore);result->file_path=file_path;result->protection=std::move(*file.value);Check(sqlite3_open_v2(":memory:",&result->db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX|SQLITE_OPEN_MEMORY,nullptr));Deserialize(result->db,bytes.bytes);Initialize(result->db,{});auto written=result->protection->Save(bytes.bytes);Require(bool(written),written.error);auto verified=result->protection->Read();Require(verified && verified.value->bytes==bytes.bytes,Error::Authentication);Require(std::filesystem::remove(file_path),Error::Io);result->file_guard=std::move(file_guard);migration_blocked=true;return {std::move(result),Error::None};}catch(Failure e){return {{},e.error};}catch(...){return {{},Error::Io};}
+}
+Result<std::vector<unsigned char>> MetadataStore::SealMemory(std::string_view text){if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};if(!protection)return {{},Error::Invalid};return protection->Seal({reinterpret_cast<const unsigned char*>(text.data()),text.size()});}
+Result<std::string> MetadataStore::UnsealMemory(std::span<const unsigned char> bytes){if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};if(!protection)return {{},Error::Invalid};auto result=protection->Unseal(bytes);if(!result)return {{},result.error};return {std::string(reinterpret_cast<const char*>(result.value->bytes.data()),result.value->bytes.size()),Error::None};}
+Result<Metadata> MetadataStore::Load(const Scope& scope){return Run([&]{
+    Transaction tx(db,false);const auto row=FindScope(db,scope,false);Metadata m;m.revision=row.revision;m.display_name=row.display;
+    if(row.id){
+        {Statement q(db,"SELECT kind,target,label FROM labels WHERE scope=? ORDER BY kind,target");q.Bind(1,row.id);while(q.Row()){Require(m.labels.size()<4096,Error::Resource);m.labels.push_back({ReadTarget(q),q.Text(2)});}}
+        {Statement q(db,"SELECT table_id,sort_column,descending FROM layouts WHERE scope=? ORDER BY table_id");q.Bind(1,row.id);while(q.Row()){Require(m.layouts.size()<64,Error::Resource);m.layouts.push_back({q.Text(0),q.Text(1),Bool(q.Int(2))});}}
+        {Statement q(db,"SELECT table_id,column_id,width FROM widths WHERE scope=? ORDER BY table_id,column_id");q.Bind(1,row.id);while(q.Row()){Require(m.widths.size()<1024 && q.Int(2)>=16 && q.Int(2)<=8192,Error::Corrupt);m.widths.push_back({q.Text(0),q.Text(1),int(q.Int(2))});}}
+        {Statement q(db,"SELECT kind,target FROM freezes WHERE scope=? ORDER BY kind,target");q.Bind(1,row.id);while(q.Row()){Require(m.freezes.size()<4096,Error::Resource);m.freezes.push_back(ReadTarget(q));}}
+        {Statement q(db,"SELECT document,revision,note,amount FROM drafts WHERE scope=? ORDER BY document");q.Bind(1,row.id);while(q.Row()){Require(m.drafts.size()<64,Error::Resource);m.drafts.push_back({q.Text(0),{Unsigned(q.Text(1))},q.Text(2),q.Amount(3)});}}
+    }
+    // Exhausted counters can still be inspected, but never advanced/wrapped.
+    auto valid=m;valid.revision=0;Validate(valid);tx.Commit();return m;
+});}
+Result<uint64_t> MetadataStore::Save(const Scope& scope,const Metadata& m){return Write([&]{
+    Validate(m);Transaction tx(db,true);const auto row=FindScope(db,scope,true);Require(row.revision==m.revision,Error::Conflict);
+    {Statement q(db,"UPDATE scopes SET revision=?,display_name=? WHERE id=?");q.Bind(1,int64_t(m.revision+1));q.Bind(2,m.display_name);q.Bind(3,row.id);q.Done();}
+    for(const auto* table:{"widths","layouts","labels","freezes","drafts"}){Statement q(db,std::string("DELETE FROM ")+table+" WHERE scope=?");q.Bind(1,row.id);q.Done();}
+    for(const auto& l:m.labels){Statement q(db,"INSERT INTO labels VALUES(?,?,?,?)");q.Bind(1,row.id);q.Bind(2,int64_t(l.target.kind));q.Bind(3,l.target.key);q.Bind(4,l.text);q.Done();}
+    for(const auto& t:m.layouts){Statement q(db,"INSERT INTO layouts VALUES(?,?,?,?)");q.Bind(1,row.id);q.Bind(2,t.table);q.Bind(3,t.sort_column);q.Bind(4,int64_t(t.descending));q.Done();}
+    for(const auto& c:m.widths){Statement q(db,"INSERT INTO widths VALUES(?,?,?,?)");q.Bind(1,row.id);q.Bind(2,c.table);q.Bind(3,c.column);q.Bind(4,int64_t(c.width));q.Done();}
+    for(const auto& f:m.freezes){Statement q(db,"INSERT INTO freezes VALUES(?,?,?)");q.Bind(1,row.id);q.Bind(2,int64_t(f.kind));q.Bind(3,f.key);q.Done();}
+    for(const auto& d:m.drafts){Statement q(db,"INSERT INTO drafts VALUES(?,?,?,?,?)");q.Bind(1,row.id);q.Bind(2,d.document);q.Bind(3,std::to_string(d.revision.value));q.Bind(4,d.note);BindAmount(q,5,d.amount);q.Done();}
+    tx.Commit();return m.revision+1;
+});}
+Result<Workspace> MetadataStore::LoadWorkspace(){return Run([&]{Workspace w;Statement q(db,"SELECT revision,refresh,hidden,restore,appearance,unit FROM workspace WHERE slot=1");if(q.Row()){w.revision=Counter(q.Int(0));const auto refresh=q.Int(1),appearance=q.Int(4),unit=q.Int(5);Require(refresh>=1 && refresh<=3600 && appearance>=0 && appearance<=2 && unit>=0 && unit<=2,Error::Corrupt);w.preferences={int(refresh),Bool(q.Int(2))};w.restore_documents=Bool(q.Int(3));w.appearance=int(appearance);w.unit=int(unit);Require(!q.Row(),Error::Corrupt);}Require(ValidPreferences(w.preferences),Error::Corrupt);return w;});}
+Result<uint64_t> MetadataStore::SaveWorkspace(const Workspace& w){return Write([&]{
+    Require(w.revision<uint64_t(std::numeric_limits<int64_t>::max()) && ValidPreferences(w.preferences) && w.appearance>=0 && w.appearance<=2 && w.unit>=0 && w.unit<=2);Transaction tx(db,true);
+    const auto revision=Scalar(db,"SELECT coalesce((SELECT revision FROM workspace WHERE slot=1),0)");Require(Counter(revision)==w.revision,Error::Conflict);
+    Statement q(db,"INSERT INTO workspace VALUES(1,?,?,?,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,refresh=excluded.refresh,hidden=excluded.hidden,restore=excluded.restore,appearance=excluded.appearance,unit=excluded.unit");q.Bind(1,int64_t(w.revision+1));q.Bind(2,int64_t(w.preferences.refresh_seconds));q.Bind(3,int64_t(w.preferences.hide_balances));q.Bind(4,int64_t(w.restore_documents));q.Bind(5,int64_t(w.appearance));q.Bind(6,int64_t(w.unit));q.Done();tx.Commit();return w.revision+1;
+});}
+Result<RecoveryRecord> MetadataStore::LoadRecovery(){return Run([&]{
+    RecoveryRecord r;Statement q(db,"SELECT revision,enabled,public_documents FROM recovery WHERE slot=1");
+    if(q.Row()){r={Counter(q.Int(0)),Bool(q.Int(1)),q.Text(2)};Require(!q.Row() && Text(r.public_documents,524288) && (r.enabled || r.public_documents.empty()),Error::Corrupt);}return r;
+});}
+Result<uint64_t> MetadataStore::SaveRecovery(const RecoveryRecord& r){return Write([&]{
+    Require(r.revision<uint64_t(std::numeric_limits<int64_t>::max()) && Text(r.public_documents,524288) && (r.enabled || r.public_documents.empty()));Transaction tx(db,true);
+    Require(Counter(Scalar(db,"SELECT coalesce((SELECT revision FROM recovery WHERE slot=1),0)"))==r.revision,Error::Conflict);
+    Statement q(db,"INSERT INTO recovery VALUES(1,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,enabled=excluded.enabled,public_documents=excluded.public_documents");q.Bind(1,int64_t(r.revision+1));q.Bind(2,int64_t(r.enabled));q.Bind(3,r.public_documents);q.Done();tx.Commit();return r.revision+1;
+});}
+Result<Profile> MetadataStore::LoadProfile(std::string_view id){return Run([&]{
+    Require(Id(id));Statement q(db,"SELECT revision,genesis,wallet,host,port,tls,ca,proxy,proxy_host,proxy_port,credential_ref FROM profiles WHERE id=?");q.Bind(1,id);Require(q.Row(),Error::NotFound);Profile p;p.id=id;p.revision=Counter(q.Int(0));auto& c=p.candidate;c.expected_genesis=q.Text(1);if(q.Type(2)!=SQLITE_NULL)c.wallet=q.Text(2);auto& v=c.connection;
+    const auto port=q.Int(4),proxy=q.Int(7),proxy_port=q.Int(9);Require(port>0 && port<=65535 && proxy>=0 && proxy<=2 && proxy_port>0 && proxy_port<=65535,Error::Corrupt);
+    v.host=q.Text(3);v.port=uint16_t(port);v.tls=Bool(q.Int(5));v.trusted_ca_file=q.Text(6);v.proxy=ProxyKind(proxy);v.proxy_host=q.Text(8);v.proxy_port=uint16_t(proxy_port);v.credential={Authentication::SecureStore,q.Text(10)};Require(!q.Row() && ValidServerCandidate(c) && Text(v.trusted_ca_file,4096) && Text(v.credential.reference,4096,false),Error::Corrupt);return p;
+});}
+Result<uint64_t> MetadataStore::SaveProfile(const Profile& p){return Write([&]{
+    Require(Id(p.id) && p.revision<uint64_t(std::numeric_limits<int64_t>::max()) && p.candidate.connection.credential.kind==Authentication::SecureStore && ValidServerCandidate(p.candidate) && Text(p.candidate.connection.trusted_ca_file,4096) && Text(p.candidate.connection.credential.reference,4096,false));Transaction tx(db,true);
+    {Statement q(db,"SELECT revision FROM profiles WHERE id=?");q.Bind(1,p.id);const auto revision=q.Row()?Counter(q.Int(0)):0;Require(revision==p.revision,Error::Conflict);}
+    const auto& c=p.candidate;const auto& v=c.connection;
+    Statement q(db,"INSERT INTO profiles VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,genesis=excluded.genesis,wallet=excluded.wallet,host=excluded.host,port=excluded.port,tls=excluded.tls,ca=excluded.ca,proxy=excluded.proxy,proxy_host=excluded.proxy_host,proxy_port=excluded.proxy_port,credential_ref=excluded.credential_ref");
+    q.Bind(1,p.id);q.Bind(2,int64_t(p.revision+1));q.Bind(3,c.expected_genesis);if(c.wallet)q.Bind(4,*c.wallet);else q.Null(4);q.Bind(5,v.host);q.Bind(6,int64_t(v.port));q.Bind(7,int64_t(v.tls));q.Bind(8,v.trusted_ca_file);q.Bind(9,int64_t(v.proxy));q.Bind(10,v.proxy_host);q.Bind(11,int64_t(v.proxy_port));q.Bind(12,v.credential.reference);q.Done();tx.Commit();return p.revision+1;
+});}
+Result<Done> MetadataStore::SaveObservation(const Scope& scope,std::string_view key,const Provenance& p,std::optional<Money> amount){return Write([&]{
+    Require(Id(key) && Id(p.context.backend.value()) && Id(p.context.wallet.value()) && Id(p.context.document.value()) && p.context.network==scope.network && p.observed_unix_ms && *p.observed_unix_ms>0 && int(p.freshness)>=0 && int(p.freshness)<=4);Transaction tx(db,true);const auto row=FindScope(db,scope,true);
+    Statement q(db,"INSERT INTO observations VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scope,key) DO UPDATE SET backend_session=excluded.backend_session,wallet_id=excluded.wallet_id,document=excluded.document,revision=excluded.revision,epoch=excluded.epoch,source_freshness=excluded.source_freshness,observed_ms=excluded.observed_ms,height=excluded.height,amount=excluded.amount WHERE excluded.observed_ms>=observations.observed_ms");
+    q.Bind(1,row.id);q.Bind(2,key);q.Bind(3,p.context.backend.value());q.Bind(4,p.context.wallet.value());q.Bind(5,p.context.document.value());q.Bind(6,std::to_string(p.context.revision.value));q.Bind(7,std::to_string(p.context.lock_epoch.value));q.Bind(8,int64_t(p.freshness));q.Bind(9,*p.observed_unix_ms);if(p.height)q.Bind(10,int64_t(*p.height));else q.Null(10);BindAmount(q,11,amount);q.Done();Require(sqlite3_changes(db)==1,Error::Conflict);tx.Commit();return Done{};
+});}
+Result<CachedObservation> MetadataStore::LoadObservation(const Scope& scope,std::string_view key){return Run([&]{
+    Require(Id(key));Transaction tx(db,false);const auto row=FindScope(db,scope,false);Require(row.id!=0,Error::NotFound);Statement q(db,"SELECT backend_session,wallet_id,document,revision,epoch,source_freshness,observed_ms,height,amount FROM observations WHERE scope=? AND key=?");q.Bind(1,row.id);q.Bind(2,key);Require(q.Row(),Error::NotFound);
+    const auto backend=BackendSessionId::Make(q.Text(0));const auto wallet=WalletId::Make(q.Text(1));const auto document=DocumentId::Make(q.Text(2));const auto freshness=q.Int(5),observed=q.Int(6);Require(backend && wallet && document && Id(backend->value()) && Id(wallet->value()) && Id(document->value()) && freshness>=0 && freshness<=4 && observed>0,Error::Corrupt);
+    std::optional<uint32_t> height;if(q.Type(7)!=SQLITE_NULL){const auto n=q.Int(7);Require(n>=0 && n<=std::numeric_limits<uint32_t>::max(),Error::Corrupt);height=uint32_t(n);}
+    CachedObservation result{{{*backend,scope.network,*wallet,*document,{Unsigned(q.Text(3))},{Unsigned(q.Text(4))}},Freshness::Cached,observed,height},Freshness(freshness),q.Amount(8)};Require(!q.Row(),Error::Corrupt);tx.Commit();return result;
+});}
+}

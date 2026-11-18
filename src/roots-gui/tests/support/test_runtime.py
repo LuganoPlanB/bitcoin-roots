@@ -103,6 +103,29 @@ class ScratchContracts(unittest.TestCase):
                 packet = self.packet | {'directory':str(folder)}
                 self.rejected(self.environment | {'TMPDIR':str(folder), 'GESTALT_SESSION_TMP_CONTEXT':json.dumps(packet)})
 
+    def test_v2_short_runtime_owned_alias(self):
+        runtime = self.root/'short-runtime'
+        runtime.mkdir()
+        stat = runtime.stat()
+        binding = dict(directory=str(runtime), token='public-fixture-token',
+                       identity=f'{stat.st_dev}:{stat.st_ino}:{stat.st_ctime_ns}')
+        packet = self.packet | dict(schemaVersion=2, runtime=binding)
+        self.marker.write_text(json.dumps(dict(ownerId='fixture-owner', workspacePath=str(self.root), runtime=binding)))
+        receipt = dict(schemaVersion=2, ownerId='fixture-owner', workspacePath=str(self.root),
+                       token=binding['token'], identity=binding['identity'])
+        runtime_marker = runtime/'.gestalt-runtime.json'
+        runtime_marker.write_text(json.dumps(receipt))
+        environment = self.environment | dict(GESTALT_SESSION_TMP_CONTEXT=json.dumps(packet),
+                                              TMPDIR=str(runtime), TMP=str(runtime), TEMP=str(runtime))
+        self.allocate(environment, runtime)
+        for key in ('token','identity','ownerId','workspacePath','schemaVersion'):
+            with self.subTest(mismatched_runtime_field=key):
+                runtime_marker.write_text(json.dumps(receipt | {key:'wrong'}))
+                self.rejected(environment)
+        runtime_marker.write_text(json.dumps(receipt))
+        self.rejected(environment | {'TEMP':str(self.managed)})
+        self.rejected(environment | {'GESTALT_SESSION_TMP_CONTEXT':json.dumps(packet | {'runtime':None})})
+
 
 class Result(unittest.TextTestResult):
     subcases = 0
@@ -116,6 +139,6 @@ if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(suite)
     failed = {test.id().split(' (', 1)[0] for test, _ in result.errors + result.failures}
     executed = result.testsRun - len(result.skipped)
-    print(json.dumps(dict(selected=8, executed=executed, passed=executed-len(failed), failed=len(failed),
+    print(json.dumps(dict(selected=9, executed=executed, passed=executed-len(failed), failed=len(failed),
                           skipped=len(result.skipped), subcases=result.subcases)))
-    raise SystemExit(int(not result.wasSuccessful() or executed != 8))
+    raise SystemExit(int(not result.wasSuccessful() or executed != 9))

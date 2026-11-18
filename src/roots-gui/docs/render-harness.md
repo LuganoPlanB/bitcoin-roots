@@ -6,12 +6,33 @@ The six plan entry points are `roots_gui_model_tests`, `roots_gui_rpc_tests`,
 `rpc`, `ui`, `regtest`, `visual` and `boundary`. The public dispatcher verifies
 exact selected identities and current JUnit outcomes; zero selection cannot
 pass. Model/RPC/UI/regtest contracts remain in [rpc-fixtures.md](rpc-fixtures.md).
+The additional `roots_gui_applicable_tests` target runs the union of the current
+deterministic model/RPC/UI/regtest/boundary cases once, without label-overlap
+duplicates. Before execution every dispatcher reconciles all83 current GUI
+CTest identities and all six label memberships, then checks selected JUnit
+identities/counts. Missing/new cases or label drift fail before execution. This
+full aggregate profile requires Linux, tests enabled and the explicitly supplied
+owned Roots daemon. Individual suites account for daemon-conditional
+registrations from explicit CMake cache inputs, so a node-less configuration can
+still run pure model/fixture RPC coverage. Empty regtest selection fails; a
+different profile cannot silently pass the full aggregate with missing capabilities.
+
+The aggregate selects61 cases. It explicitly excludes10 visual matrix/baseline
+entries, five native accessibility/platform entries and seven separate L3 native
+journeys. They are exclusions, not selected skips or passes. Under the approved
+lean verification contract, one representative current native journey and
+identity-bound unchanged evidence accompany this deterministic aggregate.
+Affected native evidence must be refreshed if its executed binary changes;
+missing inspected baselines, Core runtime and physical/platform qualifications
+remain explicit. The individual full visual/UI/regtest targets retain their
+own complete native selections for deliberate qualification runs.
 
 Visual runs use the production `NativeHost`, stock pinned GLFW/OpenGL3 and
 production Draw functions. The host owns context, input, resources and thread;
 its optional content callback composes actual production panels inside that
-frame. The default executable continues to draw the bootstrap. Preferences
-remain a public-preference port without a production persistence/menu route.
+frame. The default executable draws the wallet workspace with deliberate public
+recovery/connection choices. The older preference-gallery port remains a fixture;
+the actual Server menu uses the production connection service.
 The visual producer contains no Test Engine hooks. Its fake service records
 requests without custody or network effects.
 

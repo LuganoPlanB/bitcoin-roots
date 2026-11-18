@@ -1,5 +1,8 @@
 # Independent GUI HTTP/TLS and local public metadata source dependencies.
 function(roots_gui_add_service_dependencies source_dir)
+  # Native reviewed password/KDF/authenticated-file provider. No runtime fetch.
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(ROOTS_GUI_SODIUM REQUIRED IMPORTED_TARGET libsodium>=1.0.18)
   set(BUILD_CURL_EXE OFF)
   set(BUILD_SHARED_LIBS OFF)
   set(BUILD_STATIC_LIBS ON)

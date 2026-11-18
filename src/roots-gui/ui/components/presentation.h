@@ -76,6 +76,7 @@ public:
     void BindShortcut(ax::StableId,std::string_view);
     bool Annotate(const char* id,const char* name,std::string_view value,
                   imkit::accessibility::SemanticRole role=imkit::accessibility::SemanticRole::Text,bool disabled=false,bool read_only=true,bool busy=false);
+    bool RangeValue(ax::StableId,double current,double minimum,double maximum,double step);
     void Progress(const char* id,const char* name,std::string_view value,std::optional<unsigned> per_mille,bool busy);
     ax::AccessibilityTree Tree() const { auto tree=frame.Tree();tree.overflow|=text_overflow;return tree; }
     void RecordChart(std::span<const float> samples) { chart_samples.insert(chart_samples.end(),samples.begin(),samples.end()); }

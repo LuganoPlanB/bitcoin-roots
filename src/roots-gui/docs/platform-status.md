@@ -7,6 +7,16 @@ through the bounded generation-checked exchange. Linux AT-SPI and the unmodified
 Orca braille-monitor journey are documented in [linux-accessibility.md](linux-accessibility.md).
 Physical audio and braille hardware are separate, unqualified capabilities.
 
+The connected-wallet milestone adds current owner-thread semantic packets for
+history/address/coin views, privacy lock and pinned-input inspection, with
+guarded actions and cleanup covered by production Engine tests. Owned Roots
+and Linux software-rendered native journeys qualify only their observed
+read-only/local-metadata behavior. They do not establish Core compatibility,
+hardware assistive support, funding/signing/broadcast services or another
+platform's delivery. Parent acceptance uses one representative current native
+journey plus explicit unchanged evidence; it does not rerun the historical
+theme/scale/state cross-product or turn unavailable baseline contracts into passes.
+
 | Boundary | Linux implementation | Residual implementation and qualification |
 | --- | --- | --- |
 | Clipboard | X11 selection ownership and asynchronous UTF-8/Latin-1/INCR reads; actual public InputText callback insertion | Non-X11 clipboard transport is unimplemented |
@@ -15,6 +25,7 @@ Physical audio and braille hardware are separate, unqualified capabilities.
 | Scale | Actual root RESOURCE_MANAGER/Xft.dpi notifications; host font scale, framebuffer and layout update | Per-monitor scale selection and true movement between different-DPI monitors remain unfinished, deferred and unqualified |
 | Motion | Read-only GSettings enable-animations observation; unavailable setting conservatively reduces motion | Other desktop portals/settings providers are unimplemented |
 | Accessibility | Application-owned AT-SPI2 service, owner-thread immutable packets/actions | Physical assistive devices remain unqualified |
+| Local metadata protection | Installed libsodium Argon2id/secretstream, private atomic ciphertext and owner-thread privacy-lock epochs; representative native lock/unlock failure journey | OS RPC keychain provider remains unavailable; macOS/Windows private-file/keychain/native lock qualification remains a follow-on |
 
 `NativeInputPort` is the UI boundary. Its per-frame installation is thread-local;
 headless UI tests have no native service. Paste keeps only owned identity, view,

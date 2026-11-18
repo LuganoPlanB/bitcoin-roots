@@ -14,6 +14,7 @@ struct NativeInputPort {
     virtual ~NativeInputPort()=default;
     virtual void BeginView(std::string_view)=0;
     virtual void Privacy(bool)=0;
+    virtual void PrivacyLock(){Privacy(true);}
     virtual void EnterEditor(uint32_t,bool sensitive)=0;
     virtual void LeaveEditor()=0;
     virtual std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t)=0;

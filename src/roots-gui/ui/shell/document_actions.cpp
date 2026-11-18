@@ -17,6 +17,7 @@ void Finish(State& s,bool native=true) {
     if(native){s.actions.kind=DocumentDialog::None;RestoreDocumentFocus(s,s.actions.return_focus);ImGui::CloseCurrentPopup();}
     else s.close_document_popup=true;
 }
+bool CloseViews(State& s,std::span<const uint64_t> ids){const bool ok=s.recovery?s.recovery->Close(s.documents,ids):s.documents.Close(ids);if(!ok)s.actions.error=s.recovery?s.recovery->Error():"Document set changed.";return ok;}
 bool DocumentActionAvailable(const State& s,const a::Requests& host,std::string_view id) {
     const auto& x=s.actions;const auto* d=s.documents.Find(x.target);
     if(x.kind==DocumentDialog::None || !x.dialog.open || s.close_document_popup)return false;
@@ -38,9 +39,9 @@ bool ApplyDocumentAction(State& s,a::Requests& host,std::string_view id,bool nat
     if(id=="save-close" && x.kind==DocumentDialog::Close){
         for(auto key:x.close_ids){const auto* doc=s.documents.Find(key);if(!doc){x.error="Document set changed; cancel and try again.";return false;}
             if(doc->Dirty()){const a::Request request{a::Command::SaveDraft,key,doc->section,{}};const auto available=host.CanSubmit(request);if(!available.available){x.error=available.reason.empty()?"Draft persistence became unavailable; all views remain open.":available.reason;return false;}const auto receipt=host.Submit(request);if(!receipt.accepted){x.error=receipt.reason.empty()?"Draft persistence service is unavailable; all views remain open.":receipt.reason;return false;}}}
-        if(!s.documents.Close(x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;
+        if(!CloseViews(s,x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;
     }
-    if(id=="discard-close" && x.kind==DocumentDialog::Close){if(!s.documents.Close(x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;}
+    if(id=="discard-close" && x.kind==DocumentDialog::Close){if(!CloseViews(s,x.close_ids))return false;x.return_focus=s.documents.ActiveId();Finish(s,native);return true;}
     if(id=="apply-name" && x.kind==DocumentDialog::Rename){
         if(x.name.draft().empty() || x.name.draft().find_first_of("\r\n")!=std::string_view::npos)return false;
         const auto receipt=host.Submit({a::Command::DocumentMetadata,x.target,d->section,{},std::string(x.name.draft()),x.icon});
@@ -82,7 +83,7 @@ bool ApplyTabAction(State& s,a::Requests& host,uint64_t id,std::string_view labe
     if(label=="Close Others"){BeginClose(s,id,true);return true;}
     if(label=="Close All"){BeginClose(s,id,false,true);return true;}
     if(d->kind!=a::DocumentKind::Wallet)return false;
-    if(label=="Lock Wallet"){const auto receipt=host.Submit({a::Command::LockCurrent,id,d->section,{}});s.notice=receipt.reason;return receipt.accepted;}
+    if(label=="Lock Wallet"){if(s.recovery)return RequestPrivacyLock(s);const auto receipt=host.Submit({a::Command::LockCurrent,id,d->section,{}});s.notice=receipt.reason;return receipt.accepted;}
     if(label=="Delete Wallet..."){BeginDelete(s,id);return s.actions.kind==DocumentDialog::Delete;}
     if(label=="Separate Wallet Window...")s.notice="Separate wallet windows are unavailable: this native backend has one context/thread owner. The tab, drafts and selection remain here.";
     return false;
@@ -92,7 +93,7 @@ void BeginClose(State& s,uint64_t id,bool others,bool all)
 {
     const auto ids=s.documents.CloseTargets(id,others,all);if(ids.empty())return;
     const bool dirty=std::any_of(ids.begin(),ids.end(),[&](auto key){return s.documents.Find(key)->Dirty();});
-    if(!dirty){s.documents.Close(ids);RestoreDocumentFocus(s,s.documents.ActiveId());return;}
+    if(!dirty){if(!CloseViews(s,ids))s.notice=s.actions.error;RestoreDocumentFocus(s,s.documents.ActiveId());return;}
     Begin(s,DocumentDialog::Close,id);s.actions.close_ids=ids;
 }
 void BeginRename(State& s,uint64_t id)
@@ -143,7 +144,8 @@ void DrawDocumentDialog(State& s,a::Requests& host,Facts& f,const imkit::Theme& 
     if(stale)ImGui::TextUnformatted("The document is no longer open.");
     else if(x.kind==DocumentDialog::Close) {
         ImGui::TextUnformatted("Unsaved document drafts");
-        ImGui::TextUnformatted("Save needs an acknowledged persistence service. Discard closes these views and their drafts; it never deletes or locks a daemon wallet.");s.presentation.Annotate("close-explanation","Close behavior","Save needs an acknowledged persistence service. Discard closes these views and their drafts; it never deletes or locks a daemon wallet.");
+        const char* close_text=s.recovery && s.recovery->Enabled()?"Close saves a recoverable public copy first. Session Recovery can reopen the last closed document. No daemon wallet is deleted or locked.":"Save needs an acknowledged persistence service. Discard closes these views and their drafts; it never deletes or locks a daemon wallet.";
+        ImGui::TextUnformatted(close_text);s.presentation.Annotate("close-explanation","Close behavior",close_text);
         for(auto id:x.close_ids)if(const auto* doc=s.documents.Find(id)){ImGui::PushID(std::to_string(id).c_str());ImGui::TextUnformatted(doc->name.c_str());s.presentation.Annotate("closing-name","Document with unsaved drafts",doc->name);ImGui::PopID();}
     } else if(x.kind==DocumentDialog::Rename) {
         ImGui::TextUnformatted("Rename / Icon");ImGui::TextUnformatted("Local display metadata only. This does not rename a daemon wallet directory.");s.presentation.Annotate("rename-explanation","Rename behavior","Local display metadata only. This does not rename a daemon wallet directory.");
@@ -183,7 +185,7 @@ void DrawDocumentDialog(State& s,a::Requests& host,Facts& f,const imkit::Theme& 
     if(!x.error.empty()){const auto detail=s.privacy.hidden?std::string("Document action failed. Result details hidden."):x.error;ImGui::BeginChild("document-error",{0,56*scale},ImGuiChildFlags_NavFlattened);ImGui::TextWrapped("%s",detail.c_str());ImGui::EndChild();s.presentation.Annotate("document-error","Document action status",detail,imkit::accessibility::SemanticRole::Alert);}
     Button(s,host,f,"cancel",stale?"Close":"Cancel",theme);if(!x.dialog.open){s.presentation.EndGroup();imkit::EndDialog();return;}
     if(!stale){ImGui::SameLine();
-        if(x.kind==DocumentDialog::Close){Button(s,host,f,"save-close","Save and Close",theme,true);ImGui::SameLine();Button(s,host,f,"discard-close","Discard Drafts and Close",theme);}
+        if(x.kind==DocumentDialog::Close){Button(s,host,f,"save-close","Save and Close",theme,true);ImGui::SameLine();Button(s,host,f,"discard-close",s.recovery && s.recovery->Enabled()?"Close; keep recovery":"Discard Drafts and Close",theme);}
         else if(x.kind==DocumentDialog::Rename){const bool valid=!x.name.draft().empty() && x.name.draft().find_first_of("\r\n")==std::string_view::npos;Button(s,host,f,"apply-name","Apply Name / Icon",theme,true,valid);}
         else if(x.kind==DocumentDialog::Delete)Button(s,host,f,"confirm-delete","Request Wallet Deletion",theme,true);
         else Button(s,host,f,"import","Request Import",theme,true,x.format>=0 && size_t(x.format)<x.candidate.formats.size());

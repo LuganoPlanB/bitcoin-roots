@@ -11,7 +11,7 @@ ctest --test-dir ../roots-gui-build --output-on-failure --no-tests=error -j 2
 ```
 
 This configuration does not process the daemon/Qt build or require Boost,
-Core libraries or Core internal headers. Native Xlib/OpenGL and OpenSSL
+Core libraries or Core internal headers. Native Xlib/OpenGL, OpenSSL and libsodium>=1.0.18
 development files, C/C++20, CMake ≥3.22, Python ≥3.10 and Git for the reviewed
 provider patch are system prerequisites. The pinned sources and notices in
 [build-inputs.md](build-inputs.md) are the complete local bundled inputs.
@@ -50,7 +50,7 @@ CMake runs separately to avoid generic target/cache collisions.
 | Target | Responsibility |
 | --- | --- |
 | `roots_gui_core` | Exact domain and application build metadata; private standalone protocol/transport/SQLite dependencies |
-| `roots_gui_ui` | Production draw entry and ImKit integration; no service implementation or persistence |
+| `roots_gui_ui` | Production draw entry, document/recovery orchestration and ImKit integration; storage remains an adapter |
 | `roots_gui_platform` | Native host, stock backend lifecycle, DPI/fonts and renderer resources |
 | `roots-gui` | Executable entry and explicit diagnostic command dispatch |
 | `roots_gui_provider_build` / `roots_gui_protocol` | Isolated public-data library build and imported interface, never Core targets |
@@ -61,10 +61,13 @@ and the separate [engine/model harness](test-harness.md). Production objects
 remain unhooked; GUI test objects use their own consistent configuration.
 The current executable supports `--version` and `--build-contract`; the latter
 reports versions from linked libraries without creating a native context,
-connecting to a node or opening metadata. Default startup opens the native empty bootstrap described in
-[native-platform.md](native-platform.md). Runtime font files and their license
+connecting to a node or opening metadata. Default startup opens the native workspace described in
+[workspace-shell.md](workspace-shell.md), with deliberate public recovery and
+connection choices. Runtime font files and their license
 are copied beside the executable under `roots-gui-assets/fonts`; keep that
-directory with the binary. This bootstrap does not implement wallet services.
+directory with the binary. Existing authenticated daemon wallets have read-only
+history/address/coin services and scoped local metadata; wallet creation/import,
+receiving allocation and financial transaction services remain later work.
 
 The focused matrix covers standalone and both parent GUI options OFF/ON.
 Actual GUI binaries were built with Qt OFF and ON; the existing headless
@@ -74,17 +77,25 @@ roots-gui OFF/ON configurations, including Qt tests, and checks old options,
 the new dependency closure, actual headers, link libraries, symbols and one
 compiler launcher. It normalizes build-directory paths, not compiler flags.
 curl's own `HAVE_CONFIG_H` remains valid and resolves its own configuration;
-Core headers remain forbidden. Full existing Qt production compilation/runtime
-and the full applicable old test suite remain required at the whole-L1 gate.
+Core headers remain forbidden. Reuse of these build-only profiles requires
+unchanged integration inputs and their retained identities. It never establishes
+Core/Qt runtime or physical-platform qualification.
 
 Windows/OpenGL3 and macOS/Metal remain guarded follow-on source branches.
-Linux build results do not qualify those hosts. Physical monitor/IME/accessibility and actual RPC/metadata services remain
-unqualified; Linux virtual-display production lifecycle evidence is recorded
-separately in the native platform ledger. No private-key/seed custody is authorized.
+Linux build results do not qualify those hosts. Physical monitor/IME/assistive
+hardware remain unqualified. Owned Roots RPC, local metadata/protection/recovery
+and Linux virtual-display workspace journeys have separately scoped evidence;
+Core runtime and other platforms remain unexecuted. No private-key/seed custody is authorized.
 Public-data provider limits and
 explicit signing/broadcast boundaries remain unchanged.
 
 All six public test targets are mapped in [render-harness.md](render-harness.md). Full CTest additionally requires an explicit inspected visual baseline and native capability; absence returns unavailable rather than a passing skip.
+The additional `roots_gui_applicable_tests` aggregate checks the complete current
+Linux/explicit-owned-daemon registry and runs its61 unique deterministic
+model/RPC/regtest/UI/boundary cases once. The22 separate native/baseline/platform
+entries are excluded explicitly, with representative current native proof and
+the remaining qualifications reported separately under the approved lean gate.
+An added/missing case or changed public suite label fails before execution.
 
 Linux accessibility additionally links the installed gio-2.0 SDK (>=2.66).
 Real-bus tests require the installed AT-SPI registry, Python GI/Atspi typelib,

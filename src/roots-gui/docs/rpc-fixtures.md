@@ -12,8 +12,9 @@ JSON, response identity, JSON-RPC error, disconnect/reconnect, request timeout,
 exception cleanup, bounded incomplete-request teardown and transcript redaction. Injected gates must be observed,
 released and settled. A failed subtest does not create a negative passing count:
 failed parent identities and detailed subcase records are counted separately.
-The fixture is ready for later production transport tests; it is not evidence
-that the production libcurl adapter already exists.
+This reference-client fixture remains separate from the current production
+libcurl transport, whose own JSON/transport/capability/refresh/history/address
+tests use their actual C++ adapters and explicit owned boundaries.
 
 `tests/integration/regtest_tests.py` accepts exact `--roots-daemon` and/or
 `--core-daemon` paths and `--output` outside the source repository. At least one
@@ -71,12 +72,13 @@ missing daemon capability can report success.
 
 | Public build target | Literal CTest label | Current selected cases |
 | --- | --- | --- |
-| `roots_gui_model_tests` | `roots-gui.model` | Four domain/preference/fixture/screen wrappers; persistence implementation is later work |
-| `roots_gui_rpc_tests` | `rpc` | Two wrappers: twelve HTTP cases and eight scratch cases/37 subcases |
-| `roots_gui_ui_tests` | `ui` | Two production Draw journeys and seven applicable ImKit consumers |
-| `roots_gui_regtest_tests` | `regtest` | One wrapper, only registered with an explicit daemon path; 41 checks per supplied backend |
-| `roots_gui_visual_tests` | `visual` | Two wrappers: actual native matrix/comparison and six visual rejection contracts |
-| `roots_gui_boundary_tests` | `boundary` | Actual source/build audit, seven rejection probes and five engine rejection checks |
+| `roots_gui_model_tests` | `roots-gui.model` |16 domain/preference/connection/refresh/history/address/coin/storage wrappers, including protection/conversion/recovery |
+| `roots_gui_rpc_tests` | `rpc` |11 reference/actual-adapter/connection/refresh/history/address wrappers; two overlap the model label |
+| `roots_gui_ui_tests` | `ui` |34 production Engine/ImKit/checker/native wrappers;14 Engine categories contain88 positive cases |
+| `roots_gui_regtest_tests` | `regtest` |6 owned daemon/history/native wrappers; the original independent profile has41 checks per supplied backend |
+| `roots_gui_visual_tests` | `visual` |10 actual native matrix/baseline/rejection wrappers |
+| `roots_gui_boundary_tests` | `boundary` |8 actual source/build/rejection/runner wrappers |
+| `roots_gui_applicable_tests` | exact name union |61 unique deterministic cases;22 native/baseline/platform entries explicitly excluded and separately qualified |
 
 Namespaced `roots-gui.rpc/ui/regtest` label aliases are also supplied. Configure
 `ROOTS_GUI_TEST_ROOTS_DAEMON` and/or `ROOTS_GUI_TEST_CORE_DAEMON` with explicit
@@ -88,5 +90,9 @@ suites. Configure/build sources remain local/offline; network capability is not
 broadened by the fixture. Use `cmake --build <build> --target <public-target> -j 2`
 and retain the reported unique result directory. Never relink a tested binary
 while a suite is running. Native desktop suites remain sequential and separate.
+The exact aggregate/profile and representative native gate are documented in
+[render-harness.md](render-harness.md). The dispatcher checks the complete83-case
+GUI inventory as well as every label selection, so registry drift cannot become
+a passing old count. A full applicable aggregate is not an all83 CTest pass.
 
 See [render-harness.md](render-harness.md) for the completed visual/boundary entry points and explicit baseline/matrix inputs.

@@ -2,8 +2,15 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "app/commands.h"
+#include "services/addresses.h"
+#include "app/coin_inventory.h"
+#include "app/coin_controls.h"
 #include "ui/bootstrap.h"
+#include "ui/server.h"
+#include "app/recovery.h"
+#include "services/refresh.h"
 #include <map>
+#include <utility>
 namespace roots::gui::ui::shell {
 struct Rect { float x{},y{},w{},h{}; };
 struct Layout { Rect menus,tabs,rail,content,status,accounts;bool compact{}; };
@@ -24,7 +31,42 @@ struct DocumentActions {
 };
 enum class Drawer { None,Activity,Services };
 struct Invocation {app::Command command;uint64_t document{};bool available{},dispatched{},accepted{};std::string reason;};
+struct PrivacyPanel {bool setup{},reveal{},focus{true};std::array<char,256> password{},confirm{};std::optional<std::string> external_password,external_confirm;std::string error;};
+struct HistoryLabelEditor {
+    RefreshIdentity identity;
+    std::string txid;
+    uint64_t metadata_revision{};
+    bool seen{},active{},finished{},attempted{};
+};
+struct HistoryPermission {RefreshIdentity identity;std::string txid;int64_t observed{};uint64_t generation{},sequence{};};
+struct HistoryRuntime {
+    std::optional<HistoryLabelEditor> editor; // transient activation proof, never recovered
+    std::optional<std::pair<std::string,std::string>> label_update; // native buffer sync, never a recovered action
+    std::map<std::string,std::string> labels;
+    std::string error,export_data,export_scope;
+    uint64_t file_dialog{};
+    std::optional<RefreshIdentity> export_identity;
+    int64_t observed{};
+    uint64_t generation{},sequence{};
+    bool reveal_selected{},fee_actions{};
+    std::optional<HistoryPermission> explorer_permission;
+};
+struct AddressRuntime {bool reveal_selected{},current{},reconciled{};uint64_t generation{},sequence{},history_sequence{};std::string error;bool open_actions{};std::set<std::string> frozen;std::map<std::string,app::CoinRule> policy;std::vector<AddressRow> rows;};
+struct CoinRuntime {
+    std::optional<app::CoinInventory> inventory;std::optional<RefreshIdentity> identity;
+    std::map<std::string,std::string> labels;std::optional<HistoryLabelEditor> editor;
+    std::optional<std::pair<std::string,std::string>> label_update;
+    uint64_t generation{},sequence{},file_dialog{};int64_t observed{};
+    int chart_group{};bool reveal{},chain_current{},open_actions{};uint64_t policy_revision{};std::string error,export_data,export_scope;
+};
 struct State {
+    app::CoinControls coin_controls;
+    std::map<uint64_t,std::string> coin_draft_errors;
+    std::string history_policy_scope;uint64_t history_policy_revision{},history_policy_generation{},history_policy_sequence{};
+    uint64_t registered_session{};
+    std::map<uint64_t,HistoryRuntime> histories;
+    std::map<uint64_t,AddressRuntime> addresses;
+    std::map<uint64_t,CoinRuntime> coins;
     app::DocumentRegistry documents;
     components::AmountPrivacy privacy;
     bool semantic_hide_toggle{};
@@ -49,6 +91,11 @@ struct State {
     uint64_t close_tab_popup{};
     bool close_document_popup{};
     uint64_t semantic_context{},semantic_context_revision{};
+    ServerPanel server;
+    app::RecoverySession* recovery{}; // borrowed owner-thread application service
+    imkit::DialogState recovery_dialog;
+    bool recovery_prompted{},close_recovery_popup{};
+    PrivacyPanel lock_panel;
 };
 struct Facts {
     Layout layout;
@@ -81,13 +128,20 @@ struct Facts {
     std::array<float,4> status_visual{};
     float drawer_scroll{},drawer_scroll_max{};
     bool drawer_visible{},grid_escape{},activity_hovered{},activity_held{};
+    ServerFacts server;
+    std::map<std::string,components::ItemFacts> history;
+    std::vector<std::string> history_order;
+    std::map<std::string,components::ItemFacts> coin;std::vector<std::string> coin_order;
+    std::map<std::string,components::ItemFacts> address;
+    std::array<Rect,2> address_tables;
+    std::array<size_t,2> address_counts{};
 
 };
 ImGuiKeyChord CommandChord(std::string_view,bool macos);
 std::string CommandShortcutLabel(std::string_view,bool macos);
 app::Availability CommandAvailability(const State&,app::Command,const app::Requests&);
 void DrawStatus(State&,Facts&,const imkit::Theme&,float);
-void DrawActivityDrawer(State&,Facts&,const imkit::Theme&,float);
+void DrawActivityDrawer(State&,Facts&,const imkit::Theme&,float,app::Requests* =nullptr);
 void RestoreDocumentFocus(State&,uint64_t desired);
 void BeginClose(State&,uint64_t,bool others=false,bool all=false);
 void BeginRename(State&,uint64_t);
@@ -95,7 +149,23 @@ void BeginDelete(State&,uint64_t);
 void BeginImport(State&,std::string_view source={});
 void ClosePendingDocumentPopup(State&);
 void DrawDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawRecoveryDialog(State&,Facts&,const imkit::Theme&,float);
+bool RequestPrivacyLock(State&);
+void DrawPrivacyPanel(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawTabActions(State&,app::Requests&,Facts&,uint64_t,const imkit::Theme&);
+void BeginHistoryLabelFrame(State&);
+void BeginCoinFrame(State&);
+void FinishCoinFrame(State&,app::Requests&);
+void DrawCoinDraft(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawCoinContext(State&,app::Requests&,Facts&,const imkit::Theme&,const std::string&);
+void DrawAddressContext(State&,app::Requests&,Facts&,const imkit::Theme&,const std::string&);
+void DrawCoinActions(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawAddressActions(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawCoins(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawAddresses(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void FinishHistoryLabelFrame(State&,app::Requests&);
+void DrawHistory(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawObservedTransaction(State&,Facts&,const imkit::Theme&,float);
 std::string SemanticScope(const State&);
 Facts DrawWorkspace(State&,app::Requests&,const imkit::Theme&,const BootstrapAppearance&,ImVec2 work_size={});
 }

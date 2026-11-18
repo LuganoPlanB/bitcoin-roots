@@ -134,6 +134,7 @@ void NativeInput::BeginFrame(){impl->Owner();impl->paste_seen=false;impl->file_s
 void NativeInput::EndFrame(){impl->Owner();if(impl->paste && !impl->paste_seen)impl->CancelPaste();if(impl->process && !impl->file_seen)impl->CancelFile();}
 void NativeInput::BeginView(std::string_view scope){impl->Owner();if(impl->view!=scope)impl->CancelPaste();impl->view=scope;}
 void NativeInput::Privacy(bool hidden){impl->Owner();impl->hidden=hidden;if(hidden && impl->copy_sensitive){if(impl->display && impl->SelectionOwner()==impl->selection)impl->Checked(xcb_set_selection_owner_checked(impl->display,XCB_WINDOW_NONE,impl->clip,XCB_CURRENT_TIME));impl->copied.clear();impl->copy_sensitive=false;}if(hidden && impl->paste && impl->paste->sensitive)impl->CancelPaste();}
+void NativeInput::PrivacyLock(){impl->Owner();std::fill(impl->copied.begin(),impl->copied.end(),0);Privacy(true);impl->CancelPaste();impl->CancelFile();impl->choice={c::NativeOutcome::Cancelled,{},"File choice cancelled by privacy lock."};if(impl->display && impl->SelectionOwner()==impl->selection)impl->Checked(xcb_set_selection_owner_checked(impl->display,XCB_WINDOW_NONE,impl->clip,XCB_CURRENT_TIME));std::fill(impl->copied.begin(),impl->copied.end(),0);impl->copied.clear();impl->status.notice.clear();}
 bool NativeInput::Copy(std::string_view text,bool sensitive){return impl->Copy(text,sensitive || impl->editor_sensitive);}
 const char* NativeInput::ClipboardForPaste(){return impl->RequestPaste();}
 void NativeInput::EnterEditor(uint32_t id,bool sensitive){impl->Owner();impl->editor=id;impl->editor_sensitive=sensitive;}
@@ -153,6 +154,7 @@ InputStatus NativeInput::Status() const {impl->Owner();auto status=impl->status;
 bool NativeInput::Close(){return impl->Close();}
 #else
 struct NativeInput::Impl {InputStatus status;};
+void NativeInput::PrivacyLock(){Privacy(true);}
 bool NativeInput::NativeDialogActive() const{return false;}
 NativeInput::NativeInput(GLFWwindow*):impl(std::make_shared<Impl>()){}
 NativeInput::~NativeInput()=default;void NativeInput::Pump(){}void NativeInput::BeginFrame(){}void NativeInput::EndFrame(){}void NativeInput::BeginView(std::string_view){}void NativeInput::Privacy(bool){}bool NativeInput::Copy(std::string_view,bool){return false;}const char* NativeInput::ClipboardForPaste(){return "";}void NativeInput::EnterEditor(uint32_t,bool){}void NativeInput::LeaveEditor(){}std::optional<std::string> NativeInput::Paste(uint32_t,std::string_view,int,int,int,size_t){return {};}bool NativeInput::FileChooserAvailable() const{return false;}uint64_t NativeInput::ChooseFile(std::string_view,bool){return 0;}c::FileChoice NativeInput::PollFile(uint64_t){return {c::NativeOutcome::Unavailable,{},"Native adapter requires platform implementation."};}InputStatus NativeInput::Status() const{return impl->status;}bool NativeInput::Close(){impl->status.closed=true;return true;}

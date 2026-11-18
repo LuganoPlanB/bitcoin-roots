@@ -50,12 +50,12 @@ foreach(index RANGE 0 ${last})
 endforeach()
 target_include_directories(roots_gui_test_imkit PUBLIC "${roots_gui_ui_source}/imkit/include")
 target_link_libraries(roots_gui_test_imkit PUBLIC roots_gui_test_imgui)
-add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp components_tests.cpp privacy_tests.cpp shell_tests.cpp documents_tests.cpp commands_tests.cpp ../../ui/bootstrap.cpp ../../ui/preferences.cpp ../../application/preferences.cpp
+add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp components_tests.cpp privacy_tests.cpp shell_tests.cpp documents_tests.cpp commands_tests.cpp server_tests.cpp history_tests.cpp address_tests.cpp coin_tests.cpp ../../ui/bootstrap.cpp ../../ui/preferences.cpp ../../ui/server.cpp ../../application/preferences.cpp
   ../../ui/theme/tokens.cpp ../../ui/theme/theme.cpp ../../ui/theme/appearance.cpp
   ../../ui/components/edits.cpp ../../ui/components/controls.cpp ../../ui/components/gallery.cpp ../../ui/components/presentation.cpp ../../domain/money.cpp
-  ../../app/document_registry.cpp ../../app/commands.cpp ../../ui/shell/workspace.cpp ../../ui/shell/document_actions.cpp ../../ui/shell/command_routes.cpp ../../ui/shell/activity.cpp ../../domain/workflow.cpp)
+  ../../app/document_registry.cpp ../../app/recovery.cpp ../../app/commands.cpp ../../app/connection_observations.cpp ../../app/history_workspace.cpp ../../app/coin_inventory.cpp ../../app/coin_controls.cpp ../../ui/shell/coin_actions.cpp ../../ui/shell/coins.cpp ../../ui/shell/history.cpp ../../ui/shell/addresses.cpp ../../ui/shell/workspace.cpp ../../ui/shell/document_actions.cpp ../../ui/shell/recovery.cpp ../../ui/shell/privacy.cpp ../../ui/shell/command_routes.cpp ../../ui/shell/activity.cpp ../../domain/workflow.cpp)
 target_include_directories(roots_gui_engine_tests PRIVATE ../..)
-target_link_libraries(roots_gui_engine_tests PRIVATE roots_gui_test_engine roots_gui_test_imkit)
+target_link_libraries(roots_gui_engine_tests PRIVATE roots_gui_test_engine roots_gui_test_imkit roots_gui_core)
 add_executable(roots_gui_preference_models preferences_model.cpp ../../application/preferences.cpp)
 add_executable(roots_gui_theme_tests ../theme/theme_tests.cpp ../../ui/theme/tokens.cpp ../../ui/theme/theme.cpp ../../ui/theme/appearance.cpp)
 target_include_directories(roots_gui_theme_tests PRIVATE ../..)
@@ -124,3 +124,17 @@ set_tests_properties(roots_gui.theme.status_focus_checker PROPERTIES TIMEOUT 30 
 
 add_test(NAME roots_gui.engine.semantics COMMAND roots_gui_engine_tests "roots.semantics" "${CMAKE_CURRENT_BINARY_DIR}/semantics.xml" 25)
 set_tests_properties(roots_gui.engine.semantics PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+add_test(NAME roots_gui.engine.server COMMAND roots_gui_engine_tests "roots.server" "${CMAKE_CURRENT_BINARY_DIR}/server.xml" 1)
+set_tests_properties(roots_gui.engine.server PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+
+add_test(NAME roots_gui.engine.history COMMAND roots_gui_engine_tests "roots.history" "${CMAKE_CURRENT_BINARY_DIR}/history.xml" 12)
+set_tests_properties(roots_gui.engine.history PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+
+add_test(NAME roots_gui.engine.addresses COMMAND roots_gui_engine_tests "roots.addresses" "${CMAKE_CURRENT_BINARY_DIR}/addresses.xml" 3)
+set_tests_properties(roots_gui.engine.addresses PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+
+add_test(NAME roots_gui.engine.coins COMMAND roots_gui_engine_tests "roots.coins" "${CMAKE_CURRENT_BINARY_DIR}/coins.xml" 4)
+set_tests_properties(roots_gui.engine.coins PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
+
+add_test(NAME roots_gui.engine.coin_controls COMMAND roots_gui_engine_tests "roots.coin-controls" "${CMAKE_CURRENT_BINARY_DIR}/coin-controls.xml" 5)
+set_tests_properties(roots_gui.engine.coin_controls PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")

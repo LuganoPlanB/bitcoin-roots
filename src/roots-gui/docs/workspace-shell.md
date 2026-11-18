@@ -3,8 +3,9 @@
 The production `platform::Run` composes `ui::shell::DrawWorkspace` inside the
 existing decorated GLFW/OpenGL host. It starts with an empty registry. Public
 wallet/transaction fixtures are explicit gallery/test inputs, never automatically
-opened daemon wallets. No command in this foundation starts a daemon, holds
-private keys, signs, broadcasts, opens an external page or invokes an RPC.
+opened daemon wallets. No command starts a daemon, holds private keys, signs,
+broadcasts or opens an external page. The explicit Server Test Connection route
+now performs read-only RPC negotiation; see [Server connection](server-connection.md).
 The default NativeHost bootstrap composition remains available to its existing
 lifecycle/appearance tests; the actual application Run entry uses the shell.
 
@@ -42,14 +43,18 @@ existing binding selects its existing document. Another daemon's same wallet
 name is a separate document. Each wallet has six independent retained states:
 current section, acknowledged note/draft, selected model keys, parent scroll
 and table X/Y scroll. Transaction documents own separate state and do not
-redirect wallet navigation. State is retained in memory, not a restart/session
-persistence claim. No accounts are manufactured from descriptors or wallet names.
+redirect wallet navigation. [Public session recovery](session-recovery.md) now
+checkpoints these editors, positions and exact coin choices only after opt-in.
+Startup offers a deliberate offline restore and never replays a host command.
+No accounts are manufactured from descriptors or wallet names.
 
 New incomplete wallets start Settings. Other sections remain navigable but show
 the policy/adapter dependency and disable their primary action without drawing
 invented balances. Locked fixture state removes its content and keeps an unlock
-dependency explanation. That fixture is not a demonstrated security lock/epoch
-boundary; real locking remains later domain/adapter work.
+dependency explanation. Separate [production workspace protection](protected-sessions.md)
+now supplies local password encryption, epoch invalidation, cancellation and a
+lock surface that removes document navigation/accessibility. Its global GUI
+lock does not issue daemon wallet-lock or unlock calls.
 
 ## Commands, presentation and effects
 

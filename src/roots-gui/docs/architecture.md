@@ -38,8 +38,8 @@ confirmed already includes its frozen/reserved coins. Never add the axes.
 Duplicate outpoints, negative amounts, supply overflow and immature-spendable
 claims are rejected. Unknown amounts propagate to affected totals, never zero.
 Frozen preferences, owned draft reservations and daemon locks have different
-owners; the future inventory service must reconcile them without unlocking
-another application's coins.
+owners; the scoped inventory and coin-control services reconcile them without
+unlocking another application's coins. See [coin controls](coin-controls.md).
 
 ## Identity, freshness and locking
 
@@ -119,8 +119,8 @@ constraint verification before adoption.
 | Wallet protocol | libwally-core 1.6.1 f7b0a15b8d6fc79a5c4ed0123955dd482934483e + recorded PSBT conformance patch; pinned vendored public-data APIs qualified in [provider contract](provider-contracts.md) | contracts-providers |
 | UI components | ImKit 986d8d286a74fb7b2f724b9ef5d008af139aa887 and compatible ImGui 367b2c24f399988ddafc0bb4628da0106bcc09be; core-only consumer and [standalone/parent build targets](build.md) qualified; production Linux bootstrap qualified on owned virtual display, see [platform ledger](native-platform.md) | build-pins/build-target/build-platform |
 | Host | GLFW 3.5.1 d9d6f0f1f967807ffade6598ea9a631ebaf37a56 + matching official OpenGL3 backend; production X11/Mesa native lifecycle qualified on owned virtual display; physical hosts remain unqualified | build-pins/build-platform |
-| HTTP/TLS/proxy | libcurl 8.23.0 exact archive in ui-lock; static HTTP/HTTPS/OpenSSL and option API probe; service/handshake behavior pending | build-pins/connection-service |
-| Metadata | SQLite 3.54.1 exact amalgamation in ui-lock; source/API/exact-int64 probe; schema/durable persistence pending; no keys/mnemonics | build-pins/persistence |
+| HTTP/TLS/proxy | libcurl 8.23.0 exact archive in ui-lock; static HTTP/HTTPS/OpenSSL, cancellable authenticated connection/capability/refresh services and owned loopback fixtures; native OS credential provider unavailable | build-pins/connection-service |
+| Metadata | SQLite 3.54.1 exact amalgamation in ui-lock; transactional scoped [metadata](metadata-store.md), opt-in [document recovery](session-recovery.md), native Linux password [protection/lock epochs](protected-sessions.md), migrations/CAS/rollback and exact-int64 checks; no wallet keys/mnemonics | build-pins/persistence |
 | Interaction tests | ImGui Test Engine 7c808483d6f0a69b9d0843d5f4a141f0a9f74a58; separate v1.04 license and test-only hooks qualified in [harness](test-harness.md); excluded from production executable | harness-engine |
 
 Every bundled input must be local, pinned, hash-verified and licensed under

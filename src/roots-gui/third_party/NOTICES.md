@@ -29,6 +29,13 @@ are not bundled by this source delivery; eventual binary packaging must retain
 their applicable notices if redistributed. Linux Mesa/Xvfb execution evidence
 does not establish licensing or native qualification for another platform.
 
+Linux password-protected metadata additionally uses the installed native
+libsodium SDK/runtime (>=1.0.18), under ISC and its preserved component terms.
+No source or binary is bundled here. The observed native provider was Debian
+1.0.18-1+deb13u1; see [native ISC notice](licenses/libsodium-ISC.txt) and the
+[protected-session contract](../docs/protected-sessions.md). Eventual binary
+packaging must retain the complete applicable native-library notices.
+
 ## Protocol provider source notices
 
 `provider-lock.json` records exact revisions, source URLs, archive/patch hashes

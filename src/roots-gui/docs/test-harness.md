@@ -44,19 +44,26 @@ an exact category. It truncates stale reports, bounds frames, requires a drained
 queue and positive exact executed/success counts, and checks export existence.
 CTest supplies an independent wall-clock timeout. Each process has private
 JUnit output; reports include unselected registrations and queued entries,
-which are **not executed cases**. Current successful engine categories are:
+which are **not executed cases**. The current registry contains90 entries:
+88 positive cases in14 independently counted production categories, plus the
+two intentional failure/timeout fixtures used by rejection checks. Categories include:
 
 - `roots.preferences`: real production `DrawPreferences`, typed refresh draft,
   hide-balances checkbox, clicked Save/Cancel, keyboard activation, disabled
   invalid Save, rejected save and observed fake requests/state.
 - `roots.bootstrap`: real production `DrawBootstrap` and clicked Close result.
 
-`DrawPreferences` is compiled production panel code with an explicit public
-preference request port. It is not yet routed by the bootstrap or backed by
-persistence/RPC. Save validation also runs as an independent application command;
+The legacy `DrawPreferences` panel is compiled production code with an explicit
+public preference request port. The workspace's actual Preferences/Server route
+uses the current connection form and bounded authenticated service; the legacy
+panel's fake port is not a durability/RPC claim. Save validation also runs as an independent application command;
 Cancel restores the saved draft and reports cancellation without a Save request.
 The fake accepts/rejects requests explicitly. No test claims metadata durability,
-wallet services, signing custody or an implemented preferences menu route.
+wallet signing custody. The other production categories cover appearance,
+components, privacy, shell, documents, commands, semantics, Server, history,
+addresses, coins and coin controls. Their typed fixtures and local storage
+adapters exercise scopes, acknowledgements, failure recovery and cancelled/late
+boundaries. Actual owned-daemon/native evidence remains separate.
 
 Seven ImKit checks reuse theme, design-system, workflow, charts and three API
 consumers. The workflow adaptation extracts the pinned notification ordering,
@@ -90,6 +97,9 @@ All CTest cases have labels and bounded waits; use `ctest --no-tests=error
 establish simulated interactions, not framebuffer/native input/platform facts.
 The native evidence in [native-platform.md](native-platform.md) remains separate,
 and the current visual runner reproduces its full bootstrap matrix.
+Parent acceptance uses the approved representative native journey and explicit
+exclusions described in [render-harness.md](render-harness.md); the historical
+full visual cross-product is not required on every parent.
 
 ## Wallet theme gates
 

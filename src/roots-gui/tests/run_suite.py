@@ -8,6 +8,7 @@ from datetime import datetime,timezone
 import json
 import os
 import signal
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,21 +17,56 @@ import xml.etree.ElementTree as ET
 from support.runtime import evidence_directory,write_json
 
 SUITES={
- 'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts'}),
- 'rpc':('rpc',{'roots_gui.rpc.fake_http','roots_gui.rpc.scratch'}),
- 'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker','roots_gui.engine.preferences','roots_gui.engine.bootstrap','roots_gui.engine.appearance','roots_gui.engine.components','roots_gui.engine.privacy','roots_gui.engine.shell','roots_gui.engine.documents','roots_gui.engine.commands','roots_gui.engine.semantics',*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
- 'regtest':('regtest',{'roots_gui.regtest.owned'}),
+ 'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts',*[f'roots_gui.{x}' for x in ['connection.models','refresh.models','history.model','history.workspace','history.states','address.models','coin.models','coin.controls','storage.schema','storage.protected','storage.conversion','storage.recovery']]}),
+ 'rpc':('rpc',{'roots_gui.connection.models','roots_gui.refresh.models',*[f'roots_gui.rpc.{x}' for x in ['fake_http','scratch','json','transport','capabilities','refresh','history','history_bounds','addresses']]}),
+ 'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker',*[f'roots_gui.engine.{x}' for x in ['preferences','bootstrap','appearance','components','privacy','shell','documents','commands','semantics','server','history','addresses','coins','coin_controls']],*[f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls']],*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
+ 'regtest':('regtest',{'roots_gui.regtest.owned','roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls']]}),
  'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts','roots_gui.theme.native_gallery','roots_gui.theme.native_appearance','roots_gui.theme.native_components','roots_gui.theme.native_shell','roots_gui.theme.native_shell_appearance','roots_gui.theme.native_documents','roots_gui.theme.native_commands','roots_gui.theme.native_semantics'}),
  'boundary':('boundary',{'roots_gui.boundary.actual','roots_gui.boundary.rejections','roots_gui.build_contract',*[f'roots_gui.runner.{x}' for x in ['failure','unknown','count','undrained','timeout']]}),
 }
+ACCESSIBILITY={f'roots_gui.accessibility.{x}' for x in ['native','transport','input','orca','display_allocation']}
+# The full Linux/explicit-owned-daemon profile is the public aggregate contract.
+# Native journeys have separate evidence gates; exclude their repeated matrices
+# from the deterministic aggregate rather than converting them into skips.
+NATIVE_UI={f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls']}
+INVENTORY=set().union(*(expected for _,expected in SUITES.values()),ACCESSIBILITY)
+APPLICABLE=set().union(*(SUITES[x][1] for x in ['model','rpc','ui','regtest','boundary']))-NATIVE_UI
+SUITES['applicable']=('roots-gui',APPLICABLE)
+
+def configured_suites(build):
+ # Optional registrations follow explicit configure inputs, never the observed
+ # inventory itself. A node-less build can still run its pure model/RPC suites.
+ cache={}
+ for line in (build/'CMakeCache.txt').read_text().splitlines():
+  if line and not line.startswith(('#','//')) and '=' in line and ':' in line.split('=',1)[0]:
+   key,value=line.split('=',1);cache[key.split(':',1)[0]]=value
+ roots=bool(cache.get('ROOTS_GUI_TEST_ROOTS_DAEMON'))
+ omitted=set()
+ if not roots:omitted={'roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls']]}
+ if not roots and not cache.get('ROOTS_GUI_TEST_CORE_DAEMON'):omitted.add('roots_gui.regtest.owned')
+ return {name:(label,expected-omitted) for name,(label,expected) in SUITES.items()},INVENTORY-omitted,roots
+
+def selection_arguments(suite):
+ label,expected=SUITES[suite]
+ return ['-R','^('+'|'.join(re.escape(x) for x in sorted(expected))+')$'] if suite=='applicable' else ['-L','^'+label+'$']
+
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--suite',choices=SUITES,required=True);p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
- parent=evidence_directory(a.output);out=Path(tempfile.mkdtemp(prefix=a.suite+'-',dir=parent));label,expected=SUITES[a.suite];build=a.build.resolve()
- argv=['ctest','--test-dir',str(build),'-L','^'+label+'$','--show-only=json-v1']
+ parent=evidence_directory(a.output);out=Path(tempfile.mkdtemp(prefix=a.suite+'-',dir=parent));build=a.build.resolve();suites,inventory_expected,roots=configured_suites(build);label,expected=suites[a.suite]
+ inventory_argv=['ctest','--test-dir',str(build),'--show-only=json-v1']
+ inventory_run=subprocess.run(inventory_argv,capture_output=True,text=True,timeout=30);(out/'inventory.json').write_text(inventory_run.stdout);(out/'inventory.stderr').write_text(inventory_run.stderr)
+ inventory_tests=json.loads(inventory_run.stdout).get('tests',[]) if inventory_run.returncode==0 else []
+ inventory={x['name'] for x in inventory_tests if x['name'].startswith('roots_gui.') or 'roots-gui' in next((p['value'] for p in x.get('properties',[]) if p['name']=='LABELS'),[])}
+ label_mismatches={}
+ for name,(suite_label,suite_expected) in suites.items():
+  if name=='applicable':continue
+  actual={x['name'] for x in inventory_tests if suite_label in next((p['value'] for p in x.get('properties',[]) if p['name']=='LABELS'),[])}
+  if actual!=suite_expected:label_mismatches[name]=dict(missing=sorted(suite_expected-actual),unexpected=sorted(actual-suite_expected))
+ argv=['ctest','--test-dir',str(build),*selection_arguments(a.suite),'--show-only=json-v1']
  result=subprocess.run(argv,capture_output=True,text=True,timeout=30);(out/'selection.json').write_text(result.stdout)
  selected={x['name'] for x in json.loads(result.stdout).get('tests',[])} if result.returncode==0 else set()
- record=dict(suite=a.suite,label=label,selected=sorted(selected),selectedCount=len(selected),expected=sorted(expected),selectionCommand=argv,startUTC=datetime.now(timezone.utc).isoformat(),executed=0,passed=0,failed=0,skipped=0)
- if selected!=expected:
+ record=dict(suite=a.suite,label=label,selected=sorted(selected),selectedCount=len(selected),expected=sorted(expected),selectionCommand=argv,inventoryCommand=inventory_argv,inventoryCount=len(inventory),inventoryMissing=sorted(inventory_expected-inventory),inventoryUnexpected=sorted(inventory-inventory_expected),labelMismatches=label_mismatches,explicitRootsDaemonConfigured=roots,excluded=sorted(inventory-expected),startUTC=datetime.now(timezone.utc).isoformat(),executed=0,passed=0,failed=0,skipped=0)
+ if not expected or selected!=expected or inventory!=inventory_expected or label_mismatches or (a.suite=='applicable' and not roots):
   record.update(runnerErrors=1,error='exact intended suite unavailable or selection mismatch',exit=2);write_json(out/'result.json',record);print(json.dumps(record));return 2
  # Preserve mutable engine exports before CTest can replace them. CTest JUnit is unique.
  engine_roots=[build/'tests/engine',build/'src/roots-gui/tests/engine']
@@ -39,7 +75,7 @@ def main():
  record['snapshotScope']=[str(folder) for folder in engine_roots if folder.is_dir()]
  for path in reports:
   target=out/'prior-engine-reports'/path.relative_to(build);target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
- argv=['ctest','--test-dir',str(build),'-L','^'+label+'$','--output-on-failure','--no-tests=error','--output-junit',str(out/'junit.xml'),'-j','2']
+ argv=['ctest','--test-dir',str(build),*selection_arguments(a.suite),'--output-on-failure','--no-tests=error','--output-junit',str(out/'junit.xml'),'-j','2']
  with (out/'ctest.log').open('w') as log:
   child=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
   try:child.wait(timeout=1200)

@@ -3,6 +3,7 @@
 #include "ui/components/presentation.h"
 #include "ui/components/native_input.h"
 #include <algorithm>
+#include <cmath>
 namespace roots::gui::ui::components {
 namespace {
 AmountPresentation Text(std::string value,bool copy) { return {value,value,value,copy?std::optional(value):std::nullopt}; }
@@ -157,6 +158,10 @@ bool PresentationFrame::Annotate(const char* id,const char* name,std::string_vie
     node.state.disabled|=bool(ImGui::GetItemFlags()&ImGuiItemFlags_Disabled);
     const bool result=frame.Add(node);if(auto* f=ItemFacts(node.id))f->showing=ImGui::IsItemVisible();return result;
 }
+bool PresentationFrame::RangeValue(ax::StableId id,double current,double minimum,double maximum,double step){
+    if(!std::isfinite(current) || !std::isfinite(minimum) || !std::isfinite(maximum) || !std::isfinite(step) || minimum>current || current>maximum || step<=0)return false;
+    const auto count=frame.Tree().nodes.size();for(size_t i=0;i<count;++i)if(nodes[i].id==id && nodes[i].role==ax::SemanticRole::Slider){auto& n=nodes[i];n.numericValue=current;n.minimumValue=minimum;n.maximumValue=maximum;n.smallChange=step;n.largeChange=step;n.state.readOnly=!(ax::Supports(n.actions,ax::SemanticAction::Increment) || ax::Supports(n.actions,ax::SemanticAction::Decrement) || ax::Supports(n.actions,ax::SemanticAction::SetValue));n.state.disabled|=minimum==maximum;return true;}return false;
+}
 void PresentationFrame::Progress(const char* id,const char* name,std::string_view value,std::optional<unsigned> per_mille,bool busy) {
     ax::SemanticNode n;n.id=ImGui::GetID(id);n.parent=parents.empty()?0:parents.back();n.name=Own(name);n.role=ax::SemanticRole::Progress;
     const bool known=per_mille && *per_mille<=1000;const std::string alternative=std::string(value)+(known?" / progress "+std::to_string(*per_mille)+" per mille":" / progress unavailable");n.value=Own(alternative);
@@ -181,6 +186,7 @@ float ViewPolish::PrivacyFeedback(ImGuiID id,bool hidden,bool reduced_motion,flo
 }
 
 #include <algorithm>
+#include <cmath>
 #include <cmath>
 namespace roots::gui::ui::components {
 bool SemanticExchange::BindOwner() { std::lock_guard lock(mutex);if(owner==std::thread::id{})owner=std::this_thread::get_id();return owner==std::this_thread::get_id(); }

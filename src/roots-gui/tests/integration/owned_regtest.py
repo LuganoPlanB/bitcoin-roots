@@ -18,7 +18,7 @@ from support.runtime import binary_identity,validated_scratch,write_json
 from rpc.fake_http import strict_json,RpcError
 
 class OwnedRegtest:
-    def __init__(self,binary,output,*,port=None):
+    def __init__(self,binary,output,*,port=None,public_descriptors=False):
         self.output=Path(output);self.output.mkdir(parents=True,exist_ok=True)
         self.identity=binary_identity(binary);self.scratch=tempfile.TemporaryDirectory(prefix='roots-gui-regtest-',dir=validated_scratch())
         self.data=Path(self.scratch.name);self.data.chmod(0o700)
@@ -26,6 +26,9 @@ class OwnedRegtest:
             with socket.socket() as allocator:allocator.bind(('127.0.0.1',0));port=allocator.getsockname()[1]
         self.port=port;self.auth=None;self.secrets=[];self.sequence=0;self.transcript=[];self.closed=False
         self.argv=[self.identity['path'],'-regtest','-server=1','-daemon=0','-listen=0','-discover=0','-dnsseed=0','-connect=0','-listenonion=0','-natpmp=0','-prune=0','-walletbroadcast=0','-persistmempool=0','-printtoconsole=1','-rpcbind=127.0.0.1','-rpcallowip=127.0.0.1',f'-rpcport={port}',f'-datadir={self.data}']
+        # Transient opt-in for this disposable fixture only. GUI traffic remains
+        # behind the separate read-only proxy; no installed service is changed.
+        if public_descriptors:self.argv.append('-allow-dangerous-rpc=1')
         self.raw=self.data/'console.log';self.log=self.raw.open('wb')
         parent_pid=os.getpid()
         def parent_death_guard():
