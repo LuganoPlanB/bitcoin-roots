@@ -47,6 +47,7 @@ struct Metadata {
     std::vector<ColumnWidth> widths;
     std::vector<Target> freezes;
     std::vector<PublicDraft> drafts;
+    std::optional<int> display_icon; // absent in pre-icon stores
     bool operator==(const Metadata&) const = default;
 };
 bool ValidMetadata(const Scope&, const Metadata&);

@@ -81,6 +81,7 @@ SignatureProgress InspectSignatures(const TransactionDocument&);
 bool ValidOfflineCoin(const OfflineInput&, DisplayNetwork);
 OfflineResult ConstructOfflineDraft(const OfflineDraft&);
 OfflineResult MergeOfflineSignatures(const TransactionDocument& current, const TransactionDocument& external);
+OfflineResult CombineVerifiedCollections(const TransactionDocument& current, const TransactionDocument& signed_reply);
 OfflineResult ApplyDaemonPsbt(const TransactionDocument& current,const TransactionDocument& reply,bool signing);
 OfflineResult FinalizeOfflineDraft(const TransactionDocument& current);
 struct FinalTransaction {

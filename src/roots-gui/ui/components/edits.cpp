@@ -14,10 +14,12 @@ bool SetExternalBuffer(std::span<char> buffer,std::optional<std::string>& pendin
     if(value.size()>=buffer.size() || value.find('\0')!=std::string_view::npos)return false;
     std::fill(buffer.begin(),buffer.end(),0);std::copy(value.begin(),value.end(),buffer.begin());pending=std::string(value);return true;
 }
-bool TextInput(const char* id,const char* hint,char* buffer,size_t size,std::optional<std::string>& pending,ImGuiInputTextFlags flags,TextPosition* cursor,bool sensitive,ImVec2 multiline) {
+bool TextInput(const char* id,const char* hint,char* buffer,size_t size,std::optional<std::string>& pending,ImGuiInputTextFlags flags,TextPosition* cursor,bool sensitive,ImVec2 multiline,bool protected_editor) {
     // ImGui owns a separate live edit buffer; use its public callback when an
     // external request changes an active editor, including initial focus.
-    struct User {std::optional<std::string>& pending;TextPosition* cursor;NativeInputPort* port;ImGuiID id;};User user{pending,cursor,native_input,ImGui::GetID(id)};if(user.port)user.port->EnterEditor(user.id,sensitive);if(cursor)*cursor={};
+    struct User {std::optional<std::string>& pending;TextPosition* cursor;NativeInputPort* port;ImGuiID id;};User user{pending,cursor,native_input,ImGui::GetID(id)};
+    if(user.port){if(protected_editor)user.port->EnterProtectedEditor(user.id);else user.port->EnterEditor(user.id,sensitive);}
+    if(cursor)*cursor={};
     const auto callback=[](ImGuiInputTextCallbackData* data){auto& user=*static_cast<User*>(data->UserData);auto& value=user.pending;
         if(value){data->DeleteChars(0,data->BufTextLen);data->InsertChars(0,value->c_str());}
         if(user.port){const bool selected=data->SelectionStart!=data->SelectionEnd;const int start=selected?std::min(data->SelectionStart,data->SelectionEnd):data->CursorPos,end=selected?std::max(data->SelectionStart,data->SelectionEnd):data->CursorPos;if(auto paste=user.port->Paste(user.id,{data->Buf,size_t(data->BufTextLen)},data->CursorPos,start,end,data->BufSize)){data->DeleteChars(start,end-start);data->InsertChars(start,paste->c_str());data->CursorPos=start+int(paste->size());data->SelectionStart=data->SelectionEnd=data->CursorPos;}}

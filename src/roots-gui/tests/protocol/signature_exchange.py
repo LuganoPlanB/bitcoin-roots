@@ -2,14 +2,18 @@
 # Distributed under the MIT software license, see the accompanying COPYING file.
 """Create and exercise independent 2-of-3 PSBT exchange fixtures."""
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 from shutil import copyfile
 import subprocess
 import sys
 import tempfile
+import threading
+from urllib.parse import unquote
 
 TESTS=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(TESTS))
@@ -24,6 +28,8 @@ KEYS=[bytes.fromhex(key) for key in (
 )]
 ORDER=0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 OPAQUE=b"\xfc\x05roots\x02"
+GENESIS="0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+WALLET="Offline multisig"
 
 
 def integer(n,width=4):
@@ -167,6 +173,14 @@ def make_fixtures(directory,openssl):
         complete=[dict(row) for row in partial]
         complete[2][b"\x02"+KEYS[2]]=signed[1,2]
         complete[2][OPAQUE+b"\xa0"]=b"external signer opaque material"
+        daemon=[dict(row) for row in unsigned]
+        airgap=[dict(row) for row in unsigned]
+        for i,k in ((0,1),(1,2)):
+            daemon[i+1][b"\x02"+KEYS[0]]=signed[i,0]
+            airgap[i+1][b"\x02"+KEYS[k]]=signed[i,k]
+        airgap[2][OPAQUE+b"\xa0"]=complete[2][OPAQUE+b"\xa0"]
+        daemon_conflict=[dict(row) for row in daemon]
+        daemon_conflict[2][OPAQUE+b"\xa0"]=b"different verified reply metadata"
         invalid=[dict(row) for row in partial]
         invalid[2][b"\x02"+KEYS[0]]=signed[0,0]
         conflicting=[dict(row) for row in complete]
@@ -179,7 +193,8 @@ def make_fixtures(directory,openssl):
         unknown=[dict(row) for row in unsigned]
         unknown[2].pop(b"\x00")
         for name,rows in (("original",unsigned),("partial",partial),("complete",complete),("invalid",invalid),
-                          ("conflicting",conflicting),("wrong",wrong),("unknown",unknown)):
+                          ("conflicting",conflicting),("wrong",wrong),("unknown",unknown),
+                          ("daemon",daemon),("airgap",airgap),("daemon-conflict",daemon_conflict)):
             (folder/f"{name}.psbt").write_bytes(packed(rows))
         duplicate=packed(partial[:1])+record(b"\x00",previous[0])+packed(partial[1:])[5:]
         (folder/"duplicate.psbt").write_bytes(duplicate)
@@ -192,6 +207,81 @@ def make_fixtures(directory,openssl):
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def run_mixed_signer(args, out, fixtures):
+    original=base64.b64encode((fixtures/"v2/original.psbt").read_bytes()).decode()
+    signed=base64.b64encode((fixtures/"v2/daemon.psbt").read_bytes()).decode()
+    cookie=fixtures/"fixture.cookie"
+    port=fixtures/"loopback-port.txt"
+    cookie.touch(mode=0o600,exist_ok=False)
+    cookie.write_text("fixture:loopback-cosigner")
+    auth="Basic "+base64.b64encode(cookie.read_bytes()).decode()
+    calls=[]
+    failures=[]
+
+    class Signer(BaseHTTPRequestHandler):
+        def log_message(self,*_):
+            pass
+
+        def do_POST(self):
+            try:
+                assert self.client_address[0]=="127.0.0.1" and self.headers["Authorization"]==auth
+                length=int(self.headers["Content-Length"])
+                assert 0<length<65536
+                request=json.loads(self.rfile.read(length))
+                assert request["jsonrpc"]=="2.0"
+                method=request["method"]
+                path=unquote(self.path)
+                params=request["params"]
+                if method=="getblockhash":
+                    assert path=="/" and params==[0]
+                    result=GENESIS
+                elif method=="getwalletinfo":
+                    assert path=="/wallet/"+WALLET and params==[]
+                    result=dict(walletname=WALLET,descriptors=True,private_keys_enabled=True,external_signer=False)
+                elif method=="walletprocesspsbt":
+                    assert path=="/wallet/"+WALLET
+                    assert params==dict(psbt=original,sign=True,finalize=False,bip32derivs=False)
+                    result=dict(psbt=signed,complete=False)
+                else:
+                    raise AssertionError("unexpected method")
+                calls.append(method)
+                response=json.dumps(dict(jsonrpc="2.0",id=request["id"],result=result)).encode()
+                self.send_response(200)
+                self.send_header("Content-Length",str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+            except (AssertionError,ValueError,KeyError) as error:
+                failures.append(type(error).__name__)
+                self.send_error(400)
+
+    native=out/"mixed-signer"
+    native.mkdir()
+    argv=[sys.executable,"-B",str(TESTS/"platform/owned_display.py"),"--output",str(native/"display"),
+          "--timeout","25","--",str(args.native),str(native),str(args.fonts),str(fixtures/"v2"),"--mixed-online"]
+    start=now()
+    with ThreadingHTTPServer(("127.0.0.1",0),Signer) as server:
+        port.write_text(str(server.server_port))
+        thread=threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            run=subprocess.run(argv,text=True,capture_output=True,timeout=32)
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            port.unlink()
+            cookie.unlink()
+    (native/"output.log").write_text(run.stdout+run.stderr)
+    observed=dict(argv=argv,cwd=str(Path.cwd()),startedUTC=start,completedUTC=now(),
+                  exit=run.returncode,orderedMethods=calls,fixtureFailures=failures,serverSettled=not thread.is_alive())
+    write_json(native/"rpc-result.json",observed)
+    assert run.returncode==0 and not failures and observed["serverSettled"]
+    assert calls==["getblockhash","getwalletinfo","walletprocesspsbt"]*2
+    orders={order:json.loads((native/order/"native-result.json").read_text())
+            for order in ("airgap-first","daemon-first")}
+    assert all(group["settled"] and group["productionSignerPoll"] and group["checks"]>0 for group in orders.values())
+    return observed|{"orders":orders}
 
 
 def main():
@@ -220,6 +310,7 @@ def main():
                 argv+=["--finalize"]
         completed=subprocess.run(argv,text=True,capture_output=True,timeout=40)
         (out/"output.log").write_text(completed.stdout+completed.stderr)
+        mixed_signer=run_mixed_signer(args,out,fixtures) if args.finalize and completed.returncode==0 else None
         retained=out/"public-fixtures"
         for folder in sorted(fixtures.iterdir()):
             target=retained/folder.name
@@ -239,6 +330,11 @@ def main():
             captures=("finalized-transaction",) if args.finalize else ("signing-partial","signing-import-rejected")
             result["captures"]={name:encode_capture(out/(name+".ppm")) for name in captures}
             if args.finalize:
+                result["productionMixedSigner"]=mixed_signer
+                result["mixedOrders"]={order:json.loads((out/order/"native-result.json").read_text())
+                    for order in ("airgap-first","daemon-first")}
+                assert all(group["settled"] and group["networkDenied"] and group["checks"]>0
+                           for group in result["mixedOrders"].values())
                 final=out/"final.tx"
                 serialized=final.read_bytes()
                 assert serialized==(retained/"v2/expected.tx").read_bytes()

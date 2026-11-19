@@ -26,6 +26,7 @@
 #include "services/transaction_documents.h"
 #include <map>
 #include <utility>
+namespace roots::gui::app { struct DaemonSignResult; }
 namespace roots::gui::ui::shell {
 struct Rect { float x{},y{},w{},h{}; };
 struct Layout { Rect menus,tabs,rail,content,status,accounts;bool compact{}; };
@@ -35,6 +36,7 @@ struct DocumentActions {
     DocumentDialog kind{DocumentDialog::None};
     imkit::DialogState dialog;
     uint64_t target{},return_focus{};
+    LockEpoch metadata_epoch{};
     DraftRevision send_revision{};
     LockEpoch send_epoch{};
     std::optional<uint64_t> send_owner;
@@ -753,6 +755,8 @@ const protocol::SignatureProgress& SignatureProgressFor(State&,uint64_t,
     const std::shared_ptr<const protocol::TransactionDocument>&);
 void DrawSignatureExchange(State&,app::Requests&,Facts&,const imkit::Theme&,const InspectionOwner&,bool collect);
 void PollSigningReviews(State&,app::Requests&);
+// Adopt a worker reply already matched to the open view and exact approval.
+void CollectDaemonSigningResult(State&,app::Requests&,const app::SigningApproval&,app::DaemonSignResult);
 void RetireDaemonSigning(State&,app::Requests&);
 bool CloseSigningReview(State&,app::Requests&,uint64_t);
 void RevokeSigningReview(State&,uint64_t,std::string);

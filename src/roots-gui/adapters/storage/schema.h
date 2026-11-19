@@ -5,7 +5,7 @@
 #include <string_view>
 namespace roots::gui::storage::schema {
 inline constexpr int ApplicationId=0x52475549;
-inline constexpr int Version=10;
+inline constexpr int Version=11;
 // Version1 owns user metadata. Version2 adds an independent observation cache.
 // Exact definitions also identify supported schemas; unknown schemas fail closed.
 inline constexpr std::array<std::string_view,8> V1{
@@ -30,4 +30,5 @@ inline constexpr std::string_view V7="CREATE TABLE broadcast_attempts(genesis TE
 inline constexpr std::string_view V8="CREATE TABLE broadcast_details(genesis TEXT NOT NULL,txid TEXT NOT NULL,wire TEXT NOT NULL CHECK(length(wire) BETWEEN 2 AND 131072),serial INTEGER NOT NULL CHECK(serial>0),attempted_ms INTEGER NOT NULL CHECK(attempted_ms>0),outcome INTEGER NOT NULL CHECK(outcome BETWEEN 0 AND 4),outcome_ms INTEGER CHECK(outcome_ms IS NULL OR outcome_ms>=attempted_ms),backend TEXT NOT NULL,wallet TEXT NOT NULL,PRIMARY KEY(genesis,txid),FOREIGN KEY(genesis,txid) REFERENCES broadcast_attempts(genesis,txid),CHECK((outcome=0)=(outcome_ms IS NULL))) STRICT";
 inline constexpr std::string_view V9="CREATE TABLE general_settings(slot INTEGER PRIMARY KEY REFERENCES workspace(slot) CHECK(slot=1),trim_decimals INTEGER NOT NULL CHECK(trim_decimals IN(0,1)),group_outputs INTEGER NOT NULL CHECK(group_outputs IN(0,1)),explorer INTEGER NOT NULL CHECK(explorer BETWEEN 0 AND 2),explorer_template TEXT NOT NULL CHECK(length(explorer_template)<=512),explorer_genesis TEXT NOT NULL CHECK(length(explorer_genesis) IN(0,64))) STRICT";
 inline constexpr std::string_view V10="CREATE TABLE desktop_settings(slot INTEGER PRIMARY KEY REFERENCES workspace(slot) CHECK(slot=1),notifications INTEGER NOT NULL CHECK(notifications IN(0,1)),camera_keep_awake INTEGER NOT NULL CHECK(camera_keep_awake IN(0,1))) STRICT";
+inline constexpr std::string_view V11="CREATE TABLE wallet_icons(scope INTEGER PRIMARY KEY REFERENCES scopes(id),icon INTEGER NOT NULL CHECK(icon BETWEEN 0 AND 2)) STRICT";
 }

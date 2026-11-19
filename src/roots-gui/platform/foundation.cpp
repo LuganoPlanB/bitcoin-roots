@@ -105,7 +105,15 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
                 if(auto binding=app::VerifiedWalletBinding(*active);binding && (!recovery || !recovery->Pending())){
                     const auto* registered=app::RegisteredWallet(workspace.documents,*binding);
                     if(workspace.registered_session!=connection->Session()){
-                        if(!registered && workspace.documents.Documents().size()<32){const auto id=workspace.documents.OpenWallet(binding->DaemonWallet().empty()?"Default daemon wallet":binding->DaemonWallet().size()>255?"Daemon wallet "+binding->wallet.value().substr(0,24):binding->DaemonWallet(),*binding,true);auto* document=workspace.documents.Find(id);document->history.enabled=true;for(auto& section:document->sections)section.note=ui::components::Edit("");registered=document;}
+                        if(!registered && workspace.documents.Documents().size()<32){
+                            const auto& name=binding->DaemonWallet();
+                            const auto id=workspace.documents.OpenWallet(name.empty()?"Default daemon wallet":name.size()>255?"Daemon wallet "+binding->wallet.value().substr(0,24):name,*binding,true);
+                            auto* document=workspace.documents.Find(id);
+                            if(recovery)recovery->RestoreWalletPresentation(*document);
+                            document->history.enabled=true;
+                            for(auto& section:document->sections)section.note=ui::components::Edit("");
+                            registered=document;
+                        }
                         workspace.registered_session=connection->Session();
                     }
                     if(registered)identity=app::WalletRefreshIdentity(*active,connection->Session(),*registered,epoch);
@@ -199,9 +207,58 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
                 && app::VerifiedWalletBinding(*connection->Active())==document->binding;
         }
         bool CopyRequest(const app::Request& request) const {return request.component && (std::holds_alternative<ui::components::CopyIdentifier>(*request.component) || std::holds_alternative<ui::components::CopyAmount>(*request.component));}
+        bool MetadataRequest(const app::Request& request) const {
+            return fallback.Recovery() && (request.command==app::Command::DocumentMetadata || request.command==app::Command::DeleteWallet);
+        }
+        app::Availability CanChangeMetadata(const app::Request& request) const {
+            namespace shell=ui::shell;
+            const auto* recovery=fallback.Recovery();
+            const auto* wallet=state.documents.Find(request.document);
+            if(!recovery || recovery->Locked() || recovery->Pending() || state.privacy.hidden || state.semantic_hide_toggle
+                || !wallet || wallet->kind!=app::DocumentKind::Wallet || !wallet->binding
+                || wallet->observation==app::ObservationState::Locked || wallet->section!=request.section
+                || request.component || request.edit)
+                return {false,"Select an unlocked wallet with local metadata."};
+            const auto& action=state.actions;
+            const bool current_dialog=action.dialog.open && action.target==wallet->id
+                && action.metadata_epoch==recovery->Gate().Epoch();
+            if(request.command==app::Command::DeleteWallet){
+                const bool allowed=current_dialog && action.kind==shell::DocumentDialog::Delete
+                    && request.value.empty() && request.option==0 && !shell::BroadcastFreezes(state,wallet->id);
+                return {allowed,allowed?"":"Confirm the current wallet's local metadata removal outside an active submission."};
+            }
+            const bool rename=current_dialog && action.kind==shell::DocumentDialog::Rename
+                && request.value==action.name.draft() && request.option==action.icon;
+            const bool reset=action.kind==shell::DocumentDialog::None && request.value==wallet->original_name && request.option==0;
+            const bool allowed=(rename || reset) && !request.value.empty() && request.value.size()<=255
+                && request.option>=0 && request.option<=2;
+            return {allowed,allowed?"":"Specify a valid local display name and icon."};
+        }
+        app::Receipt ChangeMetadata(const app::Request& request) {
+            const auto allowed=CanChangeMetadata(request);
+            if(!allowed.available)return {false,allowed.reason};
+            auto* recovery=fallback.Recovery();
+            auto* wallet=state.documents.Find(request.document);
+            const bool deleting=request.command==app::Command::DeleteWallet;
+            auto default_name=deleting?wallet->original_name:std::string{};
+            const auto saved=deleting?recovery->DeleteWalletMetadata(*wallet->binding)
+                :recovery->SaveWalletPresentation(*wallet->binding,request.value,request.option);
+            if(!saved)return {false,std::string("Local wallet metadata could not be saved: ")+storage::ErrorName(saved.error)+". Previous data retained."};
+            if(!deleting)return {true,"Saved the local wallet display name and icon."};
+            wallet->name=std::move(default_name);
+            wallet->icon=0;
+            wallet->history.metadata_loaded=false;
+            wallet->coins.metadata_loaded=false;
+            if(auto receive=state.receives.find(wallet->id);receive!=state.receives.end() && !receive->second.label.dirty())
+                receive->second.label_loaded=false;
+            state.coin_controls.InvalidateMetadata(app::HistoryMetadataScope(*wallet->binding));
+            ++state.semantic_context_revision;
+            return {true,"Local wallet metadata removed. The wallet tab, drafts and daemon wallet were retained."};
+        }
         app::Availability CanSubmit(const app::Request& request) const override {
             if(ui::shell::IsSigningCommand(request.command))return ui::shell::SigningCommandAvailability(state,fallback,request);
             if(ui::shell::IsTransactionEditCommand(request.command))return ui::shell::TransactionEditAvailability(state,fallback,request);
+            if(MetadataRequest(request))return CanChangeMetadata(request);
             if(request.command==app::Command::Refresh && state.retained_address_navigation)
                 return {CanRefreshRetainedAddress(),"Apply this wallet's verified RPC profile to refresh its retained inventory."};
             if(CopyRequest(request) && fallback.Recovery() && fallback.Recovery()->Locked())return {false,"Workspace is locked."};
@@ -215,6 +272,7 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         app::Receipt Submit(const app::Request& request) override {
             if(ui::shell::IsSigningCommand(request.command))return ui::shell::DispatchSigningCommand(state,fallback,request);
             if(ui::shell::IsTransactionEditCommand(request.command))return ui::shell::DispatchTransactionEdit(state,fallback,request);
+            if(MetadataRequest(request))return ChangeMetadata(request);
             if(fallback.Recovery() && fallback.Recovery()->Locked() && request.command!=app::Command::Quit)return {false,"Workspace is locked; request discarded."};
             if(request.command==app::Command::Refresh && state.retained_address_navigation){
                 const auto availability=CanSubmit(request);

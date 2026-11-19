@@ -16,6 +16,7 @@ struct NativeInputPort {
     virtual void Privacy(bool)=0;
     virtual void PrivacyLock(){Privacy(true);}
     virtual void EnterEditor(uint32_t,bool sensitive)=0;
+    virtual void EnterProtectedEditor(uint32_t id){EnterEditor(id,true);}
     virtual void LeaveEditor()=0;
     virtual std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t)=0;
     // One-shot clipboard inspection without an ImGui edit buffer. Use the

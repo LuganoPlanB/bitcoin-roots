@@ -72,7 +72,9 @@ cleared; ImGui, SQLite, allocator and operating-system copies prevent a complete
 RAM-erasure claim. The derived key uses libsodium guarded/locked allocation and
 is released on lock. No plaintext password is retained in metadata, logs,
 semantic values or capture artifacts. Password reveal is deliberate and resets
-after an attempt; failures retain the locked views without disclosing them.
+after an attempt. Copy and Cut cannot publish protection passwords to the
+system clipboard, including while the text is revealed. Failed unlocks keep
+the workspace concealed.
 
 The owner-thread gate stamps signing, address-load, label-save and refresh
 operations with the full backend/network/wallet/document/revision/lock epoch.

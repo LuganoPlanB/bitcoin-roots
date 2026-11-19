@@ -73,6 +73,7 @@ bool Valid(const Target& t){
 }
 void Validate(const Metadata& m){
     Require(m.revision<uint64_t(std::numeric_limits<int64_t>::max()) && Text(m.display_name,1024));
+    Require(!m.display_icon || (*m.display_icon>=0 && *m.display_icon<=2));
     Require(m.labels.size()<=4096 && m.layouts.size()<=64 && m.widths.size()<=1024 && m.freezes.size()<=4096 && m.drafts.size()<=64);
     std::set<std::pair<int,std::string>> labels,freezes;std::set<std::string> tables,drafts;std::set<std::pair<std::string,std::string>> widths;
     for(const auto& l:m.labels)Require(Valid(l.target) && Text(l.text,4096,true,true) && labels.emplace(int(l.target.kind),l.target.key).second);
@@ -95,6 +96,7 @@ void ValidateSchema(sqlite3* db,int version){
     std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);if(version>=4)expected.emplace(schema::V4);if(version>=5)for(auto sql:schema::V5)expected.emplace(sql);if(version>=6)expected.emplace(schema::V6);if(version>=7)expected.emplace(schema::V7);if(version>=8)expected.emplace(schema::V8);
     if(version>=9)expected.emplace(schema::V9);
     if(version>=10)expected.emplace(schema::V10);
+    if(version>=11)expected.emplace(schema::V11);
     // GLOB keeps '_' literal: sqliteX... is an ordinary user object and must
     // reach the exact-schema check, unlike SQLite's reserved sqlite_ objects.
     Statement q(db,"SELECT type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'");
@@ -139,7 +141,8 @@ void Initialize(sqlite3* db,OpenOptions options){
     if(v==6){Exec(db,schema::V7);Exec(db,"PRAGMA user_version=7");v=7;}
     if(v==7){Exec(db,schema::V8);Exec(db,"PRAGMA user_version=8");v=8;}
     if(v==8){Exec(db,schema::V9);Exec(db,"PRAGMA user_version=9");v=9;}
-    if(v==9){Exec(db,schema::V10);Exec(db,"PRAGMA user_version=10");}
+    if(v==9){Exec(db,schema::V10);Exec(db,"PRAGMA user_version=10");v=10;}
+    if(v==10){Exec(db,schema::V11);Exec(db,"PRAGMA user_version=11");}
     ValidateSchema(db,schema::Version);
     {Statement q(db,"PRAGMA foreign_key_check");Require(!q.Row(),Error::Corrupt);}tx.Commit();
 }
@@ -215,6 +218,7 @@ Result<std::string> MetadataStore::UnsealMemory(std::span<const unsigned char> b
 Result<Metadata> MetadataStore::Load(const Scope& scope){return Run([&]{
     Transaction tx(db,false);const auto row=FindScope(db,scope,false);Metadata m;m.revision=row.revision;m.display_name=row.display;
     if(row.id){
+        {Statement q(db,"SELECT icon FROM wallet_icons WHERE scope=?");q.Bind(1,row.id);if(q.Row()){const auto icon=q.Int(0);Require(icon>=0 && icon<=2,Error::Corrupt);m.display_icon=int(icon);}}
         {Statement q(db,"SELECT kind,target,label FROM labels WHERE scope=? ORDER BY kind,target");q.Bind(1,row.id);while(q.Row()){Require(m.labels.size()<4096,Error::Resource);m.labels.push_back({ReadTarget(q),q.Text(2)});}}
         {Statement q(db,"SELECT table_id,sort_column,descending FROM layouts WHERE scope=? ORDER BY table_id");q.Bind(1,row.id);while(q.Row()){Require(m.layouts.size()<64,Error::Resource);m.layouts.push_back({q.Text(0),q.Text(1),Bool(q.Int(2))});}}
         {Statement q(db,"SELECT table_id,column_id,width FROM widths WHERE scope=? ORDER BY table_id,column_id");q.Bind(1,row.id);while(q.Row()){Require(m.widths.size()<1024 && q.Int(2)>=16 && q.Int(2)<=8192,Error::Corrupt);m.widths.push_back({q.Text(0),q.Text(1),int(q.Int(2))});}}
@@ -227,6 +231,12 @@ Result<Metadata> MetadataStore::Load(const Scope& scope){return Run([&]{
 Result<uint64_t> MetadataStore::Save(const Scope& scope,const Metadata& m){return Write([&]{
     Validate(m);Transaction tx(db,true);const auto row=FindScope(db,scope,true);Require(row.revision==m.revision,Error::Conflict);
     {Statement q(db,"UPDATE scopes SET revision=?,display_name=? WHERE id=?");q.Bind(1,int64_t(m.revision+1));q.Bind(2,m.display_name);q.Bind(3,row.id);q.Done();}
+    if(m.display_icon){
+        Statement q(db,"INSERT INTO wallet_icons VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET icon=excluded.icon");
+        q.Bind(1,row.id);q.Bind(2,int64_t(*m.display_icon));q.Done();
+    }else{
+        Statement q(db,"DELETE FROM wallet_icons WHERE scope=?");q.Bind(1,row.id);q.Done();
+    }
     for(const auto* table:{"widths","layouts","labels","freezes","drafts"}){Statement q(db,std::string("DELETE FROM ")+table+" WHERE scope=?");q.Bind(1,row.id);q.Done();}
     for(const auto& l:m.labels){Statement q(db,"INSERT INTO labels VALUES(?,?,?,?)");q.Bind(1,row.id);q.Bind(2,int64_t(l.target.kind));q.Bind(3,l.target.key);q.Bind(4,l.text);q.Done();}
     for(const auto& t:m.layouts){Statement q(db,"INSERT INTO layouts VALUES(?,?,?,?)");q.Bind(1,row.id);q.Bind(2,t.table);q.Bind(3,t.sort_column);q.Bind(4,int64_t(t.descending));q.Done();}

@@ -843,6 +843,37 @@ bool CloseSigningReview(State& state,a::Requests& host,uint64_t id)
     return true;
 }
 
+void CollectDaemonSigningResult(State& state,a::Requests& host,const a::SigningApproval& approval,
+    a::DaemonSignResult result)
+{
+    const auto id=approval.reviewed.document;
+    auto& view=state.signing_views.at(id);
+    view.daemon_status=std::move(result.status);
+    const bool external=result.action==a::DaemonSignAction::ExternalSign;
+    const bool signed_reply=result.action==a::DaemonSignAction::Sign || external;
+    if (signed_reply && result.success && result.psbt && !result.original_retired && view.external_signed
+        && view.external_source.lock()==approval.reviewed.content) {
+        const auto combined=protocol::CombineVerifiedCollections(*view.external_signed,*result.psbt);
+        const auto& basis=approval.reviewed;
+        const auto checked=combined.document
+            ? protocol::InspectOfflineReview(*combined.document,basis.proof,basis.change_output) : protocol::OfflineReview{};
+        if (checked.commitment==approval.commitment && checked.change_output==basis.change_output) {
+            if (combined.document->wire!=view.external_signed->wire) view.external_signed=combined.document;
+        } else {
+            view.daemon_status="The signing result conflicts with the verified collection. Both the existing collection and original are retained.";
+            state.signing_reviews.Revoke(id,view.daemon_status);
+            if (external && host.Devices()) host.Devices()->Cancel();
+            result.success=false;
+            result.psbt.reset();
+        }
+    }
+    if (result.action==a::DaemonSignAction::Sign || (external && result.success)) {
+        view.daemon_signed=std::move(result.psbt);
+        view.signing_uncertain=result.uncertain;
+    }
+    if (result.action==a::DaemonSignAction::Enrich) view.daemon_enriched=std::move(result.psbt);
+}
+
 void PollSigningReviews(State& state,a::Requests& host)
 {
     state.signing_reviews.RemoveClosed(state.documents);
@@ -885,30 +916,7 @@ void PollSigningReviews(State& state,a::Requests& host)
                 if (external) state.signing_reviews.Revoke(id,result->status);
                 else RevokeSigningReview(state,id,result->status);
             }
-            if (review_current) {
-                auto& view=state.signing_views.at(id);
-                view.daemon_status=std::move(result->status);
-                if (external && result->success && !result->original_retired && view.external_signed
-                    && view.external_source.lock()==approval->reviewed.content) {
-                    const auto combined=protocol::MergeOfflineSignatures(*view.external_signed,*result->psbt);
-                    const auto& basis=approval->reviewed;
-                    const auto checked=combined.document
-                        ? protocol::InspectOfflineReview(*combined.document,basis.proof,basis.change_output) : protocol::OfflineReview{};
-                    if (checked.commitment==approval->commitment && checked.change_output==basis.change_output) {
-                        view.external_signed=combined.document;
-                    } else {
-                        view.daemon_status="The device result conflicts with the verified collection. Both the existing collection and original are retained.";
-                        state.signing_reviews.Revoke(id,view.daemon_status);
-                        if (auto* devices=host.Devices()) devices->Cancel();
-                        result->success=false;
-                    }
-                }
-                if (result->action==a::DaemonSignAction::Sign || (external && result->success)) {
-                    view.daemon_signed=std::move(result->psbt);
-                    view.signing_uncertain=result->uncertain;
-                }
-                if (result->action==a::DaemonSignAction::Enrich) view.daemon_enriched=std::move(result->psbt);
-            }
+            else if (review_current) CollectDaemonSigningResult(state,host,*approval,std::move(*result));
             ++state.signing_revision;
         }
         if (!signer->Busy() && std::exchange(state.daemon_operation,0)) {

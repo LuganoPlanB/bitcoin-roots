@@ -71,6 +71,7 @@ void ApplyWallet(State& state, ConnectionService& connection, WalletAction actio
     const auto name = binding->DaemonWallet();
     const auto id = documents.OpenWallet(name.size() > 255 ? "Daemon wallet " + binding->wallet.value().substr(0, 24) : Display(name), *binding, true);
     auto* document = documents.Find(id);
+    if (!exists && state.recovery) state.recovery->RestoreWalletPresentation(*document);
     if (!document->history.enabled) {
         document->history.enabled = true;
         for (auto& section : document->sections) section.note = c::Edit("");

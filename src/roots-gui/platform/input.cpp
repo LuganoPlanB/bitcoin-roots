@@ -61,8 +61,8 @@ ReadResult ReadSelection(GCancellable* cancel) {
 struct NativeInput::Impl:std::enable_shared_from_this<Impl> {
     const std::thread::id owner=std::this_thread::get_id();GLFWwindow* window{};xcb_connection_t* display{};xcb_window_t root{},selection{};xcb_atom_t clip{},utf8{},targets{},resource{};
     GMainContext* context=g_main_context_new();GCancellable* read_cancel=g_cancellable_new();GSettings* settings{};gulong setting_signal{};InputStatus status;unsigned jobs{};bool closing{},hidden{},copy_sensitive{};std::string copied,view;
-    uint32_t editor{};bool editor_sensitive{},paste_seen{},file_seen{};uint64_t sequence{},paste_epoch{};
-    struct PasteRequest {uint64_t epoch{};uint32_t target{};bool sensitive{},snapshot{},ready{};std::string scope,before,text;int cursor{},start{},end{};};std::optional<PasteRequest> paste;
+    uint32_t editor{};bool editor_sensitive{},editor_protected{},paste_seen{},file_seen{};uint64_t sequence{},paste_epoch{};
+    struct PasteRequest {uint64_t epoch{};uint32_t target{};bool sensitive{},protected_editor{},snapshot{},ready{};std::string scope,before,text;int cursor{},start{},end{};};std::optional<PasteRequest> paste;
     GSubprocess* process{};GCancellable* pipe_cancel{};uint64_t file_id{};bool waited{},out_done{},err_done{},file_cancelled{},file_failed{};std::string output,errors;int exit_status{};c::FileChoice choice;
     explicit Impl(GLFWwindow* value):window(value){}
     void Owner() const {if(owner!=std::this_thread::get_id())throw std::logic_error("native input requires host owner thread");}
@@ -105,7 +105,7 @@ struct NativeInput::Impl:std::enable_shared_from_this<Impl> {
     static void ReadDone(GObject*,GAsyncResult* result,void* data){auto self=Take(data);self->Owner();GError* error{};std::unique_ptr<ReadResult> value(static_cast<ReadResult*>(g_task_propagate_pointer(G_TASK(result),&error)));const auto epoch=*static_cast<uint64_t*>(g_task_get_task_data(G_TASK(result)));
         if(!self->closing && self->paste && self->paste->epoch==epoch){if(value && value->ok){self->paste->text=std::move(value->text);self->paste->ready=true;}else{self->status.notice=value?value->detail:"Clipboard request was cancelled.";self->CancelPaste();}}if(error)g_error_free(error);
     }
-    const char* RequestPaste(){Owner();if(closing || !display || !editor || (hidden && editor_sensitive)){status.notice="Paste is unavailable in this control.";return "";}if(paste){status.notice="A clipboard request is already pending.";return "";}paste=PasteRequest{++paste_epoch,editor,editor_sensitive,false,false,view};paste_seen=true;
+    const char* RequestPaste(){Owner();if(closing || !display || !editor || (hidden && editor_sensitive && !editor_protected)){status.notice="Paste is unavailable in this control.";return "";}if(paste){status.notice="A clipboard request is already pending.";return "";}paste=PasteRequest{++paste_epoch,editor,editor_sensitive,editor_protected,false,false,view};paste_seen=true;
         if(SelectionOwner()==selection){paste->text=copied;paste->ready=true;return "";}
         if(jobs){status.notice="Native input is busy; retry paste.";CancelPaste();return "";}g_cancellable_reset(read_cancel);Context push(context);auto* task=g_task_new(nullptr,read_cancel,ReadDone,Hold());g_task_set_task_data(task,new uint64_t(paste_epoch),[](void* p){delete static_cast<uint64_t*>(p);});g_task_set_return_on_cancel(task,false);g_task_run_in_thread(task,ReadWorker);g_object_unref(task);++status.clipboard_reads;return "";
     }
@@ -133,15 +133,16 @@ void NativeInput::Pump(){impl->Pump();}
 void NativeInput::BeginFrame(){impl->Owner();impl->paste_seen=false;impl->file_seen=false;}
 void NativeInput::EndFrame(){impl->Owner();if(impl->paste && !impl->paste_seen)impl->CancelPaste();if(impl->process && !impl->file_seen)impl->CancelFile();}
 void NativeInput::BeginView(std::string_view scope){impl->Owner();if(impl->view!=scope)impl->CancelPaste();impl->view=scope;}
-void NativeInput::Privacy(bool hidden){impl->Owner();impl->hidden=hidden;if(hidden && impl->copy_sensitive){if(impl->display && impl->SelectionOwner()==impl->selection)impl->Checked(xcb_set_selection_owner_checked(impl->display,XCB_WINDOW_NONE,impl->clip,XCB_CURRENT_TIME));impl->copied.clear();impl->copy_sensitive=false;}if(hidden && impl->paste && impl->paste->sensitive)impl->CancelPaste();}
+void NativeInput::Privacy(bool hidden){impl->Owner();impl->hidden=hidden;if(hidden && impl->copy_sensitive){if(impl->display && impl->SelectionOwner()==impl->selection)impl->Checked(xcb_set_selection_owner_checked(impl->display,XCB_WINDOW_NONE,impl->clip,XCB_CURRENT_TIME));impl->copied.clear();impl->copy_sensitive=false;}if(hidden && impl->paste && impl->paste->sensitive && !impl->paste->protected_editor)impl->CancelPaste();}
 void NativeInput::PrivacyLock(){impl->Owner();std::fill(impl->copied.begin(),impl->copied.end(),0);Privacy(true);impl->CancelPaste();impl->CancelFile();impl->choice={c::NativeOutcome::Cancelled,{},"File choice cancelled by privacy lock."};if(impl->display && impl->SelectionOwner()==impl->selection)impl->Checked(xcb_set_selection_owner_checked(impl->display,XCB_WINDOW_NONE,impl->clip,XCB_CURRENT_TIME));std::fill(impl->copied.begin(),impl->copied.end(),0);impl->copied.clear();impl->status.notice.clear();}
-bool NativeInput::Copy(std::string_view text,bool sensitive){return impl->Copy(text,sensitive || impl->editor_sensitive);}
+bool NativeInput::Copy(std::string_view text,bool sensitive){return !impl->editor_protected && impl->Copy(text,sensitive || impl->editor_sensitive);}
 const char* NativeInput::ClipboardForPaste(){return impl->RequestPaste();}
-void NativeInput::EnterEditor(uint32_t id,bool sensitive){impl->Owner();impl->editor=id;impl->editor_sensitive=sensitive;}
-void NativeInput::LeaveEditor(){impl->Owner();impl->editor=0;impl->editor_sensitive=false;}
+void NativeInput::EnterEditor(uint32_t id,bool sensitive){impl->Owner();impl->editor=id;impl->editor_sensitive=sensitive;impl->editor_protected=false;}
+void NativeInput::EnterProtectedEditor(uint32_t id){EnterEditor(id,true);impl->editor_protected=true;}
+void NativeInput::LeaveEditor(){impl->Owner();impl->editor=0;impl->editor_sensitive=false;impl->editor_protected=false;}
 std::optional<std::string> NativeInput::Paste(uint32_t id,std::string_view value,int cursor,int start,int end,size_t capacity){impl->Owner();auto& request=impl->paste;if(!request || request->target!=id)return {};impl->paste_seen=true;
     if(!request->snapshot){request->before=value;request->cursor=cursor;request->start=start;request->end=end;request->snapshot=true;}
-    if(!request->ready)return {};if(request->scope!=impl->view || request->before!=value || request->cursor!=cursor || request->start!=start || request->end!=end || (request->sensitive && impl->hidden)){impl->status.notice="Paste target changed; clipboard text was not inserted.";impl->CancelPaste();return {};}
+    if(!request->ready)return {};if(request->scope!=impl->view || request->before!=value || request->cursor!=cursor || request->start!=start || request->end!=end || request->protected_editor!=impl->editor_protected || (request->sensitive && impl->hidden && !request->protected_editor)){impl->status.notice="Paste target changed; clipboard text was not inserted.";impl->CancelPaste();return {};}
     if(request->text.empty()){request.reset();return {};}
     if(start<0 || end<start || size_t(end)>value.size() || value.size()-size_t(end-start)+request->text.size()>=capacity){impl->status.notice="Clipboard text does not fit this field; draft retained.";impl->CancelPaste();return {};}
     auto result=std::move(request->text);request.reset();++impl->status.pastes;impl->status.notice.clear();return result;
@@ -172,6 +173,7 @@ struct NativeInput::Impl {InputStatus status;};
 bool NativeInput::RequestInspection(uint32_t){return false;}
 bool NativeInput::InspectionPending(uint32_t) const{return false;}
 void NativeInput::PrivacyLock(){Privacy(true);}
+void NativeInput::EnterProtectedEditor(uint32_t){}
 uint64_t NativeInput::ChooseRpcCookie(){return 0;}
 bool NativeInput::NativeDialogActive() const{return false;}
 NativeInput::NativeInput(GLFWwindow*):impl(std::make_shared<Impl>()){}

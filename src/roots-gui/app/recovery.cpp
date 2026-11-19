@@ -3,6 +3,7 @@
 #include "app/recovery.h"
 #include "services/fees.h"
 #include "app/coin_inventory.h"
+#include "app/history_workspace.h"
 #include "adapters/storage/protected_file.h"
 #include "adapters/rpc/json.h"
 #include <algorithm>
@@ -13,6 +14,47 @@
 #include <sodium.h>
 namespace roots::gui::app {
 storage::Result<storage::Metadata> RecoverySession::HistoryMetadata(const storage::Scope& scope){if(!started)Start();if(Locked())return {{},storage::Error::Authentication};if(!store && !std::filesystem::exists(path))return {storage::Metadata{},storage::Error::None};if(!Open())return {{},storage::Error::Io};return store->Load(scope);}
+void RecoverySession::RestoreWalletPresentation(Document& document)
+{
+    if (!store || !document.binding || document.kind!=DocumentKind::Wallet) return;
+    const auto current=store->Load(HistoryMetadataScope(*document.binding));
+    if (!current) return;
+    const auto& name=current.value->display_name;
+    if (!name.empty() && name.size()<=255) document.name=name;
+    else if (name.empty() && current.value->display_icon) document.name=document.original_name;
+    if (current.value->display_icon) document.icon=*current.value->display_icon;
+}
+
+storage::Result<uint64_t> RecoverySession::SaveWalletPresentation(const WalletBinding& binding,std::string name,int icon)
+{
+    if (std::this_thread::get_id()!=owner) return {{},storage::Error::WrongThread};
+    if (Locked() || Pending()) return {{},storage::Error::Authentication};
+    if (name.empty() || name.size()>255 || icon<0 || icon>2) return {{},storage::Error::Invalid};
+    const auto scope=HistoryMetadataScope(binding);
+    auto current=HistoryMetadata(scope);
+    if (!current) return {{},current.error};
+    current.value->display_name=std::move(name);
+    current.value->display_icon=icon;
+    if (!Open()) return {{},storage::Error::Io};
+    return store->Save(scope,*current.value);
+}
+
+storage::Result<uint64_t> RecoverySession::DeleteWalletMetadata(const WalletBinding& binding)
+{
+    if (std::this_thread::get_id()!=owner) return {{},storage::Error::WrongThread};
+    if (Locked() || Pending()) return {{},storage::Error::Authentication};
+    const auto scope=HistoryMetadataScope(binding);
+    auto current=HistoryMetadata(scope);
+    if (!current) return {{},current.error};
+    // Keep the scope and all public drafts and operational journals. The
+    // explicit default icon also retires names/icons in older recovery copies.
+    storage::Metadata cleared;
+    cleared.revision=current.value->revision;
+    cleared.display_icon=0;
+    cleared.drafts=std::move(current.value->drafts);
+    if (!Open()) return {{},storage::Error::Io};
+    return store->Save(scope,cleared);
+}
 storage::Result<storage::Done> RecoverySession::ExportWalletMetadata(const storage::Scope& scope,std::string display_name,
     const std::filesystem::path& file,std::string_view password)
 {
@@ -452,7 +494,7 @@ storage::Result<uint64_t> RecoverySession::SaveWorkspacePreferences(const storag
 bool RecoverySession::Commit(PublicSession& candidate,bool enabled){if(Locked())return false;auto encoded=EncodePublicSession(candidate);if(!encoded){error="Public draft exceeds recovery limits or is locked. Previous snapshot retained.";return false;}if(!Open())return false;storage::RecoveryRecord next{record.revision,enabled,enabled?*encoded:""};auto result=store->SaveRecovery(next);if(!result){error=storage::ErrorName(result.error);return false;}next.revision=*result.value;record=std::move(next);saved=candidate;error.clear();return true;}
 bool RecoverySession::Enable(DocumentRegistry& documents){if(!started && !Start())return false;if(!error.empty() || pending)return false;auto candidate=Snapshot(documents);if(!Commit(candidate,true))return false;suspended=false;return true;}
 bool RecoverySession::Disable(){PublicSession empty;if(!error.empty() || !Commit(empty,false))return false;pending=false;return true;}
-bool RecoverySession::Restore(DocumentRegistry& documents){if(!pending || !documents.Documents().empty() || !error.empty())return false;documents=saved.documents;hidden=saved.hide_amounts;unit=saved.unit;pending=false;return true;}
+bool RecoverySession::Restore(DocumentRegistry& documents){if(!pending || !documents.Documents().empty() || !error.empty())return false;documents=saved.documents;for(const auto& document:documents.Documents())RestoreWalletPresentation(*documents.Find(document.id));hidden=saved.hide_amounts;unit=saved.unit;pending=false;return true;}
 bool RecoverySession::StartEmpty(){if(!pending)return false;pending=false;suspended=true;return true;}
 bool RecoverySession::Retry(){if(Locked())return false;store.reset();started=false;pending=false;error.clear();return Start();}
 bool RecoverySession::Protect(DocumentRegistry& documents,std::string_view password){if(Locked() || protected_store)return false;if(password.size()<12 || password.size()>255){error="Use a password of 12–255 bytes; existing work is retained.";protection_retry=true;return false;}if(protection_retry){error.clear();protection_retry=false;}if(!Enable(documents)){protection_retry=true;return false;}auto converted=store->Protect(password);if(!converted){error=converted.error==storage::Error::Busy?"Another instance is using this workspace. Close it and retry protection.":storage::ErrorName(converted.error);protection_retry=true;return false;}store=std::move(*converted.value);protected_store=true;error.clear();return true;}
@@ -668,6 +710,7 @@ bool RecoverySession::RecoverSend(DocumentRegistry& documents)
 }
 
 bool RecoverySession::RecoverLast(DocumentRegistry& documents){if(!Enabled() || pending || saved.recoverable.empty() || !Checkpoint(documents))return false;auto candidate=Snapshot(documents);auto restored=candidate.recoverable.back();candidate.recoverable.pop_back();std::vector<Document> docs=candidate.documents.Documents();const auto it=std::find_if(docs.begin(),docs.end(),[&](const auto& d){return d.id==restored.id;});
+    RestoreWalletPresentation(restored);
     if(it!=docs.end()){if(it->observation==ObservationState::Locked || it->kind!=restored.kind || it->binding!=restored.binding)return false;Retain(candidate.recoverable,*it);if(std::max(it->draft_revision.value,restored.draft_revision.value)==UINT64_MAX)return false;restored.draft_revision.value=std::max(it->draft_revision.value,restored.draft_revision.value)+1;*it=restored;}else docs.push_back(restored);
     uint64_t floor=candidate.cleared_send?candidate.cleared_send->id:0;for(const auto& d:candidate.recoverable)floor=std::max(floor,d.id);
     if(!candidate.documents.RestorePublic(std::move(docs),restored.id,floor))return false;if(!Commit(candidate,true))return false;documents=candidate.documents;return true;}

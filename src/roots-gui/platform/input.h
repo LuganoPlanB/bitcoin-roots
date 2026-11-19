@@ -27,6 +27,7 @@ public:
     bool Copy(std::string_view,bool sensitive=false);
     const char* ClipboardForPaste();
     void EnterEditor(uint32_t,bool) override;
+    void EnterProtectedEditor(uint32_t) override;
     void LeaveEditor() override;
     std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t) override;
     bool RequestInspection(uint32_t) override;

@@ -83,6 +83,8 @@ NATIVE_UI.add("roots_gui.theme.download")
 SUITES["model"][1].update({"roots_gui.storage.crashes","roots_gui.storage.concurrency"})
 SUITES["ui"][1].add("roots_gui.theme.metadata_restore")
 NATIVE_UI.add("roots_gui.theme.metadata_restore")
+SUITES["ui"][1].add("roots_gui.theme.wallet_metadata")
+NATIVE_UI.add("roots_gui.theme.wallet_metadata")
 NATIVE_UI.update({"roots_gui.theme.send", "roots_gui.theme.funding", "roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"})
 NATIVE_UI.add("roots_gui.theme.batch_live")
 NATIVE_UI.add("roots_gui.theme.review_live")
@@ -126,7 +128,7 @@ def configured_suites(build):
    key,value=line.split('=',1);cache[key.split(':',1)[0]]=value
  roots=bool(cache.get('ROOTS_GUI_TEST_ROOTS_DAEMON'))
  omitted=set() if sys.platform.startswith("linux") else {"roots_gui.protocol.documents","roots_gui.protocol.offline_draft","roots_gui.theme.offline_documents","roots_gui.theme.offline_draft","roots_gui.theme.send","roots_gui.theme.funding","roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"}
- if not sys.platform.startswith("linux"):omitted.update({CAMERA_PROBE,CAMERA_UI,'roots_gui.storage.crashes','roots_gui.storage.concurrency','roots_gui.theme.metadata_restore','roots_gui.theme.extensions_unavailable','roots_gui.theme.custody_unavailable'})
+ if not sys.platform.startswith("linux"):omitted.update({CAMERA_PROBE,CAMERA_UI,'roots_gui.storage.crashes','roots_gui.storage.concurrency','roots_gui.theme.metadata_restore','roots_gui.theme.wallet_metadata','roots_gui.theme.extensions_unavailable','roots_gui.theme.custody_unavailable'})
  if cache.get('ROOTS_GUI_DOWNLOAD_FIXTURES')!='ON':omitted.update({'roots_gui.download.verify','roots_gui.theme.download'})
  if not roots:omitted|={'roots_gui.rpc.history','roots_gui.rpc.funding','roots_gui.theme.funding_live','roots_gui.theme.create_live','roots_gui.theme.fees_live','roots_gui.theme.flow_live',*BROADCAST_NATIVE,*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
  if not roots or not sys.platform.startswith("linux"):omitted.update({INCREASE_FEE,ATTEMPT_CANCELLATION,INCREASE_EFFECTIVE_FEE,'roots_gui.theme.batch_live','roots_gui.theme.review_live','roots_gui.theme.edit_live','roots_gui.theme.sign_live'})

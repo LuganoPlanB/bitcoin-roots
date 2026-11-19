@@ -89,6 +89,9 @@ public:
     bool RecoverSend(DocumentRegistry&);
     bool RecoverLast(DocumentRegistry&);
     storage::Result<storage::Metadata> HistoryMetadata(const storage::Scope&);
+    void RestoreWalletPresentation(Document&);
+    storage::Result<uint64_t> SaveWalletPresentation(const WalletBinding&,std::string name,int icon);
+    storage::Result<uint64_t> DeleteWalletMetadata(const WalletBinding&);
     storage::Result<storage::Done> ExportWalletMetadata(const storage::Scope&,std::string display_name,
         const std::filesystem::path&,std::string_view password);
     storage::Result<MetadataRestore> InspectWalletMetadata(const storage::Scope&,

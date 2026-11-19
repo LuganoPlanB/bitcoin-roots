@@ -474,7 +474,8 @@ OfflineResult ConstructOfflineDraft(const OfflineDraft& request)
 }
 
 namespace {
-OfflineResult CombineVerified(const TransactionDocument& current,const TransactionDocument& external,bool signing)
+enum class MergeIntent { NewSignatures, Enrich, CollectVerified };
+OfflineResult CombineVerified(const TransactionDocument& current,const TransactionDocument& external,MergeIntent intent)
 {
     try {
         Need(current.psbt_version && external.psbt_version,"Choose an externally signed PSBT.");
@@ -497,9 +498,9 @@ OfflineResult CombineVerified(const TransactionDocument& current,const Transacti
             return {{},change,0,0,{},change};
         const auto valid=VerifiedSatisfactions(*checked,*tx);
         const auto before=SignatureCount(*base),after=SignatureCount(*checked);
-        if (signing)
+        if (intent==MergeIntent::NewSignatures)
             Need(valid>=original && after>before,"The signer contributed no new verified signature.");
-        else
+        else if (intent==MergeIntent::Enrich)
             Need(after==before,"The enrichment reply supplied unexpected signatures.");
         return {std::move(merged),{},valid,tx->num_inputs};
     } catch (Failure f) {return {{},f.reason};}
@@ -509,14 +510,19 @@ OfflineResult CombineVerified(const TransactionDocument& current,const Transacti
 
 OfflineResult MergeOfflineSignatures(const TransactionDocument& current,const TransactionDocument& external)
 {
-    return CombineVerified(current,external,true);
+    return CombineVerified(current,external,MergeIntent::NewSignatures);
+}
+
+OfflineResult CombineVerifiedCollections(const TransactionDocument& current,const TransactionDocument& signed_reply)
+{
+    return CombineVerified(current,signed_reply,MergeIntent::CollectVerified);
 }
 
 OfflineResult ApplyDaemonPsbt(const TransactionDocument& current,const TransactionDocument& reply,bool signing)
 {
     if (std::ranges::any_of(reply.input_policy,[](const auto& policy){return policy.final_fields;}))
         return {{},"The daemon returned final scripts for an unfinalized PSBT request."};
-    return CombineVerified(current,reply,signing);
+    return CombineVerified(current,reply,signing ? MergeIntent::NewSignatures : MergeIntent::Enrich);
 }
 
 OfflineResult FinalizeOfflineDraft(const TransactionDocument& current)

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "platform/shell_composition.h"
+#include "app/daemon_signer.h"
+#include "app/history_workspace.h"
 #include <GLFW/glfw3.h>
 #include <X11/Xlib.h>
 #include <algorithm>
@@ -12,6 +14,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <sys/socket.h>
+#include <thread>
 #include <unistd.h>
 
 using namespace roots::gui;
@@ -19,6 +22,9 @@ namespace shell=ui::shell;
 namespace c=ui::components;
 namespace p=protocol;
 namespace {
+enum class MixedOrder { Inactive, AirgapFirst, DaemonFirst };
+constexpr auto GENESIS="0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206";
+constexpr auto WALLET="Offline multisig";
 std::string Read(const std::filesystem::path& path)
 {
     std::ifstream file(path,std::ios::binary);
@@ -27,8 +33,12 @@ std::string Read(const std::filesystem::path& path)
 struct Requests final : app::Requests {
     mutable TransactionDocuments local;
     std::optional<ConnectionService> connection;
+    rpc::CookieCredentials credentials;
+    rpc::Transport transport{credentials};
+    std::optional<app::DaemonSigner> signer;
     TransactionDocuments* LocalDocuments() const override {return &local;}
     ConnectionService* Connection() override {return connection ? &*connection : nullptr;}
+    app::DaemonSigner* Signer() override {return signer ? &*signer : nullptr;}
     app::Receipt Submit(const app::Request&) override {throw std::runtime_error("Unexpected host command in offline signing.");}
 };
 struct Observer final : platform::NativeObserver {
@@ -47,6 +57,8 @@ struct Observer final : platform::NativeObserver {
     uint64_t source{},origin{},clipboard_writes{};
     int stage{},checks{},frames{};
     bool settled{},finalize{},qr{};
+    MixedOrder mixed{MixedOrder::Inactive};
+    bool online{},sign_requested{};
     uint64_t static_source{};
     size_t qr_captured{},qr_expected{},qr_received{},qr_total{};
 
@@ -55,8 +67,8 @@ struct Observer final : platform::NativeObserver {
         if (!valid) throw std::runtime_error("Signature exchange stage "+std::to_string(stage)+": "+reason);
         ++checks;
     }
-    Observer(std::filesystem::path out,std::filesystem::path folder,bool finish,bool transport):
-        output(std::move(out)),fixtures(std::move(folder)),finalize(finish),qr(transport)
+    Observer(std::filesystem::path out,std::filesystem::path folder,bool finish,bool transport,bool connected=false):
+        output(std::move(out)),fixtures(std::move(folder)),finalize(finish),qr(transport),online(connected)
     {
         if (finalize) requests.connection.emplace(ConnectionService::Probe{});
         original=p::ParseTransactionDocument(Read(fixtures/"original.psbt"),p::DisplayNetwork::Regtest).document;
@@ -65,10 +77,42 @@ struct Observer final : platform::NativeObserver {
         const auto descriptor=p::PreviewPublicWallet(p::PublicImportKind::Descriptor,Read(fixtures/"descriptor.txt"),"regtest");
         Check(descriptor.preview && descriptor.preview->descriptors.size()==1,"independent multisig descriptor");
         const auto& proof=descriptor.preview->descriptors.front();
-        const app::WalletBinding wallet{*BackendSessionId::Make("offline-signature-collection"),
-            *WalletId::Make("Offline multisig"),
-            {*Hash256::Parse("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")},{}};
-        origin=state.documents.OpenWallet("Offline multisig",wallet,true);
+        app::WalletBinding wallet{*BackendSessionId::Make("offline-signature-collection"),
+            *WalletId::Make(WALLET),{*Hash256::Parse(GENESIS)},{}};
+        if (online) {
+            requests.connection.emplace([](const ServerCandidate& candidate,std::stop_token) {
+                BackendCapabilities caps;
+                caps.candidate=candidate;
+                caps.chain="regtest";
+                caps.genesis=GENESIS;
+                caps.authenticated=caps.identity_verified=true;
+                caps.wallet=WalletAvailability::Available;
+                caps.descriptors=caps.private_keys=true;
+                caps.external_signer=false;
+                caps.methods["walletprocesspsbt"]={true,true,true,false,{"psbt","sign","finalize","bip32derivs"}};
+                return caps;
+            });
+            ServerCandidate profile;
+            const auto port=std::stoul(Read(fixtures.parent_path()/"loopback-port.txt"));
+            Check(port>0 && port<=UINT16_MAX,"owned loopback signer port");
+            profile.connection.host="127.0.0.1";
+            profile.connection.port=uint16_t(port);
+            profile.connection.credential.reference=(fixtures.parent_path()/"fixture.cookie").string();
+            profile.expected_genesis=GENESIS;
+            profile.wallet=WALLET;
+            auto& connection=*requests.connection;
+            Check(connection.SetDraft(profile) && connection.Test(),"test scoped synthetic capability records");
+            while(connection.Busy() && Clock::now()-started<std::chrono::seconds(3)) {
+                connection.Poll();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            Check(connection.Apply(),"apply only the owned loopback wallet");
+            const auto binding=app::VerifiedWalletBinding(*connection.Active());
+            Check(binding.has_value(),"exact signing wallet identified");
+            wallet=*binding;
+            requests.signer.emplace(requests.transport,connection);
+        }
+        origin=state.documents.OpenWallet(WALLET,wallet,true);
         auto* draft=state.documents.Find(origin);
         app::CoinDraft pin{wallet,{},{}};
         p::OfflineReviewEvidence review{p::DisplayNetwork::Regtest,{},tx.outputs,*tx.fee,{}};
@@ -261,9 +305,87 @@ struct Observer final : platform::NativeObserver {
         }
         ++stage;
     }
+    void SoftwareReply(std::string_view file)
+    {
+        const auto* approval=shell::CurrentSigningApproval(state,requests,source);
+        Check(approval!=nullptr,"software reply requires an exact current approval");
+        const auto returned=p::ParseTransactionDocument(Read(fixtures/file),p::DisplayNetwork::Regtest).document;
+        Check(returned!=nullptr,"independently signed daemon fixture parsed");
+        const auto result=p::ApplyDaemonPsbt(*approval->reviewed.content,*returned,true);
+        Check(result.document!=nullptr,"production daemon result verification passed");
+        shell::CollectDaemonSigningResult(state,requests,*approval,
+            {app::DaemonSignAction::Sign,result.document,"Verified fixture daemon reply.",true});
+        Check(!shell::FinalizedMaterial(state,source),"collecting daemon material does not finalize");
+    }
+
+    void MixedFrame(platform::NativeHost& host)
+    {
+        const bool airgap_first=mixed==MixedOrder::AirgapFirst;
+        switch (stage) {
+        case 0: if (!Press("Signing review")) return; break;
+        case 1: if (!Press("Record signing review")) return; break;
+        case 2: if (!Press("Approve for signing")) return; break;
+        case 3:
+            if (!shell::CurrentSigningApproval(state,requests,source)) return;
+            if (!airgap_first && shell::SigningMaterial(state,source)==original) {
+                if (online) {
+                    if (!sign_requested && Press("Sign with daemon")) sign_requested=true;
+                    return;
+                }
+                SoftwareReply("daemon.psbt");
+            }
+            if (!Press("Merge signed file")) return;
+            break;
+        case 4: if (!Path(fixtures/"airgap.psbt")) return; break;
+        case 5: if (!Press("Validate and merge")) return; break;
+        case 6: {
+            if (state.local_document.dialog.open || state.local_document.close_pending) return;
+            const auto current=shell::SigningMaterial(state,source);
+            Check(current && current!=original && shell::CurrentSigningApproval(state,requests,source),
+                "airgapped adoption kept the exact approved original");
+            if (!airgap_first) {stage=9;break;}
+            Check(!p::InspectSignatures(*current).Complete(),"each airgapped input still needs the daemon key");
+            if (online) {stage=8;break;}
+            SoftwareReply("airgap.psbt");
+            Check(shell::SigningMaterial(state,source)==current && shell::CurrentSigningApproval(state,requests,source),
+                "duplicate collection does not replace material or retire approval");
+            SoftwareReply("daemon-conflict.psbt");
+            Check(shell::SigningMaterial(state,source)==current && !shell::CurrentSigningApproval(state,requests,source),
+                "conflict retires approval and keeps the prior verified collection");
+            break;
+        }
+        case 7: if (!Press("Record signing review")) return; break;
+        case 8: if (!Press("Approve for signing")) return; break;
+        case 9:
+            if (!shell::CurrentSigningApproval(state,requests,source)) return;
+            if (online) {
+                if (!sign_requested && Press("Sign with daemon")) sign_requested=true;
+                if (!p::InspectSignatures(*shell::SigningMaterial(state,source)).Complete()) return;
+            } else SoftwareReply("daemon.psbt");
+            break;
+        case 10: {
+            const auto current=shell::SigningMaterial(state,source);
+            const auto checked=p::InspectSignatures(*current);
+            Check(state.documents.Active()->imported->parsed==original
+                && checked.Complete() && checked.inputs.size()==2 && current->wire.find("external signer opaque material")!=std::string::npos
+                && current->wire.find("original input A")!=std::string::npos,"both independent inputs complete with opaque fields and unchanged original");
+            Check(shell::DispatchSigningCommand(state,requests,{app::Command::FinalizeSigning,source}).accepted,
+                "explicit production finalization succeeds with combined collection");
+            const auto* artifact=shell::FinalizedMaterial(state,source);
+            Check(artifact && artifact->collected==current && artifact->final.document->wire==Read(fixtures/"expected.tx"),
+                "combined collection final wire matches independently serialized fixture bytes");
+            host.RequestClose();
+            break;
+        }
+        default: return;
+        }
+        ++stage;
+    }
+
     void Frame(platform::NativeHost& host,const platform::NativeFrame& frame) override
     {
         if (frame.rendered_frames<5) return;
+        if (mixed!=MixedOrder::Inactive) {MixedFrame(host);return;}
         if (qr) {QrFrame(host,frame);return;}
         switch (stage) {
         case 0: if (!Press("Signing review")) return; break;
@@ -442,6 +564,13 @@ struct Observer final : platform::NativeObserver {
     }
     void Report()
     {
+        if (mixed!=MixedOrder::Inactive) {
+            Check(stage==11 && settled && !requests.local.Busy() && (!online || (sign_requested && !requests.signer->Busy())),
+                "both input policies and native teardown completed");
+            std::ofstream(output/"native-result.json")<<"{\"checks\":"<<checks<<",\"networkDenied\":"<<(online?"false":"true")
+                <<",\"productionSignerPoll\":"<<(online?"true":"false")<<",\"settled\":true}\n";
+            return;
+        }
         if (qr) {
             Check(stage==22 && frames==int(qr_expected)+4 && settled && !requests.local.Busy() && finalized,
                 "static and animated QR, approved collection, explicit finalization and teardown complete");
@@ -476,30 +605,44 @@ struct Observer final : platform::NativeObserver {
 int main(int argc,char** argv)
 {
     const std::string_view mode=argc==5 ? argv[4] : "";
-    if (argc!=4 && !(argc==5 && (mode=="--finalize" || mode=="--qr"))) return 2;
+    if (argc!=4 && !(argc==5 && (mode=="--finalize" || mode=="--qr" || mode=="--mixed-online"))) return 2;
     try {
         const auto* owned=std::getenv("ROOTS_GUI_OWNED_TEST_DISPLAY");
         const auto* display=std::getenv("DISPLAY");
         if (!owned || !display || std::string_view(display)!=owned) throw std::runtime_error("Owned display required.");
-        for (const int family:{AF_INET,AF_INET6}) {
+        if (mode!="--mixed-online") for (const int family:{AF_INET,AF_INET6}) {
             const int fd=socket(family,SOCK_STREAM,0);
             const bool denied=fd<0 && errno==EPERM;
             if (fd>=0) close(fd);
             if (!denied) throw std::runtime_error("Network fence required.");
         }
-        Observer observer(argv[1],argv[3],mode=="--finalize",mode=="--qr");
-        platform::NativeOptions options{960,640,false,1.F,argv[2]};
-        options.fixed_delta_seconds=1.F/60;
-        options.accessibility=&observer.state.presentation.exchange;
-        platform::NativeHost* active{};
-        {
-            platform::NativeHost host(options,&observer,[&](const auto& theme,const auto& appearance) {
-                observer.facts=platform::DrawShellFrame(*active,observer.state,observer.requests,theme,appearance);
-            });
-            active=&host;
-            host.Run();
+        const auto run=[&](Observer& observer) {
+            platform::NativeOptions options{960,640,false,1.F,argv[2]};
+            options.fixed_delta_seconds=1.F/60;
+            options.accessibility=&observer.state.presentation.exchange;
+            platform::NativeHost* active{};
+            {
+                platform::NativeHost host(options,&observer,[&](const auto& theme,const auto& appearance) {
+                    observer.facts=platform::DrawShellFrame(*active,observer.state,observer.requests,theme,appearance);
+                });
+                active=&host;
+                host.Run();
+            }
+            observer.Report();
+        };
+        if (mode!="--mixed-online") {
+            Observer observer(argv[1],argv[3],mode=="--finalize",mode=="--qr");
+            run(observer);
         }
-        observer.Report();
+        if (mode=="--finalize" || mode=="--mixed-online") {
+            for (const auto [name,order] : {std::pair{"airgap-first",MixedOrder::AirgapFirst}, {"daemon-first",MixedOrder::DaemonFirst}}) {
+                auto directory=std::filesystem::path(argv[1])/name;
+                std::filesystem::create_directory(directory);
+                Observer mixed(directory,argv[3],false,false,mode=="--mixed-online");
+                mixed.mixed=order;
+                run(mixed);
+            }
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr<<error.what()<<'\n';

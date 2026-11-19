@@ -53,6 +53,10 @@ document recovery or grant daemon or browser authority.
 Version 10 stores generic desktop notification and camera sleep-inhibition
 preferences in the same CAS transaction. Both default to off for existing
 workspaces and have no authority to start an operation at application launch.
+Version 11 stores per-wallet icons in the same transaction as local display
+names. Confirmed local metadata deletion resets the display and clears scoped
+labels, freezes and saved table settings while retaining public drafts,
+receive/rescan state and the independent submission journal.
 Backend profiles store only endpoint/proxy/TLS settings, network/wallet and an
 opaque OS secure-store item reference. Cookie authentication profiles cannot
 be persisted through this API. No password, cookie value, seed or private-key

@@ -9,6 +9,7 @@ namespace {
 namespace a=app;
 void Begin(State& s,DocumentDialog kind,uint64_t id) {
     s.actions=DocumentActions();s.actions.kind=kind;s.actions.target=id;s.actions.return_focus=s.documents.ActiveId();
+    if(s.recovery)s.actions.metadata_epoch=s.recovery->Gate().Epoch();
     s.actions.dialog.open=true;s.actions.dialog.initialFocus=true;
 }
 components::ItemFacts Last() {const auto lo=ImGui::GetItemRectMin(),hi=ImGui::GetItemRectMax();return {{lo.x,lo.y,hi.x,hi.y},ImGui::GetItemID(),ImGui::IsItemFocused(),bool(ImGui::GetItemFlags()&ImGuiItemFlags_Disabled),false,false,ImGui::IsItemVisible()};}
@@ -52,7 +53,16 @@ bool ApplyDocumentAction(State& s,a::Requests& host,std::string_view id,bool nat
         if(!receipt.accepted){x.error=receipt.reason.empty()?"Metadata service did not acknowledge the change.":receipt.reason;return false;}
         s.documents.Rename(x.target,std::string(x.name.draft()));s.documents.SetIcon(x.target,x.icon);Finish(s,native);return true;
     }
-    if(id=="confirm-delete" && x.kind==DocumentDialog::Delete){const auto receipt=host.Submit({a::Command::DeleteWallet,x.target,d->section,{}});x.error=receipt.reason.empty()?"Wallet deletion is unavailable here; no wallet files or views were removed.":receipt.reason;return receipt.accepted;}
+    if(id=="confirm-delete" && x.kind==DocumentDialog::Delete){
+        const auto receipt=host.Submit({a::Command::DeleteWallet,x.target,d->section,{}});
+        if(!receipt.accepted){
+            x.error=receipt.reason.empty()?"Local wallet metadata could not be deleted.":receipt.reason;
+            return false;
+        }
+        s.notice=receipt.reason;
+        Finish(s,native);
+        return true;
+    }
     if(id=="import" && x.kind==DocumentDialog::Import && !x.file_dialog && x.format>=0 && size_t(x.format)<x.candidate.formats.size()){
         const auto receipt=host.Submit({a::Command::ImportSource,0,a::Section::Settings,{},x.candidate.source,int(x.candidate.formats[x.format])});x.error=receipt.reason.empty()?"Import adapter is unavailable; no file was read and no wallet was created.":receipt.reason;return receipt.accepted;
     }
@@ -184,8 +194,9 @@ void DrawDocumentDialog(State& s,a::Requests& host,Facts& f,const imkit::Theme& 
         for(int i=0;i<3;++i){const bool pressed=ImGui::RadioButton(icons[i],x.icon==i);f.document_actions[icons[i]]=Last();
             const auto action=s.presentation.Interact(icons[i],components::ax::SemanticRole::Radio,components::ax::SemanticAction::Select|components::ax::SemanticAction::Focus,false,x.icon==i);if(pressed)x.icon=i;if(action)s.presentation.Defer(*action,[&x,i,pressed](const components::SemanticRequest&){if(!pressed)x.icon=i;return true;});}
     } else if(x.kind==DocumentDialog::Delete) {
-        ImGui::TextUnformatted("Delete wallet — separate confirmation");ImGui::TextUnformatted(d->name.c_str());s.presentation.Annotate("delete-target","Target document",d->name);
-        ImGui::TextUnformatted("Closing a tab only closes its view. Deletion requires a daemon-wallet lifecycle service and a separately confirmed request. This fixture shell cannot delete wallet files.");s.presentation.Annotate("delete-explanation","Delete behavior","Closing a tab only closes its view. Deletion requires a daemon-wallet lifecycle service and a separately confirmed request. This fixture shell cannot delete wallet files.");
+        ImGui::TextUnformatted("Delete local wallet metadata");ImGui::TextUnformatted(d->name.c_str());s.presentation.Annotate("delete-target","Target document",d->name);
+        const char* detail="Remove the saved display name, icon, labels, freezes and table settings for this wallet. The tab, drafts and transaction records are retained. No daemon wallet is unloaded or deleted.";
+        ImGui::TextUnformatted(detail);s.presentation.Annotate("delete-explanation","Delete behavior",detail);
     } else {
         ImGui::TextUnformatted("Import public wallet / transaction");ImGui::TextUnformatted("Extension hints only. Choose a format; the service must validate the public file and network. No file is read or imported by this shell.");s.presentation.Annotate("import-explanation","Import behavior","Extension hints only. Choose a format; the service must validate the public file and network. No file is read or imported by this shell.");
         ImGui::TextUnformatted("Path");ImGui::SetNextItemWidth(-1);
@@ -214,7 +225,7 @@ void DrawDocumentDialog(State& s,a::Requests& host,Facts& f,const imkit::Theme& 
     if(!stale){ImGui::SameLine();
         if(x.kind==DocumentDialog::Close){Button(s,host,f,"save-close","Save and Close",theme,true);ImGui::SameLine();Button(s,host,f,"discard-close",s.recovery && s.recovery->Enabled()?"Close; keep recovery":"Discard Drafts and Close",theme);}
         else if(x.kind==DocumentDialog::Rename){const bool valid=!x.name.draft().empty() && x.name.draft().find_first_of("\r\n")==std::string_view::npos;Button(s,host,f,"apply-name","Apply Name / Icon",theme,true,valid);}
-        else if(x.kind==DocumentDialog::Delete)Button(s,host,f,"confirm-delete","Request Wallet Deletion",theme,true);
+        else if(x.kind==DocumentDialog::Delete)Button(s,host,f,"confirm-delete","Delete Local Metadata",theme,true);
         else if(x.kind==DocumentDialog::ClearSend)Button(s,host,f,"confirm-clear-send","Confirm Clear",theme,true);
         else Button(s,host,f,"import","Request Import",theme,true,x.format>=0 && size_t(x.format)<x.candidate.formats.size());
     }

@@ -63,7 +63,7 @@ int64_t VersionOne(const std::filesystem::path& path){Raw raw(path);raw.Exec("BE
 void Migrations(const std::filesystem::path& path){VersionOne(path);auto store=Take(s::MetadataStore::Open(path));const auto m=Take(store->Load(Scope()));Check(m.revision==7 && m.display_name=="Preserved display" && m.labels[0].text=="Preserved label");Check(store->LoadObservation(Scope(),"new-cache").error==s::Error::NotFound);store.reset();
     {Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);Check(raw.Number("PRAGMA application_id")==s::schema::ApplicationId);Check(raw.Number("SELECT count(*) FROM observations")==0);Check(raw.Number("SELECT count(*) FROM recovery")==0);}
     store=Take(s::MetadataStore::Open(path));Take(store->SaveObservation(Scope(),"existing-cache",ProvenanceFor(Scope()),Money::Satoshis(9)));store.reset();
-    {Raw raw(path);raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");raw.Exec("DROP TABLE broadcast_details");raw.Exec("DROP TABLE broadcast_attempts");raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
+    {Raw raw(path);raw.Exec("DROP TABLE wallet_icons");raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");raw.Exec("DROP TABLE broadcast_details");raw.Exec("DROP TABLE broadcast_attempts");raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
     store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==m);Check(Take(store->LoadObservation(Scope(),"existing-cache")).amount==Money::Satoshis(9));Check(!Take(store->LoadRecovery()).enabled);store.reset();Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);
 }
 void ReceiveReservations(const std::filesystem::path& path)
@@ -119,6 +119,7 @@ void RescanTickets(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE wallet_icons");
         raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("DROP TABLE broadcast_attempts");
@@ -265,6 +266,7 @@ void BroadcastAttempts(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE wallet_icons");
         raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("DROP TABLE broadcast_attempts");
@@ -322,6 +324,7 @@ void BroadcastRecovery(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE wallet_icons");
         raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("PRAGMA user_version=7");

@@ -4,8 +4,23 @@
 #include "ui/theme/theme.h"
 #include <sodium.h>
 #include <algorithm>
+#include <type_traits>
 namespace roots::gui::ui::shell {
 namespace {
+void PasswordInput(const char* id, std::array<char,256>& value, std::optional<std::string>& pending, bool reveal)
+{
+    // ImGui enables native Copy and Cut when a field is visually revealed.
+    // Cut can erase a selection without publishing it. Paste remains enabled.
+    auto& clipboard = ImGui::GetPlatformIO().Platform_SetClipboardTextFn;
+    struct RestoreClipboard {
+        decltype(clipboard) entry;
+        std::remove_reference_t<decltype(clipboard)> previous;
+        ~RestoreClipboard() { entry = previous; }
+    } restore{clipboard, clipboard};
+    clipboard = nullptr;
+    const auto flags = ImGuiInputTextFlags_NoUndoRedo | (reveal ? 0 : ImGuiInputTextFlags_Password);
+    components::TextInput(id,nullptr,value.data(),value.size(),pending,flags,nullptr,true,{},true);
+}
 void ClearPassword(PrivacyPanel& panel){sodium_memzero(panel.password.data(),panel.password.size());sodium_memzero(panel.confirm.data(),panel.confirm.size());for(auto* pending:{&panel.external_password,&panel.external_confirm}){if(*pending && !(*pending)->empty())sodium_memzero((*pending)->data(),(*pending)->size());pending->reset();}panel.reveal=false;}
 void Retire(State& s,app::Requests& host){s.histories.clear();s.addresses.clear();s.receives.clear();s.settings.clear();s.advanced.clear();s.imported_views.clear();s.offline_builders.clear();RetireSendView(s);RetireBatch(s);RetireFunding(s);RetireFees(s);RetireLocalDocument(s,host);RetireWalletTool(s);s.activity_export={};s.activity_log.Clear();s.activity_notice.clear();s.coins.clear();s.coin_controls.PrivacyLock();s.coin_draft_errors.clear();s.registered_session=0;s.privacy.hidden=true;s.notice.clear();s.drawer=Drawer::None;s.recovery_dialog.open=false;s.close_recovery_popup=true;s.actions=DocumentActions();s.close_document_popup=true;s.server=ServerPanel();s.server.close_pending=true;if(components::native_input)components::native_input->PrivacyLock();s.lock_panel.focus=true;}
 }
@@ -37,7 +52,7 @@ void DrawPrivacyPanel(State& s,app::Requests& host,Facts& facts,const imkit::The
     ImGui::TextUnformatted(detail);s.presentation.Annotate("privacy-status","Workspace privacy",detail);
     const char* boundary="GUI privacy locking does not change daemon encryption or its unlock timeout. Work already accepted by a daemon cannot be remotely cancelled. Unlock never signs or broadcasts.";
     ImGui::TextUnformatted(boundary);s.presentation.Annotate("daemon-lock-boundary","Daemon lock boundary",boundary);
-    const auto field=[&](const char* id,const char* label,std::array<char,256>& value,std::optional<std::string>& external){ImGui::TextUnformatted(label);ImGui::SetNextItemWidth(width);if(panel.focus){ImGui::SetKeyboardFocusHere();panel.focus=false;}components::TextInput(id,nullptr,value.data(),value.size(),external,panel.reveal?0:ImGuiInputTextFlags_Password);
+    const auto field=[&](const char* id,const char* label,std::array<char,256>& value,std::optional<std::string>& external){ImGui::TextUnformatted(label);ImGui::SetNextItemWidth(width);if(panel.focus){ImGui::SetKeyboardFocusHere();panel.focus=false;}PasswordInput(id,value,external,panel.reveal);
         const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();facts.document_actions[id]={{a.x,a.y,b.x,b.y},ImGui::GetItemID(),ImGui::IsItemFocused(),false,false,false,ImGui::IsItemVisible()};
         // Accessibility may supply input, but no password value/caret contents
         // are published. Native Password input also disables ordinary copying.

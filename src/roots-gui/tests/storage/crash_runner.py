@@ -159,9 +159,10 @@ def migration(args, root, record, protected):
     assert sha(path) == initial_hash, 'restart recovered the exact legacy bytes'
     call(args.binary, root, record, run_mode)
     after = call(args.binary, root, record, 'protected-schema') if protected else schema(path)
-    assert (after['schema'] if protected else after['version']) == 10
+    assert (after['schema'] if protected else after['version']) == 11
     if not protected:
         assert after['scope'] == (7, 'Legacy display') and after['labels'] == before['labels']
+        assert 'wallet_icons' in after['tables'] and 'wallet_icons' not in before['tables']
     assert not Path(str(path) + '-journal').exists()
     record.update(exactInterposedPath=str(target),interposedSyscall=operation,
                   original=before,recoveredLegacy=recovered,migrated=after,originalHash=initial_hash,

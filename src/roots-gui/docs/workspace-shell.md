@@ -241,21 +241,20 @@ Full literal names (including `##`/`###`) are painted independently of widget
 identity and remain in wrapping pointer/keyboard tooltips and owned tab
 annotations. These annotations are not a qualified native accessibility bridge.
 
-Rename/icon and reset are local metadata requests carrying stable document ID,
-name and icon. They apply only after a host acknowledgement. Failed requests
-retain the old metadata and the dialog draft. Production has no durable metadata
-adapter yet. Test fixtures acknowledge their explicit in-memory service; a
-fixture acknowledgement is not evidence of a saved database or directory rename.
+Rename/Icon and Reset Name/Icon save the display name and icon in the local
+metadata store for the exact wallet, network and backend. The tab changes after
+the store acknowledges the write. A failed write retains the previous display
+and the dialog draft. The daemon wallet name stays the same.
 
 Close removes views only. Clean views close immediately; any dirty note across
 all six sections or transaction state opens cancellable recovery for the whole
 requested set. Cancel/Escape returns focus and retains documents, drafts and
 selection. Save and Close requires an acknowledgement for each dirty document;
 failure leaves every view open. Explicit Discard closes only the selected views
-and their in-memory drafts. Delete has a separate confirmation and lifecycle
-request; this fixture shell never removes daemon wallet files or pretends that
-view closure, privacy locking and deletion are interchangeable. Lock still names
-its missing privacy/daemon adapter; it does not silently manufacture a lock epoch.
+and their in-memory drafts. Delete Local Metadata separately confirms and clears
+the selected wallet's local name, icon, labels, freezes and table settings. The
+tab, drafts, other wallets, transaction journal and daemon wallet are retained.
+Workspace protection and daemon wallet locking have separate controls.
 
 The empty workspace centers a dashed 450x230 design-pixel target, bounded by the
 available client area at stress scale, with New/Open/Import actions. Import
