@@ -45,12 +45,12 @@ class ChangeClassifierTest(unittest.TestCase):
             self.assertEqual(
                 output.read_text(encoding="utf-8"),
                 "baseline=true\ncompat=false\ndocs=true\ngui=false\n"
-                "nightly_full=false\nnightly_fuzz=true\nnightly_platforms=false\nnightly_sanitizers=false\nplatforms=false\nsanitizers=false\nwallet=false\nbroad=false\n"
+                "nightly_full=false\nnightly_fuzz=true\nnightly_platforms=false\nnightly_sanitizers=false\nplatforms=false\nsanitizers=false\nstandalone_gui=false\nwallet=false\nbroad=false\n"
                 "complete=true\ncategories=[\"docs-only\"]\nlabels=[\"ci:fuzz\"]\n"
                 "result={\"broad\":false,\"categories\":[\"docs-only\"],\"complete\":true,"
                 "\"labels\":[\"ci:fuzz\"],\"selected\":{\"baseline\":true,\"compat\":false,"
                 "\"docs\":true,\"gui\":false,\"nightly_full\":false,\"nightly_fuzz\":true,\"nightly_platforms\":false,\"nightly_sanitizers\":false,\"platforms\":false,"
-                "\"sanitizers\":false,\"wallet\":false},\"version\":1}\n")
+                "\"sanitizers\":false,\"standalone_gui\":false,\"wallet\":false},\"version\":1}\n")
 
     def test_peer_review_paths_require_compiled_and_functional_coverage(self):
         for path in ['src/net.cpp', 'src/net_permissions.cpp', 'src/rpc/net.cpp',
@@ -69,6 +69,43 @@ class ChangeClassifierTest(unittest.TestCase):
         self.assertTrue(result["selected"]["nightly_full"])
         self.assertFalse(any(result["selected"][name] for name in (
             "nightly_sanitizers", "nightly_fuzz", "nightly_platforms")))
+
+    def test_standalone_gui_paths_select_its_build_instead_of_core(self):
+        for path in ("src/roots-gui/CMakeLists.txt", "src/roots-gui/ui/shell/workspace.cpp",
+                     "src/roots-gui/README.md", "src/roots-gui/tests/model/coin_tests.cpp",
+                     "src/roots-gui/ui/logo.png"):
+            with self.subTest(path=path):
+                result = MODULE.result_for([path], [], False, False, self.policy)
+                self.assertEqual(result["categories"], ["roots-gui"])
+                self.assertTrue(result["selected"]["standalone_gui"])
+                self.assertFalse(any(result["selected"][key] for key in
+                                     ("gui", "wallet", "sanitizers", "compat", "platforms")))
+
+    def test_quick_gui_profile_keeps_smoke_and_explicit_assurance(self):
+        files = ["src/roots-gui/main.cpp", "CMakeLists.txt", "test/lint/lint-includes.py", "ruff.toml"]
+        quick = MODULE.result_for(files, ["ci:quick"], False, False, self.policy)
+        self.assertTrue(quick["complete"])
+        self.assertTrue(quick["selected"]["standalone_gui"])
+        self.assertFalse(quick["broad"])
+        self.assertFalse(any(quick["selected"][key] for key in
+                             ("gui", "wallet", "sanitizers", "compat", "platforms")))
+        for label, key in (("ci:full", "nightly_full"), ("ci:fuzz", "nightly_fuzz"),
+                           ("ci:sanitizers", "sanitizers"), ("ci:compat", "compat"),
+                           ("ci:platforms", "platforms")):
+            with self.subTest(label=label):
+                result = MODULE.result_for(files, ["ci:quick", label], False, False, self.policy)
+                self.assertTrue(result["selected"][key])
+                self.assertTrue(result["selected"]["standalone_gui"])
+
+    def test_quick_cannot_suppress_uncertain_inputs_or_core_only_prs(self):
+        for files, truncated, error in ((["src/roots-gui/main.cpp", "unknown-file"], False, False),
+                                         (["src/roots-gui/main.cpp"], True, False),
+                                         (["src/roots-gui/main.cpp"], False, True),
+                                         (["src/validation.cpp"], False, False)):
+            with self.subTest(files=files, truncated=truncated, error=error):
+                result = MODULE.result_for(files, ["ci:quick"], truncated, error, self.policy)
+                self.assertTrue(result["selected"]["sanitizers"])
+                self.assertTrue(result["selected"]["gui"])
 
     def test_v32_profiles_schemas_and_system_library_inputs_keep_fast_coverage(self):
         for path in ['CMakePresets.json', 'vcpkg.json', 'depends/packages/qt.mk',

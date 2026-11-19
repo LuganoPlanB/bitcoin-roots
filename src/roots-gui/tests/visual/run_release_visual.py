@@ -62,7 +62,9 @@ def retain_pixels(path):
     if raw.split(b"\n", 3)[3] != rgb:
         raise ValueError(f"lossless framebuffer reconstruction failed for {path}")
     record["rgbSha256"] = hashlib.sha256(rgb).hexdigest()
-    record["rawReconstruction"] = "P6 ASCII header with recorded dimensions and max 255, followed by top-down RGB PNG bytes"
+    record["rawReconstruction"] = (
+        "P6 ASCII header with recorded dimensions and max 255, followed by top-down RGB PNG bytes"
+    )
     path.unlink()
     return record
 
@@ -73,14 +75,33 @@ def run_profile(args, out, fixture, profile):
     captures = directory / "captures"
     directory.mkdir()
     argv = [
-        sys.executable, "-B", str(TESTS / "platform/owned_display.py"),
-        "--output", str(directory), "--timeout", "120", "--",
-        str(args.binary), str(captures), str(args.fonts), str(fixture),
-        str(width), theme, str(scale), args.case,
+        sys.executable,
+        "-B",
+        str(TESTS / "platform/owned_display.py"),
+        "--output",
+        str(directory),
+        "--timeout",
+        "120",
+        "--",
+        str(args.binary),
+        str(captures),
+        str(args.fonts),
+        str(fixture),
+        str(width),
+        theme,
+        str(scale),
+        args.case,
     ]
-    result = {"profile": profile, "argv": argv, "cwd": str(Path.cwd()), "startUTC": now()}
+    result = {
+        "profile": profile,
+        "argv": argv,
+        "cwd": str(Path.cwd()),
+        "startUTC": now(),
+    }
     with (directory / "outer.log").open("wb") as log:
-        process = subprocess.run(argv, stdout=log, stderr=subprocess.STDOUT, timeout=145)
+        process = subprocess.run(
+            argv, stdout=log, stderr=subprocess.STDOUT, timeout=145
+        )
     result.update(exit=process.returncode, endUTC=now())
     process_record = json.loads((directory / "processes.json").read_text())
     if not process_record["child"]["settled"] or not all(
@@ -91,8 +112,10 @@ def run_profile(args, out, fixture, profile):
     results_path = captures / "result.jsonl"
     rows = [json.loads(row) for row in results_path.read_text().splitlines()]
     expected = [
-        row["case"] for row in args.inventory
-        if (scale != 2 or row["stress"]) and (args.case == "all" or row["case"] == args.case)
+        row["case"]
+        for row in args.inventory
+        if (scale != 2 or row["stress"])
+        and (args.case == "all" or row["case"] == args.case)
     ]
     if [row["case"] for row in rows] != expected or not expected:
         raise RuntimeError(f"{profile} did not execute the exact selected cases")
@@ -101,16 +124,23 @@ def run_profile(args, out, fixture, profile):
         stem = ppm.stem
         metadata = json.loads(ppm.with_suffix(".json").read_text())
         for key, value in {
-            "width": width, "height": 820 if width == 1200 else 640,
-            "dark": theme == "dark", "scale": scale,
+            "width": width,
+            "height": 820 if width == 1200 else 640,
+            "dark": theme == "dark",
+            "scale": scale,
         }.items():
             if metadata[key] != value:
                 raise ValueError(f"{profile}/{stem} observed {key} differs")
         image = retain_pixels(ppm)
-        image.update(meta=metadata, semantics=identity(captures / (stem + ".semantics.json")),
-                     presentation=identity(captures / (stem + ".presentation.txt")))
+        image.update(
+            meta=metadata,
+            semantics=identity(captures / (stem + ".semantics.json")),
+            presentation=identity(captures / (stem + ".presentation.txt")),
+        )
         images.append(image)
-    result.update(cases=rows, images=images, owned=identity(directory / "processes.json"))
+    result.update(
+        cases=rows, images=images, owned=identity(directory / "processes.json")
+    )
     write_json(directory / "capture-manifest.json", result)
     return result
 
@@ -122,8 +152,12 @@ def main():
     parser.add_argument("--profile", choices=PROFILES, action="append")
     parser.add_argument("--case", default="all")
     args = parser.parse_args()
-    output = Path(tempfile.mkdtemp(prefix="release-visual-", dir=evidence_directory(args.output)))
-    args.inventory = json.loads(subprocess.check_output([args.binary, "--list"], timeout=10))
+    output = Path(
+        tempfile.mkdtemp(prefix="release-visual-", dir=evidence_directory(args.output))
+    )
+    args.inventory = json.loads(
+        subprocess.check_output([args.binary, "--list"], timeout=10)
+    )
     fixtures = output / "public-fixtures"
     fixtures.mkdir()
     make_fixtures(fixtures, args.openssl)
@@ -133,34 +167,59 @@ def main():
     for profile in args.profile or PROFILES:
         scale = PROFILES[profile][2]
         counts["selected"] += sum(
-            (scale != 2 or row["stress"]) and (args.case == "all" or row["case"] == args.case)
+            (scale != 2 or row["stress"])
+            and (args.case == "all" or row["case"] == args.case)
             for row in args.inventory
         )
         try:
             result = run_profile(args, output, fixtures / "v2", profile)
             results.append(result)
             for row in result["cases"]:
-                entry = ET.SubElement(suite, "testcase", classname=profile, name=row["case"])
+                entry = ET.SubElement(
+                    suite, "testcase", classname=profile, name=row["case"]
+                )
                 counts["executed"] += 1
                 passed = row["passed"] and row["cleaned"]
                 counts["passed" if passed else "failed"] += 1
                 if not passed:
                     ET.SubElement(entry, "failure", message=row["failure"])
-            if bool(result["exit"]) != any(not row["passed"] for row in result["cases"]):
+            if bool(result["exit"]) != any(
+                not row["passed"] for row in result["cases"]
+            ):
                 raise RuntimeError("native process exit differs from case outcomes")
-        except (OSError, KeyError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        except (
+            OSError,
+            KeyError,
+            ValueError,
+            RuntimeError,
+            subprocess.TimeoutExpired,
+        ) as error:
             results.append({"profile": profile, "error": str(error)})
             entry = ET.SubElement(suite, "testcase", classname=profile, name="harness")
             ET.SubElement(entry, "error", message=str(error))
-    for key, value in (("tests", len(suite)), ("errors", len(suite.findall("./testcase/error"))), ("failures", counts["failed"])):
+    for key, value in (
+        ("tests", len(suite)),
+        ("errors", len(suite.findall("./testcase/error"))),
+        ("failures", counts["failed"]),
+    ):
         suite.set(key, str(value))
-    ET.ElementTree(suite).write(output / "junit.xml", encoding="utf-8", xml_declaration=True)
-    gates = counts["selected"] > 0 and counts["passed"] == counts["selected"] and all("error" not in item for item in results)
+    ET.ElementTree(suite).write(
+        output / "junit.xml", encoding="utf-8", xml_declaration=True
+    )
+    gates = (
+        counts["selected"] > 0
+        and counts["passed"] == counts["selected"]
+        and all("error" not in item for item in results)
+    )
     manifest = {
-        "counts": counts, "passed": gates, "profiles": results,
+        "counts": counts,
+        "passed": gates,
+        "profiles": results,
         "binary": binary_identity(args.binary),
         "openssl": binary_identity(args.openssl),
-        "fonts": [identity(font) for font in sorted(args.fonts.glob("*")) if font.is_file()],
+        "fonts": [
+            identity(font) for font in sorted(args.fonts.glob("*")) if font.is_file()
+        ],
         "uiPins": identity(TESTS.parent / "third_party/ui-lock.json"),
         "fixtureSource": identity(TESTS / "protocol/signature_exchange.py"),
         "publicFixtures": [identity(path) for path in sorted(fixtures.glob("*/*"))],

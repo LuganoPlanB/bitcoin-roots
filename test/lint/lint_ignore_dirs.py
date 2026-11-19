@@ -10,6 +10,8 @@ SHARED_EXCLUDED_SUBTREES = ["src/leveldb/",
                  "src/minisketch/",
                  "src/ipc/libmultiprocess/",
                  "src/crypto/ctaes/",
+                 # Pinned upstream QR sources; local adapters remain checked.
+                 "src/roots-gui/third_party/qr/",
                  # VitePress owns this documentation mirror and its symlinks.
                  "doc/website/content/",
                 ]

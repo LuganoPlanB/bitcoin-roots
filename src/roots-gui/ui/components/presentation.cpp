@@ -189,9 +189,6 @@ float ViewPolish::PrivacyFeedback(ImGuiID id,bool hidden,bool reduced_motion,flo
 }
 }
 
-#include <algorithm>
-#include <cmath>
-#include <cmath>
 namespace roots::gui::ui::components {
 bool SemanticExchange::BindOwner() { std::lock_guard lock(mutex);if(owner==std::thread::id{})owner=std::this_thread::get_id();return owner==std::this_thread::get_id(); }
 bool SemanticExchange::Close() {

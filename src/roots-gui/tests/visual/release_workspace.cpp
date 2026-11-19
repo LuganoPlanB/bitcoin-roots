@@ -13,6 +13,8 @@
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <cstdlib>
 #include <dlfcn.h>
 #include <fstream>
@@ -773,7 +775,11 @@ int main(int argc, char** argv)
     const fs::path output(argv[1]), fonts(argv[2]), fixtures(argv[3]);
     const int width = std::stoi(argv[4]), height = width == 1200 ? 820 : 640;
     const bool dark = std::string_view(argv[5]) == "dark";
-    const float scale = std::stof(argv[6]);
+    float scale{};
+    const std::string_view scale_text(argv[6]);
+    const auto parsed_scale = std::from_chars(scale_text.data(), scale_text.data()+scale_text.size(), scale);
+    if (parsed_scale.ec != std::errc{} || parsed_scale.ptr != scale_text.data()+scale_text.size()
+        || !std::isfinite(scale) || scale <= 0) return 2;
     const std::string_view selection(argv[7]);
     fs::create_directories(output);
     std::ofstream result(output/"result.jsonl");

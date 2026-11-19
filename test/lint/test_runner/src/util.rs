@@ -79,6 +79,7 @@ pub fn get_pathspecs_default_excludes() -> Vec<String> {
         .chain(&[
             "doc/release-notes/release-notes-*", // archived notes
             "doc/website/content",               // VitePress documentation mirror
+            "src/roots-gui/third_party/qr",        // pinned upstream QR sources
         ])
         .map(|s| format!(":(exclude){s}"))
         .collect()

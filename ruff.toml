@@ -14,3 +14,7 @@ ignore = [
     "E501", # line too long
     "E741", # ambiguous-variable-name
 ]
+
+[lint.per-file-ignores]
+# Standalone test runners bootstrap sibling support modules before importing them.
+"src/roots-gui/tests/**/*.py" = ["E402"]

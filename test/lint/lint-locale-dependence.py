@@ -49,6 +49,17 @@ KNOWN_VIOLATIONS = [
     "src/test/fuzz/locale.cpp:.*setlocale",
     "src/test/util_tests.cpp:.*strtoll",
     "src/util/syserror.cpp:.*strerror",      # Outside this function use `SysErrorString`
+    # The standalone GUI uses to_string only for integral IDs/counts/satoshis;
+    # amount and fee decimal parsing/formatting use from_chars/to_chars. Unlike
+    # floating conversions, these integer spellings have no locale decimal mark.
+    r"src/roots-gui/.*:.*std::to_string",
+    # Fixture diagnostics and explicit integer/hex fixture parsers only.
+    r"src/roots-gui/tests/.*:.*(printf|fprintf|snprintf|stoul|stoull|stoi|strtol)",
+    r"src/roots-gui/main.cpp:.*(printf|fprintf)",  # %s version/error text
+    r"src/roots-gui/platform/native_host.cpp:.*fprintf",  # integer GLFW error code
+    r"src/roots-gui/app/broadcast.cpp:.*snprintf",  # fixed-width integer UTC date
+    r"src/roots-gui/ui/shell/transaction_workbench.cpp:.*snprintf",  # hex offset
+    r"src/roots-gui/(app/history_workspace|services/refresh).cpp:.*strftime",  # numeric UTC
 ]
 
 REGEXP_EXTERNAL_DEPENDENCIES_EXCLUSIONS = [

@@ -51,6 +51,9 @@ def _get_header_id(header_file: str) -> str:
     Returns:
         The header id.
     """
+    if header_file.startswith('src/roots-gui/'):
+        return 'ROOTS_GUI_' + header_file.removeprefix('src/roots-gui/').replace('/', '_').replace('.h', '').upper() + '_H'
+
     header_id_base = header_file.split('/')[1:]
     header_id_base = '_'.join(header_id_base)
     header_id_base = header_id_base.replace('.h', '').replace('-', '_')
@@ -72,6 +75,12 @@ def main():
 
         with open(header_file, 'r') as f:
             header_file_contents = f.readlines()
+
+        # The independently built GUI uses pragma once on supported compilers.
+        # Require the actual directive; do not exempt unguarded GUI headers.
+        if (header_file.startswith('src/roots-gui/') and
+                any(line.strip() == '#pragma once' for line in header_file_contents)):
+            continue
 
         count = 0
         for header_file_contents_string in header_file_contents:

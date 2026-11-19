@@ -54,12 +54,12 @@ class WorkflowSelectionTest(unittest.TestCase):
     def test_selected_failures_cannot_pass_the_pr_result_gate(self):
         block = run_block(ROOT / '.github/workflows/ci.yml', 'Enforce selected required results')
         env = {'CLASSIFY': 'success', 'LINT': 'success'}
-        for key in ['GUI', 'SANITIZERS', 'FUZZ', 'NIGHTLY_SANITIZERS', 'NIGHTLY_FUZZ', 'NIGHTLY_PLATFORMS', 'NIGHTLY_FULL']:
+        for key in ['STANDALONE_GUI', 'GUI', 'SANITIZERS', 'FUZZ', 'NIGHTLY_SANITIZERS', 'NIGHTLY_FUZZ', 'NIGHTLY_PLATFORMS', 'NIGHTLY_FULL']:
             env[key] = 'skipped'
             env[key + '_SELECTED'] = 'false'
         base = subprocess.run(['bash', '-c', block], env=os.environ | env, capture_output=True, timeout=5)
         self.assertEqual(base.returncode, 0, base.stderr)
-        for name in ['GUI', 'SANITIZERS', 'FUZZ', 'NIGHTLY_FUZZ']:
+        for name in ['STANDALONE_GUI', 'GUI', 'SANITIZERS', 'FUZZ', 'NIGHTLY_FUZZ']:
             for status in ['failure', 'cancelled', 'skipped']:
                 with self.subTest(job=name, status=status):
                     failed = subprocess.run(['bash', '-c', block], env=os.environ | env | {name + '_SELECTED': 'true', name: status}, capture_output=True, timeout=5)

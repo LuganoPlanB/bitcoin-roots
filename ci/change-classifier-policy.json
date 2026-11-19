@@ -4,6 +4,7 @@
     "docs-only",
     "branding",
     "gui",
+    "roots-gui",
     "wallet",
     "build",
     "critical",
@@ -15,13 +16,15 @@
     "ci:sanitizers",
     "ci:fuzz",
     "ci:compat",
-    "ci:platforms"
+    "ci:platforms",
+    "ci:quick"
   ],
   "defaults": {
     "baseline": "always",
     "docs-only": ["docs"],
     "branding": ["gui"],
     "gui": ["gui"],
+    "roots-gui": ["standalone_gui"],
     "wallet": ["wallet", "sanitizers", "compat", "platforms"],
     "build": "broad",
     "critical": "broad",
@@ -30,7 +33,8 @@
   },
   "fail_open": ["unknown-path", "ambiguous-path", "empty-file-list", "truncated-file-list", "api-error", "invalid-policy"],
   "path_rules": [
-    {"category": "build", "prefixes": [".github/", "ci/", "cmake/", "depends/", "contrib/devtools/", "build_msvc/", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json"], "suffixes": ["CMakeLists.txt", ".cmake", ".yml", ".yaml"]},
+    {"category": "roots-gui", "prefixes": ["src/roots-gui/"], "suffixes": []},
+    {"category": "build", "prefixes": [".github/", "ci/", "cmake/", "depends/", "contrib/devtools/", "build_msvc/", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json", "ruff.toml"], "suffixes": ["CMakeLists.txt", ".cmake", ".yml", ".yaml"]},
     {"category": "critical", "prefixes": ["doc/man/", "share/examples/bitcoin.conf", "src/qt/locale/bitcoin_en.ts", "src/consensus/", "src/script/", "src/primitives/", "src/policy/", "src/rpc/", "src/node/", "src/kernel/", "src/net", "src/txmempool", "src/validation", "src/serialize", "src/chain", "test/functional/test_framework/", "test/"], "suffixes": []},
     {"category": "docs-only", "prefixes": ["doc/"], "suffixes": [".md", ".markdown", ".mdown", ".mkdn", ".mdx"]},
     {"category": "branding", "prefixes": ["src/qt/res/", "share/pixmaps/"], "suffixes": [".svg", ".png", ".ico", ".icns"]},

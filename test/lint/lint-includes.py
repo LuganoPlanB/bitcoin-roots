@@ -113,11 +113,13 @@ def find_extra_boosts():
 
 
 def find_quote_syntax_inclusions():
+    # Roots GUI is independently built with its own source-root include path and
+    # quoted local headers. Duplicate/.cpp/Boost checks still apply to that code.
     exclude_args = [":(exclude)" + dir for dir in EXCLUDED_DIRS]
     quote_syntax_inclusions = list()
 
     try:
-        quote_syntax_inclusions = check_output(["git", "grep", r"^#include \"", "--", "*.cpp", "*.h"] + exclude_args, text=True).splitlines()
+        quote_syntax_inclusions = check_output(["git", "grep", r"^#include \"", "--", "*.cpp", "*.h"] + exclude_args + [":(exclude)src/roots-gui/"], text=True).splitlines()
     except CalledProcessError as e:
         if e.returncode > 1:
             raise e

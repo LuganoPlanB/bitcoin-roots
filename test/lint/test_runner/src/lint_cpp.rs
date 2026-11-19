@@ -105,6 +105,8 @@ pub fn lint_std_filesystem() -> LintResult {
             "./src/",
             ":(exclude)src/ipc/libmultiprocess/",
             ":(exclude)src/util/fs.h",
+            // The standalone GUI cannot depend on Core util/fs.h.
+            ":(exclude)src/roots-gui/",
             ":(exclude)src/bitcoin-chainstate.cpp",
         ])
         .status()
@@ -133,6 +135,9 @@ pub fn lint_remove_all() -> LintResult {
             // These are likely not avoidable.
             ":(exclude)src/test/kernel/test_kernel.cpp",
             ":(exclude)src/test/util/setup_common.cpp",
+            // Owned mkdtemp workspaces and fixture teardown only.
+            ":(exclude)src/roots-gui/tests/",
+            ":(exclude)src/roots-gui/services/download_verification.cpp",
         ])
         .status()
         .expect("command error")

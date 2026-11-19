@@ -164,6 +164,20 @@ corpus replay. Direct nightly functional selection has a 7200-second bound.
 | Previous-release extended tests | 300 minutes |
 | Tidy/extended functional/native platform fuzz | 360 minutes |
 
+Standalone Roots GUI changes select a separate, 20-minute build/model job;
+this builds `roots-gui` and executes the model suite without building Core or Qt.
+The logs and model results are retained as an Actions artifact. The larger
+native/visual/regtest/package qualification remains separate from this smoke.
+
+After one-off qualification, a maintainer can apply `ci:quick` to a PR containing
+standalone GUI changes to omit repeated Core Qt, ASan/compatibility and fuzz
+lanes. Lint, classifier regression tests, docs and the standalone GUI build/model
+job remain required. Skipped assurance is reported as skipped, never as a pass.
+Removing the label restores normal selection. Unknown or incomplete file lists
+ignore this reduction and retain broad coverage. Explicit assurance labels take
+precedence, so `ci:full` restores all coverage even alongside `ci:quick`.
+Core-only PRs retain their existing default selection even with `ci:quick`.
+
 Labels `ci:sanitizers`, `ci:fuzz`, `ci:platforms` and `ci:full` request heavy
 reusable assurance; `ci:compat` requests fresh fast compatibility regressions.
 The main-only differential compatibility harness was guarded for Core 30.3.

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 Plan-B Foundation
 # Distributed under the MIT software license, see the accompanying COPYING file.
+export LC_ALL=C.UTF-8
 set -eu
 
 if [ "$#" -ne 1 ] || [ -z "$1" ]; then

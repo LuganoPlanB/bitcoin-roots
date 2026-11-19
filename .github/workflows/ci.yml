@@ -33,6 +33,7 @@ jobs:
     outputs:
       files: ${{ steps.files.outputs.files }}
       docs: ${{ steps.classify.outputs.docs }}
+      standalone_gui: ${{ steps.classify.outputs.standalone_gui }}
       gui: ${{ steps.classify.outputs.gui }}
       wallet: ${{ steps.classify.outputs.wallet }}
       sanitizers: ${{ steps.classify.outputs.sanitizers }}
@@ -141,6 +142,46 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 ci/lint.py
+
+  standalone-gui:
+    name: Standalone GUI build and models
+    needs: classify
+    if: needs.classify.outputs.standalone_gui == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install standalone GUI build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y ninja-build pkg-config libssl-dev libsodium-dev libgl1-mesa-dev libx11-dev libxcb1-dev libglib2.0-dev
+      - name: Restore standalone compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          install: binary
+          key: ${{ runner.os }}-${{ runner.arch }}-standalone-gui
+          max-size: 200M
+      - name: Build standalone GUI and run model suite
+        env:
+          BUILD_DIR: ${{ runner.temp }}/roots-gui-build
+        run: |
+          set -Eeuo pipefail
+          cmake -S src/roots-gui -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DROOTS_GUI_BUILD_TESTS=ON 2>&1 | tee "$RUNNER_TEMP/roots-gui-configure.log"
+          cmake --build "$BUILD_DIR" --target roots-gui roots_gui_model_tests -j 2 2>&1 | tee "$RUNNER_TEMP/roots-gui-models.log"
+      - name: Preserve standalone GUI diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-gui-models
+          path: |
+            ${{ runner.temp }}/roots-gui-configure.log
+            ${{ runner.temp }}/roots-gui-models.log
+            ${{ runner.temp }}/roots-gui-build/tests/runs/
+          if-no-files-found: warn
 
   test-assets:
     name: Shared test inputs
@@ -300,7 +341,7 @@ jobs:
   required-result:
     name: required result
     if: always()
-    needs: [classify, lint, gui, sanitizers, fuzz-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
+    needs: [classify, lint, standalone-gui, gui, sanitizers, fuzz-smoke, nightly-sanitizers, nightly-fuzz, nightly-platforms, nightly-full]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -308,6 +349,8 @@ jobs:
         env:
           CLASSIFY: ${{ needs.classify.result }}
           LINT: ${{ needs.lint.result }}
+          STANDALONE_GUI: ${{ needs.standalone-gui.result }}
+          STANDALONE_GUI_SELECTED: ${{ needs.classify.outputs.standalone_gui }}
           GUI: ${{ needs.gui.result }}
           SANITIZERS: ${{ needs.sanitizers.result }}
           NIGHTLY_SANITIZERS: ${{ needs.nightly-sanitizers.result }}
@@ -333,6 +376,7 @@ jobs:
           }
           check_selected true "$CLASSIFY" classify
           check_selected true "$LINT" lint
+          check_selected "$STANDALONE_GUI_SELECTED" "$STANDALONE_GUI" standalone-gui
           check_selected "$GUI_SELECTED" "$GUI" gui
           check_selected "$SANITIZERS_SELECTED" "$SANITIZERS" sanitizers
           check_selected "$FUZZ_SELECTED" "$FUZZ" fuzz-smoke

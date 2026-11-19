@@ -13,9 +13,9 @@ import os
 
 
 POLICY_PATH = os.path.join(os.path.dirname(__file__), "change-classifier-policy.json")
-KNOWN_CATEGORIES = ("docs-only", "branding", "gui", "wallet", "build", "critical", "cpp", "unknown")
-KNOWN_LABELS = ("ci:full", "ci:sanitizers", "ci:fuzz", "ci:compat", "ci:platforms")
-BROAD_SELECTION = ("gui", "wallet", "sanitizers", "compat", "platforms")
+KNOWN_CATEGORIES = ("docs-only", "branding", "gui", "roots-gui", "wallet", "build", "critical", "cpp", "unknown")
+KNOWN_LABELS = ("ci:full", "ci:sanitizers", "ci:fuzz", "ci:compat", "ci:platforms", "ci:quick")
+BROAD_SELECTION = ("standalone_gui", "gui", "wallet", "sanitizers", "compat", "platforms")
 OPTIONAL_SELECTION = ("nightly_sanitizers", "nightly_fuzz", "nightly_platforms", "nightly_full")
 SAFE_POLICY = {"version": 1, "defaults": {"unknown": "broad"}}
 
@@ -72,7 +72,16 @@ def result_for(files, labels, truncated, error, policy, reuse_canonical_ci=False
         defaults = policy["defaults"][category]
         for name in BROAD_SELECTION if defaults == "broad" else defaults:
             selected[name] = True
+    # A maintainer may opt a GUI PR into a bounded routine profile after its
+    # one-off assurance. Missing/unknown input must still fail open. Explicit
+    # assurance labels below always take precedence over this cost reduction.
+    quick = "ci:quick" in labels and complete and "unknown" not in categories and "roots-gui" in categories
+    if quick:
+        selected.update({name: False for name in BROAD_SELECTION if name != "standalone_gui"})
+        broad = False
     for label in labels:
+        if label == "ci:quick":
+            continue
         if label == "ci:full":
             selected.update({name: True for name in BROAD_SELECTION})
             selected["nightly_full"] = True

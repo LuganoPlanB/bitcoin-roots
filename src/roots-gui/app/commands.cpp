@@ -52,7 +52,7 @@ ImportCandidate ClassifyImportPath(std::string_view path)
 {
     ImportCandidate result;if(path.empty() || path.size()>4096 || path.find('\0')!=std::string_view::npos)return result;
     result.source=path;const auto dot=path.find_last_of('.');if(dot==path.npos)return result;
-    std::string ext(path.substr(dot));std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char ch){return char(std::tolower(ch));});
+    std::string ext(path.substr(dot));std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char ch){return char(ch>='A' && ch<='Z' ? ch+('a'-'A') : ch);});
     if(ext==".psbt")result.formats={ImportFormat::PSBT};
     else if(ext==".txn" || ext==".tx" || ext==".hex")result.formats={ImportFormat::RawTransaction};
     else if(ext==".desc")result.formats={ImportFormat::Descriptor};
