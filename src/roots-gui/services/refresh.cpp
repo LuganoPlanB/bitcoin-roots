@@ -250,5 +250,29 @@ RefreshView RefreshService::View() const
     for (size_t i = 0; i < 3; ++i) value.freshness[i] = offline ? Freshness::Offline : !slot.observed[i] ? Freshness::Unknown : slot.errors[i] != rpc::Error::None ? Freshness::Stale : !slot.current[i] ? Freshness::Cached : Freshness::Live;
     return value;
 }
-std::vector<RefreshView> RefreshService::HistoryViews() const {std::vector<RefreshView> values;if(!Owner() || locked)return values;for(size_t index=0;index<slots.size();++index){const auto& slot=slots[index];if(!slot.ledger)continue;RefreshView value;value.identity=&slot.identity;value.ledger=&*slot.ledger;value.generation=generation;value.history_sequence=slot.history_sequence;value.scan_budget=slot.history_limits.transactions;value.scan_blocked=slot.scan_blocked;value.chain_current=selected==index && slot.node && slot.current[0] && slot.current[2] && slot.errors[0]==rpc::Error::None && slot.errors[2]==rpc::Error::None && slot.ledger->Stable() && !slot.ledger->Limited() && slot.node->tip==slot.ledger->Tip() && !offline;value.observed=slot.observed;value.errors=slot.errors;value.offline=offline;value.busy=selected==index && Busy();for(size_t i=0;i<3;++i)value.freshness[i]=offline?Freshness::Offline:!slot.observed[i]?Freshness::Unknown:slot.errors[i]!=rpc::Error::None?Freshness::Stale:selected==index && slot.current[i]?Freshness::Live:Freshness::Cached;values.push_back(value);}return values;}
+std::vector<RefreshView> RefreshService::ObservationViews() const
+{
+    std::vector<RefreshView> values;
+    if(!Owner() || locked)return values;
+    for(size_t index=0;index<slots.size();++index){
+        const auto& slot=slots[index];
+        if(!slot.ledger && !slot.wallet)continue;
+        if(selected==index){values.push_back(View());continue;}
+        RefreshView value;
+        value.identity=&slot.identity;value.node=slot.node?&*slot.node:nullptr;
+        value.wallet=slot.wallet?&*slot.wallet:nullptr;value.ledger=slot.ledger?&*slot.ledger:nullptr;
+        value.generation=generation;value.history_sequence=slot.history_sequence;value.scan_budget=slot.history_limits.transactions;
+        value.scan_blocked=slot.scan_blocked;value.observed=slot.observed;value.errors=slot.errors;value.offline=offline;
+        for(size_t i=0;i<3;++i)value.freshness[i]=offline?Freshness::Offline:!slot.observed[i]?Freshness::Unknown:
+            slot.errors[i]!=rpc::Error::None?Freshness::Stale:Freshness::Cached;
+        values.push_back(value);
+    }
+    return values;
+}
+std::vector<RefreshView> RefreshService::HistoryViews() const
+{
+    auto values=ObservationViews();
+    std::erase_if(values,[](const RefreshView& view){return !view.ledger;});
+    return values;
+}
 }

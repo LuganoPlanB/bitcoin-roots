@@ -33,7 +33,14 @@ void RegisterCommandTests(ImGuiTestEngine* engine)
     t->TestFunc=[](ImGuiTestContext* ctx){
         auto& s=ctx->GetVars<Fixture>();std::set<int> visited;std::ofstream log("commands.routes.txt");
         for(const auto& spec:a::CommandInventory()) {
-            Reset(ctx,s,spec.id);const auto id=s.state.documents.ActiveId();ctx->ItemNavActivate(s.facts.menus[int(spec.menu)]);ctx->Yield(1);
+            Reset(ctx,s,spec.id);
+            if(spec.id==a::Command::Sweep){
+                IM_CHECK(sh::SetAmountVisibility(s.state,true));
+                IM_CHECK(!sh::CommandAvailability(s.state,spec.id,s).available);
+                IM_CHECK(sh::SetAmountVisibility(s.state,false));
+                ctx->Yield(1);
+            }
+            const auto id=s.state.documents.ActiveId();ctx->ItemNavActivate(s.facts.menus[int(spec.menu)]);ctx->Yield(1);
             IM_CHECK(s.facts.menu_items.contains(spec.id));ctx->ItemNavActivate(s.facts.menu_items.at(spec.id));ctx->Yield(1);
             IM_CHECK(s.state.invocation.has_value());IM_CHECK_EQ(s.state.invocation->command,spec.id);IM_CHECK_EQ(s.state.invocation->document,id);IM_CHECK(visited.insert(int(spec.id)).second);
             if(s.state.invocation->dispatched){IM_CHECK_EQ(s.requests.size(),1);IM_CHECK_EQ(s.requests.back().command,spec.id);IM_CHECK_EQ(s.requests.back().document,id);IM_CHECK(s.state.invocation->accepted);}
@@ -42,6 +49,17 @@ void RegisterCommandTests(ImGuiTestEngine* engine)
             if(spec.id==a::Command::RenameWallet)IM_CHECK_EQ(s.state.actions.kind,sh::DocumentDialog::Rename);
             if(spec.id==a::Command::DeleteWallet)IM_CHECK_EQ(s.state.actions.kind,sh::DocumentDialog::Delete);
             if(spec.id==a::Command::LoadingLog)IM_CHECK_EQ(s.state.drawer,sh::Drawer::Activity);
+            if(spec.id==a::Command::Sweep){
+                IM_CHECK(s.facts.sweep_visible && s.state.invocation->accepted);
+                IM_CHECK(!s.state.invocation->dispatched && s.requests.empty());
+                IM_CHECK(s.rendered.find("signs even its preview")!=std::string::npos);
+            }
+            if(spec.id==a::Command::Contacts){
+                IM_CHECK(s.facts.payment_protocol_visible && s.state.invocation->accepted);
+                IM_CHECK(!s.state.invocation->dispatched && s.requests.empty());
+                IM_CHECK(s.rendered.find("PayjoinModule")!=std::string::npos);
+                IM_CHECK(s.rendered.find("PaymentCodeContacts")!=std::string::npos);
+            }
             if(spec.id==a::Command::CloseTab)IM_CHECK(!s.state.documents.Find(id));
             log<<int(spec.id)<<' '<<spec.label<<" | "<<s.facts.shortcut_labels.at(spec.id)<<" | document="<<id<<" | available="<<s.state.invocation->available<<" | dispatched="<<s.state.invocation->dispatched<<"\n";
         }

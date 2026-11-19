@@ -10,7 +10,7 @@ int main(int argc, char** argv)
 {
     try {
         if (argc == 2 && std::string_view(argv[1]) == "--version") {
-            std::puts("roots-gui 32.1-roots.1");
+            std::printf("roots-gui %s\n",roots::gui::GUI_VERSION);
             return 0;
         }
         if (argc == 2 && std::string_view(argv[1]) == "--build-contract") {
@@ -18,6 +18,11 @@ int main(int argc, char** argv)
                 roots::gui::ui::BuildInfo() + "," + roots::gui::platform::BuildInfo() + "}";
             std::puts(value.c_str());
             return 0;
+        }
+        if(argc==2 && std::string_view(argv[1]).starts_with("--resume-gui-fd=")){
+            auto resumed=roots::gui::platform::ConsumeRestartContext(argv[1]);
+            if(!resumed){std::fputs("roots-gui: invalid GUI restart context\n",stderr);return 2;}
+            return roots::gui::platform::Run(std::move(resumed));
         }
         if (argc != 1) {
             std::fputs("usage: roots-gui [--version|--build-contract]\n", stderr);

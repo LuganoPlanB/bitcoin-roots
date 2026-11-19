@@ -4,6 +4,7 @@
 #include "ui/bootstrap.h"
 #include "platform/linux/accessibility.h"
 #include "platform/input.h"
+#include "platform/desktop.h"
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -26,6 +27,7 @@ struct NativeOptions {
     ui::components::SemanticExchange* accessibility{}; // Owner-lifetime association, never a borrowed tree.
     std::function<void()> on_draw_suspended; // Retire side effects when no window content is visible.
     std::function<bool()> before_close; // Optional owner-thread acknowledgement of pending local edits.
+    std::optional<DesktopPorts> desktop_ports;
 };
 struct NativeFrame {
     int iteration{}, rendered_frames{}, width{}, height{}, framebuffer_width{}, framebuffer_height{};
@@ -66,6 +68,8 @@ public:
     int Run();
     GLFWwindow* Window(); // Borrowed host-thread-only handle, never transferred.
     void RequestClose();
+    bool Minimize();
+    DesktopRuntime* Desktop();
     std::vector<DroppedPaths> TakeDroppedPaths(); // Owned copy, drained only on host thread.
     void SetFontScale(float scale);
     bool SetAppearance(int choice); // Light=0, Dark=1, System=2; acknowledges actual saved preference.

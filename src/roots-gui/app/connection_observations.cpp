@@ -29,6 +29,8 @@ HostObservations ConnectionObservations(const ConnectionService& connection, con
         result.screen_observations[i] = {state(i), std::string(names[i]) + ": " + ObservationDate(view.observed[i]) + (view.errors[i] == rpc::Error::None ? "" : std::string(" / ") + rpc::ErrorName(view.errors[i]))};
     }
     result.proxy = {ServiceState::Ready, connection.Active()->candidate.connection.proxy == ProxyKind::Direct ? "Direct connection" : "Explicit proxy"};
+    result.activity.state=view.offline?ServiceState::Offline:view.busy?ServiceState::Loading:
+        view.errors[0]!=rpc::Error::None?state(0):ServiceState::Ready;
     return result;
 }
 }

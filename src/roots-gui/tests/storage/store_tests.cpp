@@ -39,7 +39,12 @@ void Persistence(const std::filesystem::path& path){
     invalid=m;invalid.freezes.push_back({s::TargetKind::Output,std::string(64,'A')+":1"});Check(store->Save(scope,invalid).error==s::Error::Invalid);
     invalid=m;invalid.labels.push_back({{s::TargetKind::Transaction,std::string(64,'A')},"Noncanonical alias"});Check(store->Save(scope,invalid).error==s::Error::Invalid);
     invalid=m;invalid.revision=uint64_t(std::numeric_limits<int64_t>::max());Check(store->Save(scope,invalid).error==s::Error::Invalid);Check(Take(store->Load(scope))==m);
-    s::Workspace w;w.preferences={9,true};w.restore_documents=true;w.appearance=2;w.unit=1;Check(Take(store->SaveWorkspace(w))==1);w.revision=1;Check(Take(store->LoadWorkspace())==w);auto stale=w;stale.revision=0;Check(store->SaveWorkspace(stale).error==s::Error::Conflict);
+    s::Workspace w;w.preferences={9,true,true,false,ExplorerMode::Custom,"https://explorer.example/tx/{txid}",std::string(64,'1')};
+    w.preferences.desktop_notifications=true;w.preferences.camera_keep_awake=true;
+    w.restore_documents=true;w.appearance=2;w.unit=1;Check(Take(store->SaveWorkspace(w))==1);w.revision=1;Check(Take(store->LoadWorkspace())==w);
+    auto stale=w;stale.revision=0;Check(store->SaveWorkspace(stale).error==s::Error::Conflict);
+    auto unsafe=w;unsafe.preferences.explorer_template="http://explorer.example/tx/{txid}";
+    Check(store->SaveWorkspace(unsafe).error==s::Error::Invalid);Check(Take(store->LoadWorkspace())==w);
     s::Profile profile;profile.id="backend";profile.candidate.expected_genesis=scope.network.genesis.hex();profile.candidate.wallet=scope.daemon_wallet;profile.candidate.connection.credential={Authentication::SecureStore,"os-item-public-fixture"};Check(Take(store->SaveProfile(profile))==1);profile.revision=1;Check(Take(store->LoadProfile(profile.id))==profile);
     auto cookie=profile;cookie.candidate.connection.credential={Authentication::Cookie,"/explicit/disposable-cookie"};Check(store->SaveProfile(cookie).error==s::Error::Invalid);Check(Take(store->LoadProfile(profile.id))==profile);
     auto malformed=profile;malformed.candidate.connection.credential.reference=std::string(1,char(255));Check(store->SaveProfile(malformed).error==s::Error::Invalid);
@@ -58,7 +63,7 @@ int64_t VersionOne(const std::filesystem::path& path){Raw raw(path);raw.Exec("BE
 void Migrations(const std::filesystem::path& path){VersionOne(path);auto store=Take(s::MetadataStore::Open(path));const auto m=Take(store->Load(Scope()));Check(m.revision==7 && m.display_name=="Preserved display" && m.labels[0].text=="Preserved label");Check(store->LoadObservation(Scope(),"new-cache").error==s::Error::NotFound);store.reset();
     {Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);Check(raw.Number("PRAGMA application_id")==s::schema::ApplicationId);Check(raw.Number("SELECT count(*) FROM observations")==0);Check(raw.Number("SELECT count(*) FROM recovery")==0);}
     store=Take(s::MetadataStore::Open(path));Take(store->SaveObservation(Scope(),"existing-cache",ProvenanceFor(Scope()),Money::Satoshis(9)));store.reset();
-    {Raw raw(path);raw.Exec("DROP TABLE broadcast_details");raw.Exec("DROP TABLE broadcast_attempts");raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
+    {Raw raw(path);raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");raw.Exec("DROP TABLE broadcast_details");raw.Exec("DROP TABLE broadcast_attempts");raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
     store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==m);Check(Take(store->LoadObservation(Scope(),"existing-cache")).amount==Money::Satoshis(9));Check(!Take(store->LoadRecovery()).enabled);store.reset();Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);
 }
 void ReceiveReservations(const std::filesystem::path& path)
@@ -114,6 +119,7 @@ void RescanTickets(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("DROP TABLE broadcast_attempts");
         raw.Exec("DROP TABLE rescan_state");
@@ -259,6 +265,7 @@ void BroadcastAttempts(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("DROP TABLE broadcast_attempts");
         raw.Exec("PRAGMA user_version=6");
@@ -315,6 +322,7 @@ void BroadcastRecovery(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE desktop_settings");raw.Exec("DROP TABLE general_settings");
         raw.Exec("DROP TABLE broadcast_details");
         raw.Exec("PRAGMA user_version=7");
     }

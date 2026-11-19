@@ -51,7 +51,8 @@ struct Edit {
     bool dirty() const { return draft()!=saved; }
 };
 bool SetExternalBuffer(std::span<char>,std::optional<std::string>&,std::string_view);
-bool TextInput(const char*,const char* hint,char*,size_t,std::optional<std::string>&,ImGuiInputTextFlags flags=0,TextPosition* byte_cursor=nullptr,bool sensitive=false);
+bool TextInput(const char*,const char* hint,char*,size_t,std::optional<std::string>&,ImGuiInputTextFlags flags=0,
+    TextPosition* byte_cursor=nullptr,bool sensitive=false,ImVec2 multiline={});
 bool EditInput(const char*,Edit&,ImGuiInputTextFlags flags=0,bool sensitive=false);
 bool CommitAmountEdit(const char*,Edit&,Commands&);
 std::optional<Money> ParseAmount(std::string_view);

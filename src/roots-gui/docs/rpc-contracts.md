@@ -29,7 +29,8 @@ accept explicitly supplied exact binaries and retain their identities.
 | `lockunspent` | Registered | Registered | Explicit stateful daemon locks with ownership; no unlock of foreign/unknown locks |
 | `testmempoolaccept`, `sendrawtransaction` | Registered | Registered | Policy preflight is distinct from submission; timeout means uncertainty for the same transaction |
 | `enumeratesigners`, `walletdisplayaddress` | Build/configuration dependent | Same source build gate | Require ENABLE_EXTERNAL_SIGNER and configured daemon signer; no GUI USB/HID transport |
-| `sweepprivkeys`, `exportaddresskey` | Roots extensions; export gated | Absent | Capability-specific tools; never assume Core support or expose automatic secret-export workflows |
+| `sweepprivkeys` | Takes WIF keys, signs even with `broadcast=false`; `true` also submits | Absent | The GUI shows the unsigned-sweep dependency and does not call this RPC |
+| `exportaddresskey` | Roots extension; export gated | Absent | Keep secret export outside automatic GUI workflows |
 
 The scalar source audit retains symbolic `DEFAULT_WALLET_TX_VERSION` and
 `DEFAULT_RAWTX_VERSION` expressions and checks their `CTransaction::CURRENT_VERSION`

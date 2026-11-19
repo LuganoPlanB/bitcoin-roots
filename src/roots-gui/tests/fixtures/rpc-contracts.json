@@ -26,7 +26,7 @@
     {"method": "testmempoolaccept", "file": "src/rpc/mempool.cpp", "registry": "src/rpc/mempool.cpp", "defaults": {}, "effect": "relay-policy preflight observation; no submission guarantee"},
     {"method": "enumeratesigners", "file": "src/rpc/external_signer.cpp", "registry": "src/rpc/external_signer.cpp", "build_gate": "ENABLE_EXTERNAL_SIGNER", "defaults": {}, "effect": "daemon signer enumeration; no GUI USB/HID transport"},
     {"method": "walletdisplayaddress", "file": "src/wallet/rpc/addresses.cpp", "build_gate": "ENABLE_EXTERNAL_SIGNER", "defaults": {}, "effect": "explicit daemon-mediated device display verification"},
-    {"method": "sweepprivkeys", "baselines": ["roots"], "file": "src/wallet/rpc/spend.cpp", "defaults": {}, "effect": "Roots-only transient daemon custody; preview/review/explicit submission"},
+    {"method": "sweepprivkeys", "baselines": ["roots"], "file": "src/wallet/rpc/spend.cpp", "defaults": {"broadcast": "false"}, "effect": "Transient daemon custody of WIF keys; signs even in preview; optional submission; unused by the GUI"},
     {"method": "exportaddresskey", "baselines": ["roots"], "file": "src/wallet/rpc/backup.cpp", "defaults": {}, "effect": "Roots-only dangerous secret export; outside automatic GUI workflows"}
   ],
   "negative_fixtures": [

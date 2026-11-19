@@ -41,6 +41,17 @@ struct Observer final : platform::NativeObserver {
         int x{}, y{}; glfwGetWindowPos(host.Window(), &x, &y);
         Check(motion(display, -1, x + int((f.rect[0] + f.rect[2]) / 2), y + int((f.rect[1] + f.rect[3]) / 2), 0));
     }
+    void Capture(const platform::NativeFrame& frame,const char* name){
+        Check(frame.width==960 && frame.height==640 && frame.effective_scale==1.5F && frame.decorated && !frame.gl_error);
+        const auto semantic=state.presentation.Snapshot();
+        Check(semantic.find("Working profile is active")!=std::string::npos && !frame.rgba.empty());
+        std::ofstream ppm(output/(std::string(name)+".ppm"),std::ios::binary);
+        ppm<<"P6\n"<<frame.framebuffer_width<<' '<<frame.framebuffer_height<<"\n255\n";
+        for(int y=frame.framebuffer_height-1;y>=0;--y)for(int x=0;x<frame.framebuffer_width;++x)
+            ppm.write(reinterpret_cast<const char*>(frame.rgba.data()+(size_t(y)*frame.framebuffer_width+x)*4),3);
+        Check(bool(ppm));
+        std::ofstream(output/(std::string(name)+"-semantics.txt"))<<semantic;
+    }
     void Frame(platform::NativeHost& host, const platform::NativeFrame& frame) override {
         if (!facts.server.visible || frame.rendered_frames < 3) return;
         auto& service = requests.service;
@@ -49,7 +60,7 @@ struct Observer final : platform::NativeObserver {
         case 1: Check(button(display, 1, False, 0)); stage = 2; break;
         case 2: if (service.CanApply()) { Check(service.Tested()->authenticated && service.Tested()->identity_verified); Point(host, "apply"); Check(button(display, 1, True, 0)); stage = 3; } break;
         case 3: Check(button(display, 1, False, 0)); stage = 4; break;
-        case 4: if (service.Session() == 1) { Check(service.Active()->candidate.connection.port == original_port); Point(host, "port"); Check(button(display, 1, True, 0)); stage = 5; } break;
+        case 4: if (service.Session() == 1 && state.presentation.Snapshot().find("Working profile is active")!=std::string::npos) { Check(service.Active()->candidate.connection.port == original_port); Capture(frame,"server-applied"); Point(host, "port"); Check(button(display, 1, True, 0)); stage = 5; } break;
         case 5: Check(button(display, 1, False, 0)); Check(host.Input().Copy(std::to_string(replacement_port))); Key(XK_Control_L, true); Key(XK_a, true); stage = 6; break;
         case 6: Key(XK_a, false); Key(XK_Control_L, false); stage = 7; break;
         case 7: Key(XK_Control_L, true); Key(XK_v, true); stage = 8; break;
@@ -68,20 +79,14 @@ struct Observer final : platform::NativeObserver {
             } break;
         case 12:
             if (frame.rendered_frames < tick + 5) break;
-            Check(frame.width == 960 && frame.height == 640 && frame.effective_scale == 1.5F && frame.decorated && !frame.gl_error);
             Check(state.presentation.Tree().Validate() && !state.presentation.Tree().nodes.empty());
             {
                 const auto packet = state.presentation.exchange.Published(); Check(packet && packet->valid && !packet->nodes.empty());
                 for (const auto& entry : packet->nodes) Check(entry.name != "Transactions" && entry.name != "File" && entry.name != "Open public document");
             }
             for (const auto* id : {"test", "apply", "cancel"}) { const auto& item = facts.server.items.at(id); Check(item.visible && item.rect[0] >= 0 && item.rect[3] <= frame.height); }
-            {
-                std::ofstream ppm(output / "server-test-connection.ppm", std::ios::binary);
-                ppm << "P6\n" << frame.framebuffer_width << ' ' << frame.framebuffer_height << "\n255\n";
-                for (int y = frame.framebuffer_height - 1; y >= 0; --y) for (int x = 0; x < frame.framebuffer_width; ++x) ppm.write(reinterpret_cast<const char*>(frame.rgba.data() + (size_t(y) * frame.framebuffer_width + x) * 4), 3);
-                Check(bool(ppm));
-            }
-            std::ofstream(output / "server-semantics.txt") << state.presentation.Snapshot(); captured = true; host.RequestClose(); stage = 13; break;
+            Capture(frame,"server-test-connection");
+            captured=true;host.RequestClose();stage=13;break;
         }
         XSync(display, False);
     }

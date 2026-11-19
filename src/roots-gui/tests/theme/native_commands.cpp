@@ -107,7 +107,13 @@ int main(int argc,char** argv)
             Observer o;o.out=out;o.display=display;o.variant=variant;o.wrong=wrong;o.state.documents=a::PublicFixtureDocuments();o.state.documents.Find(1)->sections[4].note.SetDraft("Retained command fixture draft");o.state.documents.Find(1)->sections[4].selection.selected={7};
             o.motion=reinterpret_cast<decltype(o.motion)>(dlsym(xtst,"XTestFakeMotionEvent"));o.button=reinterpret_cast<decltype(o.button)>(dlsym(xtst,"XTestFakeButtonEvent"));o.key=reinterpret_cast<decltype(o.key)>(dlsym(xtst,"XTestFakeKeyEvent"));if(!o.motion||!o.button||!o.key)throw std::runtime_error("native input symbols absent");
             auto& obs=o.requests.observations;obs.connection={a::ServiceState::Offline,"Explicit public fixture; no RPC."};obs.network={a::ServiceState::Ready,"regtest fixture"};obs.activity={a::ServiceState::Loading,"Public activity fixture."};obs.tasks={{101,"Public background fixture","No wallet effect.",a::ServiceState::Loading,425}};
-            for(int i=0;i<40;++i)obs.log.push_back("Public operational fixture line "+std::to_string(i+1));
+            if(o.variant=="activityLoading"){
+                for(unsigned i=0;i<40;++i){
+                    obs.tasks.front().progress_per_mille=i*10;
+                    o.state.activity_log.Observe(obs,1700000000000LL+1000*i);
+                }
+                obs.tasks.front().progress_per_mille=425;
+            }
             if(o.variant=="statusUnavailable")obs={};
             if(o.variant=="statusLoading")obs.connection={a::ServiceState::Loading,"Explicit fixture connecting."};
             if(o.variant=="statusError" || o.variant=="activityError"){obs.connection={a::ServiceState::Error,"Explicit fixture transport failure."};obs.error="Explicit fixture failed request.";obs.activity.state=a::ServiceState::Error;obs.tasks[0].state=a::ServiceState::Error;}

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/shell/workspace.h"
+#include "services/custody_extensions.h"
 #include "app/history_workspace.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
@@ -499,11 +500,12 @@ void Keystores(State& state, app::Requests& host, Facts& facts, const imkit::The
     ImGui::PopStyleVar();
 
     const bool paste_source=settings.signer_source==SignerSource::WatchOnly || settings.signer_source==SignerSource::Airgapped;
-    if (settings.signer_source==SignerSource::Connected)
+    if (settings.signer_source==SignerSource::Connected) {
         Display(state,"discovery-service","Connected signer availability",caps && caps->external_signer==true
             ? "Open Receive or an approved signing review to rescan and select a matching daemon signer."
             : "Connected signer discovery requires a configured daemon external-signer service.");
-    else if (settings.signer_source==SignerSource::Daemon)
+        Display(state,"device-secret-owner","Device controls",DeviceTransportStatus(ShippedExtensions()).detail);
+    } else if (settings.signer_source==SignerSource::Daemon)
         Display(state,"daemon-custody","Daemon software custody",caps && caps->private_keys==true
             ? "The daemon holds the private keys. Read its saved descriptors to inspect public keys."
             : "Select a verified software wallet with daemon custody to inspect its public descriptors.");

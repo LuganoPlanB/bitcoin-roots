@@ -1,0 +1,997 @@
+{
+  "schemaVersion": 1,
+  "profile": "rpc",
+  "entries": [
+    {
+      "id": "rpc-connection",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Authenticated exact genesis/wallet, named RPC and explicit applied connection profile.",
+      "qualification": "Controlled authenticated loopback and model; no production node qualification.",
+      "bindings": [
+        {
+          "file": "services/capabilities.cpp",
+          "symbol": "ProbeCapabilities",
+          "kind": "definition"
+        },
+        {
+          "file": "services/capabilities.cpp",
+          "symbol": "ConnectionService::Apply",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.rpc.capabilities",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.connection.models",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "wallet-observations",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Verified wallet RPC arguments; bounded refresh with live or cached provenance. Wallet history and retained mempool samples are distinct from arbitrary indexed history.",
+      "qualification": "Models, bounded RPC fixture and owned Roots regtest when the daemon is available.",
+      "bindings": [
+        {
+          "file": "services/refresh.cpp",
+          "symbol": "FetchRefresh",
+          "kind": "definition"
+        },
+        {
+          "file": "services/history.cpp",
+          "symbol": "FetchHistory",
+          "kind": "definition"
+        },
+        {
+          "file": "services/addresses.cpp",
+          "symbol": "FetchAddresses",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.refresh.models",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.rpc.history_bounds",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.rpc.history",
+          "when": "owned-roots"
+        }
+      ]
+    },
+    {
+      "id": "daemon-wallet-lifecycle",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Corresponding daemon methods and exact scope; explicit remote path or public watch-only material.",
+      "qualification": "Engine public wallet cases with controlled lifecycle replies.",
+      "bindings": [
+        {
+          "file": "services/wallet_lifecycle.cpp",
+          "symbol": "RunWalletOperation",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.engine.wallet_onboarding",
+          "when": "tests",
+          "case": {
+            "kind": "engine",
+            "file": "tests/engine/onboarding_tests.cpp",
+            "id": "open_default_and_fence_cancelled_load",
+            "commandArgument": "roots_gui_engine_tests"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ordinary-receive",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Verified address allocation or an existing same-wallet offline reservation. No synthetic next address or reusable allocator.",
+      "qualification": "Receive models, retention and controlled fixture.",
+      "bindings": [
+        {
+          "file": "services/receive.cpp",
+          "symbol": "FetchReceive",
+          "kind": "definition"
+        },
+        {
+          "file": "services/receive.cpp",
+          "symbol": "CanAllocateReceive",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.receive.models",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "wallet-funding",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Verified named RPC/draft, proved prevouts/change, explicit current selected inputs and exact fee. Local address grouping is a view preference.",
+      "qualification": "Send and fee models, owned Roots regtest when the daemon is available.",
+      "bindings": [
+        {
+          "file": "services/funding.cpp",
+          "symbol": "FetchFunding",
+          "kind": "definition"
+        },
+        {
+          "file": "services/send_recipients.cpp",
+          "symbol": "ParsePaymentRequest",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.send.models",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.fees.models",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.rpc.funding",
+          "when": "owned-roots"
+        }
+      ]
+    },
+    {
+      "id": "public-psbt",
+      "compiledSurface": "implemented",
+      "shippedProfile": "available",
+      "runtimePrerequisites": "Bounded local parsing of raw transactions and PSBT versions 0 and 2; verified supported policies for construction, merge and finalization.",
+      "qualification": "Independent public fixtures; version and policy support tested separately from signature progress.",
+      "bindings": [
+        {
+          "file": "adapters/protocol/transaction.cpp",
+          "symbol": "ParseTransactionDocument",
+          "kind": "definition"
+        },
+        {
+          "file": "adapters/protocol/offline_draft.cpp",
+          "symbol": "ConstructOfflineDraft",
+          "kind": "definition"
+        },
+        {
+          "file": "adapters/protocol/offline_draft.cpp",
+          "symbol": "FinalizeReviewedDraft",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.protocol.documents",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.protocol.offline_draft",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.protocol.transaction_edit",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "daemon-signer",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Verified capability and exact wallet/descriptor/current approval. Enrichment, signing and finalization are separate.",
+      "qualification": "Engine review and controlled authenticated loopback.",
+      "bindings": [
+        {
+          "file": "app/daemon_signer.cpp",
+          "symbol": "DaemonSigner::Start",
+          "kind": "definition"
+        },
+        {
+          "file": "app/signing_review.cpp",
+          "symbol": "SigningReviews::Record",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.rpc.daemon_signer",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.engine.signing_review",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "daemon-external-device",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Node built and configured for an external signer, compatible public policy and transient exact selected signer. No direct GUI device stack.",
+      "qualification": "Controlled authenticated loopback emulator. No physical device or firmware qualification.",
+      "bindings": [
+        {
+          "file": "services/device_signers.cpp",
+          "symbol": "CanDiscoverDevice",
+          "kind": "definition"
+        },
+        {
+          "file": "services/device_signers.cpp",
+          "symbol": "DeviceSigners::Rescan",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.rpc.device_signers",
+          "when": "openssl"
+        }
+      ]
+    },
+    {
+      "id": "submission-and-monitoring",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Exact final bytes and current approval, bounded node preflight, durable pending attempt and owned broadcaster lease. Status uses read-only exact observations.",
+      "qualification": "Journal recovery and controlled/concurrent fixture; no automatic retry authority.",
+      "bindings": [
+        {
+          "file": "app/broadcast.cpp",
+          "symbol": "Broadcaster::Current",
+          "kind": "definition"
+        },
+        {
+          "file": "app/broadcast.cpp",
+          "symbol": "Broadcaster::StopMonitoring",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.storage.broadcast_recovery",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.storage.concurrency",
+          "when": "linux"
+        }
+      ]
+    },
+    {
+      "id": "psbt-qr",
+      "compiledSurface": "implemented",
+      "shippedProfile": "available",
+      "runtimePrerequisites": "Static QR or bounded indexed sequential UR v2 PSBT subset. File/text import also works without a camera.",
+      "qualification": "Bounded codec and independent QR/PSBT fixture. No claim for arbitrary fountain sequences.",
+      "bindings": [
+        {
+          "file": "adapters/protocol/qr.cpp",
+          "symbol": "EncodePsbtQr",
+          "kind": "definition"
+        },
+        {
+          "file": "adapters/protocol/qr.cpp",
+          "symbol": "QrAssembler::Read",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.protocol.qr_codec",
+          "when": "linux-openssl"
+        }
+      ]
+    },
+    {
+      "id": "native-camera",
+      "compiledSurface": "platform-adapter",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Linux V4L2 single-plane YUYV/GRAY and a usable device. Access follows an explicit capture action.",
+      "qualification": "Controlled V4L2 platform fixture; physical camera unqualified.",
+      "bindings": [
+        {
+          "file": "platform/linux/camera.cpp",
+          "symbol": "LinuxCamera",
+          "kind": "definition"
+        },
+        {
+          "file": "platform/linux/camera.cpp",
+          "symbol": "NativeCamera",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.platform.camera",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.theme.camera",
+          "when": "linux"
+        }
+      ]
+    },
+    {
+      "id": "application-preferences",
+      "compiledSurface": "implemented",
+      "shippedProfile": "available",
+      "runtimePrerequisites": "Owner-scoped persistence for presentation, privacy and local preferences. Server connection changes require separate Test and Apply.",
+      "qualification": "Preference model and Linux NativeHost settings and failure/rollback fixture.",
+      "bindings": [
+        {
+          "file": "ui/shell/preferences.cpp",
+          "symbol": "DrawGeneralPreferences",
+          "kind": "definition"
+        },
+        {
+          "file": "ui/shell/preferences.cpp",
+          "symbol": "SetAmountVisibility",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.preferences.models",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.theme.preferences",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_preferences.cpp",
+            "id": "preferences-general",
+            "commandArgument": "roots_gui_preferences_capture"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wallet-tools",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Current unlocked wallet data with local search/summary, redacted activity and supported node information.",
+      "qualification": "Engine and Linux NativeHost controlled observations.",
+      "bindings": [
+        {
+          "file": "app/wallet_tools.cpp",
+          "symbol": "SearchWallets",
+          "kind": "definition"
+        },
+        {
+          "file": "app/wallet_tools.cpp",
+          "symbol": "WalletBalances",
+          "kind": "definition"
+        },
+        {
+          "file": "app/wallet_tools.cpp",
+          "symbol": "AppliedNodeDetails",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.engine.wallet_tools",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.theme.wallet_tools",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_wallet_tools.cpp",
+            "id": "search-wallets",
+            "commandArgument": "roots_gui_wallet_tools_capture"
+          }
+        }
+      ]
+    },
+    {
+      "id": "desktop-utilities",
+      "compiledSurface": "platform-adapter",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Owned native window/inhibition/restart/help ports; availability varies by platform. Tray and separate native wallet windows need more platform integration.",
+      "qualification": "Controlled Linux native desktop and model fixtures; other OS and installed delivery unqualified.",
+      "bindings": [
+        {
+          "file": "platform/desktop.cpp",
+          "symbol": "NativeDesktopPorts",
+          "kind": "definition"
+        },
+        {
+          "file": "app/desktop.cpp",
+          "symbol": "ConfirmedHelpUrl",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.desktop.models",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.theme.desktop",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_desktop.cpp",
+            "id": "desktop-preferences",
+            "commandArgument": "roots_gui_desktop_capture"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explorer-links",
+      "compiledSurface": "implemented",
+      "shippedProfile": "opt-in",
+      "runtimePrerequisites": "Safe network-specific or validated custom URL. Explicit exact confirmation, verified direct profile and browser capability required.",
+      "qualification": "Wallet-history workspace and explicit permission fixtures. No automatic external calls.",
+      "bindings": [
+        {
+          "file": "app/history_workspace.cpp",
+          "symbol": "ExplorerUrl",
+          "kind": "definition"
+        },
+        {
+          "file": "ui/shell/preferences.cpp",
+          "symbol": "DrawGeneralPreferences",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.history.workspace",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "message-signatures",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Named legacy P2PKH compact scheme; local verification and exact verified daemon signing where supported. No Segwit/Taproot/BIP322 generation or PSBT QR relabeling.",
+      "qualification": "Local vectors and controlled authenticated RPC replies for the named scheme.",
+      "bindings": [
+        {
+          "file": "app/message_signing.cpp",
+          "symbol": "MessageSigning::Start",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.message.models",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.rpc.message",
+          "when": "tests"
+        }
+      ]
+    },
+    {
+      "id": "unsigned-key-sweep",
+      "compiledSurface": "boundary-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Requires a qualified unsigned draft and separate compatible signer. The direct signed sweep RPC is unsuitable.",
+      "qualification": "Native unavailable route and command checks. No sweep provider qualification.",
+      "bindings": [
+        {
+          "file": "ui/shell/sweep.cpp",
+          "symbol": "OpenSweepNotice",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.theme.sweep",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.engine.commands",
+          "when": "tests",
+          "case": {
+            "kind": "engine",
+            "file": "tests/engine/commands_tests.cpp",
+            "id": "every_menu_route_keyboard_and_context",
+            "commandArgument": "roots_gui_engine_tests"
+          }
+        }
+      ]
+    },
+    {
+      "id": "download-verification",
+      "compiledSurface": "build-pinned-adapter",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Build-pinned GnuPG verifier; integrity, signature and signer fingerprint trust use separate results. No download, update or installation authority.",
+      "qualification": "Format model plus signed-file fixture when the pinned verifier is configured.",
+      "bindings": [
+        {
+          "file": "services/download_verification.cpp",
+          "symbol": "DownloadVerifier::Poll",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.download.formats",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.download.verify",
+          "when": "pinned-gnupg"
+        }
+      ]
+    },
+    {
+      "id": "metadata-recovery",
+      "compiledSurface": "implemented",
+      "shippedProfile": "conditional",
+      "runtimePrerequisites": "Owner-scoped metadata. Encrypted archive explains GUI metadata versus daemon backup; restore is explicit and uses exact scope/revision.",
+      "qualification": "Persistence/concurrency models and controlled NativeHost restore.",
+      "bindings": [
+        {
+          "file": "adapters/storage/metadata_archive.cpp",
+          "symbol": "ReadWalletMetadataArchive",
+          "kind": "definition"
+        },
+        {
+          "file": "adapters/storage/metadata_archive.cpp",
+          "symbol": "WriteWalletMetadataArchive",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.storage.recovery",
+          "when": "tests"
+        },
+        {
+          "ctest": "roots_gui.storage.crashes",
+          "when": "linux"
+        },
+        {
+          "ctest": "roots_gui.theme.metadata_restore",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_metadata_backup.cpp",
+            "id": "metadata-restore",
+            "commandArgument": "roots_gui_metadata_backup_capture"
+          }
+        }
+      ]
+    },
+    {
+      "id": "indexed-history",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified HistoryIndexAdapter with independent scope, freshness and endpoint permission. No arbitrary output or complete chain history from wallet RPC.",
+      "qualification": "Public fixture and Linux unavailable view. No production indexer.",
+      "bindings": [
+        {
+          "file": "services/extensions.h",
+          "symbol": "HistoryIndexAdapter",
+          "kind": "contract"
+        },
+        {
+          "file": "services/extensions.cpp",
+          "symbol": "ValidateIndexedHistory",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.extensions.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/extensions_tests.cpp",
+            "id": "History",
+            "commandArgument": "roots_gui_extension_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.extensions_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_extensions.cpp",
+            "id": "indexing-unavailable",
+            "commandArgument": "roots_gui_extensions_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "indexed-history"
+    },
+    {
+      "id": "privacy-construction",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified TransactionConstructionAdapter, exact selection/proof, and fresh review for a changed draft. No anonymity guarantee.",
+      "qualification": "Controlled public fixture and Linux unavailable view.",
+      "bindings": [
+        {
+          "file": "services/extensions.h",
+          "symbol": "TransactionConstructionAdapter",
+          "kind": "contract"
+        },
+        {
+          "file": "services/extensions.cpp",
+          "symbol": "PrepareUnsigned",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.extensions.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/extensions_tests.cpp",
+            "id": "Construction",
+            "commandArgument": "roots_gui_extension_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.extensions_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_extensions.cpp",
+            "id": "privacy-unavailable",
+            "commandArgument": "roots_gui_extensions_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "privacy-construction"
+    },
+    {
+      "id": "local-signer",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified isolated LocalSignerService, independent vectors and protected secret store.",
+      "qualification": "Public capability fixture and Linux unavailable view. No secret input or local custody.",
+      "bindings": [
+        {
+          "file": "services/custody_extensions.h",
+          "symbol": "LocalSignerService",
+          "kind": "contract"
+        },
+        {
+          "file": "services/custody_extensions.cpp",
+          "symbol": "CurrentLocalSignerReply",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.custody.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/custody_extensions_tests.cpp",
+            "id": "SignerCases",
+            "commandArgument": "roots_gui_custody_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.custody_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_custody.cpp",
+            "id": "local-software-wallet-unavailable",
+            "commandArgument": "roots_gui_custody_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "local-signer"
+    },
+    {
+      "id": "direct-device-transport",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified DeviceTransport with a selected device and trusted PIN, passphrase and card ownership.",
+      "qualification": "Public metadata fixture. No transport/hardware qualification.",
+      "bindings": [
+        {
+          "file": "services/custody_extensions.h",
+          "symbol": "DeviceTransport",
+          "kind": "contract"
+        },
+        {
+          "file": "services/custody_extensions.cpp",
+          "symbol": "CurrentDeviceTransportReply",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.custody.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/custody_extensions_tests.cpp",
+            "id": "DeviceCases",
+            "commandArgument": "roots_gui_custody_models"
+          }
+        }
+      ],
+      "optionalRegistry": "direct-device-transport"
+    },
+    {
+      "id": "reusable-receive",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified ReusableReceiveService for fixed descriptor, silent payments or payment code public policy; no generic next address or derivation.",
+      "qualification": "Public fixed-descriptor fixture and Linux unavailable view. No silent-payment or payment-code implementation.",
+      "bindings": [
+        {
+          "file": "services/custody_extensions.h",
+          "symbol": "ReusableReceiveService",
+          "kind": "contract"
+        },
+        {
+          "file": "services/custody_extensions.cpp",
+          "symbol": "CurrentReusableReceive",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.custody.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/custody_extensions_tests.cpp",
+            "id": "ReusableCases",
+            "commandArgument": "roots_gui_custody_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.custody_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_custody.cpp",
+            "id": "reusable-policy-unavailable",
+            "commandArgument": "roots_gui_custody_capture"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.payment_protocol_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_payment_protocol.cpp",
+            "id": "payment-protocol-unavailable",
+            "commandArgument": "roots_gui_payment_protocol_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "reusable-receive"
+    },
+    {
+      "id": "payjoin",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified PayjoinModule for exact endpoint, recipient, network and version; separate disclosure permission and fresh review. No supported shipped wire version.",
+      "qualification": "Public unsigned proposal fixtures and Linux unavailable view. No interoperability/client claim.",
+      "bindings": [
+        {
+          "file": "services/payment_protocols.h",
+          "symbol": "PayjoinModule",
+          "kind": "contract"
+        },
+        {
+          "file": "services/payment_protocols.cpp",
+          "symbol": "ValidatePayjoinReply",
+          "kind": "definition"
+        },
+        {
+          "file": "app/payment_review.h",
+          "symbol": "StageNegotiatedDraft",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "PermissionCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "ProposalCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "FreshReviewCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.payment_protocol_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_payment_protocol.cpp",
+            "id": "payment-protocol-unavailable",
+            "commandArgument": "roots_gui_payment_protocol_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "payjoin"
+    },
+    {
+      "id": "payment-code-contacts",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified PaymentCodeContacts provider and exact public code/source/version/contact identity. Disclosure requires scoped permission. No account mapping or notification protocol.",
+      "qualification": "Public fixture, command route and Linux unavailable view.",
+      "bindings": [
+        {
+          "file": "services/payment_protocols.h",
+          "symbol": "PaymentCodeContacts",
+          "kind": "contract"
+        },
+        {
+          "file": "services/payment_protocols.cpp",
+          "symbol": "CurrentPaymentCodeContact",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "ProviderCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.engine.commands",
+          "when": "tests",
+          "case": {
+            "kind": "engine",
+            "file": "tests/engine/commands_tests.cpp",
+            "id": "every_menu_route_keyboard_and_context",
+            "commandArgument": "roots_gui_engine_tests"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.payment_protocol_unavailable",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_payment_protocol.cpp",
+            "id": "payment-protocol-unavailable",
+            "commandArgument": "roots_gui_payment_protocol_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "payment-code-contacts"
+    },
+    {
+      "id": "fiat-rates",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified FiatRateProvider for an explicit currency and separate service opt-in. Bitcoin remains usable.",
+      "qualification": "Capability-only fixture; native preferences show no provider.",
+      "bindings": [
+        {
+          "file": "services/payment_protocols.h",
+          "symbol": "FiatRateProvider",
+          "kind": "contract"
+        },
+        {
+          "file": "services/payment_protocols.cpp",
+          "symbol": "FiatRateStatus",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "ProviderCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.preferences",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_preferences.cpp",
+            "id": "preferences-general",
+            "commandArgument": "roots_gui_preferences_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "fiat-rates"
+    },
+    {
+      "id": "release-updates",
+      "compiledSurface": "contract-only",
+      "shippedProfile": "unavailable",
+      "runtimePrerequisites": "Qualified ReleaseUpdateProvider for a release channel and separate service opt-in. Project release links are distinct from a check or installation.",
+      "qualification": "Capability-only fixture; native desktop shows no provider.",
+      "bindings": [
+        {
+          "file": "services/payment_protocols.h",
+          "symbol": "ReleaseUpdateProvider",
+          "kind": "contract"
+        },
+        {
+          "file": "services/payment_protocols.cpp",
+          "symbol": "ReleaseUpdateStatus",
+          "kind": "definition"
+        }
+      ],
+      "tests": [
+        {
+          "ctest": "roots_gui.payment_protocols.models",
+          "when": "tests",
+          "case": {
+            "kind": "model",
+            "file": "tests/model/payment_protocol_tests.cpp",
+            "id": "ProviderCases",
+            "commandArgument": "roots_gui_payment_protocol_models"
+          }
+        },
+        {
+          "ctest": "roots_gui.theme.desktop",
+          "when": "linux",
+          "case": {
+            "kind": "native",
+            "file": "tests/theme/native_desktop.cpp",
+            "id": "desktop-preferences",
+            "commandArgument": "roots_gui_desktop_capture"
+          }
+        }
+      ],
+      "optionalRegistry": "release-updates"
+    }
+  ]
+}

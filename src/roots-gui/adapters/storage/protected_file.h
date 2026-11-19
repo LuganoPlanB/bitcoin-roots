@@ -31,10 +31,12 @@ class ProtectedFile {
     ProtectedFile()=default;
 public:
     static constexpr size_t MaxBytes=32*1024*1024;
-    static Result<std::unique_ptr<ProtectedFile>> Open(const std::filesystem::path&,std::string_view password);
+    static Result<std::unique_ptr<ProtectedFile>> Open(const std::filesystem::path&,std::string_view password,
+                                                     size_t max_plain = MaxBytes,bool existing_only = false);
     ~ProtectedFile();
     Result<CleansedBytes> Read();
     Result<Done> Save(std::span<const unsigned char>);
+    Result<Done> SaveNew(std::span<const unsigned char>); // atomic failure if a file already exists
     // Caller owns the exclusive metadata guard. Authenticate before inspecting
     // a surviving plaintext copy; never discard different bytes silently.
     Result<Done> FinishConversion(const std::filesystem::path& plain_path,ConversionResolution);

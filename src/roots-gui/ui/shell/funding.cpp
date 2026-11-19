@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/shell/workspace.h"
+#include "services/extensions.h"
 #include "ui/theme/theme.h"
 
 #include <algorithm>
@@ -216,7 +217,8 @@ void Button(State& state, Facts& facts, const imkit::Theme& theme, const char* k
 {
     ImGui::PushID(key);
     ImGui::BeginDisabled(!enabled);
-    const bool pressed = theme::ActionButton(name, imkit::ActionVariant::Secondary, {}, theme);
+    const auto label=std::string(name)+"###funding-action";
+    const bool pressed = theme::ActionButton(label.c_str(), imkit::ActionVariant::Secondary, {}, theme);
     const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
     facts.funding[key] = {{lo.x,lo.y,hi.x,hi.y},ImGui::GetItemID(),ImGui::IsItemFocused(),!enabled,
         pressed,pressed,ImGui::IsItemVisible()};
@@ -416,8 +418,10 @@ void DrawFunding(State& state, app::Requests& host, Facts& facts, const imkit::T
     }
     Text(state, "funding-efficiency", "Efficiency strategy",
         "Efficiency uses the wallet's confirmed coin selection when policy permits. Max and local restrictions use exact inputs.");
-    Text(state, "funding-privacy", "Privacy strategy",
-        "Privacy selection requires a wallet strategy this backend does not provide.");
+    const auto strategy=ConstructionStatus(ShippedExtensions(),ConstructionStrategy::AvoidPartialSpends,draft->SendWallet()->network);
+    Text(state, "funding-privacy", strategy.available ? "Privacy strategy available" : "Privacy strategy unavailable",strategy.detail);
+    Text(state, "funding-grouping", "Avoid partial spends",
+        "Avoid partial spends groups eligible coins from the same script. It may use more inputs and raise fees. It provides no anonymity guarantee.");
     ImGui::TextUnformatted("Fee rate (sat/vB)");
     std::array<char, 33> edit{};
     const auto& amount = draft->funding_rate;

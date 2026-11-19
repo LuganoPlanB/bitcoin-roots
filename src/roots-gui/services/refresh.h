@@ -78,6 +78,7 @@ public:
     bool SetHistoryPolicy(const RefreshIdentity&,HistoryPolicy); // explicit local freeze/reservation snapshot
     RefreshView View() const;
     std::vector<RefreshView> HistoryViews() const; // borrowed owner-thread cache views, no transport
+    std::vector<RefreshView> ObservationViews() const;
     bool Busy() const { return worker.joinable(); }
     bool Offline() const { return offline; }
     uint64_t PendingHistorySequence() const;

@@ -61,6 +61,7 @@ class Step:
     headers:tuple=()
     declared_length:int|None=None
     request_check:object=None
+    gate_timeout:float=2
 
 class FakeHttp:
     def __init__(self,steps):
@@ -91,7 +92,7 @@ class FakeHttp:
                             if step.request_check:
                                 try:step.request_check(self.path,body,self.headers)
                                 except AssertionError:owner.check_failures.append('request contract mismatch')
-                            if step.gate and not step.gate.wait(2):raise TimeoutError('fixture gate deadline')
+                            if step.gate and not step.gate.wait(step.gate_timeout):raise TimeoutError('fixture gate deadline')
                             if step.disconnect:self.connection.shutdown(socket.SHUT_RDWR);return
                             status=step.status
                             data=dict(jsonrpc='2.0',id='mismatch' if step.wrong_id else rid)

@@ -54,7 +54,7 @@ bool Properties(const J& schema, std::string prefix, std::set<std::string>& name
 }
 bool IsWalletMethod(std::string_view name)
 {
-    for (const auto* method : {"getwalletinfo", "getbalances", "listsinceblock", "gettransaction", "listunspent", "listlockunspent", "listdescriptors", "getaddressinfo", "getnewaddress", "walletcreatefundedpsbt", "walletprocesspsbt", "psbtbumpfee", "lockunspent", "walletdisplayaddress", "setlabel", "walletlock", "walletpassphrase", "importdescriptors", "backupwallet", "rescanblockchain"}) if (name == method) return true;
+    for (const auto* method : {"getwalletinfo", "getbalances", "listsinceblock", "gettransaction", "listunspent", "listlockunspent", "listdescriptors", "getaddressinfo", "getnewaddress", "walletcreatefundedpsbt", "walletprocesspsbt", "psbtbumpfee", "lockunspent", "walletdisplayaddress", "setlabel", "walletlock", "walletpassphrase", "importdescriptors", "backupwallet", "rescanblockchain", "signmessage"}) if (name == method) return true;
     return false;
 }
 bool ReadSchema(const J& value, BackendCapabilities& result)
@@ -68,6 +68,8 @@ bool ReadSchema(const J& value, BackendCapabilities& result)
         for (const auto& param : params->items) {
             const auto* key = param.Find("name"); const auto* schema = param.Find("schema");
             if (!key || key->kind != J::Kind::String || !Name(key->text) || !schema || schema->kind != J::Kind::Object || !support.arguments.insert(key->text).second) return false;
+            const auto* type = schema->Find("type");
+            if (type && type->kind == J::Kind::String && type->text == "string") support.string_arguments.insert(key->text);
             if (!Properties(*schema, key->text, support.arguments)) return false;
             if (const auto* aliases = param.Find("x-bitcoin-aliases")) {
                 if (aliases->kind != J::Kind::Array || aliases->items.size() > 16) return false;
@@ -93,6 +95,11 @@ SupportReason BackendCapabilities::Supports(std::string_view method, std::string
     if (support.probe_rejected) return SupportReason::ProbeRejected;
     if (!argument.empty() && (!support.schema_proven || !support.arguments.contains(std::string(argument)))) return SupportReason::UnprovenArgument;
     return SupportReason::Available;
+}
+bool BackendCapabilities::SupportsString(std::string_view method, std::string_view argument) const
+{
+    return Supports(method, argument) == SupportReason::Available
+        && methods.at(std::string(method)).string_arguments.contains(argument);
 }
 const char* SupportName(SupportReason reason)
 {

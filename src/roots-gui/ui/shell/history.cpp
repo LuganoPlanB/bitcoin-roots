@@ -17,6 +17,14 @@ LockEpoch Epoch(const State& s){return s.recovery?s.recovery->Gate().Epoch():Loc
 std::string Label(const HistoryTransaction& tx,const HistoryRuntime& runtime){if(const auto i=runtime.labels.find(tx.txid.hex());i!=runtime.labels.end())return i->second;for(const auto& d:tx.details)if(!d.label.empty())return d.label;return "";}
 std::optional<RefreshView> View(State& s,a::Requests& host,uint64_t id){const auto* d=s.documents.Find(id);return d && host.Refresh()?a::HistoryForDocument(*d,*host.Refresh(),Epoch(s)):std::nullopt;}
 bool Usable(const State& s,uint64_t id){return !s.privacy.hidden && !s.semantic_hide_toggle && (!s.recovery || !s.recovery->Locked()) && s.documents.ActiveId()==id && s.documents.Find(id);}
+std::optional<std::string> ExplorerTarget(const State& s,a::Requests& host,const RefreshIdentity& identity,std::string_view txid)
+{
+    if(!s.general.saved)return {};
+    if(auto* connection=host.Connection();connection && (!connection->Active() || connection->Offline()
+        || connection->Session()!=identity.connection_session || connection->Active()->candidate.connection.proxy!=ProxyKind::Direct))return {};
+    const auto hash=Hash256::Parse(txid);
+    return hash?a::ExplorerUrl(s.general.saved->preferences,identity.context.network,*hash):std::nullopt;
+}
 std::string ExportScope(State& s,uint64_t id){const auto* d=s.documents.Find(id);if(!d || !d->binding)return {};return std::to_string(id)+":"+d->binding->backend.value()+":"+d->binding->wallet.value()+":"+d->binding->network.genesis.hex()+":"+std::to_string(d->history.query_revision)+":"+std::to_string(d->history.metadata_revision)+":"+std::to_string(Epoch(s).value)+":"+std::to_string(s.histories.at(id).observed)+":"+std::to_string(s.histories.at(id).generation)+":"+std::to_string(s.histories.at(id).sequence);}
 // User-selected exports are new files only. Exclusive creation keeps every
 // existing file intact, including a path chosen through an overwrite dialog.
@@ -67,7 +75,16 @@ void DrawHistory(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,f
     if(ledger){
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{ImGui::GetStyle().FramePadding.x,2*scale});
     ImGui::SameLine();Button(s,f,"scan-earlier","Scan earlier",theme,online && !view->busy && !ledger->Complete() && !ledger->Scanning() && !ledger->Pruned() && !view->scan_blocked && (!ledger->Limited() || view->scan_budget<4096),[&s,&host,id]{auto v=View(s,host,id);if(!v || !v->identity || s.documents.ActiveId()!=id || (s.recovery && s.recovery->Locked()))return false;const bool accepted=host.Refresh()->ScanEarlier(*v->identity,RefreshMonotonicMs());if(!accepted)s.histories.at(id).error="Scan could not start: offline, busy, scope changed or bounded scan exhausted. Existing rows and cursor are retained.";return accepted;});
-    ImGui::SameLine();Button(s,f,"explorer","Explorer...",theme,selected && online && !s.privacy.hidden,[&s,&host,id]{auto v=View(s,host,id);auto* doc=s.documents.Find(id);if(!Usable(s,id) || !v || v->offline || !v->identity || !doc || !v->ledger->Rows().contains(doc->history.selected))return false;s.histories.at(id).explorer_permission=HistoryPermission{*v->identity,doc->history.selected,v->ledger->Observed(),v->generation,v->history_sequence};return true;});
+    const bool explorer_ready=selected && online && !s.privacy.hidden && ExplorerTarget(s,host,*view->identity,d->history.selected).has_value();
+    ImGui::SameLine();Button(s,f,"explorer","Explorer...",theme,explorer_ready,[&s,&host,id]{
+        auto v=View(s,host,id);auto* doc=s.documents.Find(id);
+        if(!Usable(s,id) || !v || v->offline || !v->identity || !doc || !v->ledger->Rows().contains(doc->history.selected))return false;
+        auto url=ExplorerTarget(s,host,*v->identity,doc->history.selected);
+        if(!url)return false;
+        s.histories.at(id).explorer_permission=HistoryPermission{*v->identity,doc->history.selected,v->ledger->Observed(),v->generation,v->history_sequence,std::move(*url)};
+        return true;
+    });
+    if(!explorer_ready && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("Enable a supported explorer in Preferences for this online direct RPC profile.");
     ImGui::SameLine();Button(s,f,"fee-actions","Fee actions",theme,selected && online && !s.privacy.hidden,[&s,id]{if(!Usable(s,id))return false;s.histories.at(id).fee_actions=!s.histories.at(id).fee_actions;return true;});
     ImGui::PopStyleVar();
     }
@@ -75,7 +92,7 @@ void DrawHistory(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,f
     if(!ledger){runtime.explorer_permission.reset();const bool loading=view && view->busy;const char* message=loading?"Loading read-only wallet history. No opening balance is assumed.":"History is unavailable. Authenticate, test and apply this existing daemon wallet in Server settings. Restored documents do not reconnect automatically.";ImGui::TextWrapped("%s",message);s.presentation.Annotate("history-unavailable","History",loading?"Loading":"Unavailable; reconnect this wallet explicitly");return;}
     const char* scan=ledger->Scanning()?"Daemon rescan in progress; earlier history is unavailable until it finishes.":ledger->Pruned()?"Pruned source: older history may be unavailable. Use a source with the required blocks; this action never rescans the daemon.":(view->scan_blocked || (ledger->Limited() && view->scan_budget>=4096))?"Scan stopped without progress at the entry/coin bound. Prior rows retained; no cursor was advanced. A smaller wallet history or future indexed source is required.":ledger->Limited()?"Partial scan: bounded history retained; earlier balances Unknown. Choose Scan earlier to re-read the same range with a larger budget.":!ledger->Complete()?"Partial history: opening/running balances Unknown. Scan earlier queries only history already known to this daemon wallet.":view->busy?"Refreshing; prior dated rows retained.":"";
     if(*scan){const char* brief=ledger->Scanning()?"Daemon rescan in progress":ledger->Pruned()?"Pruned source; earlier history unavailable":(view->scan_blocked || (ledger->Limited() && view->scan_budget>=4096))?"Scan bound reached; no further progress":ledger->Limited()?"Partial scan; earlier balances Unknown":!ledger->Complete()?"Partial history; opening balance Unknown":"Refreshing dated history";imkit::PushTextRole(theme,imkit::TextRole::Caption);ImGui::TextUnformatted(brief);if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",scan);imkit::PopTextRole();s.presentation.Annotate("history-scan","History scan",scan);}
-    if(runtime.explorer_permission && (!Usable(s,id) || !view || view->offline || !view->identity || *view->identity!=runtime.explorer_permission->identity || d->history.selected!=runtime.explorer_permission->txid || ledger->Observed()!=runtime.explorer_permission->observed || view->generation!=runtime.explorer_permission->generation || view->history_sequence!=runtime.explorer_permission->sequence))runtime.explorer_permission.reset();
+    if(runtime.explorer_permission && (!Usable(s,id) || !view || view->offline || !view->identity || *view->identity!=runtime.explorer_permission->identity || d->history.selected!=runtime.explorer_permission->txid || ledger->Observed()!=runtime.explorer_permission->observed || view->generation!=runtime.explorer_permission->generation || view->history_sequence!=runtime.explorer_permission->sequence || ExplorerTarget(s,host,*view->identity,d->history.selected)!=runtime.explorer_permission->url))runtime.explorer_permission.reset();
     if(!d->history.metadata_loaded && runtime.error.empty())LoadLabels(s,id);
     if(ImGui::BeginTable("history-upper",2,ImGuiTableFlags_SizingStretchSame)){
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{8*scale,3*scale});ImGui::TableNextColumn();ImGui::BeginChild("history-summary",{0,78*scale},ImGuiChildFlags_None);const auto& t=ledger->Totals();imkit::PushTextRole(theme,imkit::TextRole::Caption);
@@ -90,7 +107,22 @@ void DrawHistory(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,f
     if(Button(s,f,"open","Open transaction",theme,selected,[&s,&host,id]{auto v=View(s,host,id);const auto* doc=s.documents.Find(id);if(!doc || !doc->binding || !v || s.documents.ActiveId()!=id || !v->ledger->Rows().contains(doc->history.selected))return false;const auto txid=*Hash256::Parse(doc->history.selected);const auto opened=s.documents.OpenObservedTransaction({*doc->binding,txid});if(!opened){s.histories.at(id).error=DocumentLimitReason;return false;}if(s.histories.at(id).error==DocumentLimitReason)s.histories.at(id).error.clear();RestoreDocumentFocus(s,opened);return true;}))return;
     if(selected){ImGui::SameLine();Button(s,f,"copy-txid","Copy txid",theme,true,[&s,&host,id]{auto* doc=s.documents.Find(id);if(!doc || s.documents.ActiveId()!=id || (s.recovery && s.recovery->Locked()))return false;const a::Request request{a::Command::Component,id,a::Section::Transactions,c::CopyIdentifier{"history-txid",doc->history.selected}};return host.CanSubmit(request).available && host.Submit(request).accepted;});}
     if(selected){ImGui::SameLine();Button(s,f,"copy-value","Copy value",theme,!s.privacy.hidden,[&s,&host,id]{auto view=View(s,host,id);const auto* doc=s.documents.Find(id);if(!Usable(s,id) || !view || !doc)return false;const auto found=view->ledger->Rows().find(doc->history.selected);if(found==view->ledger->Rows().end())return false;const a::Request request{a::Command::Component,id,a::Section::Transactions,c::CopyAmount{"history-value",found->second.wallet_delta}};return host.CanSubmit(request).available && host.Submit(request).accepted;});}
-    if(runtime.explorer_permission){const auto permission=*runtime.explorer_permission;const auto url=a::ExplorerUrl(permission.identity.context.network,*Hash256::Parse(permission.txid));const auto prompt=url?"Open "+*url+"? This discloses this transaction and your IP/network identity to the explorer/browser. Permission applies once.":"No public explorer default exists for this exact genesis/network. No external request will be made.";ImGui::TextWrapped("%s",prompt.c_str());s.presentation.Annotate("explorer-permission","External explorer permission",prompt);Button(s,f,"explorer-allow","Allow once",theme,url.has_value(),[&s,&host,id,permission]{auto v=View(s,host,id);const auto* doc=s.documents.Find(id);if(!Usable(s,id) || !v || v->offline || !v->identity || *v->identity!=permission.identity || !doc || doc->history.selected!=permission.txid || v->ledger->Observed()!=permission.observed || v->generation!=permission.generation || v->history_sequence!=permission.sequence || !s.histories.at(id).explorer_permission)return false;s.histories.at(id).explorer_permission.reset();const auto receipt=host.OpenExplorer({permission.identity.context,*Hash256::Parse(permission.txid),true,permission.generation,permission.sequence});s.histories.at(id).error=receipt.reason;return receipt.accepted;});ImGui::SameLine();Button(s,f,"explorer-cancel","Cancel",theme,true,[&s,id]{s.histories.at(id).explorer_permission.reset();return true;});}
+    if(runtime.explorer_permission){
+        const auto permission=*runtime.explorer_permission;
+        const auto prompt="Open "+permission.url+"? Your browser sends this transaction ID and exposes your network identity. Permission applies once.";
+        ImGui::TextWrapped("%s",prompt.c_str());s.presentation.Annotate("explorer-permission","External explorer permission",prompt);
+        Button(s,f,"explorer-allow","Allow once",theme,true,[&s,&host,id,permission]{
+            auto v=View(s,host,id);const auto* doc=s.documents.Find(id);
+            if(!Usable(s,id) || !v || v->offline || !v->identity || *v->identity!=permission.identity || !doc
+                || doc->history.selected!=permission.txid || v->ledger->Observed()!=permission.observed
+                || v->generation!=permission.generation || v->history_sequence!=permission.sequence
+                || !s.histories.at(id).explorer_permission || ExplorerTarget(s,host,*v->identity,permission.txid)!=permission.url)return false;
+            s.histories.at(id).explorer_permission.reset();
+            const auto receipt=host.OpenExplorer({permission.identity.context,*Hash256::Parse(permission.txid),true,permission.generation,permission.sequence,permission.url});
+            s.histories.at(id).error=receipt.reason;return receipt.accepted;
+        });
+        ImGui::SameLine();Button(s,f,"explorer-cancel","Cancel",theme,true,[&s,id]{s.histories.at(id).explorer_permission.reset();return true;});
+    }
     if (runtime.fee_actions && !s.privacy.hidden) {
         const auto txid=Hash256::Parse(d->history.selected);
         std::optional<a::FeeDraftRequest> action;

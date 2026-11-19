@@ -265,6 +265,30 @@ struct Observer final : platform::NativeObserver {
             Check(!sh::CurrentSigningApproval(state,requests,candidate)
                 && state.signing_reviews.Reason(candidate).find("outside supported listed public wallet policy")!=std::string_view::npos,
                 "withdrawn independent destination proof retires approval");
+            Mode("approval-held");
+            Check(Dispatch(a::Command::ReviewForSigning).accepted && Dispatch(a::Command::ApproveSigning).accepted,
+                "held fee approval begins with exact current review");
+            stage=18;
+            return;
+        case 18:
+            if (!std::filesystem::exists(source/"approval-held")) return;
+            if (!queued) Check(requests.replacements.Busy() && !sh::CurrentSigningApproval(state,requests,candidate),
+                "fee approval reply held before native Back to inspection");
+            if (!Action("Back to inspection")) return;
+            Check(!state.signing_views.at(candidate).open,"native Back retires review ownership");
+            std::ofstream(source/"approval-release")<<"release";
+            stage=19;
+            return;
+        case 19:
+            if (Awaiting()) return;
+            Check(!sh::CurrentSigningApproval(state,requests,candidate)
+                && state.signing_reviews.Reason(candidate).find("Approval was retired")!=std::string_view::npos
+                && state.documents.Documents().size()==2
+                && state.imported_views.at(candidate).replacement.has_value(),
+                "late fee approval settles without consent or loss of the unsigned draft");
+            if (Action("Signing review")) stage=20;
+            return;
+        case 20:
             Mode("approve");
             Check(Dispatch(a::Command::ReviewForSigning).accepted && Dispatch(a::Command::ApproveSigning).accepted,
                 "fresh separate review and approval request");

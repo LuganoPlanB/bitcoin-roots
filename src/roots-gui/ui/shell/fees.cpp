@@ -239,6 +239,8 @@ void MempoolPanel(State& state, app::Requests& host, Facts& facts, const imkit::
     const bool can_read=access && access->support.mempool;
     const bool wide=ImGui::GetContentRegionAvail().x>=ImGui::GetFontSize()*31;
     const auto* observation=access ? Live(view.mempool,access->scope.tip,now) : nullptr;
+    Text(state,"fee-sample-coverage","Mempool sample coverage",
+        "Retained samples record this node's observed fee conditions. Indexed address or output history requires a separate service.");
     Button(state,facts,theme,"record",view.recording ? "Stop recording" : "Record every 5 minutes",can_read || view.recording,
         [&state,&host,id] {
             if (!PanelFor(state,id)) return false;
@@ -475,7 +477,7 @@ void DrawFeePanel(State& state, app::Requests& host, Facts& facts, const imkit::
         };
         tab("mode-tab","Fee target",FeeRead::Target);
         ImGui::SameLine();
-        tab("mempool-tab","Mempool history",FeeRead::Mempool);
+        tab("mempool-tab","Mempool samples",FeeRead::Mempool);
         ImGui::SameLine();
         tab("blocks-tab","Recent blocks",FeeRead::Recent);
         if (wide) ImGui::SameLine();

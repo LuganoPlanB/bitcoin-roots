@@ -1,12 +1,18 @@
 # Server connection and capability negotiation
 
-Preferences (Ctrl+,) and Tools → Switch Server open the production Server form.
+Tools → Switch Server opens the production Server form directly. File →
+Preferences (Ctrl+,) opens General and provides a Server route. Private Index
+and Public Index show the missing history index adapter and do not change the
+working RPC profile. Returning to Direct RPC requires a new Test if the prior
+proof was retired.
 Select an explicit endpoint, credential reference, expected network genesis and
 optional exact daemon wallet name. TLS verifies peer and hostname; an explicit
 CA, SOCKS5 with proxy DNS and HTTP CONNECT are supported. The current desktop
-composition supplies cookie credentials. Secure-store references require an
-injected native provider; no password is stored in the profile. Normal startup
-reads no cookie, searches no node home and makes no RPC call.
+composition supplies cookie credentials. Enter the exact absolute path or use
+the local file chooser when available. Password authentication requires a
+native credential provider. Normal startup reads no cookie, searches no node
+home and makes no RPC call. A direct onion profile is rejected before credential
+resolution. SOCKS5 delegates DNS, and HTTP CONNECT delegates origin routing.
 
 Test Connection starts one cancellable worker with a 30-second total budget.
 Read-only `getnetworkinfo`, `getblockchaininfo`, `getblockhash(0)`, `help` and

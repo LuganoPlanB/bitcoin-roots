@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/server.h"
+#include "ui/components/native_input.h"
 #include "ui/bootstrap.h"
 #include "ui/theme/theme.h"
 #include <imgui_test_engine/imgui_te_engine.h>
@@ -11,6 +12,22 @@
 using namespace roots::gui;
 namespace {
 struct Fixture {
+    struct Picker final : ui::components::NativeInputPort {
+        bool queued{};
+        void BeginView(std::string_view) override{}
+        void Privacy(bool) override{}
+        void EnterEditor(uint32_t,bool) override{}
+        void LeaveEditor() override{}
+        std::optional<std::string> Paste(uint32_t,std::string_view,int,int,int,size_t) override{return {};}
+        bool FileChooserAvailable() const override{return true;}
+        uint64_t ChooseFile(std::string_view,bool) override{return 0;}
+        uint64_t ChooseRpcCookie() override{queued=true;return 1;}
+        ui::components::FileChoice PollFile(uint64_t id) override{
+            if(id!=1 || !queued)return {ui::components::NativeOutcome::Stale,{},{}};
+            queued=false;
+            return {ui::components::NativeOutcome::Chosen,"/explicit/picked-cookie",{}};
+        }
+    } picker;
     ui::ServerPanel panel;
     ui::components::PresentationFrame presentation;
     ui::ServerFacts facts;
@@ -36,6 +53,7 @@ void RegisterServerTests(ImGuiTestEngine* engine)
         const auto theme = ui::MakeBootstrapTheme({}); ui::theme::Scope scope(theme);
         const auto current = [&] { return std::to_string(s.panel.dialog.open) + ':' + std::to_string(s.panel.scope_revision) + ':' + std::to_string(s.panel.scope_session); };
         s.presentation.Begin(current(), current);
+        const ui::components::NativeInputScope native(&s.picker);
         s.facts = ui::DrawServer(s.panel, *s.service, s.presentation, theme, 1.F);
         s.presentation.Seal();
         s.can_apply = s.service->CanApply();
@@ -48,6 +66,17 @@ void RegisterServerTests(ImGuiTestEngine* engine)
         IM_CHECK(s.can_apply); IM_CHECK(!s.service->Active());
         ctx->ItemNavActivate("**/apply/Apply");
         IM_CHECK(s.service->Active() && s.service->Session() == 1);
+        const auto original=s.service->Active()->candidate;
+        ctx->ItemClick(s.facts.items.at("Private index").id);
+        IM_CHECK(s.panel.source==ui::ServerSource::PrivateIndex && s.facts.items.at("test").disabled);
+        ctx->ItemClick(s.facts.items.at("Public index").id);
+        IM_CHECK(s.panel.source==ui::ServerSource::PublicIndex && s.facts.items.at("apply").disabled);
+        IM_CHECK(s.calls==1 && s.service->Active()->candidate==original);
+        ctx->ItemClick(s.facts.items.at("Direct RPC").id);
+        ctx->ItemClick(s.facts.items.at("browse-cookie").id);
+        ctx->Yield(2);
+        IM_CHECK(s.service->Draft().connection.credential.reference=="/explicit/picked-cookie");
+        IM_CHECK(s.calls==1 && s.service->Active()->candidate==original && !s.can_apply);
         ctx->ItemInputValue("**/port/###input", "2");
         IM_CHECK(!s.can_apply);
         ctx->ItemClick("**/test/Test Connection");
@@ -55,6 +84,6 @@ void RegisterServerTests(ImGuiTestEngine* engine)
         IM_CHECK(s.service->Tested() && s.service->Tested()->error == rpc::Error::Connection);
         IM_CHECK(!s.can_apply); IM_CHECK_EQ(s.service->Active()->candidate.connection.port, 8332);
         ctx->ItemNavActivate("**/cancel/Cancel");
-        IM_CHECK(!s.panel.dialog.open); IM_CHECK_EQ(s.service->Active()->candidate.connection.port, 8332);
+        IM_CHECK(!s.panel.dialog.open); IM_CHECK(s.service->Active()->candidate==original && s.service->Session()==1);
     };
 }

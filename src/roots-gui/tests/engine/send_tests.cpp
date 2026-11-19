@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "tests/engine/recovery_fixture.h"
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
 #include "adapters/protocol/public_wallet.h"
@@ -24,7 +25,16 @@ struct Fixture final : app::Requests {
     }};
     int submitted{};
     uint64_t wallet{}, other_wallet{};
+    bool recovery_requested{};
+    std::optional<test::RecoveryFixtureDirectory> scratch;
     std::unique_ptr<app::RecoverySession> recovery;
+
+    void PrepareRecovery()
+    {
+        if (!recovery_requested || recovery) return;
+        scratch.emplace();
+        recovery=std::make_unique<app::RecoverySession>(scratch->Metadata());
+    }
 
     Fixture()
     {
@@ -61,6 +71,7 @@ void Draw(ImGuiTestContext* ctx)
     auto& owned = ctx->GetVars<std::unique_ptr<Fixture>>();
     if (!owned) owned = std::make_unique<Fixture>();
     auto& fixture = *owned;
+    fixture.PrepareRecovery();
     fixture.connection.Poll();
     if (fixture.connection.CanApply()) fixture.connection.Apply();
     const auto theme = ui::theme::Make(false);
@@ -162,7 +173,9 @@ void RegisterSendTests(ImGuiTestEngine* engine)
     test->GuiFunc = Draw;
     test->TestFunc = [](ImGuiTestContext* ctx) {
         auto& f = *ctx->GetVars<std::unique_ptr<Fixture>>();
-        f.recovery = std::make_unique<app::RecoverySession>(std::filesystem::path{});
+        f.recovery_requested=true;
+        ctx->Yield();
+        IM_CHECK(f.recovery && !f.state.privacy.hidden);
         ctx->SetRef("###workspace");
         const auto draft = [&] { return f.state.documents.Find(f.wallet); };
         const auto click = [&](const char* id) {
@@ -217,7 +230,9 @@ void RegisterSendTests(ImGuiTestEngine* engine)
             "579cb4b75da47b8ed60998a14af5cf74e04614f6cada0721012103b63f5cc741de344da3a57e4128d0ee281c125c37fc34f9ff3297"
             "2cc8fbd2d75f65000000";
         auto& f = *ctx->GetVars<std::unique_ptr<Fixture>>();
-        f.recovery = std::make_unique<app::RecoverySession>(std::filesystem::path{});
+        f.recovery_requested=true;
+        ctx->Yield();
+        IM_CHECK(f.recovery && !f.state.privacy.hidden);
         const app::WalletBinding wallet{*BackendSessionId::Make("test-regtest"), *WalletId::Make("app command fixture"),
             {*Hash256::Parse("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")}, {}};
         const auto id=f.state.documents.OpenWallet("Funded fixture",wallet,true);

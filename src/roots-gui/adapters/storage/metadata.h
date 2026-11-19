@@ -49,6 +49,7 @@ struct Metadata {
     std::vector<PublicDraft> drafts;
     bool operator==(const Metadata&) const = default;
 };
+bool ValidMetadata(const Scope&, const Metadata&);
 struct Workspace {
     uint64_t revision{};
     PublicPreferences preferences;

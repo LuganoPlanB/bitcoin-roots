@@ -113,6 +113,14 @@ class CancellationProxy:
                             pass
                         event["readHeldForCancellation"] = True
                         time.sleep(.10)
+                    if method == "getmempoolentry" and params == [original] and mode == "approval-held":
+                        assert not (source / "approval-held").exists()
+                        (source / "approval-held").touch()
+                        until = time.monotonic() + 6
+                        while not (source / "approval-release").exists() and time.monotonic() < until and not owner.stop.wait(.02):
+                            pass
+                        assert (source / "approval-release").exists(), "owned approval gate deadline"
+                        event["approvalReplyReleasedAfterReviewClosed"] = True
                     self.send_response(status)
                     self.send_header("Content-Length", str(len(raw)))
                     self.end_headers()
@@ -187,6 +195,8 @@ def main():
                 assert race["pendingBeforeRace"] == dict(wire=final_hex, serial=1, outcome=0, txid=txid)
                 assert json.loads(race["responseBody"])["result"]["confirmations"] == 1
                 assert any(row.get("readHeldForCancellation") for row in proxy.events)
+                approval, = [row for row in proxy.events if row.get("approvalReplyReleasedAfterReviewClosed")]
+                assert approval["mode"] == "approval-held" and approval["upstreamStatus"] == 200
                 with closing(sqlite3.connect((source / "metadata.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
                     final_record, = db.execute("SELECT txid,wire,serial,outcome FROM broadcast_details").fetchall()
                 assert final_record == (txid, final_hex, 1, 1)  # Unsent

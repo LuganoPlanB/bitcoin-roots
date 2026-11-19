@@ -42,6 +42,22 @@ void Signal(State& s,const char* id,const char* label,const a::ServiceObservatio
     if(!detail.empty())ImGui::TextWrapped("%s",detail.c_str());ImGui::EndGroup();
     s.presentation.Annotate(id,label,text+" / "+detail,observation.state==a::ServiceState::Error?imkit::accessibility::SemanticRole::Alert:imkit::accessibility::SemanticRole::Status,false,true,observation.state==a::ServiceState::Loading);ImGui::PopID();
 }
+void DrawActivityExport(State& s,Facts& f,const imkit::Theme& theme,a::Requests& host)
+{
+    const auto scope=CurrentToolScope(s,host);
+    const bool enabled=!s.activity_export.chooser && !s.activity_log.Records().empty() && !scope.locked
+        && c::native_input && c::native_input->FileChooserAvailable();
+    ImGui::BeginDisabled(!enabled);
+    const bool pressed=theme::ActionButton("Export activity CSV",imkit::ActionVariant::Secondary,{},theme);
+    f.tools["activity-export"]=Last();f.tools["activity-export"].disabled=!enabled;
+    const auto external=s.presentation.Interact("Export activity CSV",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus,!enabled);
+    ImGui::EndDisabled();
+    const auto export_activity=[&s,&host,scope]{return s.drawer==Drawer::Activity && scope==CurrentToolScope(s,host)
+        && BeginToolExport(s.activity_export,scope,a::ActivityCsv(s.activity_log));};
+    const bool accepted=pressed && enabled && export_activity();
+    if(external)s.presentation.Defer(*external,[pressed,accepted,export_activity](const auto&){return pressed?accepted:export_activity();});
+    PollToolExport(s.activity_export,scope,[&s]{return a::ActivityCsv(s.activity_log);},s.activity_notice);
+}
 }
 void DrawStatus(State& s,Facts& f,const imkit::Theme& theme,float scale)
 {
@@ -70,6 +86,7 @@ void DrawStatus(State& s,Facts& f,const imkit::Theme& theme,float scale)
 }
 void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale,app::Requests* host)
 {
+    if(s.drawer!=Drawer::Activity)s.activity_export={};
     if(s.drawer==Drawer::None)return;
     const float height=std::min(340*scale,f.layout.content.h*.7F);
     ImGui::SetNextWindowPos({f.layout.content.x,f.layout.status.y-height});ImGui::SetNextWindowSize({f.layout.content.w,height});
@@ -82,6 +99,7 @@ void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale,
     const auto close_ax=s.presentation.Interact("Close drawer",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus);
     const bool escape=s.actions.kind==DocumentDialog::None && ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape);
     if(close || escape){s.drawer=Drawer::None;s.restore_status=true;}if(close_ax)s.presentation.Defer(*close_ax,[&s,close,escape](const c::SemanticRequest&){if(!close && !escape){s.drawer=Drawer::None;s.restore_status=true;}return true;});
+    if(s.drawer==Drawer::Activity && host){ImGui::SameLine();DrawActivityExport(s,f,theme,*host);}
     ImGui::BeginChild("drawer-body",{0,0},ImGuiChildFlags_NavFlattened);
     if(focus)ImGui::SetScrollY(0);
     {const auto lo=ImGui::GetWindowDrawList()->GetClipRectMin(),hi=ImGui::GetWindowDrawList()->GetClipRectMax();f.drawer_body={lo.x,lo.y,hi.x-lo.x,hi.y-lo.y};}
@@ -93,6 +111,18 @@ void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale,
             const bool applied=pressed && apply();
             const auto external=s.presentation.Interact(label,components::ax::SemanticRole::Button,components::ax::SemanticAction::Press|components::ax::SemanticAction::Focus);
             if(external)s.presentation.Defer(*external,[pressed,applied,apply](const components::SemanticRequest&){return pressed?applied:apply();});
+            ImGui::SameLine();
+        }
+        if(host){
+            const bool enabled=!(s.recovery && (s.recovery->Pending() || s.recovery->Locked()));
+            ImGui::BeginDisabled(!enabled);
+            const bool pressed=theme::ActionButton("Node information",imkit::ActionVariant::Secondary,{},theme);f.tools["node"]=Last();
+            const auto external=s.presentation.Interact("Node information",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus,!enabled);
+            ImGui::EndDisabled();
+            const auto open=[&s,host]{if(s.drawer!=Drawer::Services || s.wallet_tools.dialog.open)return false;
+                s.drawer=Drawer::None;OpenWalletTool(s,*host,WalletTool::Node);return true;};
+            const bool opened=pressed && enabled && open();
+            if(external)s.presentation.Defer(*external,[pressed,opened,open](const auto&){return pressed?opened:open();});
         }
         Signal(s,"connection","Connection",s.observations.connection,theme);
         const std::string height_text=s.observations.backend_height && *s.observations.backend_height>=0?std::to_string(*s.observations.backend_height):"Unavailable";
@@ -106,25 +136,35 @@ void DrawActivityDrawer(State& s,Facts& f,const imkit::Theme& theme,float scale,
         Signal(s,"network","Network",s.observations.network,theme);
         Signal(s,"devices","Devices",s.observations.devices,theme);Signal(s,"proxy","Proxy",s.observations.proxy,theme);Signal(s,"updates","Updates",s.observations.updates,theme);
     } else if(s.drawer==Drawer::Activity) {
-        Signal(s,"activity-feed","Activity feed",s.observations.activity,theme);
-        if(s.observations.tasks.empty())ImGui::TextUnformatted(s.observations.activity.state==a::ServiceState::Ready?"No active background tasks.":"No activity observations available.");
+        Signal(s,"activity-feed","Activity feed",{s.observations.activity.state,s.privacy.hidden?"Details hidden":""},theme);
+        if(!s.activity_notice.empty()){
+            ImGui::TextWrapped("%s",s.activity_notice.c_str());s.presentation.Annotate("activity-export-result","Activity export",s.activity_notice,c::ax::SemanticRole::Status);
+        }
+        ImGui::TextUnformatted("Operational log");
+        if(s.activity_log.Records().empty())ImGui::TextUnformatted("No service changes observed in this session.");
+        size_t line{};
+        for(auto entry=s.activity_log.Records().rbegin();entry!=s.activity_log.Records().rend();++entry){
+            const auto text=ObservationDate(entry->observed)+" · "+a::ActivityKindName(entry->kind)+" · "+a::StateName(entry->state)
+                +(entry->progress?" · "+std::to_string(*entry->progress/10)+"%":"");
+            ImGui::PushID(int(++line));ImGui::TextWrapped("%s",text.c_str());
+            s.presentation.Annotate("log-line","Operational log",text);ImGui::PopID();
+        }
+        if(s.observations.tasks.empty())ImGui::TextUnformatted(s.observations.activity.state==a::ServiceState::Ready?"No active background tasks.":"No active task progress reported.");
         size_t count{};std::set<uint64_t> ids;
         for(const auto& task:s.observations.tasks) {
             if(count++==32){ImGui::TextUnformatted("More activity entries omitted.");break;}
             if(!task.id || !ids.insert(task.id).second){ImGui::TextUnformatted("Invalid activity identity; entry unavailable.");continue;}
-            const auto title=s.privacy.hidden?std::string("Background task"):task.title;const auto detail=Detail(s,task.detail);
             const bool progress=task.progress_per_mille && *task.progress_per_mille<=1000;
             const auto stage=std::string(a::StateName(task.state));
-            imkit::TaskProgressCardView view;view.id=task.id;view.title=title.c_str();view.stage=stage.c_str();view.description=detail.c_str();
+            imkit::TaskProgressCardView view;view.id=task.id;view.title="Background task";view.stage=stage.c_str();
             view.fraction=progress?float(*task.progress_per_mille)/1000.F:-1.F;view.supplemental=task.progress_per_mille && !progress?"Progress unavailable":"";
             view.status=task.state==a::ServiceState::Error?imkit::ProgressStatus::Failed:task.state==a::ServiceState::Ready?imkit::ProgressStatus::Succeeded:task.state==a::ServiceState::Stale || task.state==a::ServiceState::Locked?imkit::ProgressStatus::Paused:imkit::ProgressStatus::Running;
             imkit::ComponentOptions options;options.theme=&theme;options.animation=nullptr;
             ImGui::PushID(std::to_string(task.id).c_str());imkit::TaskProgressCard("task",view,{true},options);
-            s.presentation.Progress("task","Background activity",title+" / "+stage+" / "+detail,task.progress_per_mille,task.state==a::ServiceState::Loading);ImGui::PopID();
+            s.presentation.Progress("task","Background activity",stage,progress?task.progress_per_mille:std::nullopt,task.state==a::ServiceState::Loading);ImGui::PopID();
         }
-        ImGui::TextUnformatted("Operational log");count=0;
-        for(const auto& line:s.observations.log){if(count++==64){ImGui::TextUnformatted("More log entries omitted.");break;}const auto text=Detail(s,line);ImGui::PushID(int(count));ImGui::TextWrapped("%s",text.c_str());s.presentation.Annotate("log-line","Operational log",text);ImGui::PopID();}
     }
+    if(s.drawer!=Drawer::Activity)s.activity_export={};
     f.drawer_scroll=ImGui::GetScrollY();f.drawer_scroll_max=ImGui::GetScrollMaxY();ImGui::EndChild();ImGui::End();ImGui::PopStyleVar();
 }
 }

@@ -37,6 +37,7 @@ std::filesystem::path ExecutableFontDirectory()
 }
 struct NativeHost::Impl {
     NativeOptions options;
+    std::optional<DesktopRuntime> desktop;
     NativeObserver* observer{};
     NativeHost::Draw content;
     NativeHost* host{};
@@ -184,6 +185,7 @@ struct NativeHost::Impl {
         for (;;) {
             ++iteration;
             glfwPollEvents();
+            if(desktop)desktop->Poll();
             if(input)input->Pump();
             if(accessibility)accessibility->Pump();
             auto facts = Facts();
@@ -196,6 +198,7 @@ struct NativeHost::Impl {
             if (facts.iconified || !glfwGetWindowAttrib(window,GLFW_VISIBLE)
                 || facts.framebuffer_width <= 0 || facts.framebuffer_height <= 0) {
                 if (options.on_draw_suspended) options.on_draw_suspended();
+                if(desktop)desktop->Suspend();
                 if(input){input->BeginFrame();input->EndFrame();}
                 if(accessibility)accessibility->Update(0,0,0,0,false);
                 glfwWaitEventsTimeout(.01); // Continue pumping events; never render a zero drawable.
@@ -281,6 +284,7 @@ struct NativeHost::Impl {
     {
         if (owner != std::this_thread::get_id()) std::terminate();
         NativeTeardown state;
+        desktop.reset();
         if(context && clipboard_hooks){auto& platform_io=ImGui::GetPlatformIO();platform_io.Platform_GetClipboardTextFn=old_clipboard_get;platform_io.Platform_SetClipboardTextFn=old_clipboard_set;platform_io.Platform_ClipboardUserData=old_clipboard_data;}
         if(input){state.input_cleared=input->Close();input.reset();}
         if(accessibility){state.accessibility_cleared=accessibility->Close();accessibility.reset();}
@@ -307,11 +311,24 @@ NativeHost::NativeHost(NativeOptions options, NativeObserver* observer, Draw dra
 {
     m_impl->host = this;
     m_impl->Initialize();
+    if(m_impl->options.desktop_ports)m_impl->desktop.emplace(*m_impl->options.desktop_ports);
 }
 NativeHost::~NativeHost() = default;
 int NativeHost::Run() { return m_impl->Loop(); }
 GLFWwindow* NativeHost::Window() { m_impl->Owner(); return m_impl->window; }
 void NativeHost::RequestClose() { m_impl->Owner(); glfwSetWindowShouldClose(m_impl->window, GLFW_TRUE); }
+bool NativeHost::Minimize()
+{
+    m_impl->Owner();
+    if(!m_impl->window || glfwWindowShouldClose(m_impl->window))return false;
+    glfwIconifyWindow(m_impl->window);
+    return true;
+}
+DesktopRuntime* NativeHost::Desktop()
+{
+    m_impl->Owner();
+    return m_impl->desktop?&*m_impl->desktop:nullptr;
+}
 void NativeHost::SetFontScale(float scale)
 {
     m_impl->Owner();

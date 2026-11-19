@@ -3,6 +3,7 @@
 #pragma once
 #include "app/document_registry.h"
 #include "adapters/storage/metadata.h"
+#include "adapters/storage/metadata_archive.h"
 #include "services/session_gate.h"
 namespace roots::gui::app {
 bool MatchesSendDraft(const Document&,const ImportedDocument&); // exact ordered draft, independently saved inputs and change
@@ -15,8 +16,14 @@ struct PublicSession {
 };
 std::optional<std::string> EncodePublicSession(const PublicSession&);
 std::optional<PublicSession> DecodePublicSession(std::string_view);
+struct MetadataRestore {
+    storage::WalletMetadataArchive archive;
+    uint64_t destination_revision{};
+    LockEpoch epoch;
+};
 // Owner-thread local persistence. There is deliberately no RPC/command port.
 class RecoverySession {
+    const std::thread::id owner{std::this_thread::get_id()};
     std::filesystem::path path;
     std::unique_ptr<storage::MetadataStore> store;
     storage::RecoveryRecord record;
@@ -53,6 +60,8 @@ public:
     int Unit() const{return saved.unit;}
     void SetPresentation(bool hide,int value){if(!pending){hidden=hide;unit=value;}}
     const std::string& Error() const{return error;}
+    storage::Result<storage::Workspace> LoadWorkspacePreferences();
+    storage::Result<uint64_t> SaveWorkspacePreferences(const storage::Workspace&);
     bool Enable(DocumentRegistry&);
     bool Disable(); // atomically forgets public snapshots
     bool Restore(DocumentRegistry&); // deliberate offline public-state restoration
@@ -80,6 +89,11 @@ public:
     bool RecoverSend(DocumentRegistry&);
     bool RecoverLast(DocumentRegistry&);
     storage::Result<storage::Metadata> HistoryMetadata(const storage::Scope&);
+    storage::Result<storage::Done> ExportWalletMetadata(const storage::Scope&,std::string display_name,
+        const std::filesystem::path&,std::string_view password);
+    storage::Result<MetadataRestore> InspectWalletMetadata(const storage::Scope&,
+        const std::filesystem::path&,std::string_view password);
+    storage::Result<uint64_t> ApplyWalletMetadata(const storage::Scope&,const MetadataRestore&);
     storage::Result<std::vector<storage::Scope>> RecentWallets();
     storage::Result<storage::Done> RememberWallet(const storage::Scope&);
     storage::Result<std::shared_ptr<storage::FileGuard>> RescanLease();

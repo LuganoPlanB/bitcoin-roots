@@ -19,7 +19,34 @@ std::optional<WalletBinding> VerifiedWalletBinding(const BackendCapabilities& ca
 storage::Scope HistoryMetadataScope(const WalletBinding& b){return {b.backend.value(),b.network,b.DaemonWallet()};}
 const Document* RegisteredWallet(const DocumentRegistry& docs,const WalletBinding& binding){for(const auto& d:docs.Documents())if(d.kind==DocumentKind::Wallet && d.binding==binding)return &d;return nullptr;}
 std::optional<RefreshIdentity> WalletRefreshIdentity(const BackendCapabilities& caps,uint64_t session,const Document& document,LockEpoch epoch){auto binding=VerifiedWalletBinding(caps);if(!binding || !document.binding || document.binding!=binding || !document.history.enabled || !document.history.query_revision || !session)return {};auto backend=BackendSessionId::Make("connection-"+std::to_string(session));auto id=DocumentId::Make("wallet-document-"+std::to_string(document.id));if(!backend || !id)return {};return RefreshIdentity{{*backend,binding->network,binding->wallet,*id,{document.history.query_revision},epoch},caps.candidate,session};}
-std::optional<RefreshView> HistoryForDocument(const Document& document,const RefreshService& refresh,LockEpoch epoch){if(!document.binding || !document.history.enabled)return {};std::optional<RefreshView> result;for(auto view:refresh.HistoryViews()){if(!view.identity || !view.ledger)continue;auto backend=MetadataBackend(view.identity->profile);const auto& c=view.identity->context;if(!backend || c.backend.value()!="connection-"+std::to_string(view.identity->connection_session) || *backend!=document.binding->backend || view.identity->profile.wallet!=std::optional<std::string>(document.binding->DaemonWallet()) || c.network!=document.binding->network || c.wallet!=document.binding->wallet || c.document.value()!="wallet-document-"+std::to_string(document.id) || c.revision.value!=document.history.query_revision || c.lock_epoch!=epoch)continue;if(!result || view.ledger->Observed()>result->ledger->Observed())result=view;}return result;}
+namespace {
+std::optional<RefreshView> WalletObservationFor(const Document& document,const RefreshService& refresh,LockEpoch epoch,bool history)
+{
+    if(!document.binding || !document.history.enabled)return {};
+    std::optional<RefreshView> result;
+    const size_t channel=history?2:1;
+    for(auto view:refresh.ObservationViews()){
+        if(!view.identity || (history?!view.ledger:!view.wallet || !view.observed[1]))continue;
+        const auto backend=MetadataBackend(view.identity->profile);
+        const auto& c=view.identity->context;
+        if(!backend || c.backend.value()!="connection-"+std::to_string(view.identity->connection_session)
+            || *backend!=document.binding->backend || view.identity->profile.wallet!=std::optional<std::string>(document.binding->DaemonWallet())
+            || c.network!=document.binding->network || c.wallet!=document.binding->wallet
+            || c.document.value()!="wallet-document-"+std::to_string(document.id)
+            || c.revision.value!=document.history.query_revision || c.lock_epoch!=epoch)continue;
+        if(!result || (history?view.ledger->Observed()>result->ledger->Observed():view.observed[channel]>result->observed[channel]))result=view;
+    }
+    return result;
+}
+}
+std::optional<RefreshView> HistoryForDocument(const Document& document,const RefreshService& refresh,LockEpoch epoch)
+{
+    return WalletObservationFor(document,refresh,epoch,true);
+}
+std::optional<RefreshView> WalletBalanceForDocument(const Document& document,const RefreshService& refresh,LockEpoch epoch)
+{
+    return WalletObservationFor(document,refresh,epoch,false);
+}
 std::string HistoryDate(int64_t value,bool full){const auto t=std::time_t(value);if(int64_t(t)!=value)return "Unknown date";const auto* utc=std::gmtime(&t);char text[32]{};if(!utc || !std::strftime(text,sizeof(text),full?"%Y-%m-%d %H:%M:%S UTC":"%Y-%m-%d",utc))return "Unknown date";return text;}
 const char* HistoryStateText(HistoryState state){switch(state){case HistoryState::Confirmed:return "Confirmed";case HistoryState::Pending:return "Unconfirmed";case HistoryState::Immature:return "Immature";case HistoryState::Orphan:return "Orphan";case HistoryState::Replaced:return "Replaced";case HistoryState::Conflicted:return "Conflicted";case HistoryState::Abandoned:return "Abandoned";}return "Unknown";}
 std::optional<std::string> ExplorerUrl(const NetworkIdentity& network,const Hash256& txid){
@@ -30,6 +57,14 @@ std::optional<std::string> ExplorerUrl(const NetworkIdentity& network,const Hash
     else if(genesis=="00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043")prefix="https://mempool.space/testnet4/tx/";
     else return {};
     return prefix+txid.hex();
+}
+std::optional<std::string> ExplorerUrl(const PublicPreferences& preferences,const NetworkIdentity& network,const Hash256& txid)
+{
+    if(!ValidPreferences(preferences))return {};
+    if(preferences.explorer==ExplorerMode::NetworkDefault)return ExplorerUrl(network,txid);
+    if(preferences.explorer!=ExplorerMode::Custom || preferences.explorer_genesis!=network.genesis.hex())return {};
+    constexpr std::string_view placeholder{"{txid}"};
+    return preferences.explorer_template.substr(0,preferences.explorer_template.size()-placeholder.size())+txid.hex();
 }
 std::string HistoryStatus(const HistoryLedger& ledger,const HistoryTransaction& tx,bool current){
     if(!current)return std::string("Current chain state Unknown; last observed ")+HistoryStateText(tx.state);

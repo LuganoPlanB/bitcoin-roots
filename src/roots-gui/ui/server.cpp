@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/server.h"
+#include "services/extensions.h"
+#include "ui/components/native_input.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
 #include <charconv>
+#include <filesystem>
 
 namespace roots::gui::ui {
 namespace {
@@ -38,7 +41,11 @@ const char* TestMessage(const BackendCapabilities& value)
 void Close(ServerPanel& panel, ConnectionService& service)
 {
     service.Cancel();
-    if (service.Active()) { service.SetDraft(service.Active()->candidate); panel.Load(service.Active()->candidate); }
+    const ServerPanel defaults;
+    const auto baseline=service.Active()?service.Active()->candidate:defaults.Candidate();
+    service.SetDraft(baseline);
+    panel.Load(baseline);
+    panel.cookie_dialog=0;
     panel.close_pending = true; panel.dialog.open = false;
     panel.scope_revision = service.Revision(); panel.scope_session = service.Session();
 }
@@ -68,10 +75,11 @@ void OpenServer(ServerPanel& panel, ConnectionService& service)
     if (panel.dialog.open) return;
     if (service.Active()) panel.Load(service.Active()->candidate);
     else if (panel.initialized) panel.Load(service.Draft());
+    panel.source=ServerSource::DirectRpc;
     panel.initialized = true; panel.notice.clear(); panel.close_pending = false;
     service.SetDraft(panel.Candidate()); panel.scope_revision = service.Revision(); panel.scope_session = service.Session(); panel.dialog.open = true; panel.dialog.initialFocus = true;
 }
-ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::PresentationFrame& presentation, const imkit::Theme& theme, float scale)
+ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::PresentationFrame& presentation, const imkit::Theme& theme, float scale,bool hidden)
 {
     ServerFacts facts;
     service.Poll();
@@ -93,6 +101,44 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
     presentation.Group("server-dialog", "Server connection", c::ax::SemanticRole::Dialog, origin, {origin.x + size.x, origin.y + size.y});
     ImGui::BeginChild("server-body", {0, -58 * scale}, ImGuiChildFlags_NavFlattened);
     ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x);
+    constexpr const char* sources[]{"Direct RPC","Private index","Public index"};
+    const auto select_source=[&panel,&service](ServerSource selected){
+        if(!panel.dialog.open || service.PrivacyLocked())return false;
+        if(panel.source==selected)return true;
+        panel.source=selected;
+        panel.notice.clear();
+        panel.cookie_dialog=0;
+        service.Cancel();
+        panel.scope_revision=service.Revision();
+        return true;
+    };
+    for(int i=0;i<3;++i){
+        if(i)ImGui::SameLine();
+        const auto source=ServerSource(i);
+        const bool pressed=ImGui::RadioButton(sources[i],panel.source==source);
+        facts.items[sources[i]]=Last();
+        if(pressed)select_source(source);
+        const auto external=presentation.Interact(sources[i],c::ax::SemanticRole::Radio,c::ax::SemanticAction::Select|c::ax::SemanticAction::Focus,false,panel.source==source);
+        if(external)presentation.Defer(*external,[select_source,source](const auto&){return select_source(source);});
+    }
+    const bool direct=panel.source==ServerSource::DirectRpc;
+    bool valid{};
+    if(service.Active()){
+        ImGui::TextUnformatted("Working profile is active.");
+        presentation.Annotate("active","Working connection","Working profile is active",c::ax::SemanticRole::Status);
+    }
+    if(!direct){
+        const auto genesis=service.Active() ? Hash256::Parse(service.Active()->genesis) : std::nullopt;
+        const auto index=HistoryIndexStatus(ShippedExtensions(),
+            panel.source==ServerSource::PrivateIndex ? IndexAccess::Private : IndexAccess::Public,
+            genesis ? std::optional(NetworkIdentity{*genesis}) : std::nullopt);
+        ImGui::TextWrapped("%s",index.detail);
+        presentation.Annotate("index-status",index.available ? "History index available" : "History index unavailable",
+            index.detail,c::ax::SemanticRole::Status);
+        constexpr char limits[]="Direct RPC covers the selected wallet. Retained mempool samples report observed fee conditions. Arbitrary address or output history requires an index client.";
+        ImGui::TextWrapped("%s",limits);
+        presentation.Annotate("index-rpc-coverage","RPC history coverage",limits);
+    }else{
     const auto sync = [&panel, &service] { panel.notice.clear(); const bool accepted = service.SetDraft(panel.Candidate()); panel.scope_revision = service.Revision(); panel.scope_session = service.Session(); return accepted; };
     const auto field = [&](const char* id, const char* label, c::Edit& edit, const char* hint = "") {
         imkit::BeginFormField(id, {label, hint, "", std::string_view(id) != "ca"}, {&theme});
@@ -121,11 +167,39 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
     field("host", "Host", panel.host); field("port", "RPC port", panel.port);
     toggle("Verified TLS###tls", "Verified TLS", panel.tls);
     if (panel.tls) field("ca", "Trusted CA file (optional)", panel.ca, "Leave empty to use system trust. Certificate verification is always enabled.");
-    toggle("Secure-store reference###auth-source", "Use secure-store credential reference", panel.secure_store);
-    field("credential", panel.secure_store ? "Credential item reference" : "Explicit cookie file", panel.credential,
-          panel.secure_store ? "Requires an available OS secure-store provider. Never enter a password here." : "Choose the exact cookie path. No node home is searched.");
+    field("credential", "Explicit cookie file", panel.credential, "Enter the exact cookie path. Password authentication requires an OS credential provider.");
+    auto* input=c::native_input;
+    if(panel.cookie_dialog && input){
+        if(panel.cookie_revision!=service.Revision() || panel.cookie_session!=service.Session() || service.PrivacyLocked())panel.cookie_dialog=0;
+        else{
+            const auto choice=input->PollFile(panel.cookie_dialog);
+            if(choice.outcome!=c::NativeOutcome::Pending){
+                panel.cookie_dialog=0;
+                if(choice.outcome==c::NativeOutcome::Chosen && std::filesystem::path(choice.path).is_absolute()
+                    && panel.credential.SetExternalDraft(choice.path))sync();
+                else if(choice.outcome!=c::NativeOutcome::Cancelled)panel.notice="Cookie file was not selected. Enter an explicit local path.";
+            }
+        }
+    }
+    const auto can_choose=[&panel,&service,input]{return panel.dialog.open && panel.source==ServerSource::DirectRpc
+        && !panel.cookie_dialog && !panel.secure_store && !service.PrivacyLocked() && input && input->FileChooserAvailable();};
+    const auto choose=[&panel,&service,input,can_choose]{
+        if(!can_choose())return false;
+        panel.cookie_dialog=input->ChooseRpcCookie();
+        panel.cookie_revision=service.Revision();panel.cookie_session=service.Session();
+        return panel.cookie_dialog!=0;
+    };
+    ImGui::BeginDisabled(!can_choose());
+    const bool browse=theme::ActionButton("Browse cookie file###browse-cookie",imkit::ActionVariant::Secondary,{},theme);
+    facts.items["browse-cookie"]=Last();facts.items["browse-cookie"].disabled=!can_choose();
+    const auto picker=presentation.Interact("Browse cookie file",c::ax::SemanticRole::Button,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus,!can_choose());
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !can_choose())ImGui::SetTooltip("Requires the local file chooser. An explicit path can also be entered.");
+    ImGui::EndDisabled();
+    const bool browsing=browse && choose();
+    if(picker)presentation.Defer(*picker,[browse,browsing,choose](const auto&){return browse?browsing:choose();});
     toggle("Select a daemon wallet###wallet-selected", "Select a daemon wallet", panel.select_wallet);
-    if (panel.select_wallet) field("wallet", "Daemon wallet name", panel.wallet, "Exact daemon name; an empty name selects the unnamed wallet.");
+    if (panel.select_wallet && !hidden) field("wallet", "Daemon wallet name", panel.wallet, "Exact daemon name; an empty name selects the unnamed wallet.");
+    if (panel.select_wallet && hidden) {ImGui::TextUnformatted("Wallet identity hidden");presentation.Annotate("wallet-hidden","Wallet identity","Hidden");}
     field("genesis", "Expected network genesis", panel.genesis, "Compare against an independently known network identity.");
     ImGui::TextUnformatted("Proxy");
     const char* proxies[]{"Direct", "SOCKS5 / proxy DNS", "HTTP CONNECT"};
@@ -135,8 +209,8 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
         if (external) presentation.Defer(*external, [&panel, i, sync](const c::SemanticRequest&) { panel.proxy = i; return sync(); });
     }
     if (panel.proxy) { field("proxy-host", "Proxy host", panel.proxy_host); field("proxy-port", "Proxy port", panel.proxy_port); }
-    const bool valid = ValidServerCandidate(panel.Candidate());
-    if (!valid) { ImGui::PushStyleColor(ImGuiCol_Text, theme.semantic.error); ImGui::TextWrapped("Enter a valid endpoint, credential reference and 64-digit network genesis."); ImGui::PopStyleColor(); presentation.Annotate("validation", "Connection validation", "Enter a valid endpoint, credential reference and 64-digit network genesis.", c::ax::SemanticRole::Alert); }
+    valid = !panel.secure_store && std::filesystem::path(panel.credential.draft()).is_absolute() && ValidServerCandidate(panel.Candidate());
+    if (!valid) { const char* message="Enter a valid endpoint, cookie reference and 64-digit genesis. Onion hosts require an explicit proxy."; ImGui::PushStyleColor(ImGuiCol_Text, theme.semantic.error); ImGui::TextWrapped("%s",message); ImGui::PopStyleColor(); presentation.Annotate("validation", "Connection validation",message,c::ax::SemanticRole::Alert); }
     if (service.Busy()) { ImGui::TextUnformatted("Testing connection…"); presentation.Annotate("testing", "Connection test", "Testing connection", c::ax::SemanticRole::Status, false, true, true); }
     if (const auto& tested = service.Tested()) {
         const char* diagnostic = TestMessage(*tested);
@@ -150,7 +224,7 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
         const auto descriptors = SupportName(tested->Supports("listdescriptors", "private")); ImGui::Text("Public descriptor inventory: %s", descriptors);
         presentation.Annotate("descriptor-capability", "Public descriptor inventory", descriptors, c::ax::SemanticRole::Status);
     }
-    if (service.Active()) { ImGui::TextUnformatted("Working profile is active. Changes apply only after a successful Test."); presentation.Annotate("active", "Working connection", "Working profile is active", c::ax::SemanticRole::Status); }
+    }
     if (!panel.notice.empty()) { ImGui::TextUnformatted(panel.notice.c_str()); presentation.Annotate("notice", "Server result", panel.notice, c::ax::SemanticRole::Status); }
     ImGui::PopTextWrapPos(); ImGui::EndChild();
     struct Actions final : c::Commands {
@@ -158,9 +232,11 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
         Actions(ServerPanel& p, ConnectionService& s) : panel(p), service(s) {}
         bool Available(const c::Command& command) const override {
             const auto* action = std::get_if<c::Action>(&command); if (!action || !panel.dialog.open) return false;
+            if (action->id == "cancel") return true;
+            if (panel.source!=ServerSource::DirectRpc || panel.cookie_dialog || panel.secure_store || service.PrivacyLocked()
+                || !std::filesystem::path(panel.credential.draft()).is_absolute())return false;
             if (action->id == "test") return !service.Offline() && !service.Busy() && ValidServerCandidate(panel.Candidate()) && service.Draft() == panel.Candidate();
-            if (action->id == "apply") return service.CanApply() && service.Draft() == panel.Candidate();
-            return action->id == "cancel";
+            return action->id == "apply" && service.CanApply() && service.Draft() == panel.Candidate();
         }
         bool Submit(const c::Command& command) override {
             if (!Available(command)) return false;
@@ -172,8 +248,12 @@ ServerFacts DrawServer(ServerPanel& panel, ConnectionService& service, c::Presen
         c::CommandEndpoint CaptureAvailability() const override { return [p = &panel, s = &service](const c::Command& c) { return Actions(*p, *s).Available(c); }; }
         c::CommandEndpoint Capture() override { return [p = &panel, s = &service](const c::Command& c) { return Actions(*p, *s).Request(c); }; }
     } actions(panel, service);
-    facts.items["test"] = c::ActionButton("test", "Test Connection", c::ActionKind::Secondary, actions, theme, valid && !service.Busy() && !service.Offline(), "Go online, complete the profile and wait for any pending test.", &presentation);
-    ImGui::SameLine(); facts.items["apply"] = c::ActionButton("apply", "Apply", c::ActionKind::Primary, actions, theme, service.CanApply(), "Test the unchanged replacement profile first.", &presentation);
+    const char* test_reason=direct ? "Go online, complete the profile and wait for any pending test."
+        : "Testing an index requires a shipped HistoryIndexAdapter.";
+    const char* apply_reason=direct ? "Test the unchanged replacement profile first."
+        : "Applying an index requires a shipped HistoryIndexAdapter.";
+    facts.items["test"] = c::ActionButton("test", "Test Connection", c::ActionKind::Secondary, actions, theme, valid && !service.Busy() && !service.Offline(), test_reason, &presentation);
+    ImGui::SameLine(); facts.items["apply"] = c::ActionButton("apply", "Apply", c::ActionKind::Primary, actions, theme, direct && service.CanApply(), apply_reason, &presentation);
     ImGui::SameLine(); facts.items["cancel"] = c::ActionButton("cancel", "Cancel", c::ActionKind::CancelDialog, actions, theme, true, "", &presentation);
     if (!panel.dialog.open) { ImGui::CloseCurrentPopup(); panel.close_pending = false; }
     presentation.EndGroup(); imkit::EndDialog(); return facts;

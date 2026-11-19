@@ -34,6 +34,7 @@ public:
     bool FileChooserAvailable() const override;
     bool NativeDialogActive() const override;
     uint64_t ChooseFile(std::string_view,bool save=false) override;
+    uint64_t ChooseRpcCookie() override;
     ui::components::FileChoice PollFile(uint64_t) override;
     InputStatus Status() const;
     bool Close();

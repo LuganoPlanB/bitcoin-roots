@@ -25,6 +25,7 @@ struct NativeInputPort {
     virtual bool FileChooserAvailable() const=0;
     virtual bool NativeDialogActive() const { return false; }
     virtual uint64_t ChooseFile(std::string_view initial,bool save=false)=0;
+    virtual uint64_t ChooseRpcCookie(){return 0;}
     virtual FileChoice PollFile(uint64_t)=0;
 };
 inline thread_local NativeInputPort* native_input{};

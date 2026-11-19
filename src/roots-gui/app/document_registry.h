@@ -100,7 +100,9 @@ struct Document {
 class DocumentRegistry {
     std::vector<Document> documents;
     uint64_t active{},next{1};
+    bool group_address_outputs{true};
 public:
+    void SetAddressGroupingDefault(bool value) { group_address_outputs=value; }
     uint64_t OpenWallet(std::string,WalletBinding,bool complete);
     uint64_t OpenTransaction(std::string);
     uint64_t OpenImportedDocument(ImportedDocument);

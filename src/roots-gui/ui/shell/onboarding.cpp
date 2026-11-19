@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/shell/workspace.h"
 #include "app/history_workspace.h"
+#include "services/custody_extensions.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
 #include <sodium.h>
@@ -256,7 +257,7 @@ void DrawOnboarding(State& state, app::Requests& host, Facts& facts, const imkit
         action("remote", "Remote node", true, [configure] { return configure(true); });
         text("remote-privacy", "Remote privacy", "The remote operator can see wallet activity and connection information. Verify the endpoint and protect RPC credentials.");
         action("indexing", "Indexing service", false, [] { return false; });
-        text("index-privacy", "Indexing availability", "Indexing needs a supported history service. No indexer is configured. An indexer could link address queries.");
+        text("index-privacy", "Indexing availability", "Indexed address and output history requires a HistoryIndexAdapter. An indexer could link your queries.");
         text("offline-privacy", "Offline privacy", "Work with local public documents. Network requests stay disabled until you go online.");
     } else if (page == OnboardingPage::Import && panel.import_method == WalletImportMethod::Choose) {
         text("wallet-title", "Wallet action", title);
@@ -267,15 +268,23 @@ void DrawOnboarding(State& state, app::Requests& host, Facts& facts, const imkit
         action("method-hardware", "Hardware wallet", true, [choose_method] { return choose_method(WalletImportMethod::Hardware); });
         action("method-foreign", "Other wallet formats", true, [choose_method] { return choose_method(WalletImportMethod::Foreign); });
     } else if (page == OnboardingPage::Import && panel.import_method >= WalletImportMethod::RecoveryWords) {
-        const char* unavailable = panel.import_method == WalletImportMethod::RecoveryWords
-            ? "Recovery words require a separate local signer service. Keep the words with their custodian and import a public descriptor here."
-            : panel.import_method == WalletImportMethod::Hardware
+        if (panel.import_method==WalletImportMethod::RecoveryWords) {
+            const auto status=LocalSignerStatus(ShippedExtensions());
+            text("import-unavailable","Local software wallet unavailable",status.detail);
+            text("signer-secret-entry","Trusted signer entry",
+                "The signer owns the word grid, mnemonic passphrase and backup verification. The workspace password only protects local GUI data.");
+            text("public-import-help","Public import","Choose Public descriptor to import supported watch-only material.");
+        } else {
+            const char* unavailable = panel.import_method == WalletImportMethod::Hardware
                 ? "Hardware onboarding requires a configured daemon external-signer service. Use a public descriptor exported by your device when available."
                 : "This wallet format requires a compatible conversion service. Export a public Bitcoin descriptor or provide a compatible daemon wallet backup.";
-        text("import-unavailable", "Import requirement", unavailable);
+            text("import-unavailable", "Import requirement", unavailable);
+        }
         action("methods", "Choose another method", true, [choose_method] { return choose_method(WalletImportMethod::Choose); });
     } else {
         text("wallet-title", "Wallet action", title);
+        if (page==OnboardingPage::Create)
+            text("local-software-unavailable","Local software wallet unavailable",LocalSignerStatus(ShippedExtensions()).detail);
         if (!Current(state, connection)) {
             text("connection-needed", "Connection required", "Test and apply an online daemon connection before opening or creating a wallet.");
             action("configure", "Connection settings", true, [configure] { return configure(false); });

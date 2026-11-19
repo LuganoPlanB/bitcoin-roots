@@ -67,6 +67,8 @@ void Button(State& s,a::Requests& host,Facts& f,const char* id,const char* label
 }
 bool TabActionAvailable(const State& s,const a::Requests& host,uint64_t id,std::string_view label) {
     const auto* d=s.documents.Find(id);if(!d)return false;const auto& docs=s.documents.Documents();const auto pos=std::find_if(docs.begin(),docs.end(),[&](const auto& doc){return doc.id==id;})-docs.begin();
+    if((s.privacy.hidden || d->observation==a::ObservationState::Locked)
+        && (label=="Rename / Icon" || label=="Reset Name / Icon" || label=="Delete Wallet..."))return false;
     if(label=="Move Left")return pos>0;if(label=="Move Right")return pos+1<std::ptrdiff_t(docs.size());
     if(label=="Rename / Icon" || label=="Close" || label=="Close All")return true;
     if(label=="Close Others")return docs.size()>1;
@@ -133,8 +135,9 @@ void DrawTabActions(State& s,a::Requests& host,Facts& f,uint64_t id,const imkit:
         const auto external=s.presentation.Interact(label,components::ax::SemanticRole::MenuItem,components::ax::SemanticAction::Press|components::ax::SemanticAction::Focus,!enabled || !TabActionAvailable(s,host,id,label));
         const bool accepted=pressed && ApplyTabAction(s,host,id,label,true);
         if(external)s.presentation.Defer(*external,[&s,&host,id,label=std::string(label),pressed,accepted](const components::SemanticRequest&){return pressed?accepted:ApplyTabAction(s,host,id,label,false);},[&s,&host,id,label=std::string(label),pressed]{return pressed || TabActionAvailable(s,host,id,label);});};
-    item("Move Left",index>0);item("Move Right",index+1<std::ptrdiff_t(docs.size()));item("Rename / Icon");item("Reset Name / Icon");item("Close");item("Close Others",docs.size()>1);item("Close All");
-    d=s.documents.Find(id);item("Lock Wallet",d && d->kind==a::DocumentKind::Wallet);item("Delete Wallet...",d && d->kind==a::DocumentKind::Wallet);item("Separate Wallet Window...",d && d->kind==a::DocumentKind::Wallet);
+    const bool names_visible=!s.privacy.hidden && d->observation!=a::ObservationState::Locked;
+    item("Move Left",index>0);item("Move Right",index+1<std::ptrdiff_t(docs.size()));item("Rename / Icon",names_visible);item("Reset Name / Icon",names_visible);item("Close");item("Close Others",docs.size()>1);item("Close All");
+    d=s.documents.Find(id);item("Lock Wallet",d && d->kind==a::DocumentKind::Wallet);item("Delete Wallet...",names_visible && d && d->kind==a::DocumentKind::Wallet);item("Separate Wallet Window...",d && d->kind==a::DocumentKind::Wallet);
 }
 void ClosePendingDocumentPopup(State& s) {
     if(!s.close_document_popup)return;if(ImGui::BeginPopupModal("Document action###document-dialog")){ImGui::CloseCurrentPopup();ImGui::EndPopup();}
@@ -161,7 +164,10 @@ void DrawDocumentDialog(State& s,a::Requests& host,Facts& f,const imkit::Theme& 
         ImGui::TextUnformatted("Unsaved document drafts");
         const char* close_text=s.recovery && s.recovery->Enabled()?"Close saves a recoverable public copy first. Session Recovery can reopen the last closed document. No daemon wallet is deleted or locked.":"Save needs an acknowledged persistence service. Discard closes these views and their drafts; it never deletes or locks a daemon wallet.";
         ImGui::TextUnformatted(close_text);s.presentation.Annotate("close-explanation","Close behavior",close_text);
-        for(auto id:x.close_ids)if(const auto* doc=s.documents.Find(id)){ImGui::PushID(std::to_string(id).c_str());ImGui::TextUnformatted(doc->name.c_str());s.presentation.Annotate("closing-name","Document with unsaved drafts",doc->name);ImGui::PopID();}
+        for(auto id:x.close_ids)if(const auto* doc=s.documents.Find(id)){
+            const auto name=s.privacy.hidden || doc->observation==a::ObservationState::Locked?"Document "+std::to_string(id):doc->name;
+            ImGui::PushID(std::to_string(id).c_str());ImGui::TextUnformatted(name.c_str());s.presentation.Annotate("closing-name","Document with unsaved drafts",name);ImGui::PopID();
+        }
     } else if(x.kind==DocumentDialog::ClearSend) {
         ImGui::TextUnformatted("Clear this Send draft?");
         const char* detail=s.recovery->Enabled()

@@ -1073,6 +1073,63 @@ std::string EditedSource(const TransactionDocument& original,std::string wire)
 }
 }
 
+std::optional<std::string> PayjoinDisclosureCopy(const TransactionDocument& original)
+{
+    if (original.psbt_version!=0 || !TransactionEditBlock(original).empty()) return {};
+    try {
+        Reader source(original.wire);
+        Require(source.Take(5)==PSBT_MAGIC);
+        std::string wire(PSBT_MAGIC);
+        EditMap global(source);
+        Require(global.Contains(0));
+        std::erase_if(global.entries,[](const auto& entry){return entry.key!=Bytes("\0",1);});
+        global.Write(wire);
+        for (const auto& input:original.transaction->inputs) {
+            Require(input.evidence==PrevoutEvidence::TxidMatched);
+            EditMap map(source);
+            std::erase_if(map.entries,[](const auto& entry){
+                return entry.key.size()!=1
+                    || (entry.key.front()!=0 && entry.key.front()!=1 && entry.key.front()!=3);
+            });
+            map.Write(wire);
+        }
+        wire.append(original.transaction->outputs.size(),'\0');
+        return wire;
+    } catch (...) {return {};}
+}
+
+std::shared_ptr<const TransactionDocument> PreservePayjoinMaps(const TransactionDocument& original,
+    const TransactionDocument& proposal, DisplayNetwork network, std::stop_token stop)
+{
+    if (stop.stop_requested() || original.psbt_version!=0 || proposal.psbt_version!=0
+        || !TransactionEditBlock(original).empty() || !TransactionEditBlock(proposal).empty()
+        || proposal.transaction->inputs.size()!=original.transaction->inputs.size()+1
+        || proposal.transaction->outputs.size()!=original.transaction->outputs.size()) return {};
+    try {
+        Reader previous(original.wire), received(proposal.wire);
+        Require(previous.Take(5)==PSBT_MAGIC && received.Take(5)==PSBT_MAGIC);
+        EditMap local(previous), remote(received);
+        Require(local.Contains(0) && remote.Contains(0) && remote.Only({0}));
+        local.changes.emplace(0,proposal.unsigned_wire);
+        std::string wire(PSBT_MAGIC);
+        local.Write(wire);
+        for (size_t i=0;i<original.transaction->inputs.size();++i) {
+            if (stop.stop_requested()) return {};
+            Require(EditMap(received).Only({0,1,3}));
+            EditMap(previous).Write(wire);
+        }
+        const EditMap added(received);
+        Require(added.Contains(0) && added.Only({0,1,3}));
+        added.Write(wire);
+        for (size_t i=0;i<original.transaction->outputs.size();++i) {
+            Require(EditMap(received).Only({}));
+            EditMap(previous).Write(wire);
+        }
+        Require(previous.Empty() && received.Empty() && wire.size()<=MAX_TRANSACTION_WIRE,Error::Limit);
+        return ParseTransactionDocument(EditedSource(original,std::move(wire)),network,stop).document;
+    } catch (...) {return {};}
+}
+
 std::shared_ptr<const TransactionDocument> WithMatchedPreviousOutputs(const TransactionDocument& target,
     DisplayNetwork network,std::span<const std::shared_ptr<const TransactionDocument>> previous)
 {

@@ -1,5 +1,9 @@
 # Wallet history observations
 
+Wallet RPC covers the selected wallet. Retained mempool samples describe
+observed fee conditions. Arbitrary script or output coverage requires a
+separate [history index client](history-and-construction-extensions.md).
+
 The existing read-only refresh worker consumes `listsinceblock` and enriches
 each distinct transaction ID with one `gettransaction` call. Cache identity
 includes backend session, genesis, actual daemon-wallet name, document/revision,

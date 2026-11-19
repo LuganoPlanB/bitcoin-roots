@@ -26,6 +26,7 @@ public:
     uint64_t Revision() const{return revision;}
     void Sync(DocumentRegistry&,RecoverySession*,RefreshService*,int64_t now);
     void PrivacyLock();
+    void InvalidateMetadata(const storage::Scope&);
     bool Reload(const Document&,const RefreshView&,RecoverySession&);
     std::string Status(const Document&,const RefreshView&,RecoverySession&);
     std::optional<CoinPolicy> Policy(const Document&,const RefreshView&,RecoverySession&,uint64_t owner_document=0,

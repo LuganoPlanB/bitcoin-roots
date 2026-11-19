@@ -16,7 +16,13 @@ AmountPresentation AmountPrivacy::Present(std::optional<Money> amount) const
 {
     if (hidden) return Text("Hidden",false);
     if (!amount) return Text("Unavailable",false);
-    return Text(amount->btc(),true);
+    auto canonical=amount->btc();
+    if(!trim_decimals)return Text(std::move(canonical),true);
+    const auto last=canonical.find_last_not_of('0');
+    auto shown=canonical.substr(0,last+size_t(canonical[last]!='.'));
+    auto value=Text(std::move(shown),false);
+    value.copy=std::move(canonical);
+    return value;
 }
 AmountPresentation AmountPrivacy::Draft(std::string_view draft) const
 {
@@ -43,6 +49,7 @@ ChartPresentation AmountPrivacy::Chart(std::span<const Money> values) const
 }
 ReviewPresentation DeliberateReview(Money amount,std::string_view full_destination,AmountPrivacy privacy)
 {
+    privacy.trim_decimals=false;
     return {privacy.Present(amount),std::string(full_destination),privacy.hidden};
 }
 void PresentationFrame::Begin(std::string next,std::function<std::string()> current) {

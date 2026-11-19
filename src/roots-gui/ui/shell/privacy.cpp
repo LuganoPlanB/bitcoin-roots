@@ -7,12 +7,18 @@
 namespace roots::gui::ui::shell {
 namespace {
 void ClearPassword(PrivacyPanel& panel){sodium_memzero(panel.password.data(),panel.password.size());sodium_memzero(panel.confirm.data(),panel.confirm.size());for(auto* pending:{&panel.external_password,&panel.external_confirm}){if(*pending && !(*pending)->empty())sodium_memzero((*pending)->data(),(*pending)->size());pending->reset();}panel.reveal=false;}
-void Retire(State& s,app::Requests& host){s.histories.clear();s.addresses.clear();s.receives.clear();s.settings.clear();s.advanced.clear();s.imported_views.clear();s.offline_builders.clear();RetireSendView(s);RetireBatch(s);RetireFunding(s);RetireFees(s);RetireLocalDocument(s,host);s.coins.clear();s.coin_controls.PrivacyLock();s.coin_draft_errors.clear();s.registered_session=0;s.privacy.hidden=true;s.notice.clear();s.drawer=Drawer::None;s.recovery_dialog.open=false;s.close_recovery_popup=true;s.actions=DocumentActions();s.close_document_popup=true;s.server=ServerPanel();s.server.close_pending=true;if(components::native_input)components::native_input->PrivacyLock();s.lock_panel.focus=true;}
+void Retire(State& s,app::Requests& host){s.histories.clear();s.addresses.clear();s.receives.clear();s.settings.clear();s.advanced.clear();s.imported_views.clear();s.offline_builders.clear();RetireSendView(s);RetireBatch(s);RetireFunding(s);RetireFees(s);RetireLocalDocument(s,host);RetireWalletTool(s);s.activity_export={};s.activity_log.Clear();s.activity_notice.clear();s.coins.clear();s.coin_controls.PrivacyLock();s.coin_draft_errors.clear();s.registered_session=0;s.privacy.hidden=true;s.notice.clear();s.drawer=Drawer::None;s.recovery_dialog.open=false;s.close_recovery_popup=true;s.actions=DocumentActions();s.close_document_popup=true;s.server=ServerPanel();s.server.close_pending=true;if(components::native_input)components::native_input->PrivacyLock();s.lock_panel.focus=true;}
 }
 bool RequestPrivacyLock(State& s,app::Requests& host)
 {
     if(!s.recovery)return false;
-    if(!s.recovery->Protected()){s.lock_panel.setup=true;s.lock_panel.focus=true;return true;}
+    if(s.desktop.dialog.open)RetireDesktop(s);
+    if(s.message.dialog.open)RetireMessage(s,host);
+    if(s.sweep.dialog.open)RetireSweepNotice(s);
+    if(s.payment_protocol.dialog.open)RetirePaymentProtocolNotice(s);
+    if(s.download.dialog.open)RetireDownload(s);
+    RetireMetadataBackup(s);
+    if(!s.recovery->Protected()){RetireWalletTool(s);s.activity_export={};s.lock_panel.setup=true;s.lock_panel.focus=true;return true;}
     if(!s.recovery->Lock(s.documents)){s.notice=s.recovery->Error();return false;}
     Retire(s,host);ClearPassword(s.lock_panel);return true;
 }

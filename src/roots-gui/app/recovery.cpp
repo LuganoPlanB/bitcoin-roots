@@ -13,6 +13,45 @@
 #include <sodium.h>
 namespace roots::gui::app {
 storage::Result<storage::Metadata> RecoverySession::HistoryMetadata(const storage::Scope& scope){if(!started)Start();if(Locked())return {{},storage::Error::Authentication};if(!store && !std::filesystem::exists(path))return {storage::Metadata{},storage::Error::None};if(!Open())return {{},storage::Error::Io};return store->Load(scope);}
+storage::Result<storage::Done> RecoverySession::ExportWalletMetadata(const storage::Scope& scope,std::string display_name,
+    const std::filesystem::path& file,std::string_view password)
+{
+    if (std::this_thread::get_id()!=owner) return {{},storage::Error::WrongThread};
+    if (Locked() || Pending()) return {{},storage::Error::Authentication};
+    if ((!started && !Start()) || !error.empty()) return {{},storage::Error::Io};
+    auto current=HistoryMetadata(scope);
+    if (!current) return {{},current.error};
+    return storage::WriteWalletMetadataArchive(file,password,
+        {scope,std::move(display_name),std::move(current.value->labels),std::move(current.value->freezes)});
+}
+storage::Result<MetadataRestore> RecoverySession::InspectWalletMetadata(const storage::Scope& scope,
+    const std::filesystem::path& file,std::string_view password)
+{
+    if (std::this_thread::get_id()!=owner) return {{},storage::Error::WrongThread};
+    if (Locked() || Pending()) return {{},storage::Error::Authentication};
+    if ((!started && !Start()) || !error.empty()) return {{},storage::Error::Io};
+    auto archive=storage::ReadWalletMetadataArchive(file,password);
+    if (!archive) return {{},archive.error};
+    if (archive.value->scope!=scope) return {{},storage::Error::Conflict};
+    auto current=HistoryMetadata(scope);
+    if (!current) return {{},current.error};
+    return {MetadataRestore{std::move(*archive.value),current.value->revision,gate.Epoch()}};
+}
+storage::Result<uint64_t> RecoverySession::ApplyWalletMetadata(const storage::Scope& scope,const MetadataRestore& restored)
+{
+    if (std::this_thread::get_id()!=owner) return {{},storage::Error::WrongThread};
+    if (Locked() || Pending() || restored.epoch!=gate.Epoch()) return {{},storage::Error::Authentication};
+    if (restored.archive.scope!=scope) return {{},storage::Error::Conflict};
+    if (!storage::ValidWalletMetadataArchive(restored.archive)) return {{},storage::Error::Invalid};
+    if ((!started && !Start()) || !error.empty() || !Open()) return {{},storage::Error::Io};
+    auto current=store->Load(scope);
+    if (!current) return {{},current.error};
+    if (current.value->revision!=restored.destination_revision) return {{},storage::Error::Conflict};
+    current.value->display_name=restored.archive.display_name;
+    current.value->labels=restored.archive.labels;
+    current.value->freezes=restored.archive.freezes;
+    return store->Save(scope,*current.value);
+}
 storage::Result<std::vector<storage::Scope>> RecoverySession::RecentWallets()
 {
     if (Locked()) return {{}, storage::Error::Authentication};
@@ -382,6 +421,34 @@ PublicSession RecoverySession::Snapshot(const DocumentRegistry& documents) const
 bool RecoverySession::Open(){if(store)return true;if(Locked()){error="Unlock the protected workspace first.";return false;}try{if(!path.is_absolute()){error="Recovery path is unavailable.";return false;}if(!std::filesystem::exists(path.parent_path())){std::filesystem::create_directories(path.parent_path());std::filesystem::permissions(path.parent_path(),std::filesystem::perms::owner_all);}auto opened=storage::MetadataStore::Open(path);if(!opened){error=storage::ErrorName(opened.error);return false;}store=std::move(*opened.value);return true;}catch(...){error="Recovery store unavailable.";return false;}}
 bool RecoverySession::LoadOpen(){auto result=store->LoadRecovery();if(!result){error=storage::ErrorName(result.error);return false;}record=*result.value;if(record.enabled && !record.public_documents.empty()){auto decoded=DecodePublicSession(record.public_documents);if(!decoded){error="Invalid public recovery snapshot; previous data retained.";return false;}saved=std::move(*decoded);pending=true;}return true;}
 bool RecoverySession::Start(){if(started)return error.empty();started=true;try{auto encrypted=path;encrypted += ".protected";if(std::filesystem::exists(encrypted)){protected_store=true;gate.Lock();return true;}if(!std::filesystem::exists(path))return true;if(!Open())return false;return LoadOpen();}catch(...){error="Recovery store unavailable; no documents were restored.";return false;}}
+storage::Result<storage::Workspace> RecoverySession::LoadWorkspacePreferences()
+{
+    if(std::this_thread::get_id()!=owner)return {{},storage::Error::WrongThread};
+    if(!started && !Start())return {{},storage::Error::Io};
+    if(Locked())return {{},storage::Error::Authentication};
+    if(store)return store->LoadWorkspace();
+    if(!path.is_absolute())return {{},storage::Error::Io};
+    // Never treat an unreadable existing store as a fresh workspace.
+    std::error_code ec;
+    const bool exists=std::filesystem::exists(path,ec);
+    if(exists && error.empty() && Open())return store->LoadWorkspace();
+    if(exists || ec || !error.empty())return {{},storage::Error::Io};
+    return {storage::Workspace{}};
+}
+storage::Result<uint64_t> RecoverySession::SaveWorkspacePreferences(const storage::Workspace& value)
+{
+    if(std::this_thread::get_id()!=owner)return {{},storage::Error::WrongThread};
+    if(!started && !Start())return {{},storage::Error::Io};
+    if(Locked())return {{},storage::Error::Authentication};
+    if(!ValidPreferences(value.preferences) || value.unit<0 || value.unit>2)return {{},storage::Error::Invalid};
+    // Ordinary presentation write failures must not disable document recovery
+    // or poison the journal's existing error state.
+    if(!store){
+        if(!error.empty())return {{},storage::Error::Io};
+        if(!Open()){error.clear();return {{},storage::Error::Io};}
+    }
+    return store->SaveWorkspace(value);
+}
 bool RecoverySession::Commit(PublicSession& candidate,bool enabled){if(Locked())return false;auto encoded=EncodePublicSession(candidate);if(!encoded){error="Public draft exceeds recovery limits or is locked. Previous snapshot retained.";return false;}if(!Open())return false;storage::RecoveryRecord next{record.revision,enabled,enabled?*encoded:""};auto result=store->SaveRecovery(next);if(!result){error=storage::ErrorName(result.error);return false;}next.revision=*result.value;record=std::move(next);saved=candidate;error.clear();return true;}
 bool RecoverySession::Enable(DocumentRegistry& documents){if(!started && !Start())return false;if(!error.empty() || pending)return false;auto candidate=Snapshot(documents);if(!Commit(candidate,true))return false;suspended=false;return true;}
 bool RecoverySession::Disable(){PublicSession empty;if(!error.empty() || !Commit(empty,false))return false;pending=false;return true;}

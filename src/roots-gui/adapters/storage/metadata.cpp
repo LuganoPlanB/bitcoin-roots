@@ -93,6 +93,8 @@ ScopeRow FindScope(sqlite3* db,const Scope& s,bool create){
 }
 void ValidateSchema(sqlite3* db,int version){
     std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);if(version>=4)expected.emplace(schema::V4);if(version>=5)for(auto sql:schema::V5)expected.emplace(sql);if(version>=6)expected.emplace(schema::V6);if(version>=7)expected.emplace(schema::V7);if(version>=8)expected.emplace(schema::V8);
+    if(version>=9)expected.emplace(schema::V9);
+    if(version>=10)expected.emplace(schema::V10);
     // GLOB keeps '_' literal: sqliteX... is an ordinary user object and must
     // reach the exact-schema check, unlike SQLite's reserved sqlite_ objects.
     Statement q(db,"SELECT type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'");
@@ -135,12 +137,19 @@ void Initialize(sqlite3* db,OpenOptions options){
     if(v==4){for(auto sql:schema::V5)Exec(db,sql);Exec(db,"PRAGMA user_version=5");v=5;}
     if(v==5){Exec(db,schema::V6);Exec(db,"PRAGMA user_version=6");v=6;}
     if(v==6){Exec(db,schema::V7);Exec(db,"PRAGMA user_version=7");v=7;}
-    if(v==7){Exec(db,schema::V8);Exec(db,"PRAGMA user_version=8");}
+    if(v==7){Exec(db,schema::V8);Exec(db,"PRAGMA user_version=8");v=8;}
+    if(v==8){Exec(db,schema::V9);Exec(db,"PRAGMA user_version=9");v=9;}
+    if(v==9){Exec(db,schema::V10);Exec(db,"PRAGMA user_version=10");}
     ValidateSchema(db,schema::Version);
     {Statement q(db,"PRAGMA foreign_key_check");Require(!q.Row(),Error::Corrupt);}tx.Commit();
 }
 CleansedBytes Serialize(sqlite3* db){sqlite3_int64 size{};auto* memory=sqlite3_serialize(db,"main",&size,0);if(!memory || size<=0 || uint64_t(size)>ProtectedFile::MaxBytes){if(memory){if(size>0)sodium_memzero(memory,size);sqlite3_free(memory);}throw Failure{Error::Resource};}CleansedBytes result;try{result.bytes.assign(memory,memory+size);}catch(...){sodium_memzero(memory,size);sqlite3_free(memory);throw;}sodium_memzero(memory,size);sqlite3_free(memory);return result;}
 void Deserialize(sqlite3* db,std::span<const unsigned char> bytes){Require(!bytes.empty() && bytes.size()<=ProtectedFile::MaxBytes,Error::Resource);auto* memory=static_cast<unsigned char*>(sqlite3_malloc64(bytes.size()+32));Require(memory,Error::Resource);std::copy(bytes.begin(),bytes.end(),memory);std::fill_n(memory+bytes.size(),32,0);Check(sqlite3_deserialize(db,"main",memory,sqlite3_int64(bytes.size()),sqlite3_int64(bytes.size()+32),SQLITE_DESERIALIZE_FREEONCLOSE|SQLITE_DESERIALIZE_RESIZEABLE));/* FREEONCLOSE also frees the buffer on failure. */}
+}
+bool ValidMetadata(const Scope& scope, const Metadata& metadata)
+{
+    try { Validate(metadata); return Valid(scope); }
+    catch (...) { return false; }
 }
 const char* ErrorName(Error e){switch(e){case Error::None:return "success";case Error::Invalid:return "invalid-metadata";case Error::Conflict:return "metadata-conflict";case Error::Busy:return "store-busy";case Error::Full:return "store-full";case Error::Corrupt:return "store-corrupt";case Error::Schema:return "unsupported-store-schema";case Error::Resource:return "store-resource-limit";case Error::Timeout:return "store-timeout";case Error::WrongThread:return "store-owner-thread";case Error::Unsupported:return "private-store-unavailable";case Error::NotFound:return "not-found";case Error::Authentication:return "password-or-protected-data-invalid";case Error::ConversionConflict:return "interrupted-conversion-conflict";case Error::ConversionBackupConflict:return "conversion-backup-conflict";default:return "store-io";}}
 template<class F> auto MetadataStore::Run(F&& fn)->Result<std::invoke_result_t<F>>{
@@ -166,7 +175,36 @@ Result<std::unique_ptr<MetadataStore>> MetadataStore::Open(const std::filesystem
     }catch(Failure e){return {{},e.error};}catch(const std::bad_alloc&){return {{},Error::Resource};}catch(...){return {{},Error::Io};}
 }
 Result<std::unique_ptr<MetadataStore>> MetadataStore::OpenProtected(const std::filesystem::path& path,std::string_view password,OpenOptions options,ConversionResolution resolution){
-    try{Require(path.is_absolute() && Text(path.string(),4096,false));auto store=std::unique_ptr<MetadataStore>(new MetadataStore);auto guard=FileGuard::Open(path,true);Require(bool(guard),guard.error);store->file_guard=std::move(*guard.value);store->file_path=path;auto encrypted=path;encrypted += ".protected";Require(std::filesystem::exists(encrypted),Error::Invalid);auto file=ProtectedFile::Open(encrypted,password);Require(bool(file),file.error);store->protection=std::move(*file.value);auto plain=store->protection->Read();Require(bool(plain),plain.error);Check(sqlite3_open_v2(":memory:",&store->db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX|SQLITE_OPEN_MEMORY,nullptr));if(!plain.value->bytes.empty())Deserialize(store->db,plain.value->bytes);Initialize(store->db,options);const auto finished=store->protection->FinishConversion(path,resolution);Require(bool(finished),finished.error);if(plain.value->bytes.empty()){auto bytes=Serialize(store->db);const auto written=store->protection->Save(bytes.bytes);Require(bool(written),written.error);}return {std::move(store),Error::None};}catch(Failure e){return {{},e.error};}catch(...){return {{},Error::Io};}
+    try {
+        Require(path.is_absolute() && Text(path.string(), 4096, false));
+        auto store = std::unique_ptr<MetadataStore>(new MetadataStore);
+        auto guard = FileGuard::Open(path, true);
+        Require(bool(guard), guard.error);
+        store->file_guard = std::move(*guard.value);
+        store->file_path = path;
+        auto encrypted = path;
+        encrypted += ".protected";
+        auto file = ProtectedFile::Open(encrypted, password, ProtectedFile::MaxBytes, true);
+        Require(bool(file), file.error==Error::NotFound ? Error::Invalid : file.error);
+        store->protection = std::move(*file.value);
+        auto plain = store->protection->Read();
+        Require(bool(plain), plain.error);
+        Require(!plain.value->bytes.empty(), Error::Corrupt);
+        Check(sqlite3_open_v2(":memory:", &store->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+                             | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_MEMORY, nullptr));
+        Deserialize(store->db, plain.value->bytes);
+        const auto before = Scalar(store->db, "PRAGMA user_version");
+        Initialize(store->db, options);
+        const auto finished = store->protection->FinishConversion(path, resolution);
+        Require(bool(finished), finished.error);
+        if (before != schema::Version) {
+            auto migrated = Serialize(store->db);
+            const auto written = store->protection->Save(migrated.bytes);
+            Require(bool(written), written.error);
+        }
+        return {std::move(store), Error::None};
+    } catch (Failure e) { return {{}, e.error}; }
+    catch (...) { return {{}, Error::Io}; }
 }
 Result<std::unique_ptr<MetadataStore>> MetadataStore::Protect(std::string_view password){
     if(std::this_thread::get_id()!=owner)return {{},Error::WrongThread};
@@ -197,11 +235,44 @@ Result<uint64_t> MetadataStore::Save(const Scope& scope,const Metadata& m){retur
     for(const auto& d:m.drafts){Statement q(db,"INSERT INTO drafts VALUES(?,?,?,?,?)");q.Bind(1,row.id);q.Bind(2,d.document);q.Bind(3,std::to_string(d.revision.value));q.Bind(4,d.note);BindAmount(q,5,d.amount);q.Done();}
     tx.Commit();return m.revision+1;
 });}
-Result<Workspace> MetadataStore::LoadWorkspace(){return Run([&]{Workspace w;Statement q(db,"SELECT revision,refresh,hidden,restore,appearance,unit FROM workspace WHERE slot=1");if(q.Row()){w.revision=Counter(q.Int(0));const auto refresh=q.Int(1),appearance=q.Int(4),unit=q.Int(5);Require(refresh>=1 && refresh<=3600 && appearance>=0 && appearance<=2 && unit>=0 && unit<=2,Error::Corrupt);w.preferences={int(refresh),Bool(q.Int(2))};w.restore_documents=Bool(q.Int(3));w.appearance=int(appearance);w.unit=int(unit);Require(!q.Row(),Error::Corrupt);}Require(ValidPreferences(w.preferences),Error::Corrupt);return w;});}
+Result<Workspace> MetadataStore::LoadWorkspace(){return Run([&]{
+    Workspace w;
+    Statement q(db,"SELECT revision,refresh,hidden,restore,appearance,unit,g.slot,trim_decimals,group_outputs,explorer,explorer_template,explorer_genesis,d.slot,notifications,camera_keep_awake FROM workspace w LEFT JOIN general_settings g USING(slot) LEFT JOIN desktop_settings d USING(slot) WHERE w.slot=1");
+    if(q.Row()){
+        w.revision=Counter(q.Int(0));
+        const auto refresh=q.Int(1),appearance=q.Int(4),unit=q.Int(5);
+        Require(refresh>=1 && refresh<=60 && appearance>=0 && appearance<=2 && unit>=0 && unit<=2,Error::Corrupt);
+        w.preferences.refresh_seconds=int(refresh);
+        w.preferences.hide_balances=Bool(q.Int(2));
+        w.restore_documents=Bool(q.Int(3));w.appearance=int(appearance);w.unit=int(unit);
+        if(q.Type(6)!=SQLITE_NULL){
+            const auto explorer=q.Int(9);
+            Require(explorer>=0 && explorer<=2,Error::Corrupt);
+            w.preferences.trim_decimals=Bool(q.Int(7));
+            w.preferences.group_address_outputs=Bool(q.Int(8));
+            w.preferences.explorer=ExplorerMode(explorer);
+            w.preferences.explorer_template=q.Text(10);
+            w.preferences.explorer_genesis=q.Text(11);
+        }
+        if(q.Type(12)!=SQLITE_NULL){
+            w.preferences.desktop_notifications=Bool(q.Int(13));
+            w.preferences.camera_keep_awake=Bool(q.Int(14));
+        }
+        Require(!q.Row(),Error::Corrupt);
+    }
+    Require(ValidPreferences(w.preferences),Error::Corrupt);
+    return w;
+});}
 Result<uint64_t> MetadataStore::SaveWorkspace(const Workspace& w){return Write([&]{
     Require(w.revision<uint64_t(std::numeric_limits<int64_t>::max()) && ValidPreferences(w.preferences) && w.appearance>=0 && w.appearance<=2 && w.unit>=0 && w.unit<=2);Transaction tx(db,true);
     const auto revision=Scalar(db,"SELECT coalesce((SELECT revision FROM workspace WHERE slot=1),0)");Require(Counter(revision)==w.revision,Error::Conflict);
-    Statement q(db,"INSERT INTO workspace VALUES(1,?,?,?,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,refresh=excluded.refresh,hidden=excluded.hidden,restore=excluded.restore,appearance=excluded.appearance,unit=excluded.unit");q.Bind(1,int64_t(w.revision+1));q.Bind(2,int64_t(w.preferences.refresh_seconds));q.Bind(3,int64_t(w.preferences.hide_balances));q.Bind(4,int64_t(w.restore_documents));q.Bind(5,int64_t(w.appearance));q.Bind(6,int64_t(w.unit));q.Done();tx.Commit();return w.revision+1;
+    Statement q(db,"INSERT INTO workspace VALUES(1,?,?,?,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,refresh=excluded.refresh,hidden=excluded.hidden,restore=excluded.restore,appearance=excluded.appearance,unit=excluded.unit");q.Bind(1,int64_t(w.revision+1));q.Bind(2,int64_t(w.preferences.refresh_seconds));q.Bind(3,int64_t(w.preferences.hide_balances));q.Bind(4,int64_t(w.restore_documents));q.Bind(5,int64_t(w.appearance));q.Bind(6,int64_t(w.unit));q.Done();
+    Statement extra(db,"INSERT INTO general_settings VALUES(1,?,?,?,?,?) ON CONFLICT(slot) DO UPDATE SET trim_decimals=excluded.trim_decimals,group_outputs=excluded.group_outputs,explorer=excluded.explorer,explorer_template=excluded.explorer_template,explorer_genesis=excluded.explorer_genesis");
+    extra.Bind(1,int64_t(w.preferences.trim_decimals));extra.Bind(2,int64_t(w.preferences.group_address_outputs));extra.Bind(3,int64_t(w.preferences.explorer));
+    extra.Bind(4,w.preferences.explorer_template);extra.Bind(5,w.preferences.explorer_genesis);extra.Done();
+    Statement desktop(db,"INSERT INTO desktop_settings VALUES(1,?,?) ON CONFLICT(slot) DO UPDATE SET notifications=excluded.notifications,camera_keep_awake=excluded.camera_keep_awake");
+    desktop.Bind(1,int64_t(w.preferences.desktop_notifications));desktop.Bind(2,int64_t(w.preferences.camera_keep_awake));desktop.Done();
+    tx.Commit();return w.revision+1;
 });}
 Result<RecoveryRecord> MetadataStore::LoadRecovery(){return Run([&]{
     RecoveryRecord r;Statement q(db,"SELECT revision,enabled,public_documents FROM recovery WHERE slot=1");

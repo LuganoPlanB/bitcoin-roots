@@ -831,6 +831,17 @@ void RetireDaemonSigning(State& state,a::Requests& host)
     if (auto* signer=host.Signer()) signer->Cancel();
 }
 
+bool CloseSigningReview(State& state,a::Requests& host,uint64_t id)
+{
+    const auto view=state.signing_views.find(id);
+    if (state.documents.ActiveId()!=id || view==state.signing_views.end() || !view->second.open
+        || state.daemon_unlock.owner) return false;
+    view->second.open=false;
+    if (state.daemon_operation==id) RetireDaemonSigning(state,host);
+    ++state.signing_revision;
+    return true;
+}
+
 void PollSigningReviews(State& state,a::Requests& host)
 {
     state.signing_reviews.RemoveClosed(state.documents);
@@ -838,6 +849,8 @@ void PollSigningReviews(State& state,a::Requests& host)
     const bool visible=Visible(state);
     const auto current_approval=[&](uint64_t id)->const a::SigningApproval* {
         if (!id || state.documents.ActiveId()!=id || !Unobstructed(state)) return nullptr;
+        const auto view=state.signing_views.find(id);
+        if (view==state.signing_views.end() || !view->second.open) return nullptr;
         const auto current=Current(state,host,id);
         return current.basis ? state.signing_reviews.Authorize(*current.basis) : nullptr;
     };
@@ -864,38 +877,41 @@ void PollSigningReviews(State& state,a::Requests& host)
     if (auto* signer=host.Signer();signer && signer->Busy()) {
         const auto id=state.daemon_operation;
         const auto* approval=current_approval(id);
+        const bool review_current=approval!=nullptr;
         if (auto result=signer->Poll(approval)) {
             const bool external=result->action==a::DaemonSignAction::ExternalSign;
             if (result->original_retired) {
                 if (external) state.signing_reviews.Revoke(id,result->status);
                 else RevokeSigningReview(state,id,result->status);
             }
-            auto& view=state.signing_views[id];
-            view.daemon_status=std::move(result->status);
-            if (external && result->success && view.external_signed && approval
-                && view.external_source.lock()==approval->reviewed.content) {
-                const auto combined=protocol::MergeOfflineSignatures(*view.external_signed,*result->psbt);
-                const auto& basis=approval->reviewed;
-                const auto checked=combined.document
-                    ? protocol::InspectOfflineReview(*combined.document,basis.proof,basis.change_output) : protocol::OfflineReview{};
-                if (checked.commitment==approval->commitment && checked.change_output==basis.change_output) {
-                    view.external_signed=combined.document;
-                } else {
-                    view.daemon_status="The device result conflicts with the verified collection. Both the existing collection and original are retained.";
-                    state.signing_reviews.Revoke(id,view.daemon_status);
-                    if (auto* devices=host.Devices()) devices->Cancel();
-                    result->success=false;
+            if (review_current) {
+                auto& view=state.signing_views.at(id);
+                view.daemon_status=std::move(result->status);
+                if (external && result->success && !result->original_retired && view.external_signed
+                    && view.external_source.lock()==approval->reviewed.content) {
+                    const auto combined=protocol::MergeOfflineSignatures(*view.external_signed,*result->psbt);
+                    const auto& basis=approval->reviewed;
+                    const auto checked=combined.document
+                        ? protocol::InspectOfflineReview(*combined.document,basis.proof,basis.change_output) : protocol::OfflineReview{};
+                    if (checked.commitment==approval->commitment && checked.change_output==basis.change_output) {
+                        view.external_signed=combined.document;
+                    } else {
+                        view.daemon_status="The device result conflicts with the verified collection. Both the existing collection and original are retained.";
+                        state.signing_reviews.Revoke(id,view.daemon_status);
+                        if (auto* devices=host.Devices()) devices->Cancel();
+                        result->success=false;
+                    }
                 }
+                if (result->action==a::DaemonSignAction::Sign || (external && result->success)) {
+                    view.daemon_signed=std::move(result->psbt);
+                    view.signing_uncertain=result->uncertain;
+                }
+                if (result->action==a::DaemonSignAction::Enrich) view.daemon_enriched=std::move(result->psbt);
             }
-            if (result->action==a::DaemonSignAction::Sign || (external && result->success)) {
-                view.daemon_signed=std::move(result->psbt);
-                view.signing_uncertain=result->uncertain;
-            }
-            if (result->action==a::DaemonSignAction::Enrich) view.daemon_enriched=std::move(result->psbt);
             ++state.signing_revision;
         }
         if (!signer->Busy() && std::exchange(state.daemon_operation,0)) {
-            if (visible && !approval && state.signing_views.contains(id))
+            if (visible && !review_current && state.signing_views.contains(id))
                 state.signing_views[id].daemon_status="The operation was retired. The original PSBT remains available.";
         }
     }
@@ -945,7 +961,8 @@ void PollBroadcast(State& state,a::Requests& host)
         return;
     }
     if (!submission->Busy() && phase!=a::BroadcastStage::Ready) return;
-    const auto* approval=CurrentSigningApproval(state,host,id);
+    const auto view=state.signing_views.find(id);
+    const auto* approval=view!=state.signing_views.end() && view->second.open ? CurrentSigningApproval(state,host,id) : nullptr;
     const auto* artifact=FinalizedMaterial(state,id);
     if (artifact && artifact->collected!=SigningMaterial(state,id)) artifact=nullptr;
     submission->Poll(state.signing_reviews,approval,artifact,state.recovery);
@@ -1033,8 +1050,8 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     imkit::PushTextRole(theme,imkit::TextRole::Heading);
     Text(state,"signing-review","Transaction review for signing","Transaction review");
     imkit::PopTextRole();
-    if (Button(state,facts,theme,"review-back","Back to inspection",!state.daemon_unlock.owner,[change]{
-        return change([](SigningView& view){view.open=false;});
+    if (Button(state,facts,theme,"review-back","Back to inspection",!state.daemon_unlock.owner,[&state,&host,id,permitted]{
+        return permitted() && CloseSigningReview(state,host,id);
     })) return false;
     ImGui::SameLine();
     Button(state,facts,theme,"advanced-sighash",panel.advanced ? "Hide sighash details" : "Advanced sighash",true,[change]{

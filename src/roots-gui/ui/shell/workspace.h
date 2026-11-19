@@ -1,11 +1,15 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
+#include "services/download_verification.h"
 #include "adapters/protocol/qr.h"
 #include "services/camera.h"
 #include "app/replacement.h"
 #include "app/signing_review.h"
 #include "app/commands.h"
+#include "app/wallet_tools.h"
+#include "app/desktop.h"
+#include "app/message_signing.h"
 #include "services/addresses.h"
 #include "services/funding.h"
 #include "services/fees.h"
@@ -44,6 +48,94 @@ struct DocumentActions {
     uint64_t file_dialog{};std::string file_source;int file_format{-1};bool file_return_focus{};
 };
 enum class Drawer { None,Activity,Services };
+enum class WalletTool { None,CurrentSearch,AllSearch,Summary,Node };
+struct ToolViewScope {
+    uint64_t document{},connection{};
+    LockEpoch epoch;
+    bool hidden{},offline{},locked{};
+    bool operator==(const ToolViewScope&) const=default;
+};
+struct ToolExport {uint64_t chooser{};ToolViewScope scope;std::string bytes;};
+struct RetainedAddressNavigation {uint64_t document{},session{};};
+struct WalletToolsPanel {
+    WalletTool tool{WalletTool::None};
+    imkit::DialogState dialog;
+    bool close_pending{},show_wallet{};
+    ToolViewScope scope;
+    components::Edit search;
+    app::SearchType search_type{app::SearchType::Any};
+    std::optional<app::WalletSearchQuery> query;
+    std::optional<app::WalletSearchResult> results;
+    std::optional<size_t> selected;
+    ToolExport export_file;
+    uint64_t revision{};
+    std::string notice;
+};
+enum class DesktopPage { None, Preferences, Camera, Documentation, Support, Report, About, Restart };
+struct DesktopPanel {
+    DesktopPage page{DesktopPage::None};
+    imkit::DialogState dialog;
+    bool close_pending{};
+    uint64_t revision{};
+    ToolViewScope scope;
+    uint64_t profile_revision{};
+    std::optional<app::HelpTarget> target;
+    std::string confirmed_url, notice;
+};
+struct MessagePanel {
+    imkit::DialogState dialog;
+    bool close_pending{},pending{},status_ok{};
+    uint64_t revision{},profile_revision{};
+    ToolViewScope scope;
+    std::optional<app::MessageWalletScope> wallet;
+    protocol::MessageFormat format{protocol::MessageFormat::Legacy};
+    protocol::MessageNetwork network{protocol::MessageNetwork::Main};
+    std::array<char,protocol::MESSAGE_ADDRESS_BYTES+1> address{};
+    std::array<char,protocol::MESSAGE_BYTES+1> text{};
+    std::array<char,protocol::MESSAGE_SIGNATURE_BYTES+1> signature{};
+    std::optional<std::string> external_address,external_text,external_signature;
+    std::string status;
+};
+struct SweepNotice {
+    imkit::DialogState dialog;
+    bool close_pending{};
+    ToolViewScope scope;
+    uint64_t profile_revision{};
+};
+struct PaymentProtocolNotice {
+    imkit::DialogState dialog;
+    bool close_pending{};
+    ToolViewScope scope;
+    uint64_t profile_revision{};
+};
+struct DownloadPanel {
+    imkit::DialogState dialog;
+    bool close_pending{};
+    ToolViewScope scope;
+    uint64_t profile_revision{}, revision{}, chooser{};
+    size_t choosing{};
+    std::array<std::array<char,4097>, size_t(DownloadFile::Count)> paths{};
+    std::array<std::optional<std::string>, size_t(DownloadFile::Count)> external_paths;
+    std::array<char,41> fingerprint{};
+    std::optional<std::string> external_fingerprint;
+    std::optional<DownloadRequest> request;
+    std::optional<DownloadResult> result;
+    const char* notice{};
+};
+enum class MetadataBackupMode { None, Export, Restore };
+struct MetadataBackupPanel {
+    MetadataBackupMode mode{MetadataBackupMode::None};
+    std::optional<app::WalletBinding> binding;
+    ToolViewScope scope;
+    uint64_t profile_revision{}, chooser{}, revision{};
+    bool initial_focus{};
+    std::array<char,4097> path{};
+    std::array<char,256> password{}, confirmation{};
+    std::optional<std::string> external_path, external_password, external_confirmation;
+    std::optional<app::MetadataRestore> inspected;
+    std::string notice, restored_name;
+    size_t restored_labels{}, restored_freezes{};
+};
 struct Invocation {app::Command command;uint64_t document{};bool available{},dispatched{},accepted{};std::string reason;};
 struct PrivacyPanel {bool setup{},reveal{},focus{true};std::array<char,256> password{},confirm{};std::optional<std::string> external_password,external_confirm;std::string error;};
 struct HistoryLabelEditor {
@@ -52,7 +144,16 @@ struct HistoryLabelEditor {
     uint64_t metadata_revision{};
     bool seen{},active{},finished{},attempted{};
 };
-struct HistoryPermission {RefreshIdentity identity;std::string txid;int64_t observed{};uint64_t generation{},sequence{};};
+struct HistoryPermission {RefreshIdentity identity;std::string txid;int64_t observed{};uint64_t generation{},sequence{};std::string url;};
+struct GeneralPanel {
+    imkit::DialogState dialog;
+    bool close_pending{}, initialized{}, hide_not_saved{};
+    app::RecoverySession* owner{};
+    LockEpoch epoch;
+    std::optional<storage::Workspace> saved;
+    components::Edit explorer_template;
+    std::string error;
+};
 struct HistoryRuntime {
     std::optional<HistoryLabelEditor> editor; // transient activation proof, never recovered
     std::optional<std::pair<std::string,std::string>> label_update; // native buffer sync, never a recovered action
@@ -110,6 +211,7 @@ struct ReceiveRuntime {
     std::optional<ReceiveRequest> inspection;
     std::string status;
     bool label_loaded{}, label_active{}, label_seen_active{};
+    bool reusable_view{}, reusable_focus{};
     uint64_t qr_session{},qr_profile{};
     LockEpoch qr_epoch;
     bool qr_uri{};
@@ -373,6 +475,20 @@ struct State {
     app::HostObservations observations;
     std::optional<Invocation> invocation;
     Drawer drawer{Drawer::None};
+    WalletToolsPanel wallet_tools;
+    DesktopPanel desktop;
+    MessagePanel message;
+    SweepNotice sweep;
+    PaymentProtocolNotice payment_protocol;
+    DownloadPanel download;
+    DownloadVerifier download_verifier;
+    MetadataBackupPanel metadata_backup;
+    app::ActivityJournal activity_log;
+    std::optional<RetainedAddressNavigation> retained_address_navigation;
+    uint64_t activity_session{};
+    LockEpoch activity_epoch;
+    ToolExport activity_export;
+    std::string activity_notice;
     bool drawer_focus{},restore_status{};
     uint64_t grid_exits{};
     uint64_t reveal_tab_focus{};
@@ -382,6 +498,7 @@ struct State {
     bool close_document_popup{};
     uint64_t semantic_context{},semantic_context_revision{};
     ServerPanel server;
+    GeneralPanel general;
     OnboardingPanel onboarding;
     LocalDocumentPanel local_document;
     uint64_t local_document_generation{};
@@ -428,6 +545,19 @@ struct Facts {
     bool appearance_notice_visible{};
     int appearance_notice_count{};
     int appearance_requested{-1};
+    bool preferences_visible{};
+    std::map<std::string,components::ItemFacts> preferences;
+    std::map<std::string,components::ItemFacts> tools;
+    bool tools_visible{};
+    bool desktop_visible{};
+    std::map<std::string,components::ItemFacts> desktop;
+    bool message_visible{};
+    std::map<std::string,components::ItemFacts> message;
+    bool sweep_visible{};
+    components::ItemFacts sweep_close;
+    bool payment_protocol_visible{};
+    bool download_visible{};
+    std::map<std::string,components::ItemFacts> download;
     Rect drop_target;
     std::map<std::string,components::ItemFacts> document_actions;
     bool document_dialog_visible{};
@@ -456,7 +586,7 @@ struct Facts {
 };
 ImGuiKeyChord CommandChord(std::string_view,bool macos);
 std::string CommandShortcutLabel(std::string_view,bool macos);
-app::Availability CommandAvailability(const State&,app::Command,const app::Requests&);
+app::Availability CommandAvailability(const State&,app::Command,app::Requests&);
 void DrawStatus(State&,Facts&,const imkit::Theme&,float);
 void DrawActivityDrawer(State&,Facts&,const imkit::Theme&,float,app::Requests* =nullptr);
 void RestoreDocumentFocus(State&,uint64_t desired);
@@ -466,7 +596,43 @@ void BeginDelete(State&,uint64_t);
 void BeginImport(State&,std::string_view source={});
 void ClosePendingDocumentPopup(State&);
 void DrawDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
-void DrawRecoveryDialog(State&,Facts&,const imkit::Theme&,float);
+void DrawRecoveryDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool OpenMetadataBackup(State&,app::Requests&,MetadataBackupMode);
+void RetireMetadataBackup(State&);
+bool CanOpenMetadataBackup(const State&);
+bool DrawMetadataBackup(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void SyncGeneralPreferences(State&,app::RecoverySession*);
+void ApplyGeneralPresentation(State&);
+void OpenGeneralPreferences(State&);
+void CloseGeneralPreferences(State&);
+bool SetAmountVisibility(State&,bool hidden);
+bool SetAmountUnit(State&,int unit);
+bool SetDecimalPresentation(State&,bool trim);
+bool SetAddressGroupingDefault(State&,bool group);
+bool SetDesktopPreference(State&,bool PublicPreferences::*,bool value);
+DesktopPage DesktopPageFor(app::Command);
+bool OpenDesktop(State&,app::Requests&,DesktopPage);
+void RetireDesktop(State&);
+void DrawDesktop(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool OpenMessage(State&,app::Requests&);
+void RetireMessage(State&,app::Requests&);
+void DrawMessage(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool OpenSweepNotice(State&,app::Requests&);
+void RetireSweepNotice(State&);
+void DrawSweepNotice(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool OpenPaymentProtocolNotice(State&,app::Requests&);
+void RetirePaymentProtocolNotice(State&);
+void DrawPaymentProtocolNotice(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool OpenDownload(State&,app::Requests&);
+void RetireDownload(State&);
+void DrawDownload(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+void DrawGeneralPreferences(State&,app::Requests&,Facts&,const imkit::Theme&,const AppearanceStatus&,float);
+ToolViewScope CurrentToolScope(const State&,app::Requests&);
+void OpenWalletTool(State&,app::Requests&,WalletTool);
+void RetireWalletTool(State&);
+void DrawWalletTools(State&,app::Requests&,Facts&,const imkit::Theme&,float);
+bool BeginToolExport(ToolExport&,const ToolViewScope&,std::string bytes);
+void PollToolExport(ToolExport&,const ToolViewScope&,const std::function<std::string()>& current,std::string& notice);
 bool OpenLocalData(State&,std::shared_ptr<const protocol::TransactionDocument>,protocol::DisplayNetwork,std::string& error);
 void DrawOfflineBuilder(State&,app::Requests&,Facts&,const imkit::Theme&);
 void DrawSendRecipients(State&,app::Requests&,Facts&,const imkit::Theme&,float);
@@ -513,6 +679,7 @@ const protocol::SignatureProgress& SignatureProgressFor(State&,uint64_t,
 void DrawSignatureExchange(State&,app::Requests&,Facts&,const imkit::Theme&,const InspectionOwner&,bool collect);
 void PollSigningReviews(State&,app::Requests&);
 void RetireDaemonSigning(State&,app::Requests&);
+bool CloseSigningReview(State&,app::Requests&,uint64_t);
 void RevokeSigningReview(State&,uint64_t,std::string);
 bool DrawSigningReview(State&,app::Requests&,Facts&,const imkit::Theme&);
 bool IsTransactionEditCommand(app::Command);

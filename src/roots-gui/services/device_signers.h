@@ -78,6 +78,7 @@ public:
     bool Select(const ConnectionService&);
     void Poll(const ConnectionService*);
     void Cancel();
+    bool Busy() const{return worker.joinable() || (selection && selection->Busy()) || (retiring && retiring->Busy());}
     DeviceState Status() const;
     std::string_view Fingerprint() const;
     std::string_view Label() const;

@@ -4,6 +4,8 @@
 #include "app/document_registry.h"
 namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; class CameraService; class FundingService; class FeeService; class DeviceSigners; }
 namespace roots::gui::app {
+class DesktopActions;
+class MessageSigning;
 class RecoverySession;
 class DaemonSigner;
 class Broadcaster;
@@ -47,7 +49,7 @@ struct HostObservations {
 std::string MissingDependency(Command);
 enum class FeeDraftKind { ReplaceByFee, CancelPayment, ChildPaysForParent };
 struct FeeDraftRequest { RequestContext context;Hash256 txid;FeeDraftKind kind;uint64_t generation{},sequence{};uint32_t rate_per_kvb{};std::optional<uint32_t> parent_output;bool operator==(const FeeDraftRequest&) const=default; };
-struct ExplorerRequest { RequestContext context;Hash256 txid;bool permission{};uint64_t generation{},sequence{}; };
+struct ExplorerRequest { RequestContext context;Hash256 txid;bool permission{};uint64_t generation{},sequence{};std::string confirmed_url; };
 struct Requests {
     virtual ~Requests()=default;
     virtual Receipt Submit(const Request&)=0;
@@ -71,5 +73,7 @@ struct Requests {
     virtual AddressService* Addresses() {return nullptr;}
     virtual RefreshService* Refresh() {return nullptr;}
     virtual RecoverySession* Recovery() {return nullptr;}
+    virtual DesktopActions* Desktop() {return nullptr;}
+    virtual MessageSigning* Messages() {return nullptr;}
 };
 }

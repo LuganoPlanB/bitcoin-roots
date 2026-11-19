@@ -3,7 +3,8 @@
 Capability is observed per method/argument/wallet/network, never inferred from
 the daemon's product name. Available has no disabled reason; unavailable has a
 typed reason and a user-facing explanation. Unknown is distinct from zero,
-unspent, complete or available. Fixture registrations are planned coverage.
+unspent, complete or available. The [capability ledger](capability-ledger.json) binds current entries to
+implementation symbols and registered checks.
 
 | Capability | Release classification | Owner / unavailable explanation |
 | --- | --- | --- |
@@ -15,10 +16,14 @@ unspent, complete or available. Fixture registrations are planned coverage.
 | Signing | Required daemon/external PSBT routes | Explicit approval; daemon walletprocesspsbt true/false or validated external import; no local private custody |
 | Hardware | Airgapped file/QR + supported daemon signer RPC | Signer service; missing daemon signer differs from disconnected device; direct GUI USB/HID outside profile |
 | Accounts | Extension | MissingAccountService; hide account strip and explain Add Account |
-| Indexed spending/history completeness | Extension | Missing history index means Unknown, not unspent/zero |
-| Privacy optimization | Extension | Missing construction strategy; Efficiency remains required RPC behavior |
-| Local keys, payjoin, payment codes | Extension | Missing dedicated service; negotiated transactions re-enter review |
-| Fiat, explorer, updates | Optional opt-in | Permission/provider failure does not disable Bitcoin workflows |
+| Indexed address/output history | Extension, unavailable | Requires a linked HistoryIndexAdapter. Indexed coverage has its own provenance. |
+| Avoid partial spends | Extension, unavailable | Requires a linked TransactionConstructionAdapter. Efficiency remains required RPC behavior. |
+| Isolated local software wallet | Extension, unavailable | Requires a qualified LocalSignerService and its own protected secret store. |
+| Direct device PIN/passphrase and card operations | Extension, unavailable | Requires a qualified DeviceTransport with trusted entry and confirmation. |
+| Reusable receive policies | Extension, unavailable | Requires a qualified ReusableReceiveService for the exact public format and network. |
+| Payjoin and payment-code contacts | Extension, unavailable | Require qualified PayjoinModule and PaymentCodeContacts providers. An admitted changed proposal requires fresh review. |
+| Fiat rates and release update checks | Extension, unavailable | Require a qualified FiatRateProvider or ReleaseUpdateProvider and scoped opt-in. |
+| Explorer links | Optional opt-in | Exact confirmed URL on the verified network and direct profile. Opening the browser is explicit. |
 | Native platform | Linux required; macOS/Windows follow-on | Distinguish source-only, compiled, native-tested, unavailable; no cross-platform claim from Linux |
 
 The model's typed reasons include unsupported method/argument, wallet disabled,
@@ -30,6 +35,13 @@ Inspection/enrichment always supplies explicit sign=false/finalize=false;
 signing uses true/false. This repository's dangerous-public-key RPC gate must be
 probed: public descriptor/key inventory is not assumed available by default.
 No capability probe may allocate addresses, import wallets, sign or broadcast.
+
+The [history and construction contracts](history-and-construction-extensions.md)
+define the registry, exact provider boundaries and RPC limits.
+The [custody and reusable Receive contracts](custody-and-reusable-receive.md)
+state the owners, public-only data shapes and separate qualification gates.
+The [payment protocol contracts](payment-protocol-extensions.md) define explicit
+disclosure, independent unsigned adoption and fresh review.
 
 ### Daemon external signers
 

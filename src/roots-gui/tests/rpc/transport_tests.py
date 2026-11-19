@@ -245,6 +245,9 @@ class TransportContracts(unittest.TestCase):
             self.assertEqual(self.call(server, tls=ARGS.cert)['error'], 'success')
 
     def test_proxy_remote_dns_tunnel_and_failure(self):
+        with self.fixture([]) as server:
+            self.assertEqual(self.call(server, host='fixture-wallet.OnIoN')['error'], 'invalid-profile')
+            self.assertEqual(server.records, [])
         for kind in ['socks', 'http']:
             with self.fixture([Step('read', True)]) as server, Tunnel(server.port, kind) as proxy:
                 self.assertEqual(self.call(server, host='fixture-wallet.onion', proxy=proxy)['error'], 'success')

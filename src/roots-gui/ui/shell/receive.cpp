@@ -3,6 +3,7 @@
 #include "ui/shell/workspace.h"
 #include "adapters/protocol/public_wallet.h"
 #include "app/history_workspace.h"
+#include "services/custody_extensions.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
 
@@ -505,9 +506,33 @@ void DrawReceive(State& state, app::Requests& host, Facts& facts, const imkit::T
     if (!document) return;
     const auto id = document->id;
     auto& runtime = Runtime(state, *document);
-    const auto identity = Identity(state, host, *document);
     auto* service = host.Receiving();
     const bool busy = service->Busy();
+    const auto change_view=[&state,id,revision=runtime.revision](bool reusable){
+        const auto* wallet=ActiveWallet(state,app::Section::Receive);
+        const auto found=state.receives.find(id);
+        if (!wallet || wallet->id!=id || found==state.receives.end() || found->second.revision!=revision) return false;
+        auto& current=found->second;
+        current.reusable_view=reusable;
+        current.reusable_focus=true;
+        ++current.revision;
+        return true;
+    };
+    if (runtime.reusable_view) {
+        Text(state,"reusable-heading","Reusable policies","Reusable receive policies");
+        for (const auto family:{ReusableFamily::FixedDescriptor,ReusableFamily::SilentPayments,ReusableFamily::PaymentCode}) {
+            const auto policy=ReusableStatus(ShippedExtensions(),family,document->binding->network);
+            const auto name="reusable-"+std::to_string(int(family));
+            Text(state,name.c_str(),policy.name,std::string(policy.name)+" · "+policy.public_fields);
+        }
+        const auto info=ReusableStatus(ShippedExtensions(),ReusableFamily::FixedDescriptor,document->binding->network);
+        Text(state,"reusable-service","Reusable policy unavailable",info.capability.detail);
+        Text(state,"reusable-action","Address advancement","These policies use a fixed public identifier. Address allocation is available under standard Receive when supported.");
+        if (std::exchange(runtime.reusable_focus,false)) ImGui::SetKeyboardFocusHere();
+        Button(state,facts.receive,theme,"standard-policy","Back to standard Receive",true,[change_view]{return change_view(false);});
+        return;
+    }
+    const auto identity = Identity(state, host, *document);
     const auto pool = state.recovery ? state.recovery->ReceivePool(*runtime.scope) : storage::Result<storage::ReceivePool>{};
     const uint64_t pending = pool ? pool.value->pending : 0;
     const auto* caps = identity ? &*host.Connection()->Active() : nullptr;
@@ -545,7 +570,8 @@ void DrawReceive(State& state, app::Requests& host, Facts& facts, const imkit::T
         ? std::to_string(pool.value->available) + " verified offline reservations"
         : "Offline pool exhausted (0 reservations)");
     if (!runtime.status.empty()) Text(state, "receive-status", "Receive status", runtime.status);
-    Text(state, "receive-reusable", "Reusable addresses", "Reusable addresses require separate wallet support.");
+    if (std::exchange(runtime.reusable_focus,false)) ImGui::SetKeyboardFocusHere();
+    Button(state,facts.receive,theme,"reusable-policies","Reusable policies",!busy,[change_view]{return change_view(true);});
     if (caps && caps->external_signer == true) DrawDeviceSigner(state,host,facts.receive,theme,busy);
     if (!verify)
         Text(state, "receive-device-unavailable", "Device verification", "Device verification requires a supported external signer and display RPC.");

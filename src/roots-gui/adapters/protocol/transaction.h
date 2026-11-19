@@ -135,6 +135,14 @@ std::optional<std::string> AddressScript(std::string_view address, DisplayNetwor
 std::shared_ptr<const TransactionDocument> WithMatchedPreviousOutputs(const TransactionDocument&,
     DisplayNetwork, std::span<const std::shared_ptr<const TransactionDocument>>);
 std::optional<std::string> MergePsbtMaps(const TransactionDocument& target, const TransactionDocument& supplied);
+// Narrow unsigned negotiation boundary. The outbound copy contains only the
+// unsigned transaction and per-input previous-transaction/UTXO/sighash keys.
+std::optional<std::string> PayjoinDisclosureCopy(const TransactionDocument&);
+// Keep all local maps and graft only the allowed unsigned transaction and one
+// new input map from an independently validated proposal. No remote metadata
+// is imported into local maps. These helpers perform no transport or approval.
+std::shared_ptr<const TransactionDocument> PreservePayjoinMaps(const TransactionDocument& original,
+    const TransactionDocument& proposal, DisplayNetwork, std::stop_token = {});
 std::optional<Hash256> TransactionCommitment(const TransactionDocument&);
 // Returns the first policy or transaction change. Independent of format and map order.
 // For an external signature subset, omitted fields can be supplied by the fixed working document.

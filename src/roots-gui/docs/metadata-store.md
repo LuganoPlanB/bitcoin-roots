@@ -21,7 +21,38 @@ they carry no approval, automatic command or opaque key/PSBT/transaction blob.
 The separate session snapshot owns document recovery and exact selected/excluded
 inputs; these older headers do not represent executable transaction state.
 
+## Encrypted wallet metadata archives
+
+Open the wallet tab for the exact backend and network, then choose **Session
+Recovery** → **Back up local wallet metadata**. Choose a new local file in a
+private folder and confirm a separate archive password. The Linux private-file
+adapter creates a mode 0600 authenticated archive and refuses to replace an
+existing file. The archive holds the active wallet's local display name, saved
+labels and freezes. It contains no seed, private key, backend profile, public
+draft, PSBT, submission journal or cached balance.
+
+To restore, open the matching wallet tab and choose **Restore local wallet
+metadata**. Inspect the encrypted archive with its password, check its counts
+and display name, then choose **Apply inspected metadata**. Applying replaces
+only those saved wallet fields at the inspected destination revision. Other
+wallets, drafts and submission tracking retain their own data. Inspect again
+if another owner changed the metadata. Wrong passwords, damaged archives or
+different wallet origins leave the current store intact.
+
+Preserve a damaged store before attempting recovery. The archive restores
+metadata into a working local store. To recover funds, use the daemon wallet
+backup or the original signer's recovery material. Restoring local metadata
+never grants transaction review, signing or submission authority.
+
 Workspace preferences are global and restore-documents defaults to false.
+Version 9 adds decimal display, initial address grouping, and restricted
+explorer settings. They share the existing workspace CAS revision and
+transaction with amount privacy and units. Legacy rows retain their existing
+values and default to explorer off. Saving these settings does not opt in to
+document recovery or grant daemon or browser authority.
+Version 10 stores generic desktop notification and camera sleep-inhibition
+preferences in the same CAS transaction. Both default to off for existing
+workspaces and have no authority to start an operation at application launch.
 Backend profiles store only endpoint/proxy/TLS settings, network/wallet and an
 opaque OS secure-store item reference. Cookie authentication profiles cannot
 be persisted through this API. No password, cookie value, seed or private-key

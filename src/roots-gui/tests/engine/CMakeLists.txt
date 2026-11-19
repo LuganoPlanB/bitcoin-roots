@@ -55,6 +55,7 @@ add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp c
   ../../ui/components/edits.cpp ../../ui/components/controls.cpp ../../ui/components/gallery.cpp ../../ui/components/presentation.cpp ../../domain/money.cpp
   ../../app/document_registry.cpp ../../app/signing_review.cpp ../../app/daemon_signer.cpp ../../app/broadcast.cpp ../../app/replacement.cpp ../../app/child_package.cpp ../../app/recovery.cpp ../../app/commands.cpp ../../app/connection_observations.cpp ../../app/history_workspace.cpp ../../app/coin_inventory.cpp ../../app/coin_controls.cpp ../../ui/shell/coin_actions.cpp ../../ui/shell/coins.cpp ../../ui/shell/history.cpp ../../ui/shell/replacement.cpp ../../ui/shell/addresses.cpp ../../ui/shell/workspace.cpp ../../ui/shell/document_actions.cpp ../../ui/shell/recovery.cpp ../../ui/shell/privacy.cpp ../../ui/shell/command_routes.cpp ../../ui/shell/activity.cpp ../../domain/workflow.cpp)
 target_include_directories(roots_gui_engine_tests PRIVATE ../..)
+target_sources(roots_gui_engine_tests PRIVATE wallet_tools_tests.cpp ../../app/desktop.cpp ../../app/wallet_tools.cpp ../../app/message_signing.cpp ../../ui/shell/message.cpp ../../ui/shell/sweep.cpp ../../ui/shell/payment_protocol.cpp ../../ui/shell/download.cpp ../../ui/shell/metadata_backup.cpp ../../ui/shell/desktop.cpp ../../ui/shell/preferences.cpp ../../ui/shell/wallet_tools.cpp)
 target_link_libraries(roots_gui_engine_tests PRIVATE roots_gui_test_engine roots_gui_test_imkit roots_gui_core)
 target_sources(roots_gui_engine_tests PRIVATE ../../ui/shell/onboarding.cpp ../../ui/shell/receive.cpp ../../ui/shell/settings.cpp ../../ui/shell/advanced.cpp ../../ui/shell/transaction_document.cpp ../../ui/shell/transaction_workbench.cpp ../../ui/shell/signing_review.cpp ../../ui/shell/transaction_editor.cpp ../../ui/shell/offline_builder.cpp ../../ui/shell/send.cpp ../../ui/shell/send_batch.cpp ../../ui/shell/funding.cpp ../../ui/shell/transaction_flow.cpp ../../ui/shell/fees.cpp onboarding_tests.cpp send_tests.cpp)
 add_executable(roots_gui_preference_models preferences_model.cpp ../../application/preferences.cpp)
@@ -112,6 +113,8 @@ add_test(NAME roots_gui.engine.shell COMMAND roots_gui_engine_tests "roots.shell
 set_tests_properties(roots_gui.engine.shell PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
 
 add_test(NAME roots_gui.theme.shell_checker COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/../theme/shell_checker_tests.py")
+add_test(NAME roots_gui.engine.wallet_tools COMMAND roots_gui_engine_tests "roots.wallet_tools" "${CMAKE_CURRENT_BINARY_DIR}/wallet_tools.xml" 4)
+set_tests_properties(roots_gui.engine.wallet_tools PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
 set_tests_properties(roots_gui.theme.shell_checker PROPERTIES TIMEOUT 30 LABELS "roots-gui;theme;ui;roots-gui.ui")
 
 add_test(NAME roots_gui.engine.documents COMMAND roots_gui_engine_tests "roots.documents" "${CMAKE_CURRENT_BINARY_DIR}/documents.xml" 11)

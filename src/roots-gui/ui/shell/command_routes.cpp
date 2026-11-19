@@ -14,23 +14,56 @@ ImGuiKeyChord CommandChord(std::string_view key,bool macos)
     return ch==','?chord|ImGuiKey_Comma:0;
 }
 std::string CommandShortcutLabel(std::string_view key,bool macos) {return key.empty()?"":std::string(macos?"Cmd+":"Ctrl+")+std::string(key);}
-app::Availability CommandAvailability(const State& s,app::Command command,const app::Requests& host)
+app::Availability CommandAvailability(const State& s,app::Command command,app::Requests& host)
 {
     namespace a=app;const auto* d=s.documents.Active();const bool wallet=d && d->kind==a::DocumentKind::Wallet;
     const bool transaction=d && d->kind==a::DocumentKind::Transaction;
     if(s.recovery && s.recovery->Locked())return command==a::Command::Quit?host.CanSubmit({command}):app::Availability{false,"Workspace is locked."};
     if(s.recovery && (command==a::Command::LockCurrent || command==a::Command::LockAll))return {true,{}};
-    if(s.actions.kind!=DocumentDialog::None || s.local_document.dialog.open || s.local_document.close_pending || s.server.dialog.open || s.onboarding.dialog.open || s.recovery_dialog.open || s.lock_panel.setup)return {false,"Finish or cancel the current dialog first."};
+    if(s.actions.kind!=DocumentDialog::None || s.local_document.dialog.open || s.local_document.close_pending || s.server.dialog.open || s.general.dialog.open || s.onboarding.dialog.open || s.recovery_dialog.open || s.lock_panel.setup || s.wallet_tools.dialog.open || s.desktop.dialog.open || s.message.dialog.open || s.sweep.dialog.open || s.payment_protocol.dialog.open || s.download.dialog.open)return {false,"Finish or cancel the current dialog first."};
+    if(command==a::Command::VerifyDownload){
+        if(s.recovery && s.recovery->Pending())return {false,"Finish workspace recovery first."};
+        if(s.privacy.hidden || s.semantic_hide_toggle)return {false,"Reveal the workspace before selecting local verification files."};
+        return {true,{}};
+    }
+    if(command==a::Command::Contacts){
+        if(s.recovery && s.recovery->Pending())return {false,"Finish workspace recovery first."};
+        return {true,{}}; // Opens local capability information only.
+    }
+    if(command==a::Command::Sweep){
+        if(s.recovery && s.recovery->Pending())return {false,"Finish workspace recovery first."};
+        if(s.privacy.hidden || s.semantic_hide_toggle)return {false,"Reveal the workspace to view sweep availability."};
+        return {true,{}};
+    }
+    if(command==a::Command::SignMessage && host.Messages()){
+        if(s.recovery && s.recovery->Pending())return {false,"Finish workspace recovery first."};
+        if(s.privacy.hidden || s.semantic_hide_toggle)return {false,"Reveal the workspace before entering a message."};
+        return {true,{}};
+    }
+    if(host.Desktop() && (DesktopPageFor(command)!=DesktopPage::None || command==a::Command::LogFile))
+        return {!(s.recovery && s.recovery->Pending()),s.recovery && s.recovery->Pending()?"Finish workspace recovery first.":""};
+    if(command==a::Command::Preferences && s.general.owner)return {true,{}};
+    if(command==a::Command::Decimal || command==a::Command::Grouping)
+        return s.general.saved?app::Availability{true,{}}:app::Availability{false,"Local preferences storage is unavailable."};
     if(command==a::Command::Recovery)return {s.recovery!=nullptr,"Local public recovery storage is unavailable."};
     if(command==a::Command::SubmissionAttempts)return {host.LocalDocuments() && s.recovery && s.recovery->BroadcastJournalAvailable()
         && !s.privacy.hidden && !s.semantic_hide_toggle,"Reveal and unlock the workspace to see local submission records."};
     if(command>=a::Command::Transactions && command<=a::Command::Settings)return {wallet,wallet?"":"Select a wallet document to navigate its sections."};
+    if((host.Refresh() || host.Connection()) && (command==a::Command::SearchCurrent || command==a::Command::SearchAll || command==a::Command::Summaries)){
+        if(command==a::Command::Summaries)return {true,{}};
+        if(s.privacy.hidden || s.semantic_hide_toggle)return {false,"Reveal wallet details before searching."};
+        if(command==a::Command::SearchCurrent)return {d && a::ToolWallet(*d),"Select an unlocked wallet with a verified RPC binding."};
+        return {std::ranges::any_of(s.documents.Documents(),a::ToolWallet),"Open an unlocked wallet with a verified RPC binding."};
+    }
     switch(command) {
     case a::Command::ExportWallet:
         if (!wallet) return {false,"Select a wallet tab before backing it up."};
         break;
     case a::Command::CloseTab:return {d!=nullptr,d?"":"No document is open to close."};
-    case a::Command::RenameWallet:case a::Command::DeleteWallet:return {wallet,wallet?"":"Select a wallet tab for this wallet command."};
+    case a::Command::RenameWallet:case a::Command::DeleteWallet:
+        if(!wallet)return {false,"Select a wallet tab for this wallet command."};
+        return !s.privacy.hidden && d->observation!=a::ObservationState::Locked
+            ? a::Availability{true,{}}:a::Availability{false,"Reveal and unlock this wallet before changing its metadata."};
     case a::Command::ImportWallet:case a::Command::Units:case a::Command::HideAmounts:
     case a::Command::AppearanceSystem:case a::Command::AppearanceLight:case a::Command::AppearanceDark:case a::Command::LoadingLog:return {true,{}};
     case a::Command::SeparateWindows:return {false,"Separate wallet windows are unavailable: this native backend has one context/thread owner. The tab, drafts and selection remain here."};

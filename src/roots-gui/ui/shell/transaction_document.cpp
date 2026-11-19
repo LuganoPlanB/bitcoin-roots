@@ -491,6 +491,8 @@ bool DrawCameraImport(State& state,app::Requests& host,Facts& facts,const imkit:
     const bool owns=panel.camera_generation && panel.camera_generation==view.generation;
     const bool engaged=owns && CaptureEngaged(view.stage);
     const bool busy=host.LocalDocuments()->Busy() || panel.file_dialog || panel.clipboard_pending;
+    if(engaged && host.Desktop())if(const auto status=host.Desktop()->Status();!status.empty())
+        Text(state,"camera-desktop","Camera desktop operation",status);
     const auto current=[&state,&host]{return Current(state,host) && ReadingQr(state.local_document.mode);};
     if (view.retiring) Text(state,"camera-closing","Camera status","Releasing the camera…");
     if (!engaged) {

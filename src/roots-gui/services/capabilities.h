@@ -23,6 +23,7 @@ struct MethodSupport {
     bool wallet_method{};
     bool probe_rejected{};
     std::set<std::string> arguments;
+    std::set<std::string, std::less<>> string_arguments{};
 };
 struct BackendCapabilities {
     ServerCandidate candidate;
@@ -36,6 +37,7 @@ struct BackendCapabilities {
     rpc::Error error{rpc::Error::None};
     bool network_mismatch{};
     SupportReason Supports(std::string_view method, std::string_view argument = {}) const;
+    bool SupportsString(std::string_view method, std::string_view argument) const;
     bool CanApply() const { return authenticated && identity_verified && error == rpc::Error::None && !network_mismatch; }
 };
 BackendCapabilities ProbeCapabilities(rpc::Transport&, const ServerCandidate&, std::stop_token);

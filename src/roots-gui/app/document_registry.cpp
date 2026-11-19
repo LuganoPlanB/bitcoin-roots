@@ -54,7 +54,9 @@ uint64_t DocumentRegistry::OpenWallet(std::string name,WalletBinding binding,boo
     for(const auto& d:documents) if(d.kind==DocumentKind::Wallet && d.binding==binding) { const auto id=d.id;Activate(id);return id; }
     if(!next)throw std::overflow_error("document identity exhausted");
     const auto id=next++;Document d{id,DocumentKind::Wallet,std::move(name),std::move(binding)};
-    d.original_name=d.name;d.complete=complete;d.section=complete?Section::Transactions:Section::Settings;documents.push_back(std::move(d));Activate(id);return id;
+    d.original_name=d.name;d.complete=complete;d.section=complete?Section::Transactions:Section::Settings;
+    d.addresses.group=group_address_outputs;
+    documents.push_back(std::move(d));Activate(id);return id;
 }
 uint64_t DocumentRegistry::OpenTransaction(std::string name)
 {

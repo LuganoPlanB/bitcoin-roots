@@ -21,6 +21,7 @@ struct ChartPresentation {
 // Explicit per-view input. Domain amounts and retained edit drafts never change.
 struct AmountPrivacy {
     bool hidden{};
+    bool trim_decimals{};
     AmountPresentation Present(std::optional<Money>) const;
     AmountPresentation Draft(std::string_view) const;
     ChartPresentation Chart(std::span<const Money>) const;

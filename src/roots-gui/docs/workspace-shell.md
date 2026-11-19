@@ -101,8 +101,9 @@ records the preview's replaceable sequence and unconfirmed change allocation.
 Signing, finalization and broadcast require independent actions.
 
 Efficiency delegates confirmed coin selection to the wallet when policy permits.
-Exact pins, Max and local restrictions constrain the inputs. Privacy selection
-requires a wallet strategy the current backend does not provide.
+Exact pins, Max and local restrictions constrain the inputs. Avoid partial
+spends requires a TransactionConstructionAdapter. Grouping eligible inputs by
+script can use more inputs and raise fees. It provides no anonymity guarantee.
 
 Fee observations show `estimatesmartfee`'s requested and returned block
 targets, actual estimate or error, and the observed relay and mempool minimums.
@@ -213,6 +214,24 @@ in execution evidence; the older three desktop appearance scenarios are retained
 
 ## Document operations and empty workspace
 
+File → Preferences opens General. Bitcoin uses the applied RPC node for fee
+observations. Fiat and update providers and native transaction alerts show their
+missing adapters. Session Recovery remains a separate wallet opt-in. Coin
+grouping sets the initial address view for newly opened wallet tabs and does not
+change funding eligibility. Local metadata acknowledges changes to display units,
+BTC decimal presentation and privacy independently of document recovery. Failed
+writes preserve the saved revision. An unsuccessful hide still conceals amounts
+for the current session and reports that the preference was not saved. While
+hidden, document tabs use local identifiers while preserving selection and order.
+
+Explorer access starts off. Opting in makes an exact-network default or a
+validated custom HTTPS transaction template available to wallet history. The
+custom template binds to the applied network and accepts one final `{txid}` path
+segment. Selecting a transaction never opens a browser. Confirm the exact URL
+for the current wallet selection each time. Proxied and offline profiles cannot
+open explorer links. Theme choice continues to use the native appearance file
+and its save acknowledgement.
+
 Tab identity is the registry's nonzero ID, independent of position, display name,
 icon and binding. Right click a tab, or focus it and press Shift+F10, for explicit
 Move Left/Right, Close/Others/All, Rename/Icon, Reset Name/Icon, Lock, Delete and
@@ -252,8 +271,8 @@ An empty launch presents the Introduction unless the workspace needs recovery
 or unlocking. Continue offline enters the public-document workspace without a
 server or transport activity. Local and Remote open the tested connection form.
 Remote surfaces who can observe RPC activity and starts with TLS selected for
-a new profile. Indexing has an explicit unavailable choice while no history
-index service is configured. Help → Introduction reopens these choices.
+a new profile. Indexing requires a linked HistoryIndexAdapter. No such client
+ships in this profile. Help → Introduction reopens these choices.
 
 New and Open use the verified daemon connection. Opening lists loaded wallets
 and, when the daemon supports it, its wallet directory. An explicitly selected
@@ -342,6 +361,72 @@ immutable native-tree/action-queue bridge gates.
 
 ## Menu routing, activity and service observations
 
+Sign / Verify Message supports legacy Bitcoin Signed Message for Base58Check
+P2PKH addresses. Verification is local and checks the HASH160 of the public
+key recovered from the Base64 compact ECDSA signature. Header values 27–34
+identify recovery and public-key serialization. The digest commits the
+CompactSize-framed message magic and literal UTF-8 message, including
+whitespace. The test-family address prefix is shared by testnet, signet and
+regtest.
+
+Sign sends only the exact address and message to the matching, applied
+RPC wallet after explicit invocation. Before signing, the adapter checks the
+daemon genesis, wallet key and unlocked state, and exact address, script and
+public-key ownership evidence. It confirms the returned signature locally
+before displaying it. Legacy signing requires a wallet with private keys.
+Segwit, Taproot and P2SH need another message scheme. BIP322 and Sign by QR
+state their missing proof and signer contracts. Message fields and results
+remain transient and are independent of transaction documents and approvals.
+
+Tools → Sweep Private Key opens an availability notice. The Roots
+`sweepprivkeys` RPC takes WIF keys and produces a signed transaction even with
+`broadcast=false`. This GUI needs public-output discovery, verified unsigned
+draft preparation, and a separate compatible signer to offer a sweep. The
+notice accepts no keys, creates no draft, and makes no RPC calls.
+
+Tools → Verify Download reads four selected local files. Choose the release
+artifact, a flat GNU SHA-256 manifest, one detached OpenPGP binary-document
+signature and one exported OpenPGP v4 public certificate. The artifact basename
+must match exactly one entry. Directory entries, repeated names, text-mode
+signatures and multiple-signature bundles are unsupported. Public keys and
+signatures may be binary or ASCII armored.
+
+File integrity, signature validity and signer trust appear separately. To
+establish your selected trust, enter the full expected primary fingerprint
+from an independent source. The selected certificate alone confers no trust.
+Verification uses the exact build-pinned Linux GnuPG 2.4.7 executable when
+available, with an isolated public keyring and no key lookup. It hashes
+the release file as a stream and verifies the captured manifest bytes.
+Input changes retire the displayed snapshot. Verify Download performs no
+download, installation, artifact execution or update action.
+
+The Tray and Prevent Sleep menu routes open Desktop preferences. Native
+minimize leaves the existing window in the desktop task switcher, with the
+same document owner and edits. System tray and separate-wallet windows name
+their missing native ownership adapters. Linux sleep inhibition is optional,
+applies only while a deliberately started camera QR capture is active, and
+releases its descriptor on completion, failure, scope retirement or teardown.
+The notification preference enables generic camera-ready cues and the explicit
+desktop test action. The local desktop service may reject either integration.
+
+The Camera route opens settings with an explicit QR import action. The import's
+Find, Open, mode and Start choices retain their existing ownership and fallback.
+Help routes include project documentation, support, issue guidance, version
+and source attribution. Log File opens the redacted Activity log. Browser
+requests display and confirm one fixed HTTPS project link, and remain disabled
+in hidden, offline or proxied contexts. Release links are deliberate browser
+actions. There is no update polling or automatic download.
+
+Linux GUI restart requires deliberate confirmation and idle operations. Open
+documents require opted-in public recovery, and unresolved edits block restart.
+The GUI checkpoints the public snapshot and re-executes its own executable.
+An owner-only sealed in-memory descriptor carries a bounded RPC form and offline
+mode. It carries authentication references such as the exact cookie path, with
+no credential contents. The same process environment retains its configuration
+and data roots. On the new GUI, opted-in public recovery still requires its
+existing explicit choice, and the retained RPC inputs are offered for Test and
+Apply. The restart never replays connection, signing, device or broadcast work.
+
 All55 File/View/Tools/Help routes remain keyboard inspectable with all23 declared
 primary shortcuts exposed beside their labels. Ctrl is used on Linux/Windows;
 Command chord/label mapping is separately checked, while actual macOS native
@@ -354,17 +439,28 @@ section, appearance and document/dialog actions retain their existing ownership.
 Production currently registers only its actual Quit handler plus local UI routes;
 fixture handlers are explicit and effect-free, never real RPC/signing/deletion.
 
-Status no longer invents proxy/update/network facts. Each frame observes typed
-service states for devices/proxy/updates/network/connection, optional backend
-height, last success and error, and a separate activity feed with stable task IDs,
-optional checked progress-per-mille and public operational log entries. Defaults
-are Unavailable, not assumed Offline/Ready/disabled services. Status uses semantic
-color plus state text. Activity exposes current progress/count and opens its log;
-Status opens all service details. Missing, loading, error, stale, offline, locked
-and known-empty observations remain distinct. No operational port accepts Money
-or raw RPC/financial payloads; host free text in status/tasks/logs is concealed
-before visible/tooltip/annotation presentation while Hide Amounts is active.
-Progress conversion is display geometry only and never monetary edit parsing.
+Search Current Wallet and Search All Wallets use retained observations for open
+unlocked wallets with verified bindings. Search accepts a literal identifier or
+label fragment and can limit results to transactions, descriptor inventory
+addresses or known outputs. The optional wallet column disambiguates matches.
+Show resolves the result's wallet, network and stable row key again before
+navigating. Cached searches do not open wallets or request new observations.
+
+Summaries shows exact RPC balance categories per wallet with the observation date
+and current, dated, stale, offline or unavailable provenance. Scanning wallets
+carry a partial observation label. Wallets may share outputs, so the chart shows
+each wallet's observed categories independently. Amount privacy hides the figures,
+chart and wallet names. Status includes a Node information view of the applied
+profile and its read-only network observation, including source and date.
+
+The Activity drawer retains up to 64 changes from typed connection, chain,
+wallet, history and background states in the applied session. Each row records
+when the GUI observed the transition in UTC and optional checked progress.
+Activity excludes free-form host diagnostics, task titles, RPC payloads and
+credentials. CSV actions use an explicit local file chooser and create a new file
+with owner-only permissions. A changed observation, privacy state or workspace
+scope cancels an in-flight choice. Search CSV includes the selected result set and
+provenance. Activity CSV contains only the typed operational fields.
 
 The drawer overlays a bounded part of content and retains tabs, navigation,
 workspace data and status actions. Close and Escape return focus to Status;

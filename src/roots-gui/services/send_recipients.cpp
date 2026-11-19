@@ -121,6 +121,8 @@ PaymentRequest ParsePaymentRequest(std::string_view text, protocol::DisplayNetwo
         const auto value = DecodeQuery(delimiter == std::string_view::npos ? "" : field.substr(delimiter + 1));
         if (!key || key->empty() || !value) return failure("A payment URI parameter has invalid encoding.");
         if (!keys.insert(*key).second) return failure("The payment URI specifies a parameter more than once.");
+        if (*key=="pj" || *key=="pjos" || *key=="req-pj")
+            return failure("This payment request requires a PayjoinModule. Choose an independent plain Bitcoin payment request to pay without Payjoin.");
         if (key->starts_with("req-")) return failure("The payment URI requires an unsupported parameter.");
         if (*key == "label") {
             if (delimiter == std::string_view::npos || value->size() > MAX_RECIPIENT_LABEL)

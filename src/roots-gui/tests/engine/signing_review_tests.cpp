@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "tests/engine/recovery_fixture.h"
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
 #include <imgui_test_engine/imgui_te_engine.h>
@@ -41,7 +42,8 @@ struct Fixture final : a::Requests {
     sh::State state;
     sh::Facts facts;
     mutable TransactionDocuments local;
-    a::RecoverySession recovery{std::filesystem::path{}};
+    test::RecoveryFixtureDirectory scratch;
+    a::RecoverySession recovery{scratch.Metadata()};
     ConnectionService connection{[](const ServerCandidate&,std::stop_token){return BackendCapabilities{};}};
     WalletLifecycle wallets{[this](const WalletOperation&,std::stop_token){++wallet_actions;return WalletResult{};}};
     unsigned external{};

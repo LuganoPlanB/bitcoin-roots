@@ -4,6 +4,7 @@
 #include "app/history_workspace.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 namespace roots::gui::ui::shell {
 namespace {
@@ -37,14 +38,42 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
         }
         if (page != OnboardingPage::None) { BeginOnboarding(s,page,host); return; }
     }
-    if((id==a::Command::Server || id==a::Command::Preferences) && host.Connection()) {OpenServer(s.server,*host.Connection());s.invocation->dispatched=true;return;}
+    if(id==a::Command::Preferences && s.general.owner) {OpenGeneralPreferences(s);s.invocation->dispatched=true;return;}
+    if(id==a::Command::Server && host.Connection()) {OpenServer(s.server,*host.Connection());s.invocation->dispatched=true;return;}
+    if(id==a::Command::Sweep){
+        // This route only opens the local capability notice. It has no host request.
+        s.invocation->accepted=OpenSweepNotice(s,host);return;
+    }
+    if(id==a::Command::Contacts){s.invocation->accepted=OpenPaymentProtocolNotice(s,host);return;}
+    if(id==a::Command::VerifyDownload){s.invocation->accepted=OpenDownload(s,host);return;}
+    if(id==a::Command::SignMessage && host.Messages()){
+        s.invocation->accepted=OpenMessage(s,host);s.invocation->dispatched=s.invocation->accepted;return;
+    }
+    if(host.Desktop() && id==a::Command::LogFile){s.drawer=Drawer::Activity;s.drawer_focus=true;s.invocation->dispatched=true;return;}
+    if(const auto page=DesktopPageFor(id);host.Desktop() && page!=DesktopPage::None){
+        s.invocation->accepted=OpenDesktop(s,host,page);s.invocation->dispatched=s.invocation->accepted;return;
+    }
     if(id==a::Command::LoadingLog){s.drawer=Drawer::Activity;s.drawer_focus=true;return;}
+    if(host.Refresh() || host.Connection()) {
+        const auto tool=id==a::Command::SearchCurrent?WalletTool::CurrentSearch:
+            id==a::Command::SearchAll?WalletTool::AllSearch:id==a::Command::Summaries?WalletTool::Summary:WalletTool::None;
+        if(tool!=WalletTool::None){OpenWalletTool(s,host,tool);s.invocation->dispatched=true;return;}
+    }
     if(id>=a::Command::Transactions && id<=a::Command::Settings) {
         if(!s.documents.Navigate(a::Section(int(id)-int(a::Command::Transactions))))s.notice="Select a wallet document to navigate its sections.";
         return;
     }
-    if(id==a::Command::HideAmounts){if(semantic)s.semantic_hide_toggle=!s.semantic_hide_toggle;else s.privacy.hidden=!s.privacy.hidden;return;}
-    if(id==a::Command::Units){s.unit=(s.unit+1)%3;return;}
+    if(id==a::Command::HideAmounts){
+        if(semantic && !s.general.owner)s.semantic_hide_toggle=!s.semantic_hide_toggle;
+        else s.invocation->accepted=SetAmountVisibility(s,!s.privacy.hidden);
+        return;
+    }
+    if(id==a::Command::Units){s.invocation->accepted=SetAmountUnit(s,(s.unit+1)%3);return;}
+    if(id==a::Command::Decimal){s.invocation->accepted=SetDecimalPresentation(s,!s.privacy.trim_decimals);return;}
+    if(id==a::Command::Grouping && s.general.saved){
+        s.invocation->accepted=SetAddressGroupingDefault(s,!s.general.saved->preferences.group_address_outputs);
+        return;
+    }
     if(id==a::Command::AppearanceSystem || id==a::Command::AppearanceLight || id==a::Command::AppearanceDark) {
         f.appearance_requested=id==a::Command::AppearanceSystem?2:id==a::Command::AppearanceDark?1:0;return;
     }
@@ -111,9 +140,19 @@ void Menus(State& s,a::Requests& host,Facts& f,const AppearanceStatus& appearanc
             if(!menu_open){const auto header=s.presentation.Interact(names[menu],c::ax::SemanticRole::Menu,c::ax::SemanticAction::Press|c::ax::SemanticAction::Focus);
                 if(header)s.presentation.Defer(*header,[&s,menu](const c::SemanticRequest&){s.semantic_menu_request=menu;return true;});}
             if(menu_open) {
+            // A queued semantic command runs after the menu was drawn. Dismiss
+            // its popup before opening the dialog at the workspace layer.
+            if((s.wallet_tools.dialog.open && s.wallet_tools.dialog.initialFocus) || (s.desktop.dialog.open && s.desktop.dialog.initialFocus)
+                || (s.message.dialog.open && s.message.dialog.initialFocus) || (s.sweep.dialog.open && s.sweep.dialog.initialFocus)
+                || (s.payment_protocol.dialog.open && s.payment_protocol.dialog.initialFocus)
+                || (s.download.dialog.open && s.download.dialog.initialFocus)){
+                ImGui::CloseCurrentPopup();ImGui::EndMenu();ImGui::PopStyleVar();continue;
+            }
             for(const auto& command:a::CommandInventory())if(int(command.menu)==menu) {
                 const auto& shortcut=f.shortcut_labels.at(command.id);
                 const bool selected=(command.id==a::Command::HideAmounts && s.privacy.hidden) ||
+                    (command.id==a::Command::Decimal && s.privacy.trim_decimals) ||
+                    (command.id==a::Command::Grouping && s.general.saved && s.general.saved->preferences.group_address_outputs) ||
                     (command.id==a::Command::AppearanceLight && appearance.choice==0) ||
                     (command.id==a::Command::AppearanceDark && appearance.choice==1) ||
                     (command.id==a::Command::AppearanceSystem && appearance.choice==2);
@@ -161,12 +200,14 @@ void Tabs(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float sc
             // request; otherwise the old input steals navigation back.
             ImGui::SetWindowFocus(nullptr);ImGui::SetWindowFocus();ImGui::SetKeyboardFocusHere();s.focus_tab=0;
         }
-        const std::string display=(d.icon==1?"o ":d.icon==2?"<> ":"")+d.name+(d.Dirty()?" *":"");
+        const bool concealed=s.privacy.hidden || d.observation==a::ObservationState::Locked;
+        const auto name=concealed?std::string(d.kind==a::DocumentKind::Wallet?"Wallet ":"Transaction ")+std::to_string(d.id):d.name;
+        const std::string display=(concealed?"":d.icon==1?"o ":d.icon==2?"<> ":"")+name+(d.Dirty()?" *":"");
         const float width=std::clamp(ImGui::CalcTextSize(display.c_str(),nullptr,false).x+24*scale,140*scale,260*scale);
         ImGui::SetCursorPosY(scale);
         const bool activate=theme::ActionButton("###tab",imkit::ActionVariant::Secondary,{width,34*scale},theme,ImGui::GetForegroundDrawList());
         const auto item=Last();f.tabs[d.id]=item;f.tab_hovered[d.id]=ImGui::IsItemHovered(ImGuiHoveredFlags_NoNavOverride);f.tab_held[d.id]=ImGui::IsItemActive() && ImGui::GetIO().MouseDown[0];const auto& r=item.rect;auto* draw=ImGui::GetWindowDrawList();
-        const auto external=s.presentation.Interact(d.name.c_str(),c::ax::SemanticRole::Tab,c::ax::SemanticAction::Select|c::ax::SemanticAction::Focus,false,d.id==s.documents.ActiveId(),d.name);
+        const auto external=s.presentation.Interact(name.c_str(),c::ax::SemanticRole::Tab,c::ax::SemanticAction::Select|c::ax::SemanticAction::Focus,false,d.id==s.documents.ActiveId(),name);
         f.annotated_tabs.push_back(d.id);
         if(s.reveal_tab_focus==d.id && item.focused){ImGui::SetNavCursorVisible(true);s.reveal_tab_focus=0;}
         f.tab_cursor_visible[d.id]=ImGui::IsAnyItemFocused();
@@ -175,7 +216,7 @@ void Tabs(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float sc
         if(d.id==s.documents.ActiveId())draw->AddLine({r[0]+1,r[3]-2*scale},{r[2]-1,r[3]-2*scale},ImGui::GetColorU32(theme.semantic.text),2*scale);
         if(ImGui::IsItemHovered(ImGuiHoveredFlags_NoNavOverride) || (item.focused && ImGui::GetIO().NavVisible)) {
             ImGui::BeginTooltip();ImGui::PushTextWrapPos(ImGui::GetCursorPosX()+std::min(480*scale,ImGui::GetMainViewport()->WorkSize.x-32*scale));
-            ImGui::TextUnformatted(d.name.c_str());ImGui::PopTextWrapPos();ImGui::EndTooltip();
+            ImGui::TextUnformatted(name.c_str());ImGui::PopTextWrapPos();ImGui::EndTooltip();
         }
         if(activate)s.documents.Activate(d.id);
         if(external)s.presentation.Defer(*external,[&s,key=d.id,activate](const c::SemanticRequest&){if(activate)return true;const bool accepted=s.documents.Activate(key);if(accepted){s.focus_tab=key;s.reveal_tab_focus=key;}return accepted;});
@@ -259,6 +300,10 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
     if(appearance.invalid_saved)appearance_notice("appearance-invalid","Saved appearance is invalid; using Light. Choose an appearance to replace it.");
     if(appearance.save_failed)appearance_notice("appearance-save","Appearance could not be saved. Choose again to retry.");
     if(appearance.system_unavailable)appearance_notice("appearance-system","System appearance is unavailable; using Light. Saved choice remains System.");
+    if(!s.general.error.empty()){
+        ImGui::TextWrapped("%s",s.general.error.c_str());
+        s.presentation.Annotate("preferences-error","Preferences",s.general.error,c::ax::SemanticRole::Alert);
+    }
     auto* d=s.documents.Active();
     if(!d) {
         if(!s.notice.empty()){const auto text=s.privacy.hidden?std::string("Command result details hidden."):s.notice;ImGui::TextWrapped("%s",text.c_str());s.presentation.Annotate("command-notice","Command status",text,c::ax::SemanticRole::Alert);}
@@ -415,6 +460,12 @@ Layout Measure(ImVec2 origin,ImVec2 size,float scale,float menu_height)
 }
 std::string SemanticScope(const State& s) {
     std::string scope=std::to_string(s.documents.ActiveId())+":"+std::to_string(s.semantic_hide_toggle)+":"+std::to_string(s.privacy.hidden)+":"+std::to_string(int(s.actions.kind))+":"+std::to_string(s.actions.target)+":"+std::to_string(int(s.drawer))+":"+std::to_string(s.close_tab_popup)+":"+std::to_string(s.close_document_popup)+":"+std::to_string(s.semantic_menu_open)+":"+std::to_string(s.semantic_context)+":"+std::to_string(s.semantic_context_revision);
+    scope+=":"+std::to_string(s.general.dialog.open)+":"+std::to_string(s.general.saved?s.general.saved->revision:0)+":"+std::to_string(int(s.server.source));
+    scope+=":"+std::to_string(int(s.wallet_tools.tool))+":"+std::to_string(s.wallet_tools.revision)+":"+std::to_string(s.activity_log.Revision());
+    scope+=":"+std::to_string(int(s.desktop.page))+":"+std::to_string(s.desktop.revision)+":"+std::to_string(s.desktop.dialog.open);
+    scope+=":"+std::to_string(s.message.revision)+":"+std::to_string(s.message.dialog.open)+":"+std::to_string(s.message.pending);
+    scope+=":"+std::to_string(s.payment_protocol.dialog.open)+":"+std::to_string(s.payment_protocol.profile_revision);
+    scope+=":"+std::to_string(s.recovery_dialog.open)+":"+std::to_string(s.metadata_backup.revision);
     scope+=":"+std::to_string(int(s.local_document.mode))+":"+std::to_string(s.local_document.context.generation)
         +":"+std::to_string(s.local_document.revision);
     if(const auto view=s.imported_views.find(s.documents.ActiveId());view!=s.imported_views.end())
@@ -445,7 +496,7 @@ std::string SemanticScope(const State& s) {
 }
 Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const BootstrapAppearance& appearance,ImVec2 work_size)
 {
-    s.recovery=host.Recovery();s.coin_controls.Sync(s.documents,s.recovery,host.Refresh(),RefreshMonotonicMs());BeginHistoryLabelFrame(s);BeginCoinFrame(s);
+    s.recovery=host.Recovery();SyncGeneralPreferences(s,s.recovery);s.coin_controls.Sync(s.documents,s.recovery,host.Refresh(),RefreshMonotonicMs());BeginHistoryLabelFrame(s);BeginCoinFrame(s);
     if(s.recovery && host.Refresh()){auto view=host.Refresh()->View();if(view.identity && view.ledger){const app::Document* wallet=nullptr;for(const auto& d:s.documents.Documents())if(d.kind==app::DocumentKind::Wallet && view.identity->context.document.value()=="wallet-document-"+std::to_string(d.id)){wallet=&d;break;}if(wallet){auto local=s.coin_controls.Policy(*wallet,view,*s.recovery);const auto scope=std::to_string(wallet->id)+":"+std::to_string(view.identity->context.lock_epoch.value);if(scope!=s.history_policy_scope || s.history_policy_revision!=s.coin_controls.Revision() || s.history_policy_sequence!=view.history_sequence || s.history_policy_generation!=view.generation){HistoryPolicy policy;policy.known=local && local->rules.size()==view.ledger->Coins().size();if(local)for(const auto& [key,rule]:local->rules)if(auto p=app::ParseCoinKey(key)){if(rule==app::CoinRule::Frozen)policy.frozen.push_back(*p);else if(rule==app::CoinRule::Reserved)policy.reserved.push_back(*p);}host.Refresh()->SetHistoryPolicy(*view.identity,std::move(policy));s.history_policy_scope=scope;s.history_policy_revision=s.coin_controls.Revision();s.history_policy_sequence=view.history_sequence;s.history_policy_generation=view.generation;}}}}
     if(s.recovery && s.recovery->Locked())s.privacy.hidden=true;
     if(s.recovery)s.recovery->SetPresentation(s.privacy.hidden,s.unit);
@@ -490,7 +541,18 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     PollSigningReviews(s,host);
     s.broadcasts=host.Broadcasts();
     PollBroadcast(s,host);
-    Facts f;s.native_drop_target={};s.observations=host.Observe();s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open || s.onboarding.dialog.open || s.local_document.dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
+    Facts f;s.native_drop_target={};s.observations=host.Observe();
+    const auto tools_scope=CurrentToolScope(s,host);
+    if(s.activity_session!=tools_scope.connection || s.activity_epoch!=tools_scope.epoch || tools_scope.locked){
+        s.activity_log.Clear();s.activity_export={};s.activity_notice.clear();
+        s.activity_session=tools_scope.connection;s.activity_epoch=tools_scope.epoch;
+    }
+    if(!tools_scope.locked)s.activity_log.Observe(s.observations,std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    s.observations.log.clear();
+    s.observations.activity.detail.clear();
+    for(auto& task:s.observations.tasks){task.title.clear();task.detail.clear();}
+    s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open || s.onboarding.dialog.open || s.local_document.dialog.open || s.wallet_tools.dialog.open || s.desktop.dialog.open || s.message.dialog.open || s.sweep.dialog.open || s.payment_protocol.dialog.open || s.download.dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
     if(work_size.x<=0 || work_size.y<=0)work_size=vp->WorkSize;
     ImGui::SetNextWindowPos(vp->WorkPos);ImGui::SetNextWindowSize(work_size);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
     ImGui::Begin("Bitcoin Roots###workspace",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoDocking);
@@ -498,15 +560,22 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     ClosePendingDocumentPopup(s);
     f.layout=Measure(vp->WorkPos,work_size,scale,ImGui::GetFrameHeight());Menus(s,host,f,appearance.status);
     const bool privacy_locked=s.recovery && s.recovery->Locked();
-    if(!privacy_locked){Tabs(s,host,f,theme,scale,f.layout.tabs);Rail(s,f,theme,scale);
+    if(!privacy_locked && !s.general.dialog.open){Tabs(s,host,f,theme,scale,f.layout.tabs);Rail(s,f,theme,scale);
     if(const auto* d=s.documents.Active()){f.active_document=d->id;if(d->kind==app::DocumentKind::Wallet)f.section=int(d->section);}
     Content(s,host,f,theme,scale,appearance.status);
     DrawStatus(s,f,theme,scale);DrawActivityDrawer(s,f,theme,scale,&host);
     DrawDocumentDialog(s,host,f,theme,scale);
-    DrawRecoveryDialog(s,f,theme,scale);}
+    DrawRecoveryDialog(s,host,f,theme,scale);}
     DrawOnboarding(s,host,f,theme,scale);
     DrawLocalDocumentDialog(s,host,f,theme,scale);
-    if(auto* connection=host.Connection())f.server=DrawServer(s.server,*connection,s.presentation,theme,scale);
+    DrawGeneralPreferences(s,host,f,theme,appearance.status,scale);
+    if(auto* connection=host.Connection())f.server=DrawServer(s.server,*connection,s.presentation,theme,scale,s.privacy.hidden);
+    DrawWalletTools(s,host,f,theme,scale);
+    DrawDesktop(s,host,f,theme,scale);
+    DrawMessage(s,host,f,theme,scale);
+    DrawSweepNotice(s,host,f,theme,scale);
+    DrawPaymentProtocolNotice(s,host,f,theme,scale);
+    DrawDownload(s,host,f,theme,scale);
     DrawPrivacyPanel(s,host,f,theme,scale);
     if(s.recovery && s.recovery->Locked() && s.onboarding.page!=OnboardingPage::None)RetireOnboarding(s,host);
     ImGui::EndDisabled();
