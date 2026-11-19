@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 
 
@@ -64,6 +65,21 @@ def verify_case(source, entry, command):
             any(Path(arg).name == entry["commandArgument"] for arg in command),
             f"CTest command does not use expected case target: {entry}",
         )
+
+
+def declared_command(declared, name):
+    # CTest omits the command from its JSON when a direct executable has not
+    # been built. A model-only build still audits the configured UI tests;
+    # bind those cases to their exact CMake declaration without building them.
+    match = re.search(
+        r"add_test\s*\(\s*NAME\s+" + re.escape(name) + r"\s+COMMAND\s+([^)]*)\)",
+        declared,
+    )
+    require(match, f"missing declared command: {name}")
+    return [
+        re.sub(r"\$<TARGET_FILE:([^>]+)>", r"\1", arg)
+        for arg in shlex.split(match[1])
+    ]
 
 
 def feature_conditions(build):
@@ -126,7 +142,7 @@ def main():
             timeout=10,
         )
     )["tests"]
-    registration = {test["name"]: test.get("command", []) for test in inventory}
+    registration = {test["name"]: test.get("command") for test in inventory}
     require(len(registration) == len(inventory), "duplicate configured CTest names")
     declared = "\n".join(
         read_source(source, path)
@@ -148,6 +164,7 @@ def main():
     conditions = feature_conditions(build)
     ids, ports, test_refs, case_refs, bindings = set(), set(), set(), set(), set()
     absent_tests = set()
+    unbuilt_case_commands = set()
     for entry in ledger["entries"]:
         feature = entry["id"]
         require(
@@ -214,6 +231,9 @@ def main():
             if name not in registration:
                 absent_tests.add(name)
             if concrete := evidence.get("case"):
+                if name in registration and command is None:
+                    command = declared_command(declared, name)
+                    unbuilt_case_commands.add(name)
                 verify_case(source, concrete, command)
                 case_refs.add((name, concrete["id"]))
     require(ports == set(actual_ports), "ledger omits a compiled optional port")
@@ -227,6 +247,7 @@ def main():
                 caseReferences=len(case_refs),
                 configuredReferences=len(test_refs - absent_tests),
                 conditionallyAbsent=sorted(absent_tests),
+                configuredUnbuiltCaseCommands=sorted(unbuilt_case_commands),
             )
         )
     )
