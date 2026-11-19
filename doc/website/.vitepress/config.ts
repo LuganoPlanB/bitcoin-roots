@@ -10,7 +10,7 @@ const htmlTags = new Set([
   "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i", "img", "input", "kbd",
   "label", "li", "main", "mark", "nav", "ol", "p", "picture", "pre", "s", "samp", "section", "small", "source", "span",
   "strong", "sub", "summary", "sup", "table", "tbody", "td", "template", "tfoot", "th",
-  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex", "comparisontable",
+  "thead", "time", "tr", "u", "ul", "var", "video", "home", "documentationindex", "comparisontable", "rpcindex",
 ]);
 
 function makeLegacyMarkdownVueSafe(rendered: string) {
@@ -121,9 +121,6 @@ export default defineConfig({
       { text: "Documentation", link: "/documentation" },
       // Static patch documents bypass VitePress page-data routing.
       { text: "Patches", link: "/patches/", target: "_self" },
-      { text: "32.x source", link: "/doc/roots-v32-port-review" },
-      { text: "Policy", link: "/doc/policy/README" },
-      { text: "Contribute", link: "/CONTRIBUTING" },
     ],
     sidebar: {
       "/doc/policy/": sidebarGroup("policy"),

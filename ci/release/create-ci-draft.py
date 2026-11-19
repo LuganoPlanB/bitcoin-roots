@@ -60,7 +60,7 @@ def create(args):
                          'Packages include the project COPYING file.\n\n'
                          f'`SHA512SUMS.asc` signs the SHA512 manifest with release key `{args.fingerprint}`. '
                          'This checksum signature is separate from Git-tag and platform-code signing. '
-                         'The annotated Git tag is unsigned. macOS applications retain ad-hoc signatures, '
+                         'Git-tag signatures require separate verification. macOS applications retain ad-hoc signatures, '
                          'without Developer ID signing or notarization; Windows executables have no Authenticode signature.\n')
         args.assets = unsigned
         args.notes = notes

@@ -1,46 +1,50 @@
 ---
 title: Get started
-description: Choose the right path to build, configure, and operate Bitcoin Roots.
+description: Download Bitcoin Roots, choose how much blockchain history to keep, and follow your first sync.
+pageClass: bitcoin-roots-reading
 ---
 
-# Get started
+# Run your first Bitcoin node
 
-Bitcoin Roots connects to the Bitcoin peer-to-peer network to download and fully
-validate blocks and transactions. It also includes a wallet and graphical user
-interface, which can be optionally built.
+You can run Bitcoin Roots on a desktop or laptop. All you need to get started is the app, disk space and an internet connection. You can run a node without creating a wallet or owning any bitcoin.
 
-Choose the guide for the system where you plan to run your node:
+## Download Bitcoin Roots
 
-This source tree tracks the Core v32.1 port and v32.1-roots.1 source. Read the
-[32.x port review](/doc/roots-v32-port-review) and
-[current build requirements](/doc/roots-build-portability) before building.
-Source availability does not establish release publication. Published downloads
-and patches are listed in the [release patch browser](/patches/), which excludes
-unpublished drafts. Use that catalogue to check which versions have public assets.
+Choose the package for your computer. You can verify your download with the signed checksums on the [latest release page](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest).
 
-- [Linux and other Unix-like systems](/doc/build-unix)
-- [macOS](/doc/build-osx)
-- [Windows](/doc/build-windows)
-- [Windows with Microsoft Visual Studio](/doc/build-windows-msvc)
-- [FreeBSD](/doc/build-freebsd)
-- [OpenBSD](/doc/build-openbsd)
-- [NetBSD](/doc/build-netbsd)
+### Windows
 
-## Before you run
+Download the [Windows ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-windows-x86_64.zip) for a 64-bit Intel or AMD computer. Choose **Extract All**, then open `bitcoin-qt.exe` in the `bin` folder.
 
-Read the [configuration reference](/doc/bitcoin-conf) before changing defaults.
-For a smaller home-node footprint, the existing guides cover
-[reducing memory usage](/doc/reduce-memory) and
-[reducing traffic](/doc/reduce-traffic).
+### macOS
 
-Bitcoin Roots follows Bitcoin Core-compatible consensus while maintaining
-conservative, configurable transaction relay and mempool policy. It does not
-enforce RDTS/BIP-110 consensus rules. Read the
-[transaction relay policy documentation](/doc/policy/README) for the boundary
-between local policy and block validity.
+Open **Apple menu → About This Mac**. If you see an Apple M-series chip, download the [Apple silicon ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-darwin-arm64.zip). If you see Intel, choose the [Intel Mac ZIP](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-darwin-x86_64.zip). Unzip it, move `Bitcoin-Qt.app` to Applications and open it.
 
-## Go deeper
+### Linux
 
-The [documentation atlas](/documentation) indexes every Markdown guide shipped
-in this repository, including operations, architecture, wallet, API, testing,
-release, and embedded-library references.
+Choose the [Linux x86_64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-linux-x86_64.tar.gz) for an Intel or AMD computer, or the [Linux ARM64 archive](https://github.com/LuganoPlanB/bitcoin-roots/releases/latest/download/bitcoin-roots-linux-aarch64.tar.gz) for a 64-bit ARM system. If you’re unsure, `uname -m` shows which one you have. Extract the archive and open `bitcoin-qt` in the `bin` folder.
+
+## Choose a drive and a storage limit
+
+On first launch, Roots asks where to store its data. Keep the default folder or choose a folder on another drive. If you already run a Bitcoin node, choose a **new, empty folder** for this one.
+
+- **Keep the whole blockchain** if you want to serve old blocks to other nodes. Leave **Limit block chain storage to** unchecked. The welcome screen estimates how much space you need today. Leave room for the chain to grow.
+- **Turn on pruning** if disk space is tight. Check **Limit block chain storage to** and choose how much block data to keep. Roots still downloads and checks the full history, then deletes older blocks. Leave extra space for the node’s other files.
+
+![The first-run checkbox “Limit block chain storage to” with the size field enabled.](./images/pruning.png)
+
+If you later want the full history, or need to rescan an old wallet beyond the blocks you kept, you’ll need to download those blocks again.
+
+## Let the first sync run
+
+Click **OK**. Roots connects to other Bitcoin nodes and starts checking blocks from the beginning of Bitcoin’s history. This first sync can take days, depending on your connection, drive and computer. If your internet plan has a data cap, budget for the full download even with pruning on.
+
+![The sync window shows the last block time, progress and estimated time left.](./images/first-sync.png)
+
+At first the window may say **Unknown** or **calculating**. You can hide it and click the progress bar at the bottom to see it again. If you need to turn off your computer, quit Roots and let it finish shutting down. It picks up where it left off the next time you open it.
+
+Once your node is up to date, it checks new blocks as they arrive. If you use the built-in wallet, wait for sync to finish before relying on the balance it shows.
+
+### Other ways to run Roots
+
+Build instructions are available for [Linux](/doc/build-unix), [macOS](/doc/build-osx), [Windows](/doc/build-windows), [FreeBSD](/doc/build-freebsd), [NetBSD](/doc/build-netbsd) and [OpenBSD](/doc/build-openbsd). For a node without a desktop, see the [configuration guide](/doc/bitcoin-conf).

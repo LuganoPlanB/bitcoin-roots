@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { checkDocumentationRoutes } from "../../scripts/check-static-html.mjs";
 import { checkPublication, fetchDeployedReceipt, needsPublication, preparePublication,
     publicationReceipt, publicationSnapshot, writePublicationReceipt } from "../../scripts/website-publication.mjs";
 
@@ -18,7 +19,7 @@ const asset = (name = "bitcoin-roots-29.4-roots.1.patch", extra = {}) => ({ id: 
 const release = (extra = {}) => ({ id: 1, tag_name: tag, draft: false, prerelease: false,
     published_at: date, updated_at: date, name: "Roots", body: "Notes", target_commitish: "roots/29.4",
     html_url: `https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/${tag}`, assets: [asset()], ...extra });
-const revisions = { siteRevision: "a".repeat(40), themeRevision: "b".repeat(40), base: "/bitcoin-roots/" };
+const revisions = { rpcRelease: { tag, digest: `sha256:${"a".repeat(64)}` }, siteRevision: "a".repeat(40), themeRevision: "b".repeat(40), base: "/bitcoin-roots/" };
 const api = (entries) => async (page) => page === 1 ? entries : [];
 const snapshot = (entries = [release()], extra = {}) => publicationSnapshot({ ...revisions, api: api(entries), ...extra });
 async function directories(t) {
@@ -35,6 +36,33 @@ async function renderedCatalogue(verified, outputDir, base = revisions.base) {
         releases: verified.releases.map((release) => ({ tag: release.tag, state: release.patchState,
             sha512: release.integrity?.sha512 ?? null })) }));
 }
+
+test("documentation route check imports without generated inputs and accepts every built route", async (t) => {
+    const { outputDir } = await directories(t);
+    const script = join(outputDir, "check-static-html.mjs");
+    await writeFile(script, await readFile(new URL("../../scripts/check-static-html.mjs", import.meta.url)));
+    const { checkDocumentationRoutes: isolatedCheck } = await import(pathToFileURL(script).href);
+    const routes = ["/README", "/doc/feature-contracts/effective-policy", "/doc/historical/policy-review"];
+    for (const route of routes) {
+        const filename = join(outputDir, `${route.slice(1)}.html`);
+        await mkdir(join(filename, ".."), { recursive: true });
+        await writeFile(filename, "<h1>Built source documentation</h1>");
+    }
+    assert.equal(await isolatedCheck([{ documents: routes.map((link) => ({ link })) }], outputDir), 3);
+});
+
+test("documentation route check reports all missing catalogue pages", async (t) => {
+    const { outputDir } = await directories(t);
+    await mkdir(join(outputDir, "doc"));
+    await writeFile(join(outputDir, "doc/roots-features.html"), "<h1>Features</h1>");
+    const missing = ["/doc/feature-contracts/subdust", "/doc/historical/policy-review"];
+    const groups = [{ documents: ["/doc/roots-features", ...missing].map((link) => ({ link })) }];
+    await assert.rejects(checkDocumentationRoutes(groups, outputDir), (error) => {
+        assert.match(error.message, /Missing built documentation routes/);
+        for (const route of missing) assert.ok(error.message.includes(route), route);
+        return true;
+    });
+});
 
 test("unsupported tag metadata is counted and displayed without blocking source publication", async (t) => {
     const other = release({ id: 123, tag_name: 'not-a-roots-version', assets: [],
@@ -194,7 +222,7 @@ test("workflow serializes current-main discovery through deploy, gates expensive
         assert.match(section, /github\.repository == 'LuganoPlanB\/bitcoin-roots'/);
         assert.match(section, /github\.ref == 'refs\/heads\/main'/);
     }
-    for (const name of ["Check out the Plan B", "Set up Node.js\n", "Install website", "Test website",
+    for (const name of ["Set up Node.js\n", "Install website", "Test website",
         "Restore verified", "Fetch and verify", "Build website", "Add validated", "Upload GitHub"]) {
         const step = build.split(/\n      - name: /).find((step) => step.startsWith(name));
         assert.ok(step, name);
@@ -206,4 +234,72 @@ test("workflow serializes current-main discovery through deploy, gates expensive
     assert.ok(build.indexOf("run: npm run build") < build.indexOf("website-publication.mjs receipt"));
     assert.ok(build.indexOf("website-publication.mjs receipt") < build.indexOf("actions/upload-pages-artifact"));
     assert.doesNotMatch(workflow, /secrets\.|--clobber|gh release|release: write|contents: write/);
+});
+
+test("documentation test workflow runs on ordinary pull requests with read-only authority", async () => {
+    const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/test-docs.yml", import.meta.url)), "utf8");
+    const trigger = workflow.match(/^on:\n([\s\S]*?)\npermissions:/m);
+    assert.ok(trigger);
+    assert.equal(trigger[1].trim(), "pull_request:");
+    assert.match(workflow, /^permissions:\n  contents: read\n/m);
+    assert.doesNotMatch(workflow, /^[\t ]+permissions:|\bwrite\b|\benvironment:|secrets[.\[]/mi);
+    const steps = workflow.split(/\n      - name: /).slice(1);
+    const build = steps.find((step) => step.startsWith("Build website and check static output\n"));
+    assert.ok(build);
+    assert.match(build, /\n        env:\n          GITHUB_TOKEN: \$\{\{ github\.token \}\}\n?$/);
+    assert.equal((workflow.match(/github\.token/g) ?? []).length, 1);
+    assert.equal((workflow.match(/GITHUB_TOKEN/g) ?? []).length, 1);
+    for (const step of steps.filter((step) => step !== build)) assert.doesNotMatch(step, /GITHUB_TOKEN|github\.token/);
+    assert.doesNotMatch(workflow, /pages:|id-token:|configure-pages|upload-.*artifact|deploy-pages|website-publication\.mjs|gh release/);
+    assert.match(workflow, /group: docs-tests-\$\{\{ github\.event\.pull_request\.number \}\}/);
+    assert.match(workflow, /cancel-in-progress: true/);
+});
+
+test("documentation test workflow checks out the immutable PR without stored credentials", async () => {
+    const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/test-docs.yml", import.meta.url)), "utf8");
+    const steps = workflow.split(/\n      - name: /).slice(1);
+    const roots = steps.find((step) => step.startsWith("Check out Bitcoin Roots\n"));
+    assert.ok(roots);
+    assert.match(roots, /uses: actions\/checkout@v6/);
+    assert.match(roots, /persist-credentials: false/);
+    assert.match(roots, /repository: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \}\}/);
+    assert.match(roots, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+    assert.match(roots, /path: bitcoin-roots\n/);
+});
+
+test("the locked theme matches the revision recorded in the Pages receipt", async () => {
+    const workflow = await readFile(new URL("../../../../.github/workflows/deploy-docs.yml", import.meta.url), "utf8");
+    const lock = JSON.parse(await readFile(new URL("../../package-lock.json", import.meta.url), "utf8"));
+    const revision = workflow.match(/THEME_REVISION: ([a-f0-9]{40})\n/);
+    assert.ok(revision);
+    const theme = lock.packages["node_modules/lugano-planb-vite-theme"];
+    assert.equal(theme.resolved, `https://codeload.github.com/LuganoPlanB/vite-theme/tar.gz/${revision[1]}`);
+    assert.match(theme.integrity, /^sha512-/);
+});
+
+test("documentation test workflow runs the locked website suite and production-base static build only", async () => {
+    const workflow = await readFile(fileURLToPath(new URL("../../../../.github/workflows/test-docs.yml", import.meta.url)), "utf8");
+    const steps = workflow.split(/\n      - name: /).slice(1);
+    assert.equal(steps.length, 5);
+    assert.deepEqual([...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]),
+        ["actions/checkout@v6", "actions/setup-node@v6"]);
+    const node = steps.find((step) => step.startsWith("Set up Node.js\n"));
+    assert.ok(node);
+    assert.match(node, /node-version: 24/);
+    assert.match(node, /cache-dependency-path: bitcoin-roots\/doc\/website\/package-lock.json/);
+    const commands = steps.filter((step) => /\n        run:/.test(step));
+    assert.deepEqual(commands.map((step) => step.match(/\n        run: (.+)/)[1]),
+        ["npm ci", "npm test", "npm run releases:build"]);
+    for (const step of commands) {
+        assert.match(step, /working-directory: bitcoin-roots\/doc\/website/);
+        assert.doesNotMatch(step, /\n\s+if:/);
+    }
+    assert.match(workflow, /DOCS_BASE: \/bitcoin-roots\//);
+    assert.match(workflow, /timeout-minutes: 15/);
+});
+
+test("a different stable RPC source invalidates the deployed receipt", async () => {
+    const receipt = publicationReceipt(await snapshot());
+    const rpcRelease = { ...revisions.rpcRelease, digest: `sha256:${"c".repeat(64)}` };
+    assert.equal(needsPublication(await snapshot([release()], { rpcRelease }), receipt), true);
 });

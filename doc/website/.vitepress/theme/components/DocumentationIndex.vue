@@ -27,20 +27,20 @@ const visibleCount = computed(() => filteredGroups.value.reduce(
   <main class="roots-atlas" id="main-content">
     <header class="roots-atlas__header">
       <div>
-        <h1>Every guide. One clear map.</h1>
+        <h1>Documentation</h1>
         <p>
-          Browse the Markdown documentation that ships with Bitcoin Roots, kept in
-          its original source location and presented here without rewritten content.
+          Browse the <a :href="withBase('/documentation/rpc/')">RPC command reference</a>
+          or find a guide by topic, title or file name.
         </p>
       </div>
       <p class="roots-atlas__count">
         <strong>{{ documentationCount }}</strong>
-        <span>source documents</span>
+        <span>guides</span>
       </p>
     </header>
 
     <label class="roots-atlas__search">
-      <span>Filter the documentation atlas</span>
+      <span>Find a guide</span>
       <input v-model="query" type="search" placeholder="Try wallet, traffic, RPC…">
     </label>
 
@@ -50,7 +50,7 @@ const visibleCount = computed(() => filteredGroups.value.reduce(
 
     <div v-if="filteredGroups.length" class="roots-atlas__groups">
       <section v-for="group in filteredGroups" :key="group.id" class="roots-atlas__group">
-        <details :open="query.length > 0 || group.id !== 'releases'">
+        <details :open="query.trim().length > 0">
           <summary>
             <h2>{{ group.label }}</h2>
             <span>{{ group.documents.length }}</span>

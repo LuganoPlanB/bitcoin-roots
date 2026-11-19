@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "diff2html": "3.4.56",
-    "lugano-planb-vite-theme": "file:../../../vite-theme"
+    "lottie-web": "5.13.0",
+    "lugano-planb-vite-theme": "https://codeload.github.com/LuganoPlanB/vite-theme/tar.gz/b969923b3407fb85a46cf45a8e18385d239cf79e"
   },
   "devDependencies": {
     "vite": "8.2.2",

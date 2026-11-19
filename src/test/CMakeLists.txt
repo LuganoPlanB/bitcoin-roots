@@ -18,6 +18,7 @@ add_executable(test_bitcoin
   baseindex_tests.cpp
   bech32_tests.cpp
   bip32_tests.cpp
+  bip322_tests.cpp
   bip324_tests.cpp
   blockchain_tests.cpp
   blockencodings_tests.cpp
@@ -149,6 +150,7 @@ add_executable(test_bitcoin
 include(TargetDataSources)
 target_json_data_sources(test_bitcoin
   data/base58_encode_decode.json
+  data/bip322_vectors.json
   data/bip341_wallet_vectors.json
   data/blockfilters.json
   data/key_io_invalid.json

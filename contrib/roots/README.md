@@ -1,9 +1,12 @@
 # Bitcoin Roots maintainer workflow
 
 Bitcoin Roots is maintained as a small, reviewable Git history on top of
-Bitcoin Core. The exact Bitcoin Core v32.1 commit is the direct base of this
-unpublished `v32.1-roots.1` candidate. The complete released v31 series through
-roots.6 is folded by observable contract, with source credits preserved.
+Bitcoin Core. This unpublished `v32.1-roots.2` candidate appends CI input
+sharing, a database cursor fix and BIP322 simple message proofs to published
+[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b),
+preserving its exact Bitcoin Core v32.1 base and complete history.
+The released v31 series through roots.6 remains folded by observable contract,
+with source credits preserved.
 Publishing, release tags and main promotion require separate authorization.
 The examples below describe later operator actions; they do not establish that
 this unpublished candidate has a public canonical branch or release tag.
@@ -346,7 +349,7 @@ release. It also refuses to run if the future tag already exists remotely.
 For an explicitly requested optional rehearsal:
 
 ```sh
-release_tag=v32.1-roots.1
+release_tag=v32.1-roots.2
 release_commit=$(git rev-parse origin/roots/32.1^{commit})
 gh workflow run release.yml --ref main \
     -f release_tag="$release_tag" -f release_commit="$release_commit"
@@ -361,13 +364,14 @@ Fetch again and verify the annotated tag target and ancestry
 immediately before pushing:
 
 ```sh
-release_tag=v32.1-roots.1
+release_tag=v32.1-roots.2
 git check-ref-format "refs/tags/$release_tag"
 git fetch origin roots/32.1
 git fetch https://github.com/bitcoin/bitcoin.git \
     refs/tags/v32.1:refs/tags/v32.1
 release_commit=$(git rev-parse origin/roots/32.1^{commit})
-git tag --annotate "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
+git tag --sign --local-user 5EADD53F2CD1F0B7AEEE920D25FC5C29CD528E32 \
+    "$release_tag" "$release_commit" -m "Bitcoin Roots $release_tag"
 git rev-parse "$release_tag^{commit}"
 test "$(git rev-parse "$release_tag^{commit}")" = \
     "$(git rev-parse origin/roots/32.1^{commit})"
@@ -437,5 +441,5 @@ Never replace published tags/assets; maintenance uses a reviewed new release.
 Use affected regressions and bounded smoke campaigns while editing; reserve
 one full applicable suite for acceptance. Broad optional-platform, extended and
 long sanitizer/fuzz coverage runs nightly or by explicit manual selection.
-See [CI commands and budgets](../../ci/README.md#fast-pr-and-development-coverage).
+See [CI commands and budgets](../../ci/README.md#roots-github-actions-policy).
 Local workflow/fixture tests do not establish hosted CI success.

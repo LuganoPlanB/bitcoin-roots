@@ -1,100 +1,25 @@
 ---
 title: Wallet privacy tools
-description: Bitcoin Roots wallet workflows, current key-disclosure permissions, and historical sweep and coin-control guidance.
+description: Choose which coins to spend, review a sweep, and understand who can use a spending key.
 pageClass: bitcoin-roots-reading
-head:
-  - - meta
-    - property: og:title
-      content: Bitcoin Roots wallet privacy tools
-  - - meta
-    - property: og:description
-      content: Review wallet workflows, key-disclosure permissions, and the limits of sweep and coin-control tools.
 ---
 
 # Wallet privacy tools
 
-For network routing, private broadcasting, wallet settings, and their defaults,
-see [Privacy settings](/privacy).
+## Choose which coins to spend
 
-## Current v32.1 source
+When you pay someone, your wallet selects coins from earlier payments to cover the amount and the fee. Spending two coins together can reveal that they belong to the same person. **Coin control** lets you review the selection and pick the coins yourself.
 
-Read the current [wallet manual](/doc/wallet-privacy) and
-[feature catalogue](/doc/roots-features) for the v32.1 source. Source availability
-does not establish a published release; public downloads and patches are listed
-in the [release patch browser](/patches/).
+Roots shows the value left after fees, whether an address has been reused, and which coins are locked. Locked coins stay visible but cannot be selected. If the selection changes while you’re reviewing it, check the inputs and fee again before signing. These tools do not add CoinJoin or payjoin.
 
-`exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled
-by default, including public-only modes. Enabling them requires starting the
-node with the explicit command-line option `--allow-dangerous-rpc` (or `=1`).
-Configuration files, JSON settings and runtime settings cannot enable them;
-omitting the option or using `=0` disables them. RPC authentication, selected-wallet
-authorization and normal wallet unlock remain required. Private-key disclosure
-can compromise other addresses or an HD subtree; review the complete manual
-before enabling these methods.
+## Move coins from a private key
 
-## Historical sweep and coin-control guidance
+A **sweep** moves confirmed coins from a supported private key into your wallet. Roots can show you a signed preview before it sends anything. Check the receiving address, amount and fee. You can cancel until broadcast begins. Keep an independent backup of the original key until the transfer confirms.
 
-The published `v29.4-roots.3` release adds two explicit wallet workflows. This
-is release documentation. Verify the version and
-built-in help of any binary before using these tools.
+Sweeping requires a wallet that can sign locally. Only certain address types are supported, and combining coins in a sweep can link them on the blockchain. See the [wallet manual](/doc/wallet-privacy) for supported keys and addresses.
 
-## Sweep a supported private key
+## Access to private keys
 
-`sweepprivkeys` scans confirmed outputs controlled by a supplied Base58 WIF key
-and prepares a transaction to a spendable destination in the selected wallet.
-A signed, non-broadcast preview is the default. Review the destination, inputs,
-fee, transaction ID, and Replace-By-Fee state before choosing to broadcast.
+Anyone who obtains a spending key may be able to spend the coins it controls. The commands `exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled by default. They require the startup option `--allow-dangerous-rpc`. Configuration files and settings cannot enable them. Wallet permissions and unlock requirements still apply.
 
-The supported configuration is a descriptor wallet with local private keys.
-P2PKH works with compressed and uncompressed WIF keys. Compressed keys also
-support native and wrapped P2WPKH. Taproot and other script forms are not
-scanned.
-
-The supplied key is transient: it is not imported into the wallet, saved as a
-descriptor or label, written to settings, or included in normal logs. The Qt
-dialog masks the key and disables copy, cut, and context-menu actions. A sweep
-can be cancelled until broadcast submission begins; once submission begins,
-the dialog stays open until the result is known.
-
-::: warning Keep your backup
-A sweep is not key backup or wallet recovery. Keep an independent, secure
-backup until the transaction confirms.
-:::
-
-## Inspect coin-control facts
-
-The advanced coin-control view reports wallet facts for outputs in the normal
-available-output list, including amount, effective value, confirmations,
-address reuse, grouping, lock and spendability state, input size, fee, change,
-and RBF state.
-
-Locked outputs remain visible but cannot be selected. Unsafe and immature
-outputs excluded by the wallet's normal availability filters are not added only
-to display a status. Material wallet or chain changes clear stale selections so
-the operator must review current inputs again.
-
-## Privacy boundary
-
-These tools do not add CoinJoin, payjoin, automatic consolidation, private-key
-export, a transaction-history product, chain-analysis scoring, or a privacy
-score. They do not provide an anonymity guarantee. They expose transaction
-facts so the operator can make and verify an explicit choice.
-
-Bitcoin Roots continues to follow Bitcoin Core-compatible consensus. These
-wallet tools do not change block validity, the P2P wire protocol, transaction
-serialization, or the wallet database format.
-
-## Verify a candidate build
-
-Use the executable itself as the authority:
-
-```sh
-bitcoin-cli --version
-bitcoin-cli help sweepprivkeys
-```
-
-Review the release's complete
-[wallet privacy manual](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.3/doc/wallet-privacy.md)
-and
-[release notes](https://github.com/LuganoPlanB/bitcoin-roots/blob/v29.4-roots.3/doc/release-notes.md)
-with the source and tests before using these workflows.
+For how your node connects to peers, see [privacy settings](/privacy).

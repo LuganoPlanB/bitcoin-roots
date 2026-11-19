@@ -131,11 +131,12 @@ export function createCatalogue(releases) {
 
 // Explicit page numbers keep pagination confined to the fixed API endpoint.
 // A final empty page proves completion even if an intermediate page is short.
-export async function discoverReleases({ api = fetchReleasePage, maxPages = 1000 } = {}) {
+export async function discoverReleases({ api, token, maxPages = 1000 } = {}) {
   requireValue(Number.isSafeInteger(maxPages) && maxPages > 0 && maxPages <= 1000, "Invalid pagination limit");
+  const requestPage = api ?? ((page) => fetchReleasePage(page, { token }));
   const releases = [];
   for (let page = 1; page <= maxPages; page++) {
-    const batch = await api(page);
+    const batch = await requestPage(page);
     requireValue(Array.isArray(batch) && batch.length <= 100, "Malformed GitHub releases page");
     if (batch.length === 0) return createCatalogue(releases);
     releases.push(...batch);
@@ -143,16 +144,39 @@ export async function discoverReleases({ api = fetchReleasePage, maxPages = 1000
   throw new Error("Release pagination limit exceeded; catalogue incomplete");
 }
 
-export async function fetchReleasePage(page, { fetchImpl = fetch, timeoutMs = 30000, maxBytes = 8 * 1024 * 1024 } = {}) {
+export async function fetchReleasePage(page, options) {
   requireValue(Number.isSafeInteger(page) && page > 0, "Invalid page number");
+  return fetchReleaseMetadata(`${releasesEndpoint}?per_page=100&page=${page}`, options);
+}
+
+export async function fetchLatestRpcRelease(options) {
+  const release = await fetchReleaseMetadata(`${releasesEndpoint}/latest`, options);
+  requireValue(release.draft === false && release.prerelease === false, "Expected latest stable Roots release");
+  const tag = validateTag(release.tag_name);
+  const archive = selectAsset(release.assets, "bitcoin-roots-linux-x86_64.tar.gz", tag);
+  requireValue(archive?.digest, "Latest release needs a digest for the Linux package");
+  return { tag, digest: archive.digest };
+}
+
+async function fetchReleaseMetadata(url, { token, fetchImpl = fetch, timeoutMs = 30000, maxBytes = 8 * 1024 * 1024 } = {}) {
+  requireValue(token === undefined || (typeof token === "string" && token.length > 0
+    && token.length <= 4096 && !/[^\x21-\x7e]/.test(token)), "Invalid GitHub releases API token");
+  // Credentials are explicit and confined to this fixed, nonredirecting GET.
+  // Asset/receipt clients never receive these headers or this option.
+  const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  if (token !== undefined) headers.Authorization = `Bearer ${token}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let failure = "GitHub release discovery request failed";
   try {
-    const response = await fetchImpl(`${releasesEndpoint}?per_page=100&page=${page}`, {
-      redirect: "error", signal: controller.signal,
-      headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+    const response = await fetchImpl(url, {
+      method: "GET", redirect: "error", signal: controller.signal,
+      headers,
     });
-    requireValue(response.ok, `GitHub release discovery failed (HTTP ${response.status})`);
+    if (!response.ok) {
+      if (Number.isInteger(response.status)) failure = `GitHub release discovery failed (HTTP ${response.status})`;
+      throw new Error(failure);
+    }
     const chunks = [];
     let bytes = 0;
     for await (const chunk of response.body) {
@@ -163,10 +187,13 @@ export async function fetchReleasePage(page, { fetchImpl = fetch, timeoutMs = 30
       }
       chunks.push(chunk);
     }
+    failure = "Invalid JSON in GitHub release metadata";
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch (error) {
+  } catch {
     if (controller.signal.aborted) throw new Error("GitHub release discovery timed out or exceeded byte limit");
-    throw error;
+    // Fetch/stream/JSON errors can contain request options or response excerpts.
+    // Expose only local messages and a numeric HTTP status, never their causes.
+    throw new Error(failure);
   } finally {
     clearTimeout(timer);
   }

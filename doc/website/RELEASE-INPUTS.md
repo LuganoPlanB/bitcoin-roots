@@ -1,14 +1,9 @@
 # Website release inputs
 
-Use Node.js 24 (the workflow version; the package minimum is 20), a clean Roots
-checkout or snapshot, and a sibling `vite-theme` checkout pinned to
-`b969923b3407fb85a46cf45a8e18385d239cf79e`. The layout is
-`<workspace>/bitcoin-roots/doc/website` and `<workspace>/vite-theme`; the theme
-is a local file dependency. Confirm the theme revision from the Roots root,
-then install the website dependencies once:
+Use Node.js 24 and a clean Roots checkout or snapshot. From the repository
+root, install the locked website dependencies, including the pinned Plan ₿ theme.
 
 ```sh
-git -C ../vite-theme rev-parse HEAD
 cd doc/website
 npm ci
 ```
@@ -36,6 +31,15 @@ numbered pages through the final empty page. Unit tests and the ordinary website
 build do not contact GitHub. Rendering these inputs into patch pages is a
 separate offline stage included in `npm run build`. A build requires a prepared
 input catalogue.
+
+The PR test workflow supplies its ephemeral, read-only `github.token` only to
+the release build step as `GITHUB_TOKEN`. The preparation CLI passes it solely
+to the fixed GitHub releases API GET; redirects are rejected and drafts are
+excluded before publication metadata is processed. Asset/CDN downloads and
+public deployment receipts remain unauthenticated. Local preparation works
+anonymously when `GITHUB_TOKEN` is absent. Authentication failures stop the
+build without an anonymous retry or stale-inventory fallback; an HTTP 403 alone
+does not establish its upstream cause. Do not supply a PAT or release secret.
 
 The ignored `.vitepress/release-inputs/catalogue.json` contains the stable,
 chronologically sorted public inventory, including prereleases and releases

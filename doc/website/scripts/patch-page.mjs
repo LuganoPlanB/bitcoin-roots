@@ -1,5 +1,5 @@
 import { releaseVersionTag } from "./release-catalogue.mjs";
-import { validateSiteShell } from "./patch-site-shell.mjs";
+import { isSiteStylesheet, validateSiteShell } from "./patch-site-shell.mjs";
 
 export function escapeHtml(value) {
     return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -18,7 +18,7 @@ export function patchDocument({ title, body, base, siteStyles = [], siteShell })
     validateSiteShell(siteShell);
     if (siteShell.base !== base) throw new Error("Shared website shell base mismatch");
     const styles = [...new Set([...siteStyles, ...siteShell.styles])];
-    if (styles.some((path) => !/^assets\/[A-Za-z0-9_.-]+\.css$/.test(path))) throw new Error("Invalid site stylesheet path");
+    if (!styles.every(isSiteStylesheet)) throw new Error("Invalid site stylesheet path");
     return `<!doctype html>\n<html lang="${siteShell.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>${escapeHtml(title)} · Bitcoin Roots</title>
 <meta name="color-scheme" content="light dark">
 <script src="${base}patches/patch-theme.js"></script>

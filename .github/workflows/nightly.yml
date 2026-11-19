@@ -16,6 +16,11 @@ on:
         options: [all, sanitizers, fuzz, platforms, tsan, msan, asan, tidy, i686, previous-releases, extended-functional, system-libraries, macos-fuzz, windows-fuzz, arm32, kernel, macos-smoke, windows-smoke]
   workflow_call:
     inputs:
+      qa-assets-revision:
+        description: Reuse this caller run's prepared inputs instead of acquiring again
+        required: false
+        default: ''
+        type: string
       ref:
         description: Immutable commit SHA to test
         required: true
@@ -140,10 +145,20 @@ jobs:
           echo "value=${value}" >> "${GITHUB_OUTPUT}"
           echo "sanitizers=${sanitizer_value}" >> "${GITHUB_OUTPUT}"
 
+  test-assets:
+    name: Shared test inputs
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && inputs.qa-assets-revision == '' && inputs.suite != 'tidy' && inputs.suite != 'extended-functional'
+    uses: ./.github/workflows/reusable-test-assets.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+      unit: ${{ inputs.suite != 'fuzz' && inputs.suite != 'macos-fuzz' && inputs.suite != 'windows-fuzz' }}
+      fuzz: ${{ inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz' || inputs.suite == 'windows-fuzz' }}
+
   linux-assurance:
     name: ${{ matrix.name }}
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && fromJSON(needs.gate.outputs.linux-matrix).include[0] != null
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.suite == 'tidy' || inputs.suite == 'extended-functional' || inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && fromJSON(needs.gate.outputs.linux-matrix).include[0] != null }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     strategy:
@@ -179,6 +194,11 @@ jobs:
           provider: gha
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
+      - name: Restore shared unit inputs
+        uses: ./.github/actions/restore-test-assets
+        if: matrix.file-env != './ci/test/00_setup_env_native_tidy.sh' && matrix.file-env != './ci/test/00_setup_env_native_extended_functional.sh'
+        with:
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       - name: Run assurance suite
         run: ./ci/test_run_all.sh
       - name: Preserve assurance diagnostics
@@ -192,14 +212,15 @@ jobs:
 
   sanitizers:
     name: ${{ matrix.name }}
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && fromJSON(needs.gate.outputs.sanitizer-matrix).include[0] != null
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && fromJSON(needs.gate.outputs.sanitizer-matrix).include[0] != null }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.gate.outputs.sanitizer-matrix) }}
     uses: ./.github/workflows/reusable-sanitizer.yml
     with:
       ref: ${{ inputs.ref || github.sha }}
+      qa-assets-revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       name: ${{ matrix.name }}
       file-env: ${{ matrix.file-env }}
       timeout: ${{ matrix.timeout }}
@@ -209,8 +230,8 @@ jobs:
 
   linux-fuzz:
     name: Linux native full fuzz corpus
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
@@ -244,6 +265,11 @@ jobs:
           provider: gha
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
+      - name: Restore shared fuzz inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          kind: fuzz_corpora
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       - name: Run full fuzz corpus
         run: ./ci/test_run_all.sh
       - name: Preserve assurance diagnostics
@@ -259,8 +285,8 @@ jobs:
     name: macOS native full fuzz corpus
     # Release our ARM smoke runner before requesting another scarce ARM runner.
     # The explicit status check also permits fuzz-only runs when smoke is skipped.
-    needs: [gate, macos-smoke]
-    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz') }}
+    needs: [gate, test-assets, macos-smoke]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'macos-fuzz') }}
     runs-on: macos-15
     timeout-minutes: 360
     env:
@@ -294,6 +320,11 @@ jobs:
           max-size: 500M
           append-timestamp: true
           save: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
+      - name: Restore shared fuzz inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          kind: fuzz_corpora
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       - name: Run full fuzz corpus
         run: ./ci/test_run_all.sh
       - name: Preserve assurance diagnostics
@@ -307,8 +338,8 @@ jobs:
 
   windows-fuzz:
     name: Windows x86_64 full fuzz corpus
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'windows-fuzz')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'fuzz' || inputs.suite == 'windows-fuzz') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 360
     env:
@@ -367,19 +398,20 @@ jobs:
         working-directory: build
         shell: pwsh
         run: py -3 ../ci/test/roots-regressions.py command --timeout 18000 --artifacts "$env:RUNNER_TEMP/roots-failures/build" -- cmake --build . --config Release --parallel 2
-      - name: Clone fuzz corpora
+      - name: Restore shared fuzz inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          kind: fuzz_corpora
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
+      - name: Prepare writable fuzz corpus
         shell: pwsh
-        run: |
-          git clone --depth=1 https://github.com/bitcoin-core/qa-assets "$env:RUNNER_TEMP\qa-assets"
-          Set-Location "$env:RUNNER_TEMP\qa-assets"
-          Write-Host "Using qa-assets repo from commit ..."
-          git log -1
+        run: py -3 test/download_utils.py fuzz "$env:RUNNER_TEMP\qa-assets-working"
       - name: Run every fuzz target
         working-directory: build
         shell: cmd
         env:
           BITCOINFUZZ: ${{ github.workspace }}\build\bin\Release\fuzz.exe
-        run: py -3 ..\ci\test\roots-regressions.py command --timeout 18000 --artifacts "%RUNNER_TEMP%\roots-failures\fuzz" -- py -3 test\fuzz\test_runner.py --par 2 --loglevel DEBUG "%RUNNER_TEMP%\qa-assets\fuzz_corpora"
+        run: py -3 ..\ci\test\roots-regressions.py command --timeout 18000 --artifacts "%RUNNER_TEMP%\roots-failures\fuzz" -- py -3 test\fuzz\test_runner.py --par 2 --loglevel DEBUG "%RUNNER_TEMP%\qa-assets-working\fuzz_corpora"
       - name: Save vcpkg binary cache
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -407,8 +439,8 @@ jobs:
           if-no-files-found: warn
   arm32:
     name: 32-bit ARM unit tests
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'arm32')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'arm32') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
@@ -439,6 +471,10 @@ jobs:
           provider: gha
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
+      - name: Restore shared unit inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       - name: Run ARM32 unit tests
         run: ./ci/test_run_all.sh
       - name: Preserve assurance diagnostics
@@ -453,8 +489,8 @@ jobs:
 
   kernel:
     name: native kernel library and chainstate
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'kernel')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'kernel') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -485,6 +521,10 @@ jobs:
           provider: gha
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
+      - name: Restore shared unit inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
       - name: Run kernel library and chainstate coverage
         run: ./ci/test_run_all.sh
       - name: Preserve assurance diagnostics
@@ -499,8 +539,8 @@ jobs:
 
   windows-smoke:
     name: Windows x86_64 production-like smoke
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'windows-smoke')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'windows-smoke') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
     steps:
@@ -545,6 +585,16 @@ jobs:
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+      - name: Restore shared unit inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
+      - name: Prepare unit inputs
+        shell: pwsh
+        run: |
+          py -3 test/download_utils.py unit "$env:RUNNER_TEMP/unit_test_data"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "DIR_UNIT_TEST_DATA=$env:RUNNER_TEMP/unit_test_data"
       - name: Configure, build, and smoke test
         shell: pwsh
         run: |
@@ -566,8 +616,8 @@ jobs:
           if-no-files-found: warn
   macos-smoke:
     name: macOS ${{ matrix.expected-arch }} native production-like smoke
-    needs: gate
-    if: needs.gate.outputs.run == 'true' && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'macos-smoke')
+    needs: [gate, test-assets]
+    if: ${{ !cancelled() && needs.gate.outputs.run == 'true' && (inputs.qa-assets-revision != '' || needs.test-assets.result == 'success') && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'platforms' || inputs.suite == 'macos-smoke') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     strategy:
@@ -614,6 +664,14 @@ jobs:
           max-size: 500M
           append-timestamp: true
           save: false
+      - name: Restore shared unit inputs
+        uses: ./.github/actions/restore-test-assets
+        with:
+          revision: ${{ inputs.qa-assets-revision || needs.test-assets.outputs.revision }}
+      - name: Prepare unit inputs
+        run: |
+          python3 test/download_utils.py unit "$RUNNER_TEMP/unit_test_data"
+          echo "DIR_UNIT_TEST_DATA=$RUNNER_TEMP/unit_test_data" >> "$GITHUB_ENV"
       - name: Configure, build, and smoke test
         run: |
           set -Eeuo pipefail

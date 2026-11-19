@@ -64,15 +64,6 @@ jobs:
         if: steps.inventory.outputs.changed == 'false'
         run: printf '%s\n' 'Public catalogue and site revision unchanged; installation, build and deployment skipped.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Check out the Plan B Vite theme
-        if: steps.inventory.outputs.changed == 'true'
-        uses: actions/checkout@v6
-        with:
-          repository: LuganoPlanB/vite-theme
-          ref: b969923b3407fb85a46cf45a8e18385d239cf79e
-          path: vite-theme
-          persist-credentials: false
-
       - name: Set up Node.js
         if: steps.inventory.outputs.changed == 'true'
         uses: actions/setup-node@v6
@@ -98,6 +89,7 @@ jobs:
           path: |
             bitcoin-roots/doc/website/.vitepress/release-inputs/assets
             bitcoin-roots/doc/website/.vitepress/patch-cache
+            bitcoin-roots/doc/website/.vitepress/rpc-cache
           key: website-patches-v1-${{ runner.os }}-${{ steps.inventory.outputs.fingerprint }}
           restore-keys: |
             website-patches-v1-${{ runner.os }}-
@@ -105,6 +97,11 @@ jobs:
       - name: Fetch and verify checked release snapshot
         if: steps.inventory.outputs.changed == 'true'
         run: node scripts/website-publication.mjs prepare
+        working-directory: bitcoin-roots/doc/website
+
+      - name: Refresh the stable RPC reference
+        if: steps.inventory.outputs.changed == 'true'
+        run: python3 scripts/rpc-reference.py --publication .vitepress/release-inputs/publication.json
         working-directory: bitcoin-roots/doc/website
 
       - name: Build website and render bounded patch pages

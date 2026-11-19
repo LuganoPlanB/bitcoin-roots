@@ -3,6 +3,7 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { filterCommands } from "../theme/components/rpc-filter.mjs";
 
 import { documentationCount, documentationGroups } from "../generated/catalog.mjs";
 
@@ -48,16 +49,9 @@ test("catalog routes are clean and rooted", () => {
 test("the homepage states the project position and operator journey precisely", async () => {
   const home = await readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8");
 
-  assert.match(home, /Your node\. Your policy\. Bitcoin consensus\./);
-  assert.match(home, /Bitcoin Core-compatible consensus/);
-  assert.match(home, /does not enforce\s+RDTS\/BIP-110/);
-  assert.match(home, /source-code fork/);
-  assert.match(home, /It is not a separate cryptocurrency/);
-  assert.match(home, /Get started/);
-  assert.match(home, /Independently verify Bitcoin/);
-  assert.match(home, /Know exactly where policy ends/);
-  assert.match(home, /Documentation stays with the source/);
-  assert.match(home, /Open development for security-critical software/);
+  assert.match(home, /Run your own Bitcoin node/);
+  assert.match(home, /withBase\('\/getting-started'\)/);
+  assert.match(home, /withBase\('\/compare'\)/);
 });
 
 test("new editorial copy avoids prohibited claims and punctuation", async () => {
@@ -78,7 +72,10 @@ test("new editorial copy avoids prohibited claims and punctuation", async () => 
 });
 
 test("website-owned navigation only targets published pages", async () => {
+  const rpcFiles = await readdir(resolve(siteRoot, "content/documentation/rpc"));
   const availableRoutes = new Set([
+    "/documentation/rpc/",
+    ...rpcFiles.filter(name => name.endsWith(".md")).map(name => "/documentation/rpc/" + name.slice(0, -3)),
     "/",
     "/bitcoin-roots.lottie.json",
     "/compare",
@@ -91,6 +88,7 @@ test("website-owned navigation only targets published pages", async () => {
     ...documentationGroups.flatMap((group) => group.documents.map((document) => document.link)),
   ]);
   const websiteFiles = [
+    ".vitepress/theme/components/DocumentationIndex.vue",
     ".vitepress/theme/components/Home.vue",
     "content/compare.md",
     "content/getting-started.md",
@@ -107,7 +105,8 @@ test("website-owned navigation only targets published pages", async () => {
     ].map((match) => match[1]);
 
     for (const route of routes) {
-      assert.ok(availableRoutes.has(route), `${file} targets unpublished route ${route}`);
+      const page = route.split(/[?#]/, 1)[0];
+      assert.ok(availableRoutes.has(page), `${file} targets unpublished route ${route}`);
     }
   }
 });
@@ -145,64 +144,41 @@ test("primary navigation includes the two editorial routes", async () => {
     ["Compare", "/compare"],
     ["Privacy", "/privacy"],
     ["Documentation", "/documentation"],
-    ["Policy", "/doc/policy/README"],
-    ["Contribute", "/CONTRIBUTING"],
+    ["Patches", "/patches/"],
   ]) {
     assert.match(config, new RegExp(`text: "${label}", link: "${route}"`));
   }
 });
 
-test("32.x navigation separates source availability from public release assets", async () => {
-  const [config, gettingStarted] = await Promise.all([
-    readFile(resolve(siteRoot, ".vitepress/config.ts"), "utf8"),
-    readFile(resolve(siteRoot, "content/getting-started.md"), "utf8"),
-  ]);
-  assert.match(config, /text: "32.x source", link: "\/doc\/roots-v32-port-review"/);
-  assert.match(gettingStarted, /Core v32\.1 port and v32\.1-roots\.1 source/);
-  assert.match(gettingStarted, /Source availability does not establish release publication/);
-  assert.match(gettingStarted, /excludes\s+unpublished drafts/);
-  assert.doesNotMatch(gettingStarted, /releases\/download\/v32/);
-  await access(resolve(siteRoot, "content/doc/roots-v32-port-review.md"));
-  await access(resolve(siteRoot, "content/doc/roots-build-portability.md"));
-});
-
-test("wallet privacy copy states capabilities and boundaries", async () => {
-  const [home, page] = await Promise.all([
-    readFile(resolve(siteRoot, ".vitepress/theme/components/Home.vue"), "utf8"),
-    readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8"),
-  ]);
-  const source = `${home}\n${page}`;
-
-  assert.doesNotMatch(home, /v29\.4-roots\.3 candidate/);
-  assert.match(source, /private-key sweep/);
-  assert.match(source, /privacy-aware coin control/);
-  assert.match(source, /cancel/i);
-  assert.match(source, /independent backup/i);
-  assert.match(source, /do not add CoinJoin, payjoin/i);
-  assert.match(page, /published\s+`v29\.4-roots\.3`\s+release/i);
-  assert.match(page, /release documentation/i);
-  assert.match(source, /do not provide an anonymity guarantee/i);
-  assert.match(source, /wallet privacy manual/i);
-  assert.match(source, /release notes/i);
-});
-
-test("current wallet guidance retains the startup-only key-disclosure gate", async () => {
-  const [page, manual, features] = await Promise.all([
-    readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8"),
-    readFile(resolve(repositoryRoot, "doc/wallet-privacy.md"), "utf8"),
-    readFile(resolve(repositoryRoot, "doc/roots-features.md"), "utf8"),
-  ]);
-  for (const copy of [page, manual, features]) {
-    for (const method of ["exportaddresskey", "listdescriptors", "gethdkeys", "derivehdkey"]) {
-      assert.ok(copy.includes(method), `Missing ${method} guidance`);
-    }
-    assert.match(copy, /disabled\s+by default/);
-    assert.match(copy, /--allow-dangerous-rpc/);
-    assert.match(copy, /cannot (?:be enabled|enable)/);
-    assert.match(copy, /unlock/);
+test("the first-run guide links the five published packages and both screenshots", async () => {
+  const guide = await readFile(resolve(siteRoot, "content/getting-started.md"), "utf8");
+  const latest = "https://github.com/LuganoPlanB/bitcoin-roots/releases/latest";
+  assert.ok(guide.includes(`](${latest})`));
+  for (const asset of [
+    "darwin-arm64.zip", "darwin-x86_64.zip", "windows-x86_64.zip",
+    "linux-aarch64.tar.gz", "linux-x86_64.tar.gz",
+  ]) {
+    assert.ok(guide.includes(`](${latest}/download/bitcoin-roots-${asset})`));
   }
-  assert.match(page, /Historical sweep and coin-control guidance/);
-  assert.match(page, /blob\/v29\.4-roots\.3\/doc\/wallet-privacy\.md/);
+  for (const image of ["pruning.png", "first-sync.png"]) {
+    assert.ok(guide.includes(`](./images/${image})`));
+    await access(resolve(siteRoot, "content/images", image));
+  }
+});
+
+test("wallet guidance keeps the sweep and key-disclosure boundaries", async () => {
+  const page = await readFile(resolve(siteRoot, "content/wallet-privacy.md"), "utf8");
+  assert.match(page, /confirmed coins/);
+  assert.match(page, /cancel until broadcast begins/);
+  assert.match(page, /independent backup/);
+  assert.match(page, /do not add CoinJoin or payjoin/);
+  for (const method of ["exportaddresskey", "listdescriptors", "gethdkeys", "derivehdkey"]) {
+    assert.ok(page.includes(method));
+  }
+  assert.match(page, /disabled by default/);
+  assert.match(page, /--allow-dangerous-rpc/);
+  assert.match(page, /cannot enable/);
+  assert.match(page, /unlock/);
 });
 
 test("the contribution guide separates patch maintenance from Core ports", async () => {
@@ -217,51 +193,27 @@ test("the contribution guide separates patch maintenance from Core ports", async
   assert.match(guide, /A commit being on `main` does not by itself make it part of\s+a release patch/);
 });
 
-test("the comparison is versioned and linked to primary sources", async () => {
-  const [page, table] = await Promise.all([
-    readFile(resolve(siteRoot, "content/compare.md"), "utf8"),
-    readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8"),
-  ]);
-  const comparison = `${page}\n${table}`;
-
-  assert.match(comparison, /v32\.1-roots\.1/);
-  assert.match(comparison, /Bitcoin Core:\*\* \[v32\.1\]/);
-  assert.match(comparison, /v29\.4\.3\.knots20260508/);
-  assert.match(comparison, /6 November 2026/);
-  assert.doesNotMatch(comparison, /v29\.4-roots|Core v29\.4|v29\.3\.knots|v29\.4\.1\.knots/);
-  assert.match(comparison, /github\.com\/bitcoin\/bitcoin/);
-  assert.match(comparison, /github\.com\/LuganoPlanB\/bitcoin-roots/);
-  assert.match(comparison, /github\.com\/bitcoinknots\/bitcoin/);
-  assert.match(comparison, /BLAKE2b proof-of-work/);
-  assert.match(comparison, /extended coinbase maturity/);
-  assert.match(table, /title: "Roots-only features"/);
-  assert.ok(table.indexOf('title: "Roots-only features"') < table.indexOf('title: "Transaction and mining policy"'));
-  assert.match(table, /Bitcoin Roots<br \/><small>v32\.1-roots\.1<\/small>/);
-  assert.match(table, /Bitcoin Core<br \/><small>v32\.1<\/small>/);
-  assert.match(comparison, /exportaddresskey RPC/);
-  assert.match(comparison, /--allow-dangerous-rpc/);
-  assert.match(comparison, /getmempoolinfo\.policy/);
-  assert.match(comparison, /Private-key sweeping/);
-  assert.match(comparison, /Advanced privacy-aware coin control/);
-  assert.match(comparison, /getmempoolstats RPC/);
-  assert.match(comparison, /Monotonic process-uptime reporting/);
-  assert.match(comparison, /Windows taskbar synchronization progress/);
-});
-
-test("the comparison table is semantic and keyboard-scrollable", async () => {
-  const table = await readFile(
-    resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"),
-    "utf8",
-  );
-
+test("Compare presents Core and Roots at two levels of detail", async () => {
+  const page = await readFile(resolve(siteRoot, "content/compare.md"), "utf8");
+  const table = await readFile(resolve(siteRoot, ".vitepress/theme/components/ComparisonTable.vue"), "utf8");
+  assert.match(page, /<ComparisonTable \/>[\s\S]*<ComparisonTable detailed \/>/);
+  assert.match(page, /github\.com\/bitcoin\/bitcoin\/tree\/v32\.1/);
+  assert.match(page, /github\.com\/LuganoPlanB\/bitcoin-roots\/releases\/tag\/v32\.1-roots\.2/);
+  assert.doesNotMatch(page + table, /knots/i);
+  assert.match(table, /<th scope="col">Bitcoin Core<\/th>\s*<th scope="col">Bitcoin Roots<\/th>/);
+  assert.match(table, /<th scope="row">/);
   assert.match(table, /role="region"/);
   assert.match(table, /tabindex="0"/);
-  assert.match(table, /<th scope="col">/);
-  assert.match(table, /<th scope="row">/);
-  assert.match(table, /<th scope="rowgroup" colspan="4">/);
+});
 
-  const rootsColumn = table.indexOf(">Bitcoin Roots<");
-  const knotsColumn = table.indexOf(">Bitcoin Knots<");
-  const coreColumn = table.indexOf(">Bitcoin Core<");
-  assert.ok(rootsColumn < knotsColumn && knotsColumn < coreColumn, "expected Roots, Knots, Core column order");
+test("RPC search combines descriptions, category and Roots changes", () => {
+  const commands = [
+    { name: "signmessage", category: "wallet", description: "Make a BIP322 proof.", change: "SegWit" },
+    { name: "verifymessage", category: "util", description: "Check a BIP322 proof.", change: "SegWit" },
+    { name: "signmessagewithprivkey", category: "util", description: "Legacy signature.", change: "" },
+  ];
+  assert.deepEqual(filterCommands(commands, "  BIP322 proof ", "", true), commands.slice(0, 2));
+  assert.deepEqual(filterCommands(commands, "MESSAGE", "util", true), [commands[1]]);
+  assert.deepEqual(filterCommands(commands, "legacy", "wallet", false), []);
+  assert.deepEqual(filterCommands(commands, "", "", false), commands);
 });
