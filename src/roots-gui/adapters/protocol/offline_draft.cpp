@@ -281,68 +281,113 @@ size_t SignatureCount(const wally_psbt& psbt)
         count+=psbt.inputs[i].signatures.num_items+size_t(!Field(psbt.inputs[i],0x13).empty());
     return count;
 }
-size_t VerifiedSatisfactions(wally_psbt& psbt,const wally_tx& tx)
+bool VerifyInput(wally_psbt& psbt,const wally_tx& tx,size_t i,uint64_t& in_total,InputSignatureProgress* progress=nullptr)
 {
-    size_t satisfied{};
-    uint64_t in_total{},out_total{};
-    for (size_t i=0;i<tx.num_outputs;++i) out_total=Total(out_total,tx.outputs[i].satoshi);
-    for (size_t i=0;i<tx.num_inputs;++i) {
-        const auto& input=psbt.inputs[i];
-        const auto& spend=tx.inputs[i];
-        Need(Field(input,7).empty() && !input.final_witness && !input.taproot_leaf_signatures.num_items
-             && !input.taproot_leaf_scripts.num_items,"Import partial signatures on a supported policy. Pre-finalized or Taproot script-path inputs require independent verification.");
-        std::array<unsigned char,32> hash{};
-        Need(input.utxo && spend.index<input.utxo->num_outputs
-             && wally_tx_get_txid(input.utxo,hash.data(),hash.size())==WALLY_OK
-             && std::ranges::equal(hash,spend.txhash),"Fee and previous output are Unknown. A matching full previous transaction is required.");
-        const auto& prev=input.utxo->outputs[spend.index];
-        const auto root=Bytes(prev.script,prev.script_len);
-        Need(!input.witness_utxo || (input.witness_utxo->satoshi==prev.satoshi
-              && Bytes(input.witness_utxo->script,input.witness_utxo->script_len)==root),"Witness and full previous outputs conflict.");
-        in_total=Total(in_total,prev.satoshi);
-        const auto policy=Policy(root,Field(input,4),Field(input,5));
-        const auto tap_signature=Field(input,0x13);
-        if (policy.type==WALLY_SCRIPT_TYPE_P2TR) {
-            Need(!input.signatures.num_items && (input.sighash==0 || input.sighash==1),"Unsupported Taproot signature or sighash policy.");
-            if (tap_signature.empty()) continue;
+    const auto& input=psbt.inputs[i];
+    const auto& spend=tx.inputs[i];
+    Need(Field(input,7).empty() && !input.final_witness && !input.taproot_leaf_signatures.num_items
+         && !input.taproot_leaf_scripts.num_items,"Import partial signatures on a supported policy. Pre-finalized or Taproot script-path inputs require independent verification.");
+    std::array<unsigned char,32> hash{};
+    Need(input.utxo && spend.index<input.utxo->num_outputs
+         && wally_tx_get_txid(input.utxo,hash.data(),hash.size())==WALLY_OK
+         && std::ranges::equal(hash,spend.txhash),"Fee and previous output are Unknown. A matching full previous transaction is required.");
+    const auto& prev=input.utxo->outputs[spend.index];
+    const auto root=Bytes(prev.script,prev.script_len);
+    Need(!input.witness_utxo || (input.witness_utxo->satoshi==prev.satoshi
+          && Bytes(input.witness_utxo->script,input.witness_utxo->script_len)==root),"Witness and full previous outputs conflict.");
+    in_total=Total(in_total,prev.satoshi);
+    const auto policy=Policy(root,Field(input,4),Field(input,5));
+    if (progress) progress->threshold=policy.threshold;
+    const auto tap_signature=Field(input,0x13);
+    if (policy.type==WALLY_SCRIPT_TYPE_P2TR) {
+        Need(!input.signatures.num_items && (input.sighash==0 || input.sighash==1),"Unsupported Taproot signature or sighash policy.");
+        if (!tap_signature.empty()) {
             const uint32_t mode=tap_signature.size()==65 ? uint8_t(tap_signature.back()) : 0;
             Need(tap_signature.size()==64 || (tap_signature.size()==65 && mode==1),"Taproot signatures must commit to all outputs.");
             SignatureHash(psbt,i,tx,{},mode,hash.data());
             Ok(wally_ec_sig_verify(prev.script+2,32,hash.data(),hash.size(),EC_FLAG_SCHNORR,
                 Bytes(tap_signature),64),"Taproot signature does not validate for this exact transaction.");
-            ++satisfied;
-            continue;
         }
-        Need(tap_signature.empty() && (input.sighash==0 || input.sighash==1),"Unsupported signature or sighash policy.");
-        for (size_t j=0;j<input.signatures.num_items;++j) {
-            const auto& sig=input.signatures.items[j];
-            const auto key=Bytes(sig.key,sig.key_len);
-            const auto serialized=Bytes(sig.value,sig.value_len);
-            Need(serialized.size()>=2 && uint8_t(serialized.back())==1,"Only SIGHASH_ALL ECDSA signatures are supported.");
-            auto scriptcode=policy.script;
-            std::array<unsigned char,25> p2pkh{};
-            if (policy.type==WALLY_SCRIPT_TYPE_MULTISIG) Need(policy.signers.contains(key),"Signature key is outside this multisig policy.");
-            else {
-                const bool witness=policy.type==WALLY_SCRIPT_TYPE_P2WPKH;
-                Need(Hash160(key,policy.script.substr(witness?2:3,20)),"Signature key is outside this key-hash policy.");
-                if (witness) {
-                    size_t written{};
-                    Ok(wally_scriptpubkey_p2pkh_from_bytes(sig.key,sig.key_len,WALLY_SCRIPT_HASH160,p2pkh.data(),p2pkh.size(),&written),
-                        "Could not derive the signed script code.");
-                    scriptcode=Bytes(p2pkh.data(),written);
-                }
-            }
-            SignatureHash(psbt,i,tx,scriptcode,1,hash.data());
-            std::array<unsigned char,64> compact{};
-            Ok(wally_ec_sig_from_der(sig.value,sig.value_len-1,compact.data(),compact.size()),"Invalid ECDSA signature encoding.");
-            Ok(wally_ec_sig_verify(sig.key,sig.key_len,hash.data(),hash.size(),EC_FLAG_ECDSA,compact.data(),compact.size()),
-                "Signature does not validate for this exact transaction.");
-        }
-        if (input.signatures.num_items>=policy.threshold) ++satisfied;
+        if (progress) progress->signers.push_back({TransactionHex(root.substr(2)),!tap_signature.empty()});
+        return !tap_signature.empty();
     }
+    Need(tap_signature.empty() && (input.sighash==0 || input.sighash==1),"Unsupported signature or sighash policy.");
+    std::set<std::string_view> verified_keys;
+    for (size_t j=0;j<input.signatures.num_items;++j) {
+        const auto& sig=input.signatures.items[j];
+        const auto key=Bytes(sig.key,sig.key_len);
+        const auto serialized=Bytes(sig.value,sig.value_len);
+        Need(serialized.size()>=2 && uint8_t(serialized.back())==1,"Only SIGHASH_ALL ECDSA signatures are supported.");
+        auto scriptcode=policy.script;
+        std::array<unsigned char,25> p2pkh{};
+        if (policy.type==WALLY_SCRIPT_TYPE_MULTISIG) Need(policy.signers.contains(key),"Signature key is outside this multisig policy.");
+        else {
+            const bool witness=policy.type==WALLY_SCRIPT_TYPE_P2WPKH;
+            Need(Hash160(key,policy.script.substr(witness?2:3,20)),"Signature key is outside this key-hash policy.");
+            if (witness) {
+                size_t written{};
+                Ok(wally_scriptpubkey_p2pkh_from_bytes(sig.key,sig.key_len,WALLY_SCRIPT_HASH160,p2pkh.data(),p2pkh.size(),&written),
+                    "Could not derive the signed script code.");
+                scriptcode=Bytes(p2pkh.data(),written);
+            }
+        }
+        SignatureHash(psbt,i,tx,scriptcode,1,hash.data());
+        std::array<unsigned char,64> compact{};
+        Ok(wally_ec_sig_from_der(sig.value,sig.value_len-1,compact.data(),compact.size()),"Invalid ECDSA signature encoding.");
+        Ok(wally_ec_sig_verify(sig.key,sig.key_len,hash.data(),hash.size(),EC_FLAG_ECDSA,compact.data(),compact.size()),
+            "Signature does not validate for this exact transaction.");
+        Need(verified_keys.insert(key).second,"Duplicate signature key.");
+    }
+    if (progress) {
+        const auto& keys=policy.signers.empty() ? verified_keys : policy.signers;
+        for (const auto key:keys) progress->signers.push_back({TransactionHex(key),verified_keys.contains(key)});
+    }
+    return verified_keys.size()>=policy.threshold;
+}
+size_t VerifiedSatisfactions(wally_psbt& psbt,const wally_tx& tx)
+{
+    size_t satisfied{};
+    uint64_t in_total{},out_total{};
+    for (size_t i=0;i<tx.num_outputs;++i) out_total=Total(out_total,tx.outputs[i].satoshi);
+    for (size_t i=0;i<tx.num_inputs;++i) satisfied+=VerifyInput(psbt,tx,i,in_total);
     Need(in_total>=out_total,"Input value does not cover the ordered outputs.");
     return satisfied;
 }
+}
+
+size_t InputSignatureProgress::Verified() const
+{
+    return std::ranges::count_if(signers,[](const auto& signer){return signer.verified;});
+}
+bool InputSignatureProgress::Satisfied() const
+{
+    return unknown.empty() && threshold && Verified()>=threshold;
+}
+bool SignatureProgress::Complete() const
+{
+    return error.empty() && !inputs.empty() && std::ranges::all_of(inputs,&InputSignatureProgress::Satisfied);
+}
+SignatureProgress InspectSignatures(const TransactionDocument& document)
+{
+    try {
+        Need(document.psbt_version && document.transaction,"A PSBT is required to inspect signature progress.");
+        if (auto conflict=CompareTransactionReview(document,document);!conflict.empty()) return {{},std::move(conflict)};
+        auto psbt=ParsePsbt(document);
+        auto tx=Unsigned(*psbt);
+        SignatureProgress result;
+        result.inputs.resize(tx->num_inputs);
+        uint64_t in_total{},out_total{};
+        for (size_t i=0;i<tx->num_outputs;++i) out_total=Total(out_total,tx->outputs[i].satoshi);
+        for (size_t i=0;i<tx->num_inputs;++i) {
+            auto& input=result.inputs[i];
+            try {VerifyInput(*psbt,*tx,i,in_total,&input);}
+            catch (Failure failure) {input.signers.clear();input.unknown=failure.reason;}
+        }
+        if (std::ranges::all_of(result.inputs,[](const auto& input){return input.unknown.empty();}) && in_total<out_total)
+            result.error="Input value does not cover the ordered outputs.";
+        return result;
+    } catch (Failure failure) {return {{},failure.reason};}
+    catch (...) {return {{},"Signature inspection exceeded available resources."};}
 }
 
 bool ValidOfflineCoin(const OfflineInput& selected,DisplayNetwork network)
@@ -428,7 +473,8 @@ OfflineResult ConstructOfflineDraft(const OfflineDraft& request)
     catch (...) {return {{},"The offline draft exceeded available resources."};}
 }
 
-OfflineResult MergeOfflineSignatures(const TransactionDocument& current,const TransactionDocument& external)
+namespace {
+OfflineResult CombineVerified(const TransactionDocument& current,const TransactionDocument& external,bool signing)
 {
     try {
         Need(current.psbt_version && external.psbt_version,"Choose an externally signed PSBT.");
@@ -450,10 +496,27 @@ OfflineResult MergeOfflineSignatures(const TransactionDocument& current,const Tr
         if (auto change=CompareTransactionReview(current,*merged); !change.empty())
             return {{},change,0,0,{},change};
         const auto valid=VerifiedSatisfactions(*checked,*tx);
-        Need(valid>=original && SignatureCount(*checked)>SignatureCount(*base),"The signed file contributed no new verified signature.");
+        const auto before=SignatureCount(*base),after=SignatureCount(*checked);
+        if (signing)
+            Need(valid>=original && after>before,"The signer contributed no new verified signature.");
+        else
+            Need(after==before,"The enrichment reply supplied unexpected signatures.");
         return {std::move(merged),{},valid,tx->num_inputs};
     } catch (Failure f) {return {{},f.reason};}
     catch (...) {return {{},"The PSBT merge exceeded available resources."};}
+}
+}
+
+OfflineResult MergeOfflineSignatures(const TransactionDocument& current,const TransactionDocument& external)
+{
+    return CombineVerified(current,external,true);
+}
+
+OfflineResult ApplyDaemonPsbt(const TransactionDocument& current,const TransactionDocument& reply,bool signing)
+{
+    if (std::ranges::any_of(reply.input_policy,[](const auto& policy){return policy.final_fields;}))
+        return {{},"The daemon returned final scripts for an unfinalized PSBT request."};
+    return CombineVerified(current,reply,signing);
 }
 
 OfflineResult FinalizeOfflineDraft(const TransactionDocument& current)
@@ -480,7 +543,8 @@ OfflineResult FinalizeOfflineDraft(const TransactionDocument& current)
     catch (...) {return {{},"Finalization exceeded available resources."};}
 }
 
-OfflineReview InspectOfflineReview(const TransactionDocument& document,const OfflineReviewEvidence& evidence)
+OfflineReview InspectOfflineReview(const TransactionDocument& document,const OfflineReviewEvidence& evidence,
+    std::optional<size_t> change_position)
 {
     try {
         Need(!DocumentChain(evidence.network).empty(),"Wallet network is Unknown.");
@@ -501,20 +565,58 @@ OfflineReview InspectOfflineReview(const TransactionDocument& document,const Off
         }
         const auto count=evidence.recipients.size();
         Need(tx.outputs.size()==count+size_t(bool(evidence.change)),"Change is Unknown or the ordered output count changed.");
-        Need(std::equal(evidence.recipients.begin(),evidence.recipients.end(),tx.outputs.begin()),
-            "A recipient amount, destination or order differs from the recorded payment.");
+        const auto position=change_position.value_or(count);
+        Need(!change_position || (evidence.change && position<tx.outputs.size()),"The reviewed change position is invalid.");
+        for (size_t i=0;i<count;++i)
+            Need(evidence.recipients[i]==tx.outputs[i+size_t(evidence.change && i>=position)],
+                "A recipient amount, destination or order differs from the recorded payment.");
         if (evidence.change) {
             const auto& proof=*evidence.change;
             const auto descriptor=DerivePublicDescriptor(proof.descriptor,DocumentChain(evidence.network),proof.index);
-            Need(proof.observed_ms>0 && descriptor && descriptor->script==tx.outputs.at(count).script,
+            Need(proof.observed_ms>0 && descriptor && descriptor->script==tx.outputs.at(position).script,
                 "Change is Unknown. The output does not match the independently read internal descriptor.");
         }
         auto psbt=ParsePsbt(document);
         VerifiedSatisfactions(*psbt,*Unsigned(*psbt));
         auto commitment=TransactionCommitment(document);
         Need(bool(commitment),"An exact transaction commitment is unavailable.");
-        return {std::move(commitment),evidence.change ? std::optional{count} : std::nullopt,{}};
+        return {std::move(commitment),evidence.change ? std::optional{position} : std::nullopt,{}};
     } catch (Failure f) {return {{},{},f.reason};}
     catch (...) {return {{},{},"The local review exceeded available resources."};}
+}
+
+FinalizationResult FinalizeReviewedDraft(const TransactionDocument& original,const TransactionDocument& collected,
+    const OfflineReviewEvidence& proof,std::optional<size_t> change_position)
+{
+    try {
+        Need(original.psbt_version && original.psbt_version==collected.psbt_version,
+            "Finalization requires the reviewed PSBT version.");
+        if (auto change=CompareTransactionReview(original,collected);!change.empty()) return {{},std::move(change)};
+        const auto review=InspectOfflineReview(collected,proof,change_position);
+        if (!review.commitment) return {{},review.error};
+        Need(review.change_output==change_position,"The exact reviewed change position is unavailable.");
+        auto result=FinalizeOfflineDraft(collected);
+        if (!result.document) return {{},std::move(result.error)};
+        const auto& bytes=*result.document;
+        Need(!bytes.psbt_version && bytes.transaction && bytes.transaction->txid && bytes.transaction->wtxid
+            && TransactionCommitment(bytes)==review.commitment,"Finalization did not preserve the exact approved transaction.");
+        const auto& tx=*bytes.transaction;
+        uint64_t total_in{},total_out{};
+        for (size_t i=0;i<tx.inputs.size();++i) {
+            Need(tx.inputs[i].outpoint==proof.inputs[i].point,"A final input differs from its independently reviewed previous output.");
+            total_in=Total(total_in,uint64_t(proof.inputs[i].value.sats()));
+        }
+        for (const auto& output:tx.outputs) total_out=Total(total_out,uint64_t(output.value.sats()));
+        Need(total_in>=total_out && total_in-total_out==uint64_t(proof.fee.sats()),
+            "The final bytes and independently reviewed previous outputs do not reconcile.");
+        const auto parsed=ParseRaw(bytes);
+        const auto size=bytes.wire.size();
+        size_t stripped{};
+        Ok(wally_tx_get_length(parsed.get(),0,&stripped),"The exact final transaction size is unavailable.");
+        Need(stripped>0 && stripped<=size && (tx.witness || stripped==size),"Final transaction serialization does not reconcile.");
+        const auto weight=3*stripped+size;
+        return {FinalTransaction{std::move(result.document),size,stripped,weight,(weight+3)/4,proof.fee},{}};
+    } catch (Failure failure) {return {{},failure.reason};}
+    catch (...) {return {{}, "Final transaction inspection exceeded available resources."};}
 }
 }

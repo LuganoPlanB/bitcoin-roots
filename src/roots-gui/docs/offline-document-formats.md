@@ -131,8 +131,145 @@ fresh actions after restart.
 
 Advanced sighash explains which inputs and outputs a signature covers. An
 explicit Taproot ALL request needs a separate acknowledgement. Unsupported,
-unknown or conflicting sighash modes block approval. The workbench currently
-has no transaction signer or broadcast action.
+unknown or conflicting sighash modes block approval.
+
+After approval, Enrich PSBT requests public data without signing or finalizing.
+Sign with daemon is a separate action for the exact compatible wallet and
+approved PSBT. The daemon reply must pass local previous-output and transaction
+checks, and any new signatures must validate against the approved commitments.
+Open verified signed PSBT displays an exportable copy. The reviewed original
+remains available in its own tab. Daemon completion and derived transaction hex
+do not advance the workflow.
+
+An encrypted daemon wallet has an explicit 30-second unlock action. The masked
+passphrase is transient and is omitted from accessibility values, metadata and
+diagnostics. Unlock requires TLS or a direct numeric loopback connection. The
+daemon owns timeout and relocking. Unlock never starts signing. Cancelling or
+changing wallet, profile or lock context discards the response locally, even if
+the daemon already accepted the request.
+
+## Collecting external signatures
+
+Use Merge signed file for a local binary or Base64 PSBT, or Merge signed text
+for Base64 PSBT text placed on the native clipboard. Copy PSBT text exports
+Base64 without changing any decoded records. Save original preserves the
+opened representation. From an approved review, Save collected PSBT exports
+the current validated collection separately from the approved original.
+The native clipboard is bounded. Use a file for larger PSBTs.
+
+QR exchange accepts a single local PNG containing one readable code or decoded
+QR text entered explicitly. Static PSBT codes carry canonical Base64. Multipart
+PSBT codes use the indexed systematic subset of UR v2 `psbt` (untagged CBOR
+byte string, minimal Bytewords and CRC32). Export repeats the indexed frames so
+missed frames can be scanned again. Shuffled frames and exact duplicates are
+accepted. Mixed fountain fragments, other UR types and BBQr are unavailable.
+The checksum distinguishes ordinary mixed streams and corrupted data. It grants
+no signing authority. Every assembled PSBT goes through the strict PSBT parser
+and, in signing review, the existing exact approval and signature verifier.
+
+Exports show the encoding, outbound byte count, matrix dimension and frame
+number. Density changes the size of indexed fragments. You can pause, step or
+restart a multipart display. Export omits global extended public keys by default
+in a separate copy. Include them if a signer requires that metadata. All other
+records, including proprietary data, per-input derivations and signatures, are
+retained. The original document and approved collection stay intact.
+
+The current limits are 16 KiB of PSBT data, 64 indexed frames, two minutes per
+assembly/display, 780 decoded characters per symbol and a 4 MiB PNG with sides
+up to 1536 pixels. PNG import checks the exact filtered scanline length,
+including Adam7 passes, in a fixed-size inflater before decoding pixels.
+Unexpected inflated bytes are refused. Decoder allocation charges are capped
+at the smaller of 64 MiB or 64 KiB plus 24 bytes per pixel and three times the
+PNG size. Concurrent calls share a 96 MiB cap, including luma buffers until
+released. Replacement allocations charge both old and new memory until the
+copy finishes. Display uses at least three physical pixels per module and a
+four-module quiet zone. Choose a file if a PSBT cannot fit at a supported
+density. Receive can display an address or payment URI. Import a payment QR
+from Send to preview a destination and explicitly apply it to the current
+recipient. QR data cannot change the active chain, contact a URL or submit a
+payment. A bare PSBT does not encode its chain. Check the display network and
+payment proofs before approval. Raw transaction QR display is static and
+bounded. The PSBT QR import route refuses raw transactions. Linux camera import can feed the same validators. A decoded frame merely
+reports detection. A complete parsed payload stays staged until the user
+chooses Use this payment request or Import validated PSBT. The current
+document, wallet, stream and approval gate that action. Physical signer
+interoperability has a separate qualification.
+
+The signature view checks every input against a matching full previous
+transaction and the exact supported script. It reports verified public keys
+per input. A 2-of-3 policy is satisfied only after two valid signatures for that
+input. Complete requires every input to be satisfied. Missing evidence,
+unsupported policies or unverified signatures are shown with their reason.
+Public keys in this view identify signature checks, not devices or people.
+
+Merge preserves exact transaction and policy identity and all nonconflicting
+original records. It refuses invalid signatures, conflicting records and
+imports without new verified signatures. Compatible v0 and v2 transactions
+can be compared. Merge requires the same PSBT version on both sides and never
+converts or strips maps to make them fit. Signature-only material can stay with
+the exact live approval after independent proof checks. A changed transaction
+or material policy revokes approval and requires fresh review. Imported or
+recovered copies do not carry signing approval, even when fully signed.
+
+## Finalizing the approved collection
+
+Choose Finalize transaction after every input in the approved collection has
+its required verified signatures. The local service rechecks the unsigned
+transaction and independent previous-output, payment and change evidence before
+assembling the final bytes. It retains the approved original, the collected
+PSBT and the finalized transaction separately.
+
+The final view shows the transaction ID, witness transaction ID, byte size,
+weight and virtual size from the final serialization. The fee rate is shown as
+the exact ratio of the verified fee in satoshis to the final virtual size.
+Save final transaction writes those wire bytes to a new local file. View final
+transaction opens them for offline inspection. A connection change retires the
+approval while allowing the finalized public bytes to be saved or inspected.
+Finalization makes no daemon request. Any later submission requires a
+separate action with fresh live evidence.
+
+## Checking node policy and broadcasting
+
+With the exact approved collection finalized and its wallet online, use Check
+node policy to test those bytes. A rejection reports this node's current
+admission decision and retains the final bytes for inspection. A successful
+check enables Broadcast for 30 seconds in the same context. Broadcast checks
+the bytes and current node identity again, records the attempt in the local
+metadata store, then sends once. The fee ceiling is 100 sat/vB and the RPC
+burn limit is zero.
+
+The transaction and its signing collection are held steady during submission.
+Cancel wait can stop the local wait. After a request may have reached the node,
+the outcome can remain uncertain and the local attempt prevents another send.
+A node acknowledgment supplies the transaction ID. Confirmation and payment
+status require separate observations.
+
+File → Submission Attempts lists recent local records. Open recorded transaction
+to inspect the saved public bytes after restart. Check Status asks the current
+verified node for matching wallet, mempool and chain observations when supported.
+The result includes the check time and expires when the context changes or the
+observation gets stale. Missing, unavailable and conflicting answers leave
+status Unknown. An already-known reply alone does not establish confirmation.
+
+The raw transaction view does not restore permission to send. To deliberately
+repeat an attempt, return to the independently proved PSBT, review and approve
+the current collection when needed, and finalize the same bytes. After a fresh
+policy check, Rebroadcast same bytes revalidates approval and the recorded
+transaction and advances its durable attempt number before sending. Nothing
+from the journal is sent automatically.
+
+Choose Monitor transaction for periodic read-only checks on this open record.
+Checks normally repeat five seconds after completion and pause after ten
+minutes, when you change documents or nodes, or when you choose Stop
+monitoring. A known tip change retires the previous current observation as
+verification runs again. Going offline shows the last observation with its age.
+Reconnecting to the same verified node can resume the check.
+
+An active block can supply confirmations, height and time. A reorg is shown
+when the node proves the previously confirmed block is outside its active
+chain. A competing spend is shown only with an exact transaction consuming a
+shared outpoint and a matching mempool or active-block observation. If an
+earlier mempool transaction is no longer found, the reason remains Unknown.
 
 ## Editing a transaction
 

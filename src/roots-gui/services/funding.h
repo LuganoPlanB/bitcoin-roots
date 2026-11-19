@@ -58,6 +58,8 @@ struct FundingReply {
 // The supported daemon fee_rate argument is sat/vB at 0.001 precision.
 std::optional<uint32_t> ParseFundingRate(std::string_view);
 bool CanFund(const BackendCapabilities&);
+// Conservative size ceiling for an independently proved supported input.
+uint32_t FundingInputVsizeBound(std::string_view script,std::string_view redeem);
 FundingReply FetchFunding(rpc::Transport&, const FundingRequest&, std::stop_token);
 
 class FundingService {

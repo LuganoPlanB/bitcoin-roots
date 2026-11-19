@@ -28,6 +28,7 @@ std::optional<HistoryTransaction> NormalizeHistoryTransaction(const J& j,std::st
 {
     try{
         auto txid=Hash(j.Find("txid"));Need(txid.hex()==expected);HistoryTransaction tx{std::move(txid)};tx.reported_amount=Amount(j.Find("amount"));tx.time=Integer(j.Find("time"));tx.confirmations=Integer(j.Find("confirmations"));Need(tx.time>0 && tx.confirmations>=-INT32_MAX && tx.confirmations<=INT32_MAX);
+        if (const auto* witness=j.Find("wtxid")) tx.wire_witness=Hash(witness);
         if(const auto* fee=j.Find("fee")){tx.fee=Amount(fee);Need(tx.fee->value.sats()<=0);}
         if(const auto* generated=j.Find("generated"))tx.generated=Boolean(generated);
         if(const auto* height=j.Find("blockheight")){tx.block_height=Integer(height);Need(*tx.block_height>=0 && *tx.block_height<=INT32_MAX);}
@@ -54,6 +55,11 @@ std::optional<HistoryTransaction> NormalizeHistoryTransaction(const J& j,std::st
         if(tx.generated && Active(tx.state))Need(reward.sats()>0 && !tx.fee);
         if(const auto* decoded=j.Find("decoded")){
             Need(decoded->kind==J::Kind::Object && Hash(decoded->Find("txid"))==tx.txid);tx.decoded_available=true;
+            if (const auto* witness=decoded->Find("hash")) {
+                const auto decoded_witness=Hash(witness);
+                Need(!tx.wire_witness || tx.wire_witness==decoded_witness);
+                tx.wire_witness=decoded_witness;
+            }
             for(const auto& input:Array(decoded->Find("vin"),max_details)){
                 HistoryIO io;io.kind="Input";
                 if(const auto* coinbase=input.Find("coinbase")){Text(coinbase,8192);io.reference="Coinbase";}

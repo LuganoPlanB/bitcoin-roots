@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "app/signing_review.h"
 #include "app/recovery.h"
+#include <algorithm>
+#include <limits>
 #include <sodium.h>
 
 namespace roots::gui::app {
@@ -43,6 +45,8 @@ std::string ReviewDifference(const SigningBasis& before,const SigningBasis& afte
         return "Intended change, its position, or its independent proof changed.";
     if (before.proof.recipients!=after.proof.recipients || before.proof.fee!=after.proof.fee)
         return "The independent recipients or fee changed.";
+    if (before.cancellation!=after.cancellation) return "The original payment or owned cancellation destination changed.";
+    if (before.child_package!=after.child_package) return "The exact parent outpoint, ownership or package evidence changed.";
     if (before.sighash!=after.sighash) return "The reviewed sighash commitment changed.";
     if (before.observed_policy!=after.observed_policy) return "The observed wallet policy changed.";
     if (before.coin_policy!=after.coin_policy) return "Current input policy evidence changed.";
@@ -70,12 +74,44 @@ bool SigningReviews::Acknowledge(SigningBasis basis)
 }
 bool SigningReviews::Record(SigningBasis basis)
 {
-    if (!basis.content || !Acknowledged(basis)) return false;
+    if (!basis.content || !Acknowledged(basis) || last_generation==std::numeric_limits<uint64_t>::max()) return false;
+    if (basis.child_package && basis.cancellation) return false;
+    if (const auto& child=basis.child_package) {
+        if (!basis.content->psbt_version || !basis.content->transaction || !child->parent
+            || child->parent->psbt_version || !child->parent->transaction || !child->parent->transaction->txid
+            || child->output>=child->parent->transaction->outputs.size() || basis.proof.inputs.size()!=1
+            || basis.proof.recipients.size()!=1 || basis.proof.change || basis.change_output) return false;
+        const auto& parent=*child->parent->transaction;
+        const auto& selected=parent.outputs[child->output];
+        const auto& input=basis.proof.inputs.front();
+        const auto& output=basis.proof.recipients.front();
+        if (input.point!=Outpoint{*parent.txid,child->output} || input.value!=selected.value || output.script!=selected.script
+            || child->package.ancestors.empty() || !child->package.vsize || !child->estimated_vsize
+            || child->owned_destination.observed_ms<=0) return false;
+        const auto derived=protocol::DerivePublicDescriptor(child->owned_destination.descriptor,
+            protocol::DocumentChain(basis.proof.network),child->owned_destination.index);
+        if (!derived || derived->script!=output.script || !protocol::InspectOfflineReview(*basis.content,basis.proof).commitment)
+            return false;
+    }
+    if (const auto& intent=basis.cancellation) {
+        if (!basis.content->psbt_version || !basis.content->transaction || !intent->original
+            || intent->original->psbt_version || !intent->original->transaction || basis.proof.recipients.size()!=1
+            || basis.proof.change || basis.change_output || basis.proof.fee.sats()<=intent->original_fee.sats()) return false;
+        const auto destination=protocol::DerivePublicDescriptor(intent->owned_destination.descriptor,
+            protocol::DocumentChain(basis.proof.network),intent->owned_destination.index);
+        if (!destination || destination->script!=basis.proof.recipients.front().script) return false;
+        const auto& original=intent->original->transaction->inputs;
+        const auto& candidate=basis.content->transaction->inputs;
+        if (candidate.size()!=original.size() || !std::ranges::all_of(original,[&](const auto& input) {
+            return std::ranges::find(candidate,input.outpoint,&protocol::TransactionInput::outpoint)!=candidate.end();
+        })) return false;
+        if (!protocol::InspectOfflineReview(*basis.content,basis.proof).commitment) return false;
+    }
     const auto commitment=protocol::TransactionCommitment(*basis.content);
     const auto source=SigningDigest(basis.content->source);
     if (!commitment || !source) return false;
     auto& entry=entries[basis.document];
-    entry.reviewed=SigningApproval{std::move(basis),*commitment,*source};
+    entry.reviewed=SigningApproval{std::move(basis),*commitment,*source,++last_generation};
     entry.approved=false;
     entry.reason.clear();
     return true;
@@ -88,6 +124,10 @@ const SigningApproval* SigningReviews::Recorded(const SigningBasis& basis) const
 }
 bool SigningReviews::Approve(const SigningBasis& current)
 {
+    return !current.cancellation && !current.child_package && ApproveCurrent(current);
+}
+bool SigningReviews::ApproveCurrent(const SigningBasis& current)
+{
     if (!Recorded(current)) return false;
     auto& entry=entries.at(current.document);
     if (entry.approved) return false;
@@ -98,6 +138,22 @@ const SigningApproval* SigningReviews::Authorize(const SigningBasis& basis) cons
 {
     const auto* record=Recorded(basis);
     return record && entries.at(basis.document).approved ? record : nullptr;
+}
+ApprovedFinalization SigningReviews::Finalize(const SigningBasis& basis,
+    std::shared_ptr<const protocol::TransactionDocument> collected) const
+{
+    const auto* approval=Authorize(basis);
+    if (!approval || !basis.content || !collected)
+        return {{},"Finalization requires the exact current signing approval and its collected PSBT."};
+    const auto source=SigningDigest(collected->source);
+    if (!source || SigningDigest(basis.content->source)!=approval->original_source
+        || protocol::TransactionCommitment(*collected)!=approval->commitment)
+        return {{},"The original or collected PSBT differs from the exact signing approval."};
+    auto result=protocol::FinalizeReviewedDraft(*basis.content,*collected,basis.proof,basis.change_output);
+    if (!result.final) return {{},std::move(result.error)};
+    const auto final_source=SigningDigest(result.final->document->wire);
+    if (!final_source) return {{},"A digest of the exact finalized bytes is unavailable."};
+    return {ApprovedFinalTransaction{*approval,std::move(collected),*source,*final_source,std::move(*result.final)},{}};
 }
 bool SigningReviews::HasReview(uint64_t id) const
 {

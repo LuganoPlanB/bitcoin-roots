@@ -2,9 +2,12 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "app/document_registry.h"
-namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; class FundingService; class FeeService; }
+namespace roots::gui { class ConnectionService; class RefreshService; class AddressService; class WalletLifecycle; class ReceiveService; class RescanService; class TransactionDocuments; class CameraService; class FundingService; class FeeService; class DeviceSigners; }
 namespace roots::gui::app {
 class RecoverySession;
+class DaemonSigner;
+class Broadcaster;
+class Replacements;
 enum class Menu { File,View,Tools,Help };
 enum class Command {
  NewWallet,OpenWallet,ImportWallet,ExportWallet,TransactionFile,TransactionId,TransactionText,TransactionQR,SaveTransaction,ShowQR,RenameWallet,DeleteWallet,Preferences,CloseTab,Quit,
@@ -12,7 +15,8 @@ enum class Command {
  Transactions,Send,Receive,Addresses,UTXOs,Settings,Refresh,
  SignMessage,SendMany,Sweep,Contacts,Server,VerifyDownload,Hardware,PreventSleep,Restart,
  Introduction,Documentation,LogFile,Support,ReportIssue,About,Component,Primary,DocumentMetadata,SaveDraft,ImportSource,Recovery,
- ReviewForSigning,ApproveSigning,SignTransaction,
+ ReviewForSigning,ApproveSigning,SignTransaction,EnrichTransaction,OpenDaemonUnlock,FinalizeSigning,
+ CheckBroadcast, BroadcastTransaction, CancelBroadcast, CheckBroadcastStatus, MonitorBroadcast, RebroadcastTransaction, SubmissionAttempts,
  BeginTransactionEdit,ApplyTransactionEdit,CloseTransactionEdit
 };
 struct CommandSpec { Command id;Menu menu;const char* label;const char* shortcut;const char* dependency; };
@@ -41,8 +45,8 @@ struct HostObservations {
     std::array<ServiceObservation,3> screen_observations;
 };
 std::string MissingDependency(Command);
-enum class FeeDraftKind { ReplaceByFee, ChildPaysForParent };
-struct FeeDraftRequest { RequestContext context;Hash256 txid;FeeDraftKind kind;uint64_t generation{},sequence{}; };
+enum class FeeDraftKind { ReplaceByFee, CancelPayment, ChildPaysForParent };
+struct FeeDraftRequest { RequestContext context;Hash256 txid;FeeDraftKind kind;uint64_t generation{},sequence{};uint32_t rate_per_kvb{};std::optional<uint32_t> parent_output;bool operator==(const FeeDraftRequest&) const=default; };
 struct ExplorerRequest { RequestContext context;Hash256 txid;bool permission{};uint64_t generation{},sequence{}; };
 struct Requests {
     virtual ~Requests()=default;
@@ -55,9 +59,14 @@ struct Requests {
     virtual ConnectionService* Connection() {return nullptr;}
     virtual WalletLifecycle* Wallets() {return nullptr;}
     virtual TransactionDocuments* LocalDocuments() const {return nullptr;}
+    virtual CameraService* Camera() {return nullptr;}
     virtual RescanService* Rescanning() {return nullptr;}
     virtual ReceiveService* Receiving() {return nullptr;}
+    virtual DeviceSigners* Devices() {return nullptr;}
     virtual FundingService* Funding() {return nullptr;}
+    virtual DaemonSigner* Signer() {return nullptr;}
+    virtual Broadcaster* Broadcasts() {return nullptr;}
+    virtual Replacements* ReplacementDrafts() {return nullptr;}
     virtual FeeService* Fees() {return nullptr;}
     virtual AddressService* Addresses() {return nullptr;}
     virtual RefreshService* Refresh() {return nullptr;}

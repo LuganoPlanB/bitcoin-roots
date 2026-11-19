@@ -64,6 +64,12 @@ struct Receive {
         self.headers += n; return n;
     }
 };
+void ClearJson(Json& value)
+{
+    Clear(value.text);
+    for (auto& [name,child] : value.members) { Clear(name); ClearJson(child); }
+    for (auto& child : value.items) ClearJson(child);
+}
 bool ValidLimits(const Limits& l)
 {
     return l.connect_timeout.count() > 0 && l.connect_timeout.count() <= 60000 &&
@@ -142,16 +148,50 @@ const char* ErrorName(Error error)
 }
 Reply Transport::Call(const ConnectionProfile& profile, const Request& request, std::stop_token stop, Limits limits) const
 {
+    if (request.method=="walletpassphrase") return {.error=Error::InvalidRequest};
+    return Call(profile,request,stop,limits,{},0);
+}
+Reply Transport::UnlockWallet(const ConnectionProfile& profile,std::string_view wallet,
+    std::string_view passphrase,unsigned seconds,std::stop_token stop) const
+{
+    if (passphrase.empty() || passphrase.size()>255 || !ValidUtf8(passphrase)
+        || passphrase.find('\0')!=passphrase.npos || !seconds || seconds>60)
+        return {.error=Error::InvalidRequest};
+    if (!profile.tls && (profile.proxy!=ProxyKind::Direct
+        || (profile.host!="127.0.0.1" && profile.host!="::1")))
+        return {.error=Error::InvalidProfile};
+    Limits limits;
+    limits.response_bytes=16*1024;
+    return Call(profile,{1,"walletpassphrase","[]",std::string(wallet),Effect::Mutation},
+        stop,limits,passphrase,seconds);
+}
+Reply Transport::Call(const ConnectionProfile& profile,const Request& request,std::stop_token stop,
+    Limits limits,std::string_view passphrase,unsigned seconds) const
+{
     Reply reply;
     const auto fail = [&reply](Error error) { reply.error = error; return reply; };
     if (!ValidConnectionProfile(profile)) return fail(Error::InvalidProfile);
     if (!ValidLimits(limits) || request.params.size() > limits.request_bytes || request.method.empty() || request.method.size() > 128 ||
         !std::all_of(request.method.begin(), request.method.end(), [](unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; }) ||
         (request.wallet && (request.wallet->size() > 1024 || !ValidUtf8(*request.wallet) || request.wallet->find('\0') != std::string::npos))) return fail(Error::InvalidRequest);
-    auto params = Json::Parse(request.params, limits.json_depth, limits.json_nodes);
-    if (!params || (params->kind != Json::Kind::Array && params->kind != Json::Kind::Object)) return fail(Error::InvalidRequest);
+    if (passphrase.empty()) {
+        const auto params=Json::Parse(request.params,limits.json_depth,limits.json_nodes);
+        if (!params || (params->kind!=Json::Kind::Array && params->kind!=Json::Kind::Object)) return fail(Error::InvalidRequest);
+    }
     const auto id = std::to_string(request.id);
-    const std::string body = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":" + Quote(request.method) + ",\"params\":" + request.params + '}';
+    SecretBuffer protected_body;
+    auto& body=protected_body.value;
+    if (!passphrase.empty()) body.reserve(160+passphrase.size()*6);
+    body.append("{\"jsonrpc\":\"2.0\",\"id\":").append(id).append(",\"method\":");
+    AppendQuoted(body,request.method);
+    body.append(",\"params\":");
+    if (passphrase.empty()) body.append(request.params);
+    else {
+        body.append("{\"passphrase\":");
+        AppendQuoted(body,passphrase);
+        body.append(",\"timeout\":").append(std::to_string(seconds)).append("}");
+    }
+    body += '}';
     if (body.size() > limits.request_bytes) return fail(Error::Limit);
     if (stop.stop_requested()) return fail(Error::Cancelled);
     // curl/OpenSSL honor this environment variable and can export TLS secrets.
@@ -169,6 +209,12 @@ Reply Transport::Call(const ConnectionProfile& profile, const Request& request, 
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi(curl_multi_init(), curl_multi_cleanup);
     if (!easy || !multi) return fail(Error::Configuration);
     Receive received{{}, 0, limits.response_bytes, limits.header_bytes};
+    struct ClearResponse {
+        Receive& received;
+        bool sensitive;
+        ~ClearResponse() { if (sensitive) Clear(received.body); }
+    } clear_response{received,!passphrase.empty()};
+    if (clear_response.sensitive) received.body.reserve(limits.response_bytes);
     bool options_ok = true;
     const auto option = [&]<typename T>(CURLoption key, T value) { if (curl_easy_setopt(easy.get(), key, value) != CURLE_OK) options_ok = false; };
     option(CURLOPT_URL, url.c_str());
@@ -232,6 +278,11 @@ Reply Transport::Call(const ConnectionProfile& profile, const Request& request, 
     if (reply.http_status >= 300 && reply.http_status < 400) return fail(Error::Redirect);
     if (reply.http_status != 200) return fail(Error::Http);
     auto response = Json::Parse(received.body, limits.json_depth, limits.json_nodes);
+    struct ClearParsed {
+        std::optional<Json>& response;
+        bool sensitive;
+        ~ClearParsed() { if (sensitive && response) ClearJson(*response); }
+    } clear_parsed{response,!passphrase.empty()};
     if (!response || response->kind != Json::Kind::Object) return fail(Error::Json);
     const auto* version = response->Find("jsonrpc"); const auto* response_id = response->Find("id");
     if (!version || version->kind != Json::Kind::String || version->text != "2.0" || !response_id || response_id->kind != Json::Kind::Number || response_id->text != id) return fail(Error::Identity);
@@ -243,9 +294,29 @@ Reply Transport::Call(const ConnectionProfile& profile, const Request& request, 
         int32_t number{}; const auto parsed = std::from_chars(code->text.data(), code->text.data() + code->text.size(), number);
         if (parsed.ec != std::errc{} || parsed.ptr != code->text.data() + code->text.size()) return fail(Error::Json);
         // A remote error need not roll back an operation's earlier side effects.
-        reply.rpc_code = number; return fail(Error::Rpc);
+        reply.rpc_code = number;
+        if (request.method == "enumeratesigners" || request.method == "walletdisplayaddress") {
+            // Never publish remote error strings. Only these exact messages
+            // are useful as evidence of an external action or device state.
+            const auto& note = message->text;
+            if (note == "Error: restart bitcoind with -signer=<cmd>" || note == "restart bitcoind with -signer=<cmd>")
+                reply.signer_notice = SignerNotice::Unconfigured;
+            else if (note == "No external signers found") reply.signer_notice = SignerNotice::Absent;
+            else if (note == "More than one external signer found. Please connect only one at a time.")
+                reply.signer_notice = SignerNotice::Multiple;
+            else if (request.method == "walletdisplayaddress" && note == "Signer returned error: Device is locked")
+                reply.signer_notice = SignerNotice::Locked;
+            else if (request.method == "walletdisplayaddress" && note == "Signer returned error: Passphrase required")
+                reply.signer_notice = SignerNotice::Passphrase;
+            else if (request.method == "walletdisplayaddress" && note == "Signer returned error: Device disconnected")
+                reply.signer_notice = SignerNotice::Disconnected;
+        }
+        if (request.method == "walletprocesspsbt" && message->text == "External signer not found")
+            reply.signer_notice = SignerNotice::Disconnected;
+        return fail(Error::Rpc);
     }
     if (!result) return fail(Error::Json);
+    if (!passphrase.empty() && result->kind!=Json::Kind::Null) return fail(Error::Json);
     reply.result = std::move(*response->Find("result")); reply.mutation_uncertain = false;
     return reply;
 }

@@ -61,11 +61,41 @@ struct OfflineResult {
     std::optional<OfflineReviewEvidence> review_evidence;
     std::string review_conflict;
 };
+struct PublicSignature {
+    std::string key;
+    bool verified{};
+};
+struct InputSignatureProgress {
+    size_t threshold{};
+    std::vector<PublicSignature> signers;
+    std::string unknown;
+    size_t Verified() const;
+    bool Satisfied() const;
+};
+struct SignatureProgress {
+    std::vector<InputSignatureProgress> inputs;
+    std::string error;
+    bool Complete() const;
+};
+SignatureProgress InspectSignatures(const TransactionDocument&);
 bool ValidOfflineCoin(const OfflineInput&, DisplayNetwork);
 OfflineResult ConstructOfflineDraft(const OfflineDraft&);
 OfflineResult MergeOfflineSignatures(const TransactionDocument& current, const TransactionDocument& external);
+OfflineResult ApplyDaemonPsbt(const TransactionDocument& current,const TransactionDocument& reply,bool signing);
 OfflineResult FinalizeOfflineDraft(const TransactionDocument& current);
+struct FinalTransaction {
+    std::shared_ptr<const TransactionDocument> document;
+    size_t size{}, stripped_size{}, weight{}, vsize{};
+    Money fee;
+};
+struct FinalizationResult {
+    std::optional<FinalTransaction> final;
+    std::string error;
+};
+FinalizationResult FinalizeReviewedDraft(const TransactionDocument& original,const TransactionDocument& collected,
+    const OfflineReviewEvidence&,std::optional<size_t> change_position);
 // Requires evidence from the scoped wallet and intended payment, independent
 // of every origin or change hint contained in the PSBT.
-OfflineReview InspectOfflineReview(const TransactionDocument&,const OfflineReviewEvidence&);
+OfflineReview InspectOfflineReview(const TransactionDocument&,const OfflineReviewEvidence&,
+    std::optional<size_t> change_position={});
 }

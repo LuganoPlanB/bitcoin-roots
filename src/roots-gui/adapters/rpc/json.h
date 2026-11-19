@@ -21,5 +21,6 @@ struct Json {
     std::string Encode() const;
 };
 std::string Quote(std::string_view);
+void AppendQuoted(std::string&,std::string_view);
 bool ValidUtf8(std::string_view);
 }

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "platform/shell_composition.h"
 #include "app/connection_observations.h"
+#include "app/daemon_signer.h"
 
 #include <GLFW/glfw3.h>
 #include <X11/Xlib.h>
@@ -23,11 +24,13 @@ namespace {
 namespace shell = ui::shell;
 namespace c = ui::components;
 constexpr auto ADDRESS = "1BitcoinEaterAddressDontSendf59kuE";
+constexpr std::string_view FIXTURE_PASSPHRASE="signnativefixture";
 
 struct Requests final : app::Requests {
     bool funding_enabled{};
     bool fees_enabled{};
     bool live{};
+    bool signer_enabled{};
     rpc::CookieCredentials credentials;
     rpc::Transport transport{credentials};
     ConnectionService connection{[this](const ServerCandidate& candidate, std::stop_token stop) {
@@ -45,6 +48,8 @@ struct Requests final : app::Requests {
     bool local_enabled{};
     std::unique_ptr<app::RecoverySession> recovery;
     FundingService* Funding() override {return funding_enabled ? &funding : nullptr;}
+    app::DaemonSigner signer{transport,connection};
+    app::DaemonSigner* Signer() override {return signer_enabled ? &signer : nullptr;}
     FeeService* Fees() override {return fees_enabled ? &fees : nullptr;}
     ConnectionService* Connection() override {return live ? &connection : nullptr;}
     RefreshService* Refresh() override {return live ? &refresh : nullptr;}
@@ -74,6 +79,7 @@ class Observer final : public platform::NativeObserver {
     bool batch{};
     bool review{};
     bool edit{};
+    bool sign{};
     uint64_t source_id{}, created_id{};
     uint64_t working_id{};
     std::optional<Hash256> first_review;
@@ -325,7 +331,7 @@ class Observer final : public platform::NativeObserver {
                 && approval->reviewed.proof.change && approval->reviewed.proof.recipients.size()==1
                 && approval->reviewed.proof.recipients[0].value==Money::Satoshis(12345678),
                 "approval records exact source, commitment and independent provenance");
-            Check(denied()==app::MissingDependency(app::Command::SignTransaction),"matching approval still has no signer");
+            if (!sign) Check(denied()==app::MissingDependency(app::Command::SignTransaction),"matching approval still has no signer");
             const auto& recorded=approval->reviewed;
             std::ofstream bound(output/"approval-provenance.json");
             bound<<"{\"commitment\":"<<rpc::Quote(approval->commitment.hex())<<",\"originalSourceSha256\":"
@@ -337,7 +343,13 @@ class Observer final : public platform::NativeObserver {
                 <<",\"feeSats\":"<<recorded.proof.fee.sats()<<",\"recipientSats\":"<<recorded.proof.recipients[0].value.sats()
                 <<",\"intendedChangeProved\":true}\n";
             Check(bool(bound),"retained approval provenance");
-            if (edit) {
+            if (sign) {
+                app::Request injection{app::Command::SignTransaction,created_id};
+                injection.value="injected replacement";
+                Check(!shell::DispatchSigningCommand(state,requests,injection).accepted
+                    && !requests.signer.Busy(),"direct signing rejects caller-supplied PSBT bytes");
+                Press("Enrich PSBT");
+            } else if (edit) {
                 first_review=approval->commitment;
                 app::Request injection{app::Command::ApplyTransactionEdit,created_id};
                 injection.edit=app::TransactionEditRequest{1,doc->draft_revision,{.locktime=900000}};
@@ -368,6 +380,93 @@ class Observer final : public platform::NativeObserver {
         }
         }
         std::cerr<<"Completed native review stage "<<stage<<'\n';
+        ++stage;
+    }
+
+    void SignFrame(platform::NativeHost& host,const platform::NativeFrame& frame)
+    {
+        auto& view=state.signing_views.at(created_id);
+        switch (stage) {
+        case 11:
+            if (view.daemon_status.starts_with("Waiting")) return;
+            if (!view.daemon_enriched) throw std::runtime_error("Enrichment result: "+view.daemon_status);
+            Check(protocol::CompareTransactionReview(*state.documents.Active()->imported->parsed,*view.daemon_enriched).empty()
+                && !view.daemon_enriched->input_policy[0].signature_fields,
+                "Explicit enrichment retains exact review and adds no signatures");
+            Press("Sign with daemon");
+            break;
+        case 12:
+            if (view.daemon_status.starts_with("Waiting") || view.daemon_status.starts_with("Enriched")) return;
+            Check(view.daemon_status.find("wallet is locked")!=std::string::npos,"Locked wallet refuses sign");
+            Press("Unlock daemon wallet");
+            break;
+        case 13:
+            if (!facts.transaction_document.contains("daemon-wallet-passphrase")) return;
+            if (!facts.transaction_document.at("daemon-wallet-passphrase").focused) return;
+            for (const char c:FIXTURE_PASSPHRASE) {
+                const char name[]{c,'\0'};
+                const auto code=XKeysymToKeycode(display,XStringToKeysym(name));
+                Check(code && key(display,code,True,0) && key(display,code,False,0),"Native protected keyboard input");
+            }
+            XSync(display,False);
+            break;
+        case 14: {
+            const std::string_view entered(state.daemon_unlock.passphrase.data());
+            // The pinned backend trickles queued down/up events across frames.
+            if (entered.size()<FIXTURE_PASSPHRASE.size()) return;
+            const auto& submit=facts.transaction_document.at("submit-daemon-unlock");
+            if (submit.rect[3]>=facts.layout.status.y) return;
+            Check(entered==FIXTURE_PASSPHRASE,"Complete native protected edit delivered before submit");
+            const auto packet=state.presentation.exchange.Published();
+            const auto field=std::ranges::find_if(packet->nodes,[](const auto& node){return node.name=="Wallet passphrase";});
+            Check(field!=packet->nodes.end() && field->value.empty()
+                && !c::ax::Supports(field->actions,c::ax::SemanticAction::SetValue)
+                && state.presentation.Snapshot().find(FIXTURE_PASSPHRASE)==std::string::npos,
+                "Masked passphrase has no semantic value or injection route");
+            Capture(frame,"daemon-unlock");
+            Click(host,submit);
+            break;
+        }
+        case 15:
+            if (state.daemon_unlock.owner || view.daemon_status.starts_with("Waiting")) return;
+            if (!view.daemon_status.starts_with("The daemon accepted")) throw std::runtime_error("Unlock result: "+view.daemon_status);
+            Check(!view.daemon_signed && std::ranges::all_of(state.daemon_unlock.passphrase,[](char c){return !c;}),
+                "Unlock ends with cleared input and does not sign");
+            Press("Sign with daemon");
+            break;
+        case 16: {
+            if (view.daemon_status.starts_with("Waiting") || view.daemon_status.starts_with("The daemon accepted")) return;
+            if (!view.daemon_signed) throw std::runtime_error("Signature result: "+view.daemon_status);
+            const auto* approval=shell::CurrentSigningApproval(state,requests,created_id);
+            const auto original=state.documents.Active()->imported->parsed;
+            Check(approval && original->source==accepted && view.daemon_signed->input_policy[0].signature_fields
+                && !view.daemon_signed->input_policy[0].final_fields
+                && protocol::TransactionCommitment(*view.daemon_signed)==approval->commitment,
+                "Exact approved original and separately verified unfinalized signed PSBT");
+            const auto public_data=app::EncodePublicSession({state.documents,{}});
+            const auto restored=public_data ? app::DecodePublicSession(*public_data) : std::nullopt;
+            shell::State recreated;
+            Check(restored && restored->documents.Active()->imported->parsed->source==accepted
+                && public_data->find(FIXTURE_PASSPHRASE)==std::string::npos,"Public recovery retains exact original and no secret");
+            recreated.documents=restored->documents;
+            Check(!shell::DispatchSigningCommand(recreated,requests,{app::Command::SignTransaction,created_id}).accepted,
+                "Restart does not restore signing authority");
+            std::ofstream result(output/"signing-provenance.json");
+            result<<"{\"source\":"<<rpc::Quote(original->source)<<",\"signedPsbt\":"<<rpc::Quote(view.daemon_signed->source)
+                <<",\"commitment\":"<<rpc::Quote(approval->commitment.hex())<<"}\n";
+            Check(bool(result),"Exact signed PSBT evidence retained");
+            std::ofstream semantics(output/"daemon-signed.semantics.txt");
+            semantics<<state.presentation.Snapshot();
+            Press("Open verified signed PSBT");
+            break;
+        }
+        case 17:
+            if (state.documents.ActiveId()==created_id) return;
+            Check(state.documents.Active()->imported->parsed==view.daemon_signed
+                && state.documents.Find(created_id)->imported->parsed->source==accepted,"Explicit signed copy opens without replacing original");
+            host.RequestClose();
+            break;
+        }
         ++stage;
     }
 
@@ -652,8 +751,8 @@ class Observer final : public platform::NativeObserver {
         ++stage;
     }
 public:
-    Observer(const std::filesystem::path& path, bool funding, bool create, bool fees, bool flow, bool batch, bool review, bool edit)
-        : output(path), create(create), fees(fees), flow(flow), batch(batch), review(review), edit(edit)
+    Observer(const std::filesystem::path& path, bool funding, bool create, bool fees, bool flow, bool batch, bool review, bool edit,bool sign)
+        : output(path), create(create), fees(fees), flow(flow), batch(batch), review(review), edit(edit),sign(sign)
     {
         display = XOpenDisplay(nullptr);
         xtst = dlopen("libXtst.so.6", RTLD_NOW);
@@ -669,6 +768,7 @@ public:
         requests.funding_enabled = funding;
         requests.fees_enabled = fees;
         requests.local_enabled = batch;
+        requests.signer_enabled=sign;
     }
     void Connect(ServerCandidate profile, const std::filesystem::path& metadata, std::string address)
     {
@@ -725,6 +825,7 @@ public:
         if (fees) { FeeFrame(host,frame); return; }
         if (batch) { BatchFrame(host,frame); return; }
         if (edit && stage>=11) { EditFrame(host,frame); return; }
+        if (sign && stage>=11) { SignFrame(host,frame); return; }
         if (review && stage>=7) { ReviewFrame(host,frame); return; }
         if (flow && stage>=6) { FlowFrame(host,frame); return; }
         if (requests.live) {
@@ -884,8 +985,8 @@ public:
     }
     void Report()
     {
-        const int expected_stage = edit ? 20 : review ? 12 : batch ? 15 : flow ? 21 : fees ? 12 : create ? 17 : requests.funding_enabled && !requests.live ? 3 : 7;
-        const int expected_frames = edit ? 1 : flow || fees ? 3 : batch || create || !requests.funding_enabled ? 2 : 1;
+        const int expected_stage = sign ? 18 : edit ? 20 : review ? 12 : batch ? 15 : flow ? 21 : fees ? 12 : create ? 17 : requests.funding_enabled && !requests.live ? 3 : 7;
+        const int expected_frames = sign || edit ? 1 : flow || fees ? 3 : batch || create || !requests.funding_enabled ? 2 : 1;
         Check(stage == expected_stage && frames == expected_frames && cleaned, "All intended native checks ran");
         std::ofstream report(output / "result.json");
         report << "{\"selected\":1,\"executed\":1,\"passed\":1,\"failed\":0,\"skipped\":0,\"checks\":"
@@ -899,7 +1000,8 @@ public:
 int main(int argc, char** argv)
 {
     const bool edit = argc == 10 && std::string_view(argv[3]) == "--edit-live";
-    const bool review = edit || (argc == 10 && std::string_view(argv[3]) == "--review-live");
+    const bool sign = argc == 10 && std::string_view(argv[3]) == "--sign-live";
+    const bool review = sign || edit || (argc == 10 && std::string_view(argv[3]) == "--review-live");
     const bool create = review || (argc == 10 && std::string_view(argv[3]) == "--create-live");
     const bool fees = argc == 10 && std::string_view(argv[3]) == "--fees-live";
     const bool flow = argc == 10 && std::string_view(argv[3]) == "--flow-live";
@@ -917,7 +1019,7 @@ int main(int argc, char** argv)
             if (!denied) throw std::runtime_error("Offline network fence required");
         }
         std::filesystem::create_directories(argv[1]);
-        Observer observer(argv[1], argc != 3, create, fees, flow, batch, review, edit);
+        Observer observer(argv[1], argc != 3, create, fees, flow, batch, review, edit,sign);
         if (live) {
             ServerCandidate profile;
             const std::string_view port(argv[4]);

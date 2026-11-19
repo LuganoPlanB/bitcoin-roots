@@ -2,13 +2,18 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
+#include "app/daemon_signer.h"
+#include "app/broadcast.h"
 
 #include <algorithm>
 #include <bit>
 #include <charconv>
+#include <imgui_internal.h>
 #include <sodium.h>
 
 namespace roots::gui::ui::shell {
+DaemonUnlockView::~DaemonUnlockView() {sodium_memzero(passphrase.data(),passphrase.size());}
+
 namespace {
 namespace a=app;
 namespace c=components;
@@ -22,12 +27,97 @@ bool Visible(const State& state)
     return !state.privacy.hidden && !state.semantic_hide_toggle && !state.lock_panel.setup
         && (!state.recovery || (!state.recovery->Locked() && !state.recovery->Pending()));
 }
-bool Unobstructed(const State& state)
+bool Unobstructed(const State& state,bool completing_exchange=false)
 {
-    return Visible(state) && state.actions.kind==DocumentDialog::None && !state.local_document.dialog.open
+    const auto& local=state.local_document;
+    const bool exchange=completing_exchange && local.signature_approval
+        && (local.mode==LocalDocumentMode::Merge || local.mode==LocalDocumentMode::MergeText || local.mode==LocalDocumentMode::MergeQr);
+    return Visible(state) && state.actions.kind==DocumentDialog::None && (!local.dialog.open || exchange)
         && !state.local_document.close_pending && !state.server.dialog.open && !state.onboarding.dialog.open
         && !state.recovery_dialog.open && !state.close_tab_popup && !state.close_document_popup
-        && (!c::native_input || !c::native_input->NativeDialogActive());
+        && (!c::native_input || !c::native_input->NativeDialogActive() || (exchange && local.file_dialog));
+}
+
+void ClearUnlockInputEvents(ImGuiContext& context,bool retire)
+{
+    for (auto& event:context.InputEventsTrail) {
+        if (event.Type==ImGuiInputEventType_Text) sodium_memzero(&event.Text,sizeof(event.Text));
+    }
+    auto& characters=context.IO.InputQueueCharacters;
+    if (retire) characters.resize(0);
+    if (characters.empty() && characters.Data)
+        sodium_memzero(characters.Data,size_t(characters.Capacity)*sizeof(ImWchar));
+    if (retire) {
+        auto& pending=context.InputEventsQueue;
+        auto* end=std::remove_if(pending.begin(),pending.end(),[](const auto& event){return event.Type==ImGuiInputEventType_Text;});
+        if (end!=pending.end()) {
+            sodium_memzero(end,size_t(pending.end()-end)*sizeof(ImGuiInputEvent));
+            pending.resize(int(end-pending.begin()));
+        }
+    }
+}
+
+void ClearUnlockEditor(ImGuiID field)
+{
+    if (field && ImGui::GetCurrentContext()) {
+        const auto wipe=[](ImVector<char>& bytes) {
+            if (bytes.Data) sodium_memzero(bytes.Data,size_t(bytes.Capacity));
+        };
+        auto& ctx=*ImGui::GetCurrentContext();
+        if (auto* edit=ImGui::GetInputTextState(field)) {
+            ClearUnlockInputEvents(ctx,true);
+            if (ctx.ActiveId==field) ImGui::ClearActiveID();
+            wipe(edit->TextA);
+            wipe(edit->TextToRevertTo);
+            wipe(edit->CallbackTextBackup);
+            if (edit->TextA.Size) edit->ClearText();
+            edit->ID=0;
+        }
+        if (ctx.InputTextDeactivatedState.ID==field) {
+            wipe(ctx.InputTextDeactivatedState.TextA);
+            ctx.InputTextDeactivatedState.ClearFreeMemory();
+        }
+    }
+}
+void ClearUnlock(DaemonUnlockView& view)
+{
+    sodium_memzero(view.passphrase.data(),view.passphrase.size());
+    ClearUnlockEditor(view.field);
+    view.owner.reset();
+    view.field=0;
+    view.focus=false;
+}
+
+std::optional<a::DaemonSignAction> DaemonAction(a::Command command)
+{
+    switch (command) {
+    case a::Command::SignTransaction: return a::DaemonSignAction::Sign;
+    case a::Command::EnrichTransaction: return a::DaemonSignAction::Enrich;
+    case a::Command::OpenDaemonUnlock: return a::DaemonSignAction::Unlock;
+    default: return {};
+    }
+}
+std::optional<a::BroadcastAction> BroadcastAction(a::Command command)
+{
+    switch (command) {
+    case a::Command::CheckBroadcast: return a::BroadcastAction::Check;
+    case a::Command::BroadcastTransaction: return a::BroadcastAction::Submit;
+    case a::Command::RebroadcastTransaction: return a::BroadcastAction::Rebroadcast;
+    default: return {};
+    }
+}
+std::optional<a::BroadcastStatusContext> StatusContext(State& state,a::Requests& host,uint64_t id)
+{
+    if (!Unobstructed(state) || id!=state.documents.ActiveId()) return {};
+    const auto owner=CurrentInspectionOwner(state,host);
+    const auto* connection=host.Connection();
+    if (!owner || !connection || !connection->Active()) return {};
+    const auto genesis=Hash256::Parse(connection->Active()->genesis);
+    if (!genesis || protocol::DocumentNetwork(NetworkIdentity{*genesis})!=owner->network) return {};
+    auto raw=owner->content;
+    if (const auto* artifact=FinalizedMaterial(state,id)) raw=artifact->final.document;
+    if (!raw || raw->psbt_version || !raw->transaction || !raw->transaction->txid) return {};
+    return a::BroadcastStatusContext{id,owner->session,owner->profile,owner->draft,owner->epoch,{*genesis},std::move(raw)};
 }
 
 class Provenance {
@@ -195,6 +285,9 @@ Candidate WorkingBasis(State& state,a::Requests& host,const a::Document& doc,con
     facts.document_revision=doc.draft_revision;
     facts.content=doc.imported->parsed;
     facts.proof.inputs=std::move(proof_inputs);
+    const auto original_view=state.imported_views.find(lineage.id);
+    if (original_view!=state.imported_views.end() && original_view->second.replacement && proof_outputs!=facts.proof.recipients)
+        return reject("A replacement must preserve the original recipient order. The unedited draft is retained.");
     facts.proof.recipients=std::move(proof_outputs);
     facts.change_output=change;
     facts.sighash=std::move(modes);
@@ -218,14 +311,16 @@ Candidate Current(State& state,a::Requests& host,uint64_t id,bool validate,bool 
     const auto& tx=*content->transaction;
     const auto view=state.imported_views.find(id);
     const auto* funding=imported.funding ? &*imported.funding : nullptr;
+    const auto* replacement=view!=state.imported_views.end() && view->second.replacement ? &*view->second.replacement : nullptr;
     const auto local=view!=state.imported_views.end() ? view->second.offline_review_origin : std::nullopt;
-    if (!funding && (!local || !view->second.wallet || !view->second.review_evidence))
+    if (!funding && !replacement && (!local || !view->second.wallet || !view->second.review_evidence))
         return reject("Independent payment and wallet proofs are unavailable for this PSBT. Open the compatible wallet or export the original.");
-    const auto origin=funding ? std::pair{funding->draft_document,funding->draft_revision} : *local;
+    const auto origin=funding ? std::pair{funding->draft_document,funding->draft_revision}
+        : replacement ? std::pair{replacement->scope.document,replacement->scope.revision} : *local;
     const auto* draft=state.documents.Find(origin.first);
     if (!draft || draft->draft_revision!=origin.second || !draft->complete || draft->observation==a::ObservationState::Locked)
         return reject("The independent originating draft is missing or its revision changed.");
-    const auto& binding=funding ? funding->evidence.wallet : *view->second.wallet;
+    const auto& binding=funding ? funding->evidence.wallet : replacement ? replacement->coins.wallet : *view->second.wallet;
     const auto* wallet=a::RegisteredWallet(state.documents,binding);
     if (!wallet || wallet->observation==a::ObservationState::Locked || !draft->SendWallet() || *draft->SendWallet()!=binding
         || protocol::DocumentNetwork(binding.network)!=imported.network)
@@ -238,20 +333,62 @@ Candidate Current(State& state,a::Requests& host,uint64_t id,bool validate,bool 
     if (connection && connection->PrivacyLocked()) return reject("The connection is locked.");
     if (!offline && a::VerifiedWalletBinding(*connection->Active())!=binding)
         return reject("The verified connected wallet differs from the signing wallet.");
-    const auto proof=funding ? a::FundingReviewEvidence(*draft,imported) : view->second.review_evidence;
+    if (replacement) {
+        const auto& scope=replacement->scope;
+        if (content!=replacement->working || epoch!=scope.identity.context.lock_epoch
+            || session!=scope.identity.connection_session || profile!=scope.profile || draft->history.query_revision!=scope.query)
+            return reject("The exact replacement relationship or its wallet context changed. Prepare a new fee draft.");
+        if (!offline) {
+            const auto history=host.Refresh() ? a::HistoryForDocument(*wallet,*host.Refresh(),epoch) : std::nullopt;
+            if (!history || !history->identity || *history->identity!=scope.identity || !history->chain_current || !history->ledger)
+                return reject("Refresh the original in the verified wallet before reviewing this fee draft.");
+            const auto row=history->ledger->Rows().find(scope.txid.hex());
+            if (row==history->ledger->Rows().end() || row->second.state!=HistoryState::Pending || row->second.confirmations
+                || row->second.replaced_by || !row->second.mempool_conflicts.empty()
+                || (row->second.wire_witness && row->second.wire_witness!=replacement->original->transaction->wtxid)
+                || (!row->second.previous_hex.empty() && row->second.previous_hex!=replacement->original->source))
+                return reject("The original payment was confirmed, replaced or changed. Its fee draft has no approval.");
+        }
+    }
+    const auto proof=funding ? a::FundingReviewEvidence(*draft,imported) : replacement
+        ? std::optional(replacement->proof) : view->second.review_evidence;
     if (!proof || proof->network!=imported.network || proof->inputs.size()!=tx.inputs.size()
         || proof->recipients.empty() || proof->recipients.size()+size_t(proof->change.has_value())!=tx.outputs.size()
-        || !std::ranges::equal(proof->recipients,std::span(tx.outputs).first(proof->recipients.size())))
+        || (!replacement && !std::ranges::equal(proof->recipients,std::span(tx.outputs).first(proof->recipients.size()))))
         return reject("The ordered recipients, change, or independent input proof differs from the originating draft.");
-    const auto* coins=funding ? &funding->evidence : draft->coin_draft ? &*draft->coin_draft : nullptr;
-    const auto digest=coins && coins->wallet==binding ? ProofDigest(*coins) : std::nullopt;
+    const auto change_output=replacement ? replacement->change_output
+        : proof->change ? std::optional(tx.outputs.size()-1) : std::nullopt;
+    const auto* coins=funding ? &funding->evidence : replacement ? &replacement->coins : draft->coin_draft ? &*draft->coin_draft : nullptr;
+    auto digest=coins && coins->wallet==binding ? ProofDigest(*coins) : std::nullopt;
     if (!digest) return reject("An independent previous-output or change proof is missing or unavailable.");
+    if (replacement) {
+        Provenance relationship;
+        relationship.Add("Exact replacement source and original wire v1");
+        relationship.Add(digest->hex());
+        relationship.Add(replacement->original->wire);
+        relationship.Add(replacement->returned ? replacement->returned->source : replacement->working->source);
+        relationship.Number(replacement->scope.rate_per_kvb);
+        relationship.Number(replacement->cancellation.has_value());
+        relationship.Number(replacement->child_package.has_value());
+        if (const auto& package=replacement->child_package) {
+            relationship.Add(package->owned_destination.descriptor);
+            relationship.Number(package->owned_destination.index);
+            relationship.Number(package->output);
+            for (const auto& entry:package->package.ancestors) relationship.Add(entry.wtxid.hex());
+        }
+        if (const auto& intent=replacement->cancellation) {
+            relationship.Add(intent->owned_destination.descriptor);
+            relationship.Number(intent->owned_destination.index);
+            relationship.Number(intent->original_fee.sats());
+        }
+        digest=relationship.Finish();
+    }
     if (!tx.locktime || content->modifiable.value_or(0) || tx.coinbase || tx.inputs.empty())
         return reject("A fixed non-coinbase PSBT with known locktime and immutable payment fields is required.");
     if (validate && funding && !a::ValidCreatedFunding(imported))
         return reject("The saved independent funding evidence no longer validates.");
     if (validate && !funding) {
-        const auto checked=protocol::InspectOfflineReview(*content,*proof);
+        const auto checked=protocol::InspectOfflineReview(*content,*proof,change_output);
         if (!checked.commitment) return reject(checked.error);
     }
     const auto* observed=ObservedPolicy(state,wallet->id,binding,session);
@@ -288,7 +425,7 @@ Candidate Current(State& state,a::Requests& host,uint64_t id,bool validate,bool 
         return reject("The independent input and output totals do not reconcile with the exact fee.");
     if (proof->change) {
         const auto derived=protocol::DerivePublicDescriptor(proof->change->descriptor,protocol::DocumentChain(proof->network),proof->change->index);
-        if (!derived || proof->change->observed_ms<=0 || tx.outputs.back().script!=derived->script
+        if (!derived || proof->change->observed_ms<=0 || !change_output || tx.outputs.at(*change_output).script!=derived->script
             || (observed && !PolicyScript(*observed,derived->script,{proof->change->index},true)))
             return reject("Intended change no longer matches the independent internal wallet proof.");
     }
@@ -298,52 +435,129 @@ Candidate Current(State& state,a::Requests& host,uint64_t id,bool validate,bool 
         const auto fresh=host.Refresh()->View();
         if (scope && fresh.identity && *scope==*fresh.identity && fresh.ledger && fresh.chain_current
             && !fresh.offline && !fresh.locked && fresh.freshness[2]==Freshness::Live && fresh.ledger->InventoryAvailable()) {
-            const auto rules=state.coin_controls.Policy(*wallet,fresh,*state.recovery,draft->id);
-            Provenance seen;
-            seen.Add("Current exact coin policy v1");
-            seen.Number(bool(rules));
-            for (const auto& input:tx.inputs) {
-                const auto id=a::CoinKey(input.outpoint);
-                const auto exists=std::ranges::find(fresh.ledger->Coins(),input.outpoint,&HistoryCoin::outpoint);
-                if (exists==fresh.ledger->Coins().end() || exists->amount!=input.previous_value
-                    || exists->script!=input.previous_script || (fresh.ledger->LocksAvailable()
-                    && std::ranges::find(fresh.ledger->DaemonLocked(),input.outpoint)!=fresh.ledger->DaemonLocked().end()))
-                    return reject("An exact input changed, is unavailable or now has a daemon lock.");
-                if (rules) {
-                    const auto rule=rules->rules.find(id);
-                    if (rule==rules->rules.end() || rule->second!=a::CoinRule::Allowed)
-                        return reject("An exact input is frozen, reserved elsewhere, or unavailable under current coin policy.");
+            if (replacement) {
+                if (!a::ReplacementInputsAllowed(*replacement,*wallet,fresh,*state.recovery,state.coin_controls))
+                    return reject("A replacement input is frozen, reserved, daemon-locked or no longer independently eligible.");
+                Provenance seen;
+                seen.Add("Current exact replacement coin policy v1");
+                seen.Add(replacement->scope.txid.hex());
+                for (const auto& input:tx.inputs) seen.Add(a::CoinKey(input.outpoint));
+                coin_policy=seen.Finish();
+            } else {
+                const auto rules=state.coin_controls.Policy(*wallet,fresh,*state.recovery,draft->id);
+                Provenance seen;
+                seen.Add("Current exact coin policy v1");
+                seen.Number(bool(rules));
+                for (const auto& input:tx.inputs) {
+                    const auto id=a::CoinKey(input.outpoint);
+                    const auto exists=std::ranges::find(fresh.ledger->Coins(),input.outpoint,&HistoryCoin::outpoint);
+                    if (exists==fresh.ledger->Coins().end() || exists->amount!=input.previous_value
+                        || exists->script!=input.previous_script || (fresh.ledger->LocksAvailable()
+                        && std::ranges::find(fresh.ledger->DaemonLocked(),input.outpoint)!=fresh.ledger->DaemonLocked().end()))
+                        return reject("An exact input changed, is unavailable or now has a daemon lock.");
+                    if (rules) {
+                        const auto rule=rules->rules.find(id);
+                        if (rule==rules->rules.end() || rule->second!=a::CoinRule::Allowed)
+                            return reject("An exact input is frozen, reserved elsewhere, or unavailable under current coin policy.");
+                    }
+                    seen.Add(id);
                 }
-                seen.Add(id);
+                if (rules) coin_policy=seen.Finish();
             }
-            coin_policy=seen.Finish();
         }
     }
     return {a::SigningBasis{id,origin.first,wallet->id,session,profile,doc->draft_revision,origin.second,epoch,
-        offline,binding,content,*proof,proof->change ? std::optional(tx.outputs.size()-1) : std::nullopt,
+        offline,binding,content,*proof,change_output,
         *digest,observed ? std::optional(PolicyDigest(*observed)) : std::nullopt,
-        coin_policy,std::move(sighash),acknowledgement},{}};
+        coin_policy,std::move(sighash),acknowledgement,replacement ? replacement->cancellation : std::nullopt,
+        replacement ? replacement->child_package : std::nullopt},{}};
 }
 
-a::Availability Can(State& state,const a::Request& request,const Candidate& current)
+a::Availability Can(State& state,a::Requests& host,const a::Request& request,const Candidate& current)
 {
     if (!Unobstructed(state) || request.document!=state.documents.ActiveId() || !request.document)
         return {false,"The requested transaction view is no longer current."};
+    if (request.command==a::Command::CancelBroadcast) {
+        const auto* submission=host.Broadcasts();
+        return {submission && submission->Busy() && submission->View().document==request.document,
+            "No submission work is pending in this view."};
+    }
+    if (request.command==a::Command::CheckBroadcastStatus || request.command==a::Command::MonitorBroadcast) {
+        const auto scope=StatusContext(state,host,request.document);
+        const auto* submission=host.Broadcasts();
+        if (request.command==a::Command::MonitorBroadcast && submission && submission->Monitoring(request.document))
+            return {true,{}};
+        if (!scope || !submission) return {false,"Status Unknown without the exact raw transaction and a verified current node."};
+        return submission->CanCheckStatus(*scope,state.recovery);
+    }
+    if (BroadcastFreezes(state,request.document))
+        return {false,"Wait for the pending submission before changing this transaction."};
     if (!current.basis) return {false,current.reason};
     const auto& facts=*current.basis;
-    if (request.command==a::Command::SignTransaction) {
+    if (const auto action=BroadcastAction(request.command)) {
+        const auto* submission=host.Broadcasts();
+        const auto* artifact=FinalizedMaterial(state,request.document);
+        if (!submission) return {false,"The node submission service is unavailable."};
+        if (const auto* replacement=host.ReplacementDrafts();replacement && replacement->Busy())
+            return {false,"Wait for the current fee draft request to settle before submission."};
+        if (!artifact || artifact->collected!=SigningMaterial(state,request.document))
+            return {false,"Finalize the current approved collection first."};
+        const auto view=state.signing_views.find(request.document);
+        if (view==state.signing_views.end() || !view->second.open || state.daemon_operation || state.daemon_unlock.owner
+            || !state.transaction_edits.empty())
+            return {false,"Open the exact signing review and close any pending editor or daemon action."};
+        return submission->Can(*action,state.signing_reviews.Authorize(facts),artifact,state.recovery);
+    }
+    if (const auto action=DaemonAction(request.command)) {
         if (!state.signing_reviews.Authorize(facts)) return {false,"Signing requires a matching current review and explicit approval."};
-        return {false,a::MissingDependency(a::Command::SignTransaction)};
+        const auto* signer=host.Signer();
+        if (!signer) return {false,a::MissingDependency(a::Command::SignTransaction)};
+        if (state.daemon_unlock.owner) return {false,"Finish or cancel the daemon unlock prompt first."};
+        const auto view=state.signing_views.find(request.document);
+        if (view==state.signing_views.end() || !view->second.open)
+            return {false,"Open the signing review for this exact transaction."};
+        if (*action==a::DaemonSignAction::Sign && view->second.daemon_signed)
+            return {false,"Verified signature material has already been collected for this approval."};
+        if (*action==a::DaemonSignAction::Sign && view->second.signing_uncertain)
+            return {false,"Review and approve the retained original again before deliberately requesting a new signature."};
+        const bool external=*action==a::DaemonSignAction::Sign && host.Connection()
+            && host.Connection()->Active() && host.Connection()->Active()->external_signer==true;
+        if (external && SignatureProgressFor(state,request.document,SigningMaterial(state,request.document)).Complete())
+            return {false,"Every input already has the required verified signatures."};
+        const auto device=external && host.Devices() ? host.Devices()->Current(host.Connection()) : SelectedDevice{};
+        const auto unavailable=signer->Unavailable(facts,external ? a::DaemonSignAction::ExternalSign : *action,device);
+        return {unavailable.empty(),unavailable};
     }
     const auto view=state.signing_views.find(request.document);
     if (view==state.signing_views.end() || !view->second.open) return {false,"Open the review for this exact transaction."};
+    if (request.command==a::Command::FinalizeSigning) {
+        const auto* approval=state.signing_reviews.Authorize(facts);
+        if (!approval) return {false,"Review and approve this exact transaction before finalization."};
+        if (state.daemon_operation || state.daemon_unlock.owner)
+            return {false,"Finish or cancel the current daemon operation first."};
+        const auto material=SigningMaterial(state,request.document);
+        if (!material || !SignatureProgressFor(state,request.document,material).Complete())
+            return {false,"Every input needs its required verified signatures before finalization."};
+        const auto& previous=view->second.finalized;
+        if (previous && previous->approval==*approval && previous->collected==material)
+            return {false,"This exact collection is already finalized."};
+        return {true,{}};
+    }
     if (!state.signing_reviews.Acknowledged(facts)) return {false,"Read and acknowledge the advanced sighash commitments first."};
     if (request.command==a::Command::ReviewForSigning)
         return state.signing_reviews.Recorded(facts) ? a::Availability{false,"This exact transaction is already reviewed."}
             : a::Availability{true,{}};
-    if (request.command==a::Command::ApproveSigning)
+    if (request.command==a::Command::ApproveSigning) {
+        if (facts.cancellation || facts.child_package) {
+            const auto* replacement=host.ReplacementDrafts();
+            if (!replacement || facts.offline || !facts.coin_policy)
+                return {false,facts.child_package ? "Approval needs a current online check of the parent, ancestors and wallet output policy."
+                    : "Approval needs a current online check of the original payment and wallet input policy."};
+            if (replacement->Busy()) return {false,"Wait for the current original-payment check."};
+        }
         return {state.signing_reviews.Recorded(facts) && !state.signing_reviews.Authorize(facts),
             "Review this exact transaction before approving it. An existing approval needs no repeat."};
+    }
     return {false,"Unrecognized signing review command."};
 }
 
@@ -391,7 +605,7 @@ std::string SighashLabel(std::optional<uint32_t> mode)
     }
 }
 
-void Overview(State& state,const a::ImportedDocument& imported,const Candidate& candidate)
+void Overview(State& state,const a::ImportedDocument& imported,const Candidate& candidate,bool finalized)
 {
     const auto& tx=*imported.parsed->transaction;
     const auto* facts=candidate.basis ? &*candidate.basis : nullptr;
@@ -416,7 +630,7 @@ void Overview(State& state,const a::ImportedDocument& imported,const Candidate& 
         Text(state,"review-rate-request","Requested funding rate","Requested funding: "+std::to_string(*requested/1000)+"."+fraction+" sat/vB");
     } else if (origin && origin->funding_target) Text(state,"review-rate-request","Requested funding target",
         "Funding target "+std::to_string(origin->funding_target)+" blocks. The exact requested rate is unavailable in this view.");
-    Text(state,"review-rate","Actual final fee rate","Final fee rate: Unknown until the signed size is known.");
+    if (!finalized) Text(state,"review-rate","Actual final fee rate","Final fee rate: Unknown until the signed size is known.");
     const bool all_final=std::ranges::all_of(tx.inputs,[](const auto& input){return input.sequence==UINT32_MAX;});
     Text(state,"review-locktime","Absolute locktime and policy",tx.locktime
         ? "Locktime "+std::to_string(*tx.locktime)+(*tx.locktime==0 ? " · no absolute constraint" :
@@ -440,14 +654,52 @@ void Advanced(State& state)
 
 bool IsSigningCommand(a::Command command)
 {
-    return command==a::Command::ReviewForSigning || command==a::Command::ApproveSigning || command==a::Command::SignTransaction;
+    return command==a::Command::ReviewForSigning || command==a::Command::ApproveSigning
+        || command==a::Command::FinalizeSigning || command==a::Command::CancelBroadcast || command==a::Command::CheckBroadcastStatus
+        || command==a::Command::MonitorBroadcast
+        || DaemonAction(command).has_value() || BroadcastAction(command).has_value();
 }
 
-const a::SigningApproval* CurrentSigningApproval(State& state,a::Requests& host,uint64_t id)
+const a::SigningApproval* CurrentSigningApproval(State& state,a::Requests& host,uint64_t id,bool completing_exchange)
 {
-    if (!id || state.documents.ActiveId()!=id || !Unobstructed(state)) return nullptr;
+    if (!id || state.documents.ActiveId()!=id || !Unobstructed(state,completing_exchange)) return nullptr;
     const auto current=Current(state,host,id,true);
     return current.basis ? state.signing_reviews.Authorize(*current.basis) : nullptr;
+}
+
+std::shared_ptr<const protocol::TransactionDocument> SigningMaterial(const State& state,uint64_t id)
+{
+    const auto* document=state.documents.Find(id);
+    if (!document || !document->imported) return {};
+    const auto original=document->imported->parsed;
+    if (const auto at=state.signing_views.find(id);at!=state.signing_views.end()) {
+        const auto& view=at->second;
+        if (view.external_signed && view.external_source.lock()==original) return view.external_signed;
+        if (view.daemon_signed) return view.daemon_signed;
+    }
+    if (const auto* artifact=FinalizedMaterial(state,id)) return artifact->collected;
+    return original;
+}
+
+const a::ApprovedFinalTransaction* FinalizedMaterial(const State& state,uint64_t id)
+{
+    if (!Visible(state)) return nullptr;
+    const auto* document=state.documents.Find(id);
+    const auto at=state.signing_views.find(id);
+    if (!document || !document->imported || document->observation==a::ObservationState::Locked
+        || at==state.signing_views.end() || !at->second.finalized)
+        return nullptr;
+    const auto& artifact=*at->second.finalized;
+    const auto& basis=artifact.approval.reviewed;
+    return basis.content==document->imported->parsed && basis.document_revision==document->draft_revision
+        && basis.proof.network==document->imported->network ? &artifact : nullptr;
+}
+
+bool BroadcastFreezes(const State& state,uint64_t id)
+{
+    if (!state.broadcasts || !state.broadcasts->Busy()) return false;
+    const auto* document=state.documents.Find(id);
+    return state.broadcasts->Freezes(id,document && document->imported ? document->imported->parsed.get() : nullptr);
 }
 
 static a::Availability ValidateSigningRequest(const State& state,const a::Request& request)
@@ -463,23 +715,94 @@ a::Availability SigningCommandAvailability(State& state,a::Requests& host,const 
 {
     const auto valid=ValidateSigningRequest(state,request);
     if (!valid.available) return valid;
-    return Can(state,request,Current(state,host,request.document,request.command==a::Command::SignTransaction));
+    if (request.command==a::Command::CheckBroadcastStatus || request.command==a::Command::CancelBroadcast
+        || request.command==a::Command::MonitorBroadcast)
+        return Can(state,host,request,{});
+    return Can(state,host,request,Current(state,host,request.document,
+        DaemonAction(request.command).has_value() || request.command==a::Command::FinalizeSigning
+        || BroadcastAction(request.command).has_value()));
 }
 
 a::Receipt DispatchSigningCommand(State& state,a::Requests& host,const a::Request& request)
 {
     const auto valid=ValidateSigningRequest(state,request);
     if (!valid.available) return {false,valid.reason};
+    if (request.command==a::Command::CheckBroadcastStatus || request.command==a::Command::MonitorBroadcast) {
+        const auto available=Can(state,host,request,{});
+        if (!available.available) return {false,available.reason};
+        const bool monitor=request.command==a::Command::MonitorBroadcast;
+        auto* submission=host.Broadcasts();
+        if (monitor && submission->Monitoring(request.document)) {
+            const auto stopped=submission->StopMonitoring();
+            if (stopped) ++state.signing_revision;
+            return {stopped,"Monitoring paused."};
+        }
+        auto result=submission->StartStatus(*StatusContext(state,host,request.document),*state.recovery,monitor);
+        ++state.signing_revision;
+        return result;
+    }
+    if (request.command==a::Command::CancelBroadcast) {
+        const auto available=Can(state,host,request,{});
+        if (!available.available) return {false,available.reason};
+        const auto accepted=host.Broadcasts()->Cancel();
+        if (accepted) ++state.signing_revision;
+        return {accepted,accepted ? "Stopping the local wait. Any possible submission remains recorded." : "The wait is already ending."};
+    }
     auto current=Current(state,host,request.document,true);
     if (current.basis) {
         if (state.signing_reviews.Revalidate(*current.basis)) ++state.signing_revision;
     }
     else RevokeSigningReview(state,request.document,current.reason);
-    const auto availability=Can(state,request,current);
+    const auto availability=Can(state,host,request,current);
     if (!availability.available) return {false,availability.reason};
-    // Signing never routes to the fallback host in this milestone. Its
-    // availability is intentionally denied even when the exact approval exists.
-    if (request.command==a::Command::SignTransaction) return {false,a::MissingDependency(request.command)};
+    if (const auto action=BroadcastAction(request.command)) {
+        auto result=host.Broadcasts()->Start(*action,state.signing_reviews,*current.basis,
+            *FinalizedMaterial(state,request.document),*state.recovery);
+        ++state.signing_revision;
+        return result;
+    }
+    if (request.command==a::Command::FinalizeSigning) {
+        const auto material=SigningMaterial(state,request.document);
+        auto result=state.signing_reviews.Finalize(*current.basis,material);
+        auto& view=state.signing_views[request.document];
+        if (!result.artifact) {
+            view.finalization_error=std::move(result.error);
+            ++state.signing_revision;
+            return {false,view.finalization_error};
+        }
+        const auto* approval=CurrentSigningApproval(state,host,request.document);
+        if (!approval || *approval!=result.artifact->approval || SigningMaterial(state,request.document)!=material)
+            return {false,"The signing context changed. The collected PSBT is retained."};
+        view.finalized=std::move(result.artifact);
+        view.finalization_error.clear();
+        ++state.signing_revision;
+        return {true,"Exact final transaction created locally. The original and collected PSBTs are retained."};
+    }
+    if (const auto action=DaemonAction(request.command)) {
+        if (*action==a::DaemonSignAction::Unlock) {
+            state.daemon_unlock.owner=*current.basis;
+            state.daemon_unlock.focus=true;
+            ++state.signing_revision;
+            return {true,"Enter the passphrase for the current daemon wallet."};
+        }
+        const bool external=*action==a::DaemonSignAction::Sign && host.Connection()
+            && host.Connection()->Active() && host.Connection()->Active()->external_signer==true;
+        const auto device=external && host.Devices() ? host.Devices()->Current(host.Connection()) : SelectedDevice{};
+        if (!host.Signer()->Start(state.signing_reviews,*current.basis,
+                external ? a::DaemonSignAction::ExternalSign : *action,{},device))
+            return {false,"The scoped daemon request could not start. The approved PSBT is retained."};
+        state.daemon_operation=request.document;
+        state.signing_views[request.document].daemon_status=external ? DeviceStateText(DeviceState::Confirm)
+            : "Waiting for the current daemon wallet.";
+        ++state.signing_revision;
+        return {true,"Requested once. The original PSBT remains available."};
+    }
+    if (request.command==a::Command::ApproveSigning && (current.basis->cancellation || current.basis->child_package)) {
+        auto result=host.ReplacementDrafts()->StartApproval(state.signing_reviews,*current.basis);
+        state.signing_views[request.document].cancellation_status=result.reason;
+        ++state.signing_revision;
+        return result;
+    }
     const bool review=request.command==a::Command::ReviewForSigning;
     const bool accepted=review ? state.signing_reviews.Record(std::move(*current.basis)) : state.signing_reviews.Approve(*current.basis);
     if (accepted) ++state.signing_revision;
@@ -489,14 +812,94 @@ a::Receipt DispatchSigningCommand(State& state,a::Requests& host,const a::Reques
 
 void RevokeSigningReview(State& state,uint64_t id,std::string reason)
 {
-    if (state.signing_reviews.Revoke(id,std::move(reason))) ++state.signing_revision;
+    if (state.signing_reviews.Revoke(id,std::move(reason))) {
+        ++state.signing_revision;
+        if (const auto view=state.signing_views.find(id);view!=state.signing_views.end()) {
+            view->second.daemon_signed.reset();
+            view->second.daemon_enriched.reset();
+            view->second.daemon_status.clear();
+            view->second.cancellation_status.clear();
+            view->second.signing_uncertain=false;
+        }
+    }
+}
+
+void RetireDaemonSigning(State& state,a::Requests& host)
+{
+    ClearUnlock(state.daemon_unlock);
+    if (auto* devices=host.Devices()) devices->Cancel();
+    if (auto* signer=host.Signer()) signer->Cancel();
 }
 
 void PollSigningReviews(State& state,a::Requests& host)
 {
     state.signing_reviews.RemoveClosed(state.documents);
     std::erase_if(state.signing_views,[&](const auto& pair){return !state.documents.Find(pair.first);});
-    if (!Visible(state)) {
+    const bool visible=Visible(state);
+    const auto current_approval=[&](uint64_t id)->const a::SigningApproval* {
+        if (!id || state.documents.ActiveId()!=id || !Unobstructed(state)) return nullptr;
+        const auto current=Current(state,host,id);
+        return current.basis ? state.signing_reviews.Authorize(*current.basis) : nullptr;
+    };
+    if (auto* service=host.ReplacementDrafts();service && service->ApprovalBasis()) {
+        const auto id=service->ApprovalBasis()->document;
+        const auto view=state.signing_views.find(id);
+        const bool current_view=visible && Unobstructed(state) && state.documents.ActiveId()==id
+            && view!=state.signing_views.end() && view->second.open;
+        const auto current=current_view ? Current(state,host,id,true) : Candidate{};
+        if (auto result=service->PollApproval(state.signing_reviews,current.basis ? &*current.basis : nullptr)) {
+            if (!result->accepted) RevokeSigningReview(state,id,result->reason);
+            if (visible && state.signing_views.contains(id))
+                state.signing_views[id].cancellation_status=std::move(result->reason);
+            ++state.signing_revision;
+        }
+    }
+    if (auto& unlock=state.daemon_unlock;unlock.owner) {
+        const auto* approval=current_approval(unlock.owner->document);
+        if (!approval || approval->reviewed!=*unlock.owner || !state.signing_views[unlock.owner->document].open) {
+            ClearUnlock(unlock);
+            ++state.signing_revision;
+        }
+    }
+    if (auto* signer=host.Signer();signer && signer->Busy()) {
+        const auto id=state.daemon_operation;
+        const auto* approval=current_approval(id);
+        if (auto result=signer->Poll(approval)) {
+            const bool external=result->action==a::DaemonSignAction::ExternalSign;
+            if (result->original_retired) {
+                if (external) state.signing_reviews.Revoke(id,result->status);
+                else RevokeSigningReview(state,id,result->status);
+            }
+            auto& view=state.signing_views[id];
+            view.daemon_status=std::move(result->status);
+            if (external && result->success && view.external_signed && approval
+                && view.external_source.lock()==approval->reviewed.content) {
+                const auto combined=protocol::MergeOfflineSignatures(*view.external_signed,*result->psbt);
+                const auto& basis=approval->reviewed;
+                const auto checked=combined.document
+                    ? protocol::InspectOfflineReview(*combined.document,basis.proof,basis.change_output) : protocol::OfflineReview{};
+                if (checked.commitment==approval->commitment && checked.change_output==basis.change_output) {
+                    view.external_signed=combined.document;
+                } else {
+                    view.daemon_status="The device result conflicts with the verified collection. Both the existing collection and original are retained.";
+                    state.signing_reviews.Revoke(id,view.daemon_status);
+                    if (auto* devices=host.Devices()) devices->Cancel();
+                    result->success=false;
+                }
+            }
+            if (result->action==a::DaemonSignAction::Sign || (external && result->success)) {
+                view.daemon_signed=std::move(result->psbt);
+                view.signing_uncertain=result->uncertain;
+            }
+            if (result->action==a::DaemonSignAction::Enrich) view.daemon_enriched=std::move(result->psbt);
+            ++state.signing_revision;
+        }
+        if (!signer->Busy() && std::exchange(state.daemon_operation,0)) {
+            if (visible && !approval && state.signing_views.contains(id))
+                state.signing_views[id].daemon_status="The operation was retired. The original PSBT remains available.";
+        }
+    }
+    if (!visible) {
         if (!state.signing_views.empty() || !state.signing_reviews.PendingDocuments().empty()) ++state.signing_revision;
         state.signing_views.clear();
         state.signing_reviews.RetireAll("Workspace details were hidden, locked or retired.");
@@ -505,7 +908,84 @@ void PollSigningReviews(State& state,a::Requests& host)
     for (const auto id:state.signing_reviews.PendingDocuments()) {
         const auto current=Current(state,host,id);
         if (!current.basis) RevokeSigningReview(state,id,current.reason);
-        else if (state.signing_reviews.Revalidate(*current.basis)) ++state.signing_revision;
+        else if (state.signing_reviews.Revalidate(*current.basis)) {
+            ++state.signing_revision;
+            if (auto view=state.signing_views.find(id);view!=state.signing_views.end()) {
+                view->second.daemon_signed.reset();
+                view->second.daemon_enriched.reset();
+                view->second.daemon_status.clear();
+                view->second.cancellation_status.clear();
+                view->second.signing_uncertain=false;
+            }
+        }
+    }
+}
+
+void PollBroadcast(State& state,a::Requests& host)
+{
+    auto* submission=host.Broadcasts();
+    if (!submission) return;
+    const auto phase=submission->View().stage;
+    const auto id=submission->View().document;
+    if (submission->StatusActive()) {
+        const auto scope=StatusContext(state,host,id);
+        std::optional<std::string> tip;
+        const auto* connection=host.Connection();
+        if (scope && connection && connection->Active() && host.Refresh()) {
+            const auto refresh=host.Refresh()->View();
+            if (refresh.identity && refresh.node && !refresh.offline && !refresh.locked
+                && refresh.freshness[0]==Freshness::Live && refresh.identity->connection_session==scope->session
+                && refresh.identity->profile==connection->Active()->candidate
+                && refresh.identity->context.network==scope->network && refresh.identity->context.lock_epoch==scope->epoch
+                && Hash256::Parse(refresh.node->tip))
+                tip=refresh.node->tip;
+        }
+        submission->PollStatus(scope,state.recovery,tip);
+        if (phase!=submission->View().stage) ++state.signing_revision;
+        return;
+    }
+    if (!submission->Busy() && phase!=a::BroadcastStage::Ready) return;
+    const auto* approval=CurrentSigningApproval(state,host,id);
+    const auto* artifact=FinalizedMaterial(state,id);
+    if (artifact && artifact->collected!=SigningMaterial(state,id)) artifact=nullptr;
+    submission->Poll(state.signing_reviews,approval,artifact,state.recovery);
+    if (phase!=submission->View().stage) {
+        if (submission->View().original_retired) RevokeSigningReview(state,id,submission->View().message);
+        ++state.signing_revision;
+    }
+}
+
+void DrawBroadcastStatus(State& state,a::Requests& host,Facts& facts,const imkit::Theme& theme)
+{
+    const auto* submission=host.Broadcasts();
+    if (!submission) return;
+    const auto owner=CurrentInspectionOwner(state,host);
+    if (!owner || !Unobstructed(state)) return;
+    const auto revision=state.signing_revision;
+    const auto action=[&](a::Command cmd,const char* key,const char* label){
+        const a::Request request{cmd,owner->id};
+        const auto available=SigningCommandAvailability(state,host,request);
+        Button(state,facts,theme,key,label,available.available,[&state,&host,owner,revision,request] {
+            if (state.signing_revision!=revision || CurrentInspectionOwner(state,host)!=owner) return false;
+            const auto result=DispatchSigningCommand(state,host,request);
+            state.notice=result.reason;
+            return result.accepted;
+        },false,available.available ? "" : available.reason);
+    };
+    action(a::Command::CheckBroadcastStatus,"check-broadcast-status","Check Status");
+    ImGui::SameLine();
+    action(a::Command::MonitorBroadcast,"monitor-broadcast",submission->Monitoring(owner->id) ? "Stop monitoring" : "Monitor transaction");
+    const auto& result=submission->View();
+    if (result.document!=owner->id) return;
+    if (submission->Busy()) {
+        ImGui::SameLine();
+        action(a::Command::CancelBroadcast,"broadcast-cancel","Cancel wait");
+    }
+    if (!result.message.empty()) {
+        const bool alert=result.stage==a::BroadcastStage::Rejected || result.stage==a::BroadcastStage::Uncertain
+            || result.stage==a::BroadcastStage::Refused || result.stage==a::BroadcastStage::Recorded
+            || result.stage==a::BroadcastStage::StatusUnknown;
+        Text(state,"broadcast-status","Transaction submission",result.message,alert ? SemanticRole::Alert : SemanticRole::Text);
     }
 }
 
@@ -534,6 +1014,16 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     const auto candidate=current.basis ? &*current.basis : nullptr;
     const auto* review=candidate ? state.signing_reviews.Recorded(*candidate) : nullptr;
     const auto* approval=candidate ? state.signing_reviews.Authorize(*candidate) : nullptr;
+    if (candidate && candidate->cancellation) {
+        Text(state,"review-cancellation-intent","Competing self-payment",
+            "This draft redirects the original inputs to a verified address in your wallet. The original may confirm first; cancellation is never guaranteed.");
+    }
+    if (candidate && candidate->child_package) {
+        Text(state,"review-child-intent","Child pays for parent",
+            "This draft spends the selected unconfirmed parent output to a verified address in your wallet. Approval requires the exact current parent and package.");
+    }
+    if (!panel.cancellation_status.empty())
+        Text(state,"review-cancellation-check","Fee-action eligibility check",panel.cancellation_status);
     const auto change=[&state,&panel,permitted](auto update) {
         if (!permitted()) return false;
         update(panel);
@@ -543,7 +1033,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     imkit::PushTextRole(theme,imkit::TextRole::Heading);
     Text(state,"signing-review","Transaction review for signing","Transaction review");
     imkit::PopTextRole();
-    if (Button(state,facts,theme,"review-back","Back to inspection",true,[change]{
+    if (Button(state,facts,theme,"review-back","Back to inspection",!state.daemon_unlock.owner,[change]{
         return change([](SigningView& view){view.open=false;});
     })) return false;
     ImGui::SameLine();
@@ -564,7 +1054,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
         });
     }
     if (!panel.advanced) {
-        Overview(state,*document->imported,current);
+        Overview(state,*document->imported,current,FinalizedMaterial(state,id)!=nullptr);
         const auto first=panel.output_page*PAGE;
         for (size_t n=first;n<std::min(first+PAGE,tx.outputs.size());++n) {
             ImGui::PushID(int(n));
@@ -629,7 +1119,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     }
     if (const auto reason=state.signing_reviews.Reason(id);!reason.empty()) Text(state,"approval-revocation","Signing approval revocation",reason,SemanticRole::Alert);
     if (review) Text(state,"review-commitment","Reviewed transaction commitment","Reviewed commitment: "+review->commitment.hex());
-    Text(state,"approval-stage","Signing review state",approval ? "Approved for this exact transaction. No signing was requested."
+    Text(state,"approval-stage","Signing review state",approval ? "Approved for this exact transaction. Signing is a separate action."
         : review ? "Review recorded. Approve separately." : "Review and approval are separate actions.");
     const auto command=[&state,&host,id,permitted](a::Command action) {
         if (!permitted()) return false;
@@ -637,11 +1127,11 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
         state.notice=receipt.reason;
         return receipt.accepted;
     };
-    const auto record=Can(state,{a::Command::ReviewForSigning,id},current);
+    const auto record=Can(state,host,{a::Command::ReviewForSigning,id},current);
     Button(state,facts,theme,"review-record","Record signing review",record.available,[command]{return command(a::Command::ReviewForSigning);},
         !review,record.available ? "" : record.reason);
     ImGui::SameLine();
-    const auto approve=Can(state,{a::Command::ApproveSigning,id},current);
+    const auto approve=Can(state,host,{a::Command::ApproveSigning,id},current);
     Button(state,facts,theme,"review-approve","Approve for signing",approve.available,[command]{return command(a::Command::ApproveSigning);},
         bool(review) && !approval,approve.available ? "" : approve.reason);
     if (review || (candidate && candidate->requires_ack && state.signing_reviews.Acknowledged(*candidate))) {
@@ -651,7 +1141,158 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
             return true;
         });
     }
-    Text(state,"signer-unavailable","Signer availability","A transaction signer is unavailable.");
+    const auto draw_finalization=[&] {
+        const auto available=Can(state,host,{a::Command::FinalizeSigning,id},current);
+        Button(state,facts,theme,"finalize-signing","Finalize transaction",available.available,
+            [command]{return command(a::Command::FinalizeSigning);},available.available,available.reason);
+        if (!panel.finalization_error.empty())
+            Text(state,"finalization-error","Finalization status",panel.finalization_error,SemanticRole::Alert);
+        const auto* artifact=FinalizedMaterial(state,id);
+        if (!artifact) return;
+        const auto& final=artifact->final;
+        const auto data=final.document;
+        const auto& actual=*data->transaction;
+        const auto vsize=std::to_string(final.vsize);
+        const auto fee=std::to_string(final.fee.sats());
+        Text(state,"final-transaction-title","Finalized transaction","Finalized transaction");
+        const auto* current_approval=candidate ? state.signing_reviews.Authorize(*candidate) : nullptr;
+        if (!current_approval || *current_approval!=artifact->approval || SigningMaterial(state,id)!=artifact->collected)
+            Text(state,"final-previous-approval","Final transaction provenance",
+                "These bytes came from an earlier approved collection. You can still save or inspect them.");
+        Text(state,"final-txid","Final transaction ID","Transaction ID: "+actual.txid->hex());
+        Text(state,"final-wtxid","Final witness transaction ID","Witness transaction ID: "+actual.wtxid->hex());
+        Text(state,"final-size","Final transaction size and weight",std::to_string(final.size)+" bytes · "+
+            std::to_string(final.weight)+" WU · "+vsize+" vB");
+        Text(state,"final-rate","Actual final fee rate","Final fee rate: "+fee+" sats / "+vsize+" vB");
+        const auto artifact_current=[&state,id,permitted,data] {
+            if (!permitted()) return false;
+            const auto* latest=FinalizedMaterial(state,id);
+            return latest && latest->final.document==data;
+        };
+        Button(state,facts,theme,"save-final-transaction","Save final transaction",host.LocalDocuments(),
+            [&state,&host,artifact_current] {
+                return artifact_current() && BeginLocalDocument(state,host,LocalDocumentMode::SaveFinalized);
+            });
+        ImGui::SameLine();
+        if (Button(state,facts,theme,"view-final-transaction","View final transaction",state.documents.Documents().size()<32,
+            [&state,artifact_current,data,network=owner->network] {
+                if (!artifact_current()) return false;
+                std::string error;
+                if (OpenLocalData(state,data,network,error)) return true;
+                state.notice=std::move(error);
+                return false;
+            })) return;
+        ImGui::SameLine();
+        Button(state,facts,theme,"final-transaction-qr","Show final transaction QR",host.LocalDocuments(),[&state,&host,id]{
+            return state.documents.ActiveId()==id && BeginLocalDocument(state,host,LocalDocumentMode::ShowFinalQr);
+        });
+        if (host.Broadcasts()) {
+            const auto action=[&](a::Command cmd,const char* key,const char* label,bool primary=false) {
+                const auto status=Can(state,host,{cmd,id},current);
+                Button(state,facts,theme,key,label,status.available,[command,cmd]{return command(cmd);},
+                    primary && status.available,status.available ? "" : status.reason);
+            };
+            Text(state,"broadcast-fee-limit","Broadcast fee policy","Maximum submission fee rate: 100 sat/vB.");
+            action(a::Command::CheckBroadcast,"broadcast-check","Check node policy");
+            ImGui::SameLine();
+            action(a::Command::BroadcastTransaction,"broadcast-submit","Broadcast",true);
+            ImGui::SameLine();
+            action(a::Command::RebroadcastTransaction,"broadcast-retry","Rebroadcast same bytes");
+            DrawBroadcastStatus(state,host,facts,theme);
+        }
+    };
+    auto* signer=host.Signer();
+    if (!signer) {
+        Text(state,"signer-unavailable","Signer availability","A transaction signer is unavailable.");
+        DrawSignatureExchange(state,host,facts,theme,*owner,approval!=nullptr);
+        draw_finalization();
+        return true;
+    }
+    if (!panel.daemon_status.empty())
+        Text(state,"daemon-signing-status","Daemon signing status",panel.daemon_status);
+    if (state.daemon_operation==id && signer->Busy()) {
+        Button(state,facts,theme,"cancel-daemon-signing","Cancel waiting",true,[&state,&panel,signer,permitted]{
+            if (!permitted()) return false;
+            signer->Cancel();
+            panel.daemon_status="Waiting cancelled. Work already received by the daemon may finish. The original PSBT is retained.";
+            ++state.signing_revision;
+            return true;
+        });
+    }
+    auto& unlock=state.daemon_unlock;
+    if (unlock.owner && unlock.owner->document==id) {
+        Text(state,"unlock-daemon-boundary","Daemon unlock timeout",
+            "Unlock for 30 seconds. This changes only the daemon wallet lock. Signing requires a separate action.");
+        ImGui::TextUnformatted("Wallet passphrase");
+        const bool opening=std::exchange(unlock.focus,false);
+        if (opening) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(-1);
+        const bool entered=ImGui::InputText("##daemon-wallet-passphrase",unlock.passphrase.data(),unlock.passphrase.size(),
+            ImGuiInputTextFlags_Password|ImGuiInputTextFlags_NoUndoRedo|ImGuiInputTextFlags_EnterReturnsTrue);
+        unlock.field=ImGui::GetItemID();
+        const auto lo=ImGui::GetItemRectMin(),hi=ImGui::GetItemRectMax();
+        facts.transaction_document["daemon-wallet-passphrase"]={{lo.x,lo.y,hi.x,hi.y},unlock.field,ImGui::IsItemFocused(),
+            false,false,false,ImGui::IsItemVisible()};
+        state.presentation.Interact("Wallet passphrase",SemanticRole::TextField,SemanticAction::None,
+            false,false,{},"Protected keyboard input. The value is never published.");
+        const bool typing=ImGui::IsItemActive();
+        if (typing) ClearUnlockInputEvents(*ImGui::GetCurrentContext(),false);
+        if (ImGui::IsItemDeactivated()) ClearUnlockEditor(unlock.field);
+        const auto submit=[&state,&host,&unlock,id,permitted] {
+            if (!permitted() || !unlock.owner || !unlock.passphrase[0]) return false;
+            const auto fresh=Current(state,host,id,true);
+            const bool accepted=fresh.basis && *fresh.basis==*unlock.owner && host.Signer()->Start(state.signing_reviews,
+                *fresh.basis,a::DaemonSignAction::Unlock,unlock.passphrase.data());
+            ClearUnlock(unlock);
+            ++state.signing_revision;
+            if (accepted) state.daemon_operation=id;
+            state.signing_views[id].daemon_status=accepted ? "Waiting for the daemon unlock response."
+                : "The unlock request was retired. The original PSBT remains available.";
+            return accepted;
+        };
+        Button(state,facts,theme,"submit-daemon-unlock","Unlock for 30 seconds",unlock.passphrase[0],submit,true);
+        if (entered && unlock.owner) submit();
+        ImGui::SameLine();
+        Button(state,facts,theme,"cancel-daemon-unlock","Cancel",bool(unlock.owner),[&state,&unlock,permitted] {
+            if (!permitted()) return false;
+            ClearUnlock(unlock);
+            ++state.signing_revision;
+            return true;
+        });
+        if ((opening || typing) && ImGui::GetItemRectMax().y>ImGui::GetCurrentWindow()->InnerClipRect.Max.y)
+            ImGui::SetScrollHereY(1.0f);
+        return true;
+    }
+    const bool external=host.Connection() && host.Connection()->Active() && host.Connection()->Active()->external_signer==true;
+    if (external) DrawDeviceSigner(state,host,facts.transaction_document,theme,signer->Busy() && state.daemon_operation!=id);
+    if (approval) {
+        const auto operation=[&](a::Command cmd,const char* key,const char* label,bool primary=false) {
+            const auto available=Can(state,host,{cmd,id},current);
+            Button(state,facts,theme,key,label,available.available,[command,cmd]{return command(cmd);},primary,available.reason);
+        };
+        operation(a::Command::SignTransaction,external ? "sign-on-device" : "sign-with-daemon",
+            external ? "Sign on device" : "Sign with daemon",true);
+        if (!external) {
+            ImGui::SameLine();
+            operation(a::Command::OpenDaemonUnlock,"open-daemon-unlock","Unlock daemon wallet");
+        }
+        ImGui::SameLine();
+        operation(a::Command::EnrichTransaction,"enrich-psbt","Enrich PSBT");
+        const auto open=[&](const auto& data,const char* key,const char* label) {
+            if (!data) return;
+            Button(state,facts,theme,key,label,true,[&state,permitted,data,network=document->imported->network] {
+                if (!permitted()) return false;
+                std::string error;
+                if (OpenLocalData(state,data,network,error)) return true;
+                state.notice=std::move(error);
+                return false;
+            });
+        };
+        open(panel.daemon_signed,"open-daemon-signed","Open verified signed PSBT");
+        open(panel.daemon_enriched,"open-daemon-enriched","Open enriched PSBT");
+    }
+    DrawSignatureExchange(state,host,facts,theme,*owner,approval!=nullptr);
+    draw_finalization();
     return true;
 }
 } // namespace roots::gui::ui::shell

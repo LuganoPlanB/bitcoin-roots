@@ -193,7 +193,9 @@ struct NativeHost::Impl {
                 glfwSetWindowShouldClose(window, GLFW_FALSE);
             }
             facts = Facts();
-            if (facts.iconified || facts.framebuffer_width <= 0 || facts.framebuffer_height <= 0) {
+            if (facts.iconified || !glfwGetWindowAttrib(window,GLFW_VISIBLE)
+                || facts.framebuffer_width <= 0 || facts.framebuffer_height <= 0) {
+                if (options.on_draw_suspended) options.on_draw_suspended();
                 if(input){input->BeginFrame();input->EndFrame();}
                 if(accessibility)accessibility->Update(0,0,0,0,false);
                 glfwWaitEventsTimeout(.01); // Continue pumping events; never render a zero drawable.

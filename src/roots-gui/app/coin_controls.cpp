@@ -17,20 +17,22 @@ CoinControls::MetadataState* CoinControls::StateFor(const Document& d,const Refr
 bool CoinControls::Reload(const Document& d,const RefreshView& v,RecoverySession& r){auto* m=StateFor(d,v,r,true);return m && m->valid;}
 std::string CoinControls::Status(const Document& d,const RefreshView& v,RecoverySession& r){auto* m=StateFor(d,v,r);if(!m)return "Local coin policy Unknown: verified wallet scope unavailable";if(!m->valid)return m->error;return "Acknowledged local policy revision "+std::to_string(m->acknowledged.revision)+"; GUI reservations are temporary, separate from daemon locks. Preflight rereads policy and wallet.";}
 Receipt CoinControls::Save(RecoverySession& r,MetadataState& m,std::vector<storage::Target> next){auto saved=r.SaveCoinFreezes(m.scope,next,m.acknowledged.revision);++revision;if(!saved){m.valid=false;m.error=std::string("Freeze was not acknowledged: ")+storage::ErrorName(saved.error)+". Previous saved state retained; Reload policy, then deliberately retry.";return {false,m.error};}m.acknowledged.freezes=std::move(next);m.acknowledged.revision=*saved.value;m.error.clear();return {true,"Local freeze policy saved. No daemon lock changed."};}
-std::optional<CoinPolicy> CoinControls::Policy(const Document& d,const RefreshView& v,RecoverySession& r,uint64_t owner){
+std::optional<CoinPolicy> CoinControls::Policy(const Document& d,const RefreshView& v,RecoverySession& r,uint64_t owner,std::span<const PinnedCoin> replaced_inputs){
     auto* m=StateFor(d,v,r);if(!m || !m->valid || !v.chain_current || !v.ledger->InventoryAvailable() || !v.ledger->LocksAvailable())return {};
     CoinPolicy p{v.identity->context,v.history_sequence,{}};std::set<std::string> frozen,scripts,reserved,locked;
     for(const auto& t:m->acknowledged.freezes){if(t.kind==storage::TargetKind::Output)frozen.insert(t.key);else if(t.kind==storage::TargetKind::Address)if(auto address=ParseAddress(t.key))scripts.insert(address->script);}
     for(const auto& [id,lease]:leases)if(id!=owner && lease.wallet==*d.binding)reserved.insert(lease.keys.begin(),lease.keys.end());
     for(const auto& point:v.ledger->DaemonLocked())locked.insert(CoinKey(point));
-    for(const auto& coin:v.ledger->Coins()){
-        const auto key=CoinKey(coin.outpoint);auto script=Digest(coin.script);
-        // A matching malformed string is not public locking-script evidence.
-        // Leave its rule Unknown, even with acknowledged empty local policy.
-        if(!script)continue;
+    const auto add=[&](const Outpoint& point,std::string_view locking_script) {
+        const auto key=CoinKey(point);
+        const auto script=Digest(locking_script);
+        if(!script)return;
         const auto rule=frozen.contains(key) || scripts.contains(*script)?CoinRule::Frozen:reserved.contains(key)?CoinRule::Reserved:locked.contains(key)?CoinRule::Unavailable:CoinRule::Allowed;
         p.rules.emplace(key,rule);
-    }return p;
+    };
+    for(const auto& coin:v.ledger->Coins())add(coin.outpoint,coin.script);
+    for(const auto& coin:replaced_inputs)add(coin.outpoint,coin.script);
+    return p;
 }
 
 Receipt CoinControls::FreezeOutpoints(const Document& d,const RefreshView& v,const CoinInventory& inventory,const std::set<std::string>& keys,bool freeze,RecoverySession& r){auto* m=StateFor(d,v,r);if(!m || !m->valid || !v.chain_current || inventory.Context()!=v.identity->context || inventory.Sequence()!=v.history_sequence || keys.empty() || keys.size()>4096)return {false,"Freeze unavailable: reload policy in the current verified wallet. Selection retained."};auto next=m->acknowledged.freezes;for(const auto& key:keys){if(!ParseCoinKey(key))return {false,"Invalid exact outpoint; nothing saved."};const auto row=inventory.Rows().find(key);if(freeze && (row==inventory.Rows().end() || !row->second.present || !row->second.current))return {false,"Freeze needs a current owned output observation; no partial selection was saved."};const storage::Target target{storage::TargetKind::Output,key};auto at=std::find(next.begin(),next.end(),target);if(freeze && at==next.end())next.push_back(target);if(!freeze && at!=next.end())next.erase(at);}return Save(r,*m,std::move(next));}

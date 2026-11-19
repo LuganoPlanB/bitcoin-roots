@@ -106,6 +106,10 @@ void OwnerFence(const ReceiveTarget& target)
     Check(!CanVerifyReceiveOnDevice(*connection.Active()), "unproven signer unavailable");
     auto device = *connection.Active();
     device.external_signer = true;
+    device.private_keys = false;
+    device.methods["getblockhash"] = {true,true,false,false,{}};
+    device.methods["enumeratesigners"] = {true,true,false,false,{}};
+    device.methods["listdescriptors"] = {true,true,true,false,{"private"}};
     device.methods["walletdisplayaddress"] = {true,true,true,false,{"address"}};
     Check(CanVerifyReceiveOnDevice(device), "only a proved signer operation is available");
     device.chain = "main";

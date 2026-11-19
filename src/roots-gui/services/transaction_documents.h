@@ -15,6 +15,7 @@ struct LocalDocumentContext {
 struct LocalDocumentReply {
     protocol::DocumentResult parsed;
     std::string file_error;
+    std::optional<std::string> qr_text;
 };
 
 // One owner and one bounded, cancellable local read/parse. No server port.
@@ -23,11 +24,15 @@ public:
     ~TransactionDocuments();
     bool ReadFile(LocalDocumentContext, std::string path, protocol::DisplayNetwork);
     bool ReadText(LocalDocumentContext, std::string text, protocol::DisplayNetwork);
+    bool ReadQrImage(LocalDocumentContext,std::string path);
+    bool ReadBinary(LocalDocumentContext,std::string payload,protocol::DisplayNetwork);
     bool Busy() const {return worker.joinable();}
     void Cancel();
     std::optional<LocalDocumentReply> Poll(const std::optional<LocalDocumentContext>&);
 private:
-    bool Start(LocalDocumentContext, std::string, protocol::DisplayNetwork, bool local_path);
+    enum class Source { Text, File, Binary, QrImage };
+    bool Start(LocalDocumentContext,std::string,protocol::DisplayNetwork,Source);
+    static LocalDocumentReply Read(std::string,protocol::DisplayNetwork,Source,std::stop_token);
     const std::thread::id owner{std::this_thread::get_id()};
     std::optional<LocalDocumentContext> active;
     bool retired{};

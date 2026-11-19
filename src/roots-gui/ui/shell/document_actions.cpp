@@ -87,7 +87,7 @@ bool ApplyTabAction(State& s,a::Requests& host,uint64_t id,std::string_view labe
     if(label=="Close Others")return BeginClose(s,id,true);
     if(label=="Close All")return BeginClose(s,id,false,true);
     if(d->kind!=a::DocumentKind::Wallet)return false;
-    if(label=="Lock Wallet"){if(s.recovery)return RequestPrivacyLock(s);const auto receipt=host.Submit({a::Command::LockCurrent,id,d->section,{}});s.notice=receipt.reason;return receipt.accepted;}
+    if(label=="Lock Wallet"){if(s.recovery)return RequestPrivacyLock(s,host);const auto receipt=host.Submit({a::Command::LockCurrent,id,d->section,{}});s.notice=receipt.reason;return receipt.accepted;}
     if(label=="Delete Wallet..."){BeginDelete(s,id);return s.actions.kind==DocumentDialog::Delete;}
     if(label=="Separate Wallet Window...")s.notice="Separate wallet windows are unavailable: this native backend has one context/thread owner. The tab, drafts and selection remain here.";
     return false;

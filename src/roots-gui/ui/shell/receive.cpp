@@ -46,13 +46,20 @@ ReceiveRuntime& Runtime(State& state, const app::Document& document)
     return runtime;
 }
 
-void Select(ReceiveRuntime& runtime, ReceiveTarget target, ReceiveSource source)
+void Select(State& state,app::Requests& host,ReceiveRuntime& runtime,ReceiveTarget target,ReceiveSource source)
 {
     runtime.selection = ReceiveSelection{std::move(target), source};
     runtime.label = c::Edit{};
     runtime.label_loaded = false;
     runtime.label_active = runtime.label_seen_active = false;
     runtime.label_revision = 0;
+    runtime.qr_payload.clear();
+    runtime.qr_matrix.reset();
+    runtime.qr_uri=false;
+    const auto* connection=host.Connection();
+    runtime.qr_session=connection ? connection->Session() : 0;
+    runtime.qr_profile=connection ? connection->Revision() : 0;
+    runtime.qr_epoch=state.recovery ? state.recovery->Gate().Epoch() : LockEpoch{};
     Status(runtime, {});
 }
 
@@ -233,6 +240,11 @@ bool Start(State& state, app::Requests& host, uint64_t id, ReceiveRequest reques
         || connection->Revision() != request.profile_revision) return false;
     auto& runtime = Runtime(state, *document);
     if (request.action == ReceiveAction::VerifyDevice && (!runtime.selection || runtime.selection->target != request.selected)) return false;
+    if (request.action == ReceiveAction::VerifyDevice) {
+        if (state.privacy.hidden || !host.Devices()) return false;
+        request.device = host.Devices()->Current(connection);
+        if (!request.device) return false;
+    }
     if (request.action == ReceiveAction::Next && !SaveLabel(state, id)) return false;
     if (ReceiveAllocation(request.action)) {
         const auto ticket = state.recovery->BeginReceive(*runtime.scope, request.action == ReceiveAction::Reserve);
@@ -244,7 +256,9 @@ bool Start(State& state, app::Requests& host, uint64_t id, ReceiveRequest reques
         runtime.inspection.reset();
     }
     if (service->Start(request, *connection)) {
-        Status(runtime, "Checking this exact wallet with the daemon…");
+        Status(runtime, request.action == ReceiveAction::VerifyDevice
+            ? "Waiting for the daemon. Check this exact address on the device."
+            : "Checking this exact wallet with the daemon…");
         return true;
     }
     if (ReceiveAllocation(request.action)) state.recovery->FinishReceive(*runtime.scope, request.ticket);
@@ -263,7 +277,7 @@ bool TakeReservation(State& state, app::Requests& host, uint64_t id)
         Status(runtime, std::string("Offline reservation unavailable: ") + storage::ErrorName(target.error));
         return false;
     }
-    Select(runtime, std::move(*target.value), ReceiveSource::Reservation);
+    Select(state,host,runtime,std::move(*target.value),ReceiveSource::Reservation);
     LoadLabel(state, runtime);
     return true;
 }
@@ -303,7 +317,7 @@ void DrawTarget(State& state, app::Requests& host, Facts& facts, const imkit::Th
     const auto& target = selected.target;
     const auto id = document.id;
     const bool hidden = state.privacy.hidden;
-    const auto qr = 140 * scale;
+    const auto qr = 190 * scale;
     const bool wide = ImGui::GetContentRegionAvail().x >= qr + 185 * scale
         && ImGui::BeginTable("receive-layout", 2, ImGuiTableFlags_SizingStretchSame);
     if (wide) {
@@ -330,13 +344,39 @@ void DrawTarget(State& state, app::Requests& host, Facts& facts, const imkit::Th
         return Copy(state, host, id, selected, label, true, hidden);
     });
     if (wide) ImGui::TableNextColumn();
-    ImGui::BeginChild("receive-qr", {std::min(qr,ImGui::GetContentRegionAvail().x),qr}, ImGuiChildFlags_AlwaysUseWindowPadding,
-        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    const auto pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
-    ImGui::GetWindowDrawList()->AddRect({pos.x + 1,pos.y + 1},{pos.x + size.x - 1,pos.y + size.y - 1},
-        ImGui::GetColorU32(ImGuiCol_Border), 4 * scale);
-    Text(state, "receive-qr-unavailable", "Receive QR", "QR unavailable");
-    ImGui::EndChild();
+    const auto qr_current=[&state,&host,&runtime,id,selected] {
+        const auto* connection=host.Connection();
+        return !state.privacy.hidden && !state.semantic_hide_toggle && CurrentSelection(state,id,selected)
+            && runtime.qr_session==(connection ? connection->Session() : 0)
+            && runtime.qr_profile==(connection ? connection->Revision() : 0)
+            && runtime.qr_epoch==(state.recovery ? state.recovery->Gate().Epoch() : LockEpoch{});
+    };
+    if (!hidden && qr_current()) {
+        const auto payload=runtime.qr_uri ? ReceiveUri(target.address,label) : std::optional{target.address};
+        const auto validated=payload ? ParsePaymentRequest(*payload,protocol::DocumentNetwork(document.binding->network))
+            : PaymentRequest{};
+        if (!payload || validated.address!=target.address || !validated.error.empty()) {
+            runtime.qr_payload.clear();
+            runtime.qr_matrix.reset();
+        } else if (runtime.qr_payload!=*payload) {
+            runtime.qr_payload=*payload;
+            runtime.qr_matrix=protocol::EncodeQr(*payload);
+        }
+        Text(state,"receive-qr-type","Receive QR format",runtime.qr_uri ? "Static QR · payment URI" : "Static QR · Bitcoin address");
+        if (!runtime.qr_matrix || !DrawQrMatrix(*runtime.qr_matrix,qr-4))
+            Text(state,"receive-qr-size","Receive QR size","Enlarge the window or copy the address or URI to share it.");
+        Button(state,facts.receive,theme,"receive-qr-mode",runtime.qr_uri ? "Show address QR" : "Show payment URI QR",true,
+            [&runtime,qr_current] {
+                if (!qr_current()) return false;
+                runtime.qr_uri=!runtime.qr_uri;
+                return true;
+            });
+    }
+    if (!hidden && !qr_current()) {
+        runtime.qr_payload.clear();
+        runtime.qr_matrix.reset();
+        Text(state,"receive-qr-current","Receive QR availability","Select an address in the current wallet session to display its QR.");
+    }
     if (wide) ImGui::EndTable();
     ImGui::Separator();
     ImGui::TextUnformatted("scriptPubKey");
@@ -399,17 +439,63 @@ void PollReceive(State& state, app::Requests& host)
     }
     if (reply.address && operation.action == ReceiveAction::Next) {
         if (!SaveLabel(state, active->id)) return;
-        Select(*runtime, std::move(*reply.address), ReceiveSource::Daemon);
+        Select(state,host,*runtime,std::move(*reply.address),ReceiveSource::Daemon);
         LoadLabel(state, *runtime);
     } else if (reply.address && operation.action == ReceiveAction::Reserve) {
         Status(*runtime, "One verified address saved for offline use.");
     } else if (reply.inspected) {
         runtime->inspection = operation;
         Status(*runtime, "Wallet and network reverified. Check the daemon wallet's address history before clearing the local pending attempt.");
-    } else if (reply.verified_on_device) {
-        Status(*runtime, "Signer confirmed this exact address.");
+    } else if (reply.signer_echo) {
+        Status(*runtime, "The daemon signer echoed this exact address. Compare it on the device before relying on it.");
     } else {
         Status(*runtime, std::move(reply.error));
+    }
+}
+
+void DrawDeviceSigner(State& state, app::Requests& host, std::map<std::string,c::ItemFacts>& facts,
+    const imkit::Theme& theme, bool blocked)
+{
+    if (state.privacy.hidden || (state.recovery && state.recovery->Locked())) return;
+    auto* devices = host.Devices();
+    auto* connection = host.Connection();
+    const auto* document = state.documents.Active();
+    if (!devices || !connection || !document || connection->Offline() || !connection->Active()) return;
+    if (!CanDiscoverDevice(*connection->Active())) {
+        Text(state, "device-status", "Daemon signer status", DeviceStateText(DeviceState::Unsupported));
+        return;
+    }
+    const auto status = devices->Status();
+    std::string detail = DeviceStateText(status);
+    if (!devices->Fingerprint().empty()) {
+        detail += " Fingerprint " + std::string(devices->Fingerprint()) + ".";
+        if (!devices->Label().empty()) detail += " Daemon label " + std::string(devices->Label()) + ".";
+    }
+    Text(state, "device-status", "Daemon signer status", detail);
+    const auto current = [&state,connection,id=document->id,section=document->section,session=connection->Session(),
+        revision=connection->Revision(),epoch=state.recovery ? state.recovery->Gate().Epoch() : LockEpoch{}] {
+        const auto* active = state.documents.Active();
+        return active && active->id == id && active->section == section && active->observation != app::ObservationState::Locked
+            && !state.privacy.hidden && (!state.recovery || (!state.recovery->Locked() && state.recovery->Gate().Epoch() == epoch))
+            && connection->Session() == session && connection->Revision() == revision && !connection->Offline();
+    };
+    Button(state, facts, theme, "device-rescan", "Rescan devices", !blocked && status != DeviceState::Scanning
+        && status != DeviceState::Confirm, [current,devices,connection] {return current() && devices->Rescan(*connection);});
+    if (status == DeviceState::Select) {
+        ImGui::SameLine();
+        Button(state, facts, theme, "device-select", "Select matching signer", !blocked,
+            [current,devices,connection] {return current() && devices->Select(*connection);});
+    }
+    if (status == DeviceState::Scanning || status == DeviceState::Select || status == DeviceState::Ready || status == DeviceState::Confirm) {
+        ImGui::SameLine();
+        Button(state, facts, theme, "device-cancel", "Cancel device selection", true, [current,devices,&state,&host,id=document->id] {
+            if (!current()) return false;
+            if (auto* receiving=host.Receiving();receiving && receiving->CancelDevice())
+                if (auto runtime=state.receives.find(id);runtime!=state.receives.end())
+                    Status(runtime->second,"Waiting cancelled. The selected address is retained.");
+            devices->Cancel();
+            return true;
+        });
     }
 }
 
@@ -444,6 +530,7 @@ void DrawReceive(State& state, app::Requests& host, Facts& facts, const imkit::T
     const auto width = [&](const char* label) {return ImGui::CalcTextSize(label).x + style.FramePadding.x * 2;};
     const float next_width = width("Get Next Address");
     const bool verify = caps && CanVerifyReceiveOnDevice(*caps);
+    const auto device = host.Devices() ? host.Devices()->Current(host.Connection()) : SelectedDevice{};
     const float signer_width = verify ? width("Verify on device") + style.ItemSpacing.x : 0;
     const float footer_width = ImGui::GetContentRegionAvail().x;
     const bool signer_alongside = next_width + signer_width <= footer_width;
@@ -459,12 +546,18 @@ void DrawReceive(State& state, app::Requests& host, Facts& facts, const imkit::T
         : "Offline pool exhausted (0 reservations)");
     if (!runtime.status.empty()) Text(state, "receive-status", "Receive status", runtime.status);
     Text(state, "receive-reusable", "Reusable addresses", "Reusable addresses require separate wallet support.");
-    if (!caps || !CanVerifyReceiveOnDevice(*caps))
-        Text(state, "receive-device-unavailable", "Device verification", "Device verification requires a supported daemon signer.");
+    if (caps && caps->external_signer == true) DrawDeviceSigner(state,host,facts.receive,theme,busy);
+    if (!verify)
+        Text(state, "receive-device-unavailable", "Device verification", "Device verification requires a supported external signer and display RPC.");
     ImGui::EndChild();
 
     if (busy) {
-        Button(state, facts.receive, theme, "cancel", "Cancel receive operation", true, [service] {service->Cancel(); return true;});
+        Button(state, facts.receive, theme, "cancel", "Cancel receive operation", true, [service,&state,id] {
+            service->Cancel();
+            if (auto runtime=state.receives.find(id);runtime!=state.receives.end())
+                Status(runtime->second,"Waiting cancelled. The selected address is retained.");
+            return true;
+        });
     } else if (pending && identity) {
         Button(state, facts.receive, theme, "inspect", "Check daemon wallet", caps != nullptr, [action,pending] {return action(ReceiveAction::Inspect,pending);});
         if (runtime.inspection && runtime.inspection->ticket == pending) {
@@ -484,7 +577,7 @@ void DrawReceive(State& state, app::Requests& host, Facts& facts, const imkit::T
         const float remaining = ImGui::GetContentRegionAvail().x;
         if (signer_alongside) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + remaining - next_width - signer_width);
         if (verify) {
-            Button(state, facts.receive, theme, "verify-device", "Verify on device", target.has_value(),
+            Button(state, facts.receive, theme, "verify-device", "Verify on device", target.has_value() && device && !device->Busy(),
                 [action,target] {return action(ReceiveAction::VerifyDevice,0,target);});
             if (signer_alongside) ImGui::SameLine();
         }
@@ -506,7 +599,7 @@ void DrawReceiveTo(State& state, app::Requests& host, Facts& facts, const imkit:
             if (current.sequence != sequence || current.generation != generation || InventoryTarget(current,key) != valid) return false;
             auto& runtime = Runtime(state, *active);
             if (!SaveLabel(state, id)) return false;
-            Select(runtime, *valid, ReceiveSource::Inventory);
+            Select(state,host,runtime,*valid,ReceiveSource::Inventory);
             LoadLabel(state, runtime);
             state.documents.Find(id)->section = app::Section::Receive;
             return true;

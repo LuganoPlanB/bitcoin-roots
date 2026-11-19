@@ -34,10 +34,10 @@ class Actor:
         return dict(argv=self.argv,events=self.events,exit=self.process.returncode,settled=self.process.poll() is not None,forcedTermination=forced,stderr=error)
 
 def main():
-    cases=['persistence','migrations','rollback','disk-full','corruption','schema-collision','concurrent-instances','receive-reservations','rescan-tickets']
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--binary',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--case',choices=cases,action='append');args=p.parse_args();selected=args.case or cases
+    cases=['persistence','migrations','rollback','disk-full','corruption','schema-collision','concurrent-instances','receive-reservations','rescan-tickets','broadcast-attempts']
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--binary',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--case',choices=cases+['broadcast-recovery'],action='append');args=p.parse_args();selected=args.case or cases
     if len(set(selected))!=len(selected):p.error('duplicate selected case')
-    out=evidence_directory(args.output);records=[]
+    out=Path(tempfile.mkdtemp(prefix='attempt-',dir=evidence_directory(args.output)));records=[]
     for case in selected:
         record=dict(id=case,startUTC=datetime.now(timezone.utc).isoformat(),passed=False,processes=[])
         with tempfile.TemporaryDirectory(prefix='store-',dir=validated_scratch()) as tmp:
@@ -66,5 +66,6 @@ def main():
             except Exception as error:record['failure']=type(error).__name__
         record['scratchRemoved']=not Path(tmp).exists();record['endUTC']=datetime.now(timezone.utc).isoformat();records.append(record)
     result=dict(selected=len(selected),executed=len(records),passed=sum(r['passed'] for r in records),failed=sum(not r['passed'] for r in records),skipped=0,binary=binary_identity(args.binary),cases=records,observedUTC=datetime.now(timezone.utc).isoformat())
-    write_json(out/'result.json',result);print(json.dumps({k:result[k] for k in ['selected','executed','passed','failed','skipped']}));return int(result['failed']!=0)
+    write_json(out/'result.json',result);print('Metadata store evidence:',out)
+    print(json.dumps({k:result[k] for k in ['selected','executed','passed','failed','skipped']}));return int(result['failed']!=0)
 if __name__=='__main__':raise SystemExit(main())

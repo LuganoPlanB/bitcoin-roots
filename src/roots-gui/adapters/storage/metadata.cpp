@@ -5,6 +5,7 @@
 #include "adapters/storage/protected_file.h"
 #include "adapters/rpc/json.h"
 #include "adapters/protocol/public_wallet.h"
+#include "adapters/protocol/transaction.h"
 #include <sqlite3.h>
 #include <algorithm>
 #include <charconv>
@@ -91,7 +92,7 @@ ScopeRow FindScope(sqlite3* db,const Scope& s,bool create){
     if(!q.Row())return {};ScopeRow r{q.Int(0),Counter(q.Int(1)),q.Text(2)};Require(r.id>0 && Text(r.display,1024),Error::Corrupt);Require(!q.Row(),Error::Corrupt);return r;
 }
 void ValidateSchema(sqlite3* db,int version){
-    std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);if(version>=4)expected.emplace(schema::V4);if(version>=5)for(auto sql:schema::V5)expected.emplace(sql);if(version>=6)expected.emplace(schema::V6);
+    std::set<std::string> expected;for(auto sql:schema::V1)expected.emplace(sql);if(version>=2)expected.emplace(schema::V2);if(version>=3)expected.emplace(schema::V3);if(version>=4)expected.emplace(schema::V4);if(version>=5)for(auto sql:schema::V5)expected.emplace(sql);if(version>=6)expected.emplace(schema::V6);if(version>=7)expected.emplace(schema::V7);if(version>=8)expected.emplace(schema::V8);
     // GLOB keeps '_' literal: sqliteX... is an ordinary user object and must
     // reach the exact-schema check, unlike SQLite's reserved sqlite_ objects.
     Statement q(db,"SELECT type,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'");
@@ -132,7 +133,9 @@ void Initialize(sqlite3* db,OpenOptions options){
     if(v==2){Exec(db,schema::V3);Exec(db,"PRAGMA user_version=3");v=3;}
     if(v==3){Exec(db,schema::V4);Exec(db,"PRAGMA user_version=4");v=4;}
     if(v==4){for(auto sql:schema::V5)Exec(db,sql);Exec(db,"PRAGMA user_version=5");v=5;}
-    if(v==5){Exec(db,schema::V6);Exec(db,"PRAGMA user_version=6");}
+    if(v==5){Exec(db,schema::V6);Exec(db,"PRAGMA user_version=6");v=6;}
+    if(v==6){Exec(db,schema::V7);Exec(db,"PRAGMA user_version=7");v=7;}
+    if(v==7){Exec(db,schema::V8);Exec(db,"PRAGMA user_version=8");}
     ValidateSchema(db,schema::Version);
     {Statement q(db,"PRAGMA foreign_key_check");Require(!q.Row(),Error::Corrupt);}tx.Commit();
 }
@@ -209,6 +212,155 @@ Result<uint64_t> MetadataStore::SaveRecovery(const RecoveryRecord& r){return Wri
     Require(Counter(Scalar(db,"SELECT coalesce((SELECT revision FROM recovery WHERE slot=1),0)"))==r.revision,Error::Conflict);
     Statement q(db,"INSERT INTO recovery VALUES(1,?,?,?) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,enabled=excluded.enabled,public_documents=excluded.public_documents");q.Bind(1,int64_t(r.revision+1));q.Bind(2,int64_t(r.enabled));q.Bind(3,r.public_documents);q.Done();tx.Commit();return r.revision+1;
 });}
+Result<bool> MetadataStore::HasBroadcastAttempt(const NetworkIdentity& network,const Hash256& txid)
+{
+    return Run([&]{
+        Statement query(db,"SELECT 1 FROM broadcast_attempts WHERE genesis=? AND txid=?");
+        query.Bind(1,network.genesis.hex());
+        query.Bind(2,txid.hex());
+        return query.Row();
+    });
+}
+namespace {
+constexpr auto BROADCAST_QUERY="SELECT a.genesis,a.txid,a.wtxid,a.wire_digest,a.observed_ms,d.wire,d.serial,d.attempted_ms,d.outcome,d.outcome_ms,d.backend,d.wallet FROM broadcast_attempts a LEFT JOIN broadcast_details d USING(genesis,txid)";
+void BindAttemptKey(Statement& statement,const NetworkIdentity& net,const Hash256& txid)
+{
+    statement.Bind(1,net.genesis.hex());
+    statement.Bind(2,txid.hex());
+}
+bool SameBytes(const BroadcastAttempt& a,const BroadcastAttempt& b)
+{
+    return a.network==b.network && a.txid==b.txid && a.wtxid==b.wtxid && a.wire_digest==b.wire_digest;
+}
+bool ValidBroadcastWire(const BroadcastRecord& record)
+{
+    const auto& source=record.wire_hex;
+    if (source.empty() || source.size()>2*protocol::MAX_TRANSACTION_WIRE || source.size()%2
+        || !std::ranges::all_of(source,[](unsigned char c){return (c>='0' && c<='9') || (c>='a' && c<='f');})) return false;
+    const auto parsed=protocol::ParseTransactionDocument(source,protocol::DocumentNetwork(record.identity.network));
+    if (!parsed.document || parsed.document->psbt_version || !parsed.document->transaction
+        || parsed.document->transaction->txid!=record.identity.txid || parsed.document->transaction->wtxid!=record.identity.wtxid)
+        return false;
+    const auto& wire=parsed.document->wire;
+    unsigned char digest[32];
+    if (crypto_hash_sha256(digest,reinterpret_cast<const unsigned char*>(wire.data()),wire.size())!=0) return false;
+    return protocol::TransactionHex({reinterpret_cast<const char*>(digest),sizeof(digest)})==record.identity.wire_digest.hex();
+}
+BroadcastRecord ReadBroadcast(const Statement& row)
+{
+    const auto network=Hash256::Parse(row.Text(0)),txid=Hash256::Parse(row.Text(1)),wtxid=Hash256::Parse(row.Text(2)),
+        digest=Hash256::Parse(row.Text(3));
+    Require(network && txid && wtxid && digest && row.Int(4)>0,Error::Corrupt);
+    BroadcastRecord result{{{*network},*txid,*wtxid,*digest,row.Int(4)}};
+    result.attempted_ms=result.identity.observed_ms;
+    if (row.Type(5)==SQLITE_NULL) return result;
+    result.wire_hex=row.Text(5);
+    result.serial=Counter(row.Int(6));
+    result.attempted_ms=row.Int(7);
+    const auto state=row.Int(8);
+    if (row.Type(9)!=SQLITE_NULL) result.outcome_ms=row.Int(9);
+    result.backend=row.Text(10);
+    result.wallet=row.Text(11);
+    Require(result.serial>0 && result.attempted_ms>=result.identity.observed_ms && state>=0 && state<=4
+        && ((state==0)==!result.outcome_ms) && (!result.outcome_ms || *result.outcome_ms>=result.attempted_ms)
+        && Valid({result.backend,result.identity.network,result.wallet}) && ValidBroadcastWire(result),Error::Corrupt);
+    result.outcome=BroadcastOutcome(state);
+    return result;
+}
+std::optional<BroadcastRecord> FindBroadcast(sqlite3* db,const NetworkIdentity& net,const Hash256& txid)
+{
+    Statement row(db,std::string(BROADCAST_QUERY)+" WHERE a.genesis=? AND a.txid=?");
+    BindAttemptKey(row,net,txid);
+    return row.Row() ? std::optional(ReadBroadcast(row)) : std::nullopt;
+}
+void InsertBroadcast(sqlite3* db,const BroadcastAttempt& attempt)
+{
+    Require(Scalar(db,"SELECT count(*) FROM broadcast_attempts")<4096,Error::Full);
+    Statement write(db,"INSERT INTO broadcast_attempts VALUES(?,?,?,?,?)");
+    BindAttemptKey(write,attempt.network,attempt.txid);
+    write.Bind(3,attempt.wtxid.hex());
+    write.Bind(4,attempt.wire_digest.hex());
+    write.Bind(5,attempt.observed_ms);
+    write.Done();
+}
+}
+Result<Done> MetadataStore::RecordBroadcastAttempt(const BroadcastAttempt& attempt)
+{
+    return Write([&]{
+        Require(attempt.observed_ms>0);
+        Transaction tx(db,true);
+        {
+            Statement existing(db,"SELECT 1 FROM broadcast_attempts WHERE genesis=? AND txid=?");
+            existing.Bind(1,attempt.network.genesis.hex());
+            existing.Bind(2,attempt.txid.hex());
+            Require(!existing.Row(),Error::Conflict);
+        }
+        InsertBroadcast(db,attempt);
+        tx.Commit();
+        return Done{};
+    });
+}
+Result<std::optional<BroadcastRecord>> MetadataStore::LoadBroadcastAttempt(const NetworkIdentity& net,const Hash256& txid)
+{
+    return Run([&]{return FindBroadcast(db,net,txid);});
+}
+Result<std::vector<BroadcastRecord>> MetadataStore::RecentBroadcastAttempts()
+{
+    return Run([&]{
+        Statement rows(db,std::string(BROADCAST_QUERY)+" ORDER BY coalesce(d.attempted_ms,a.observed_ms) DESC,a.genesis,a.txid LIMIT 24");
+        std::vector<BroadcastRecord> result;
+        while (rows.Row()) result.push_back(ReadBroadcast(rows));
+        return result;
+    });
+}
+Result<uint64_t> MetadataStore::BeginBroadcastAttempt(const BroadcastRecord& next,std::optional<uint64_t> expected)
+{
+    return Write([&]{
+        const auto& id=next.identity;
+        Require(id.observed_ms>0 && next.attempted_ms==id.observed_ms
+            && Valid({next.backend,id.network,next.wallet}) && ValidBroadcastWire(next));
+        Transaction tx(db,true);
+        const auto previous=FindBroadcast(db,id.network,id.txid);
+        Require(bool(previous)==expected.has_value(),Error::Conflict);
+        if (previous) {
+            Require(previous->serial==expected && SameBytes(previous->identity,id)
+                && (previous->wire_hex.empty() || previous->wire_hex==next.wire_hex),Error::Conflict);
+            Require(previous->serial<INT64_MAX && next.attempted_ms>=previous->attempted_ms,Error::Conflict);
+        } else InsertBroadcast(db,id);
+        if (!previous || previous->wire_hex.empty())
+            Require(Scalar(db,"SELECT coalesce(sum(length(wire)),0) FROM broadcast_details")+int64_t(next.wire_hex.size())<=8*1024*1024,
+                Error::Full);
+        const uint64_t serial=expected.value_or(0)+1;
+        Statement write(db,"INSERT INTO broadcast_details VALUES(?,?,?,?,?,0,NULL,?,?) ON CONFLICT(genesis,txid) DO UPDATE SET serial=excluded.serial,attempted_ms=excluded.attempted_ms,outcome=0,outcome_ms=NULL,backend=excluded.backend,wallet=excluded.wallet");
+        BindAttemptKey(write,id.network,id.txid);
+        write.Bind(3,next.wire_hex);
+        write.Bind(4,int64_t(serial));
+        write.Bind(5,next.attempted_ms);
+        write.Bind(6,next.backend);
+        write.Bind(7,next.wallet);
+        write.Done();
+        tx.Commit();
+        return serial;
+    });
+}
+Result<Done> MetadataStore::FinishBroadcastAttempt(const BroadcastAttempt& id,uint64_t serial,BroadcastOutcome outcome,int64_t observed_ms)
+{
+    return Write([&]{
+        Require(serial>0 && serial<=INT64_MAX && outcome>BroadcastOutcome::Pending && outcome<=BroadcastOutcome::Uncertain);
+        Transaction tx(db,true);
+        const auto current=FindBroadcast(db,id.network,id.txid);
+        Require(current && current->serial==serial && SameBytes(current->identity,id)
+            && current->outcome==BroadcastOutcome::Pending && observed_ms>=current->attempted_ms,Error::Conflict);
+        Statement write(db,"UPDATE broadcast_details SET outcome=?,outcome_ms=? WHERE genesis=? AND txid=?");
+        write.Bind(1,int64_t(outcome));
+        write.Bind(2,observed_ms);
+        write.Bind(3,id.network.genesis.hex());
+        write.Bind(4,id.txid.hex());
+        write.Done();
+        tx.Commit();
+        return Done{};
+    });
+}
 namespace {
 constexpr size_t MAX_RECENT_WALLETS = 16;
 std::vector<Scope> RecentWallets(sqlite3* db)

@@ -38,6 +38,33 @@ foreach(suite model rpc ui regtest visual boundary applicable)
     USES_TERMINAL VERBATIM)
 endforeach()
 add_dependencies(roots_gui_rpc_tests roots_gui_rpc_client roots_gui_rpc_json)
+add_executable(roots_gui_daemon_signer_probe rpc/daemon_signer_probe.cpp)
+target_link_libraries(roots_gui_daemon_signer_probe PRIVATE roots_gui_ui roots_gui_core)
+add_test(NAME roots_gui.rpc.daemon_signer COMMAND "${Python3_EXECUTABLE}" -B
+  "${CMAKE_CURRENT_SOURCE_DIR}/rpc/daemon_signer_tests.py" --binary "$<TARGET_FILE:roots_gui_daemon_signer_probe>"
+  --vectors "${roots_gui_provider_source}/src/data/psbt.json" --output "${CMAKE_CURRENT_BINARY_DIR}/daemon-signer-rpc")
+set_tests_properties(roots_gui.rpc.daemon_signer PROPERTIES TIMEOUT 55 LABELS "roots-gui;rpc;roots-gui.rpc")
+add_dependencies(roots_gui_rpc_tests roots_gui_daemon_signer_probe)
+add_dependencies(roots_gui_applicable_tests roots_gui_daemon_signer_probe)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_program(ROOTS_GUI_TEST_OPENSSL openssl)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ROOTS_GUI_TEST_OPENSSL)
+  add_executable(roots_gui_device_signer_probe rpc/device_signer_probe.cpp)
+  target_link_libraries(roots_gui_device_signer_probe PRIVATE roots_gui_ui roots_gui_core)
+  add_test(NAME roots_gui.rpc.device_signers COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/rpc/device_signer_tests.py" --binary "$<TARGET_FILE:roots_gui_device_signer_probe>"
+    --openssl "${ROOTS_GUI_TEST_OPENSSL}" --output "${CMAKE_CURRENT_BINARY_DIR}/device-signer-rpc")
+  set_tests_properties(roots_gui.rpc.device_signers PROPERTIES TIMEOUT 55 LABELS "roots-gui;rpc;roots-gui.rpc")
+  add_dependencies(roots_gui_rpc_tests roots_gui_device_signer_probe)
+  add_dependencies(roots_gui_applicable_tests roots_gui_device_signer_probe)
+  add_test(NAME roots_gui.theme.device_signers COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/rpc/device_signer_tests.py" --binary "$<TARGET_FILE:roots_gui_device_signer_probe>"
+    --native "$<TARGET_FILE:roots_gui_device_signers_capture>" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --openssl "${ROOTS_GUI_TEST_OPENSSL}" --output "${CMAKE_CURRENT_BINARY_DIR}/device-signer-native")
+  set_tests_properties(roots_gui.theme.device_signers PROPERTIES TIMEOUT 50 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+  add_dependencies(roots_gui_ui_tests roots_gui_device_signers_capture roots_gui_device_signer_probe roots-gui)
+endif()
 add_executable(roots_gui_capability_client rpc/capability_client.cpp)
 target_link_libraries(roots_gui_capability_client PRIVATE roots_gui_core)
 add_executable(roots_gui_connection_models model/connection_tests.cpp)
@@ -145,6 +172,10 @@ add_test(NAME roots_gui.storage.schema COMMAND "${Python3_EXECUTABLE}" -B
   "${CMAKE_CURRENT_SOURCE_DIR}/storage/store_runner.py" --binary "$<TARGET_FILE:roots_gui_store_tests>"
   --output "${CMAKE_CURRENT_BINARY_DIR}/store-runs")
 set_tests_properties(roots_gui.storage.schema PROPERTIES TIMEOUT 60 LABELS "roots-gui;model;storage;roots-gui.model")
+add_test(NAME roots_gui.storage.broadcast_recovery COMMAND "${Python3_EXECUTABLE}" -B
+  "${CMAKE_CURRENT_SOURCE_DIR}/storage/store_runner.py" --binary "$<TARGET_FILE:roots_gui_store_tests>"
+  --case broadcast-recovery --output "${CMAKE_CURRENT_BINARY_DIR}/broadcast-recovery-store")
+set_tests_properties(roots_gui.storage.broadcast_recovery PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;storage;roots-gui.model")
 add_dependencies(roots_gui_model_tests roots_gui_store_tests)
 add_dependencies(roots_gui_model_tests roots_gui_protected_tests roots_gui_recovery_tests roots_gui_send_models roots_gui_fee_models)
 if(TARGET roots_gui_conversion_tests)
@@ -301,6 +332,20 @@ add_dependencies(roots_gui_model_tests roots_gui_coin_control_models)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_executable(roots_gui_document_offline_exec protocol/offline_exec.c)
+  add_executable(roots_gui_camera_probe platform/camera_probe.cpp)
+  target_link_libraries(roots_gui_camera_probe PRIVATE roots_gui_platform roots_gui_core)
+  add_test(NAME roots_gui.platform.camera COMMAND roots_gui_camera_probe)
+  set_tests_properties(roots_gui.platform.camera PROPERTIES TIMEOUT 30 LABELS "roots-gui;model;roots-gui.model")
+  add_test(NAME roots_gui.theme.camera COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/platform/camera_runner.py"
+    --binary "$<TARGET_FILE:roots_gui_camera_capture>" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"
+    --vector "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/qr/vectors/bcr-2020-006-psbt.hex"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/camera-native")
+  set_tests_properties(roots_gui.theme.camera PROPERTIES TIMEOUT 55 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+  add_dependencies(roots_gui_applicable_tests roots_gui_camera_probe)
+  add_dependencies(roots_gui_model_tests roots_gui_camera_probe)
+  add_dependencies(roots_gui_ui_tests roots_gui_camera_capture roots_gui_document_offline_exec roots-gui)
   add_test(NAME roots_gui.theme.send COMMAND "${Python3_EXECUTABLE}" -B
     "${CMAKE_CURRENT_SOURCE_DIR}/theme/send_runner.py" --binary "$<TARGET_FILE:roots_gui_send_capture>"
     --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
@@ -348,6 +393,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       --edit --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
       --output "${CMAKE_CURRENT_BINARY_DIR}/edit-live")
     set_tests_properties(roots_gui.theme.edit_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_test(NAME roots_gui.theme.sign_live COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/rpc/funding_runner.py" --native "$<TARGET_FILE:roots_gui_send_capture>"
+      --sign --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/sign-live")
+    set_tests_properties(roots_gui.theme.sign_live PROPERTIES TIMEOUT 70 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
   endif()
   add_executable(roots_gui_transaction_probe protocol/document_probe.cpp)
   target_link_libraries(roots_gui_transaction_probe PRIVATE roots_gui_core)
@@ -375,8 +425,104 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_tests_properties(roots_gui.protocol.offline_draft PROPERTIES TIMEOUT 50 LABELS "roots-gui;model;roots-gui.model")
   add_dependencies(roots_gui_model_tests roots_gui_offline_draft_probe roots_gui_document_offline_exec)
   add_dependencies(roots_gui_applicable_tests roots_gui_offline_draft_probe roots_gui_document_offline_exec)
+  if(ROOTS_GUI_TEST_OPENSSL)
+    add_executable(roots_gui_signature_exchange_probe protocol/signature_exchange_probe.cpp)
+    target_link_libraries(roots_gui_signature_exchange_probe PRIVATE roots_gui_ui roots_gui_core)
+    add_test(NAME roots_gui.protocol.signature_exchange COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/protocol/signature_exchange.py" --probe "$<TARGET_FILE:roots_gui_signature_exchange_probe>"
+      --openssl "${ROOTS_GUI_TEST_OPENSSL}" --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/signature-exchange-protocol")
+    set_tests_properties(roots_gui.protocol.signature_exchange PROPERTIES TIMEOUT 55 LABELS "roots-gui;model;roots-gui.model")
+    add_dependencies(roots_gui_applicable_tests roots_gui_signature_exchange_probe roots_gui_document_offline_exec)
+    add_dependencies(roots_gui_model_tests roots_gui_signature_exchange_probe roots_gui_document_offline_exec)
+    add_test(NAME roots_gui.theme.signature_exchange COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/protocol/signature_exchange.py" --native "$<TARGET_FILE:roots_gui_signature_exchange_capture>"
+      --openssl "${ROOTS_GUI_TEST_OPENSSL}" --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"
+      --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts" --output "${CMAKE_CURRENT_BINARY_DIR}/signature-exchange-native")
+    set_tests_properties(roots_gui.theme.signature_exchange PROPERTIES TIMEOUT 65 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_executable(roots_gui_qr_probe protocol/qr_probe.cpp)
+    target_link_libraries(roots_gui_qr_probe PRIVATE roots_gui_core)
+    set(qr_probe_args --probe "$<TARGET_FILE:roots_gui_qr_probe>"
+      --openssl "${ROOTS_GUI_TEST_OPENSSL}" --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"
+      --vectors "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/qr/vectors")
+    add_test(NAME roots_gui.protocol.qr_codec COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/protocol/qr_exchange.py" ${qr_probe_args}
+      --output "${CMAKE_CURRENT_BINARY_DIR}/qr-codec-protocol")
+    set_tests_properties(roots_gui.protocol.qr_codec PROPERTIES TIMEOUT 55 LABELS "roots-gui;model;roots-gui.model")
+    add_test(NAME roots_gui.theme.qr_exchange COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/protocol/qr_exchange.py" ${qr_probe_args}
+      --native "$<TARGET_FILE:roots_gui_signature_exchange_capture>"
+      --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts" --output "${CMAKE_CURRENT_BINARY_DIR}/qr-exchange-native")
+    set_tests_properties(roots_gui.theme.qr_exchange PROPERTIES TIMEOUT 65 RUN_SERIAL TRUE LABELS "roots-gui;theme;ui;roots-gui.ui")
+    add_dependencies(roots_gui_applicable_tests roots_gui_qr_probe roots_gui_document_offline_exec)
+    add_dependencies(roots_gui_model_tests roots_gui_qr_probe roots_gui_document_offline_exec)
+    add_dependencies(roots_gui_ui_tests roots_gui_qr_probe roots_gui_signature_exchange_capture roots_gui_document_offline_exec roots-gui)
+    set(finalization_daemon)
+    set(finalization_labels "roots-gui;theme;ui;roots-gui.ui")
+    if(ROOTS_GUI_TEST_ROOTS_DAEMON)
+      list(APPEND finalization_daemon --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}")
+      list(APPEND finalization_labels regtest roots-gui.regtest)
+      add_dependencies(roots_gui_regtest_tests roots_gui_signature_exchange_capture roots_gui_document_offline_exec roots-gui)
+    endif()
+    add_test(NAME roots_gui.theme.finalized_transaction COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/protocol/signature_exchange.py" --native "$<TARGET_FILE:roots_gui_signature_exchange_capture>"
+      --openssl "${ROOTS_GUI_TEST_OPENSSL}" --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"
+      --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts" --output "${CMAKE_CURRENT_BINARY_DIR}/finalized-transaction-native"
+      --finalize ${finalization_daemon})
+    set_tests_properties(roots_gui.theme.finalized_transaction PROPERTIES TIMEOUT 85 RUN_SERIAL TRUE LABELS "${finalization_labels}")
+    if(ROOTS_GUI_TEST_ROOTS_DAEMON)
+      add_test(NAME roots_gui.theme.broadcast_preflight COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/theme/broadcast_runner.py" --native "$<TARGET_FILE:roots_gui_broadcast_capture>"
+        --openssl "${ROOTS_GUI_TEST_OPENSSL}" --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}"
+        --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/broadcast-native")
+      set_tests_properties(roots_gui.theme.broadcast_preflight PROPERTIES TIMEOUT 90 RUN_SERIAL TRUE
+        LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+      add_test(NAME roots_gui.theme.broadcast_recovery COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/theme/broadcast_runner.py" --native "$<TARGET_FILE:roots_gui_broadcast_capture>"
+        --openssl "${ROOTS_GUI_TEST_OPENSSL}" --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}"
+        --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/broadcast-recovery-native" --recovery)
+      set_tests_properties(roots_gui.theme.broadcast_recovery PROPERTIES TIMEOUT 110 RUN_SERIAL TRUE
+        LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+      add_test(NAME roots_gui.theme.broadcast_monitor COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/theme/broadcast_runner.py" --native "$<TARGET_FILE:roots_gui_broadcast_capture>"
+        --openssl "${ROOTS_GUI_TEST_OPENSSL}" --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}"
+        --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/broadcast-monitor-native" --monitor)
+      set_tests_properties(roots_gui.theme.broadcast_monitor PROPERTIES TIMEOUT 125 RUN_SERIAL TRUE
+        LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+      add_dependencies(roots_gui_ui_tests roots_gui_broadcast_capture roots-gui)
+      add_dependencies(roots_gui_regtest_tests roots_gui_broadcast_capture roots-gui)
+    endif()
+    add_dependencies(roots_gui_ui_tests roots_gui_signature_exchange_capture roots_gui_document_offline_exec roots-gui)
+  endif()
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ROOTS_GUI_TEST_ROOTS_DAEMON)
+  add_test(NAME roots_gui.theme.increase_fee COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/theme/replacement_runner.py" --native "$<TARGET_FILE:roots_gui_replacement_capture>"
+    --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/increase-fee-native")
+  set_tests_properties(roots_gui.theme.increase_fee PROPERTIES TIMEOUT 110 RUN_SERIAL TRUE
+    LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+  add_dependencies(roots_gui_ui_tests roots_gui_replacement_capture roots-gui)
+  add_dependencies(roots_gui_regtest_tests roots_gui_replacement_capture roots-gui)
+  add_test(NAME roots_gui.theme.attempt_cancellation COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/theme/cancellation_runner.py" --native "$<TARGET_FILE:roots_gui_cancellation_capture>"
+    --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/cancellation-native")
+  set_tests_properties(roots_gui.theme.attempt_cancellation PROPERTIES TIMEOUT 105 RUN_SERIAL TRUE
+    LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+  add_dependencies(roots_gui_ui_tests roots_gui_cancellation_capture roots-gui)
+  add_dependencies(roots_gui_regtest_tests roots_gui_cancellation_capture roots-gui)
+  add_test(NAME roots_gui.theme.increase_effective_fee COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/theme/cpfp_runner.py" --native "$<TARGET_FILE:roots_gui_cpfp_capture>"
+    --daemon "${ROOTS_GUI_TEST_ROOTS_DAEMON}" --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/cpfp-native")
+  set_tests_properties(roots_gui.theme.increase_effective_fee PROPERTIES TIMEOUT 105 RUN_SERIAL TRUE
+    LABELS "roots-gui;theme;ui;roots-gui.ui;regtest;roots-gui.regtest")
+  add_dependencies(roots_gui_ui_tests roots_gui_cpfp_capture roots-gui)
+  add_dependencies(roots_gui_regtest_tests roots_gui_cpfp_capture roots-gui)
   add_test(NAME roots_gui.theme.offline_draft COMMAND "${Python3_EXECUTABLE}" -B
     "${CMAKE_CURRENT_SOURCE_DIR}/theme/offline_draft_runner.py" --binary "$<TARGET_FILE:roots_gui_offline_draft_capture>"
     --probe "$<TARGET_FILE:roots_gui_offline_draft_probe>" --offline-exec "$<TARGET_FILE:roots_gui_document_offline_exec>"

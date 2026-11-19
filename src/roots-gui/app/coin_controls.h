@@ -28,7 +28,8 @@ public:
     void PrivacyLock();
     bool Reload(const Document&,const RefreshView&,RecoverySession&);
     std::string Status(const Document&,const RefreshView&,RecoverySession&);
-    std::optional<CoinPolicy> Policy(const Document&,const RefreshView&,RecoverySession&,uint64_t owner_document=0);
+    std::optional<CoinPolicy> Policy(const Document&,const RefreshView&,RecoverySession&,uint64_t owner_document=0,
+        std::span<const PinnedCoin> replaced_inputs={});
     Receipt FreezeOutpoints(const Document&,const RefreshView&,const CoinInventory&,const std::set<std::string>&,bool freeze,RecoverySession&);
     Receipt FreezeAddress(const Document&,const RefreshView&,const AddressView&,std::string_view key,bool freeze,RecoverySession&);
     bool AddressFrozen(const Document&,const RefreshView&,const DerivedAddress&,RecoverySession&);

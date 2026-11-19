@@ -18,7 +18,7 @@ from support.runtime import binary_identity,validated_scratch,write_json
 from rpc.fake_http import strict_json,RpcError
 
 class OwnedRegtest:
-    def __init__(self,binary,output,*,port=None,public_descriptors=False):
+    def __init__(self,binary,output,*,port=None,public_descriptors=False,monitor_fixture=False):
         self.output=Path(output);self.output.mkdir(parents=True,exist_ok=True)
         self.identity=binary_identity(binary);self.scratch=tempfile.TemporaryDirectory(prefix='roots-gui-regtest-',dir=validated_scratch())
         self.data=Path(self.scratch.name);self.data.chmod(0o700)
@@ -29,6 +29,7 @@ class OwnedRegtest:
         # Transient opt-in for this disposable fixture only. GUI traffic remains
         # behind the separate read-only proxy; no installed service is changed.
         if public_descriptors:self.argv.append('-allow-dangerous-rpc=1')
+        if monitor_fixture:self.argv.extend(('-txindex=1','-txospenderindex=1','-mempoolexpiry=1','-debug=mempool'))
         self.raw=self.data/'console.log';self.log=self.raw.open('wb')
         parent_pid=os.getpid()
         def parent_death_guard():

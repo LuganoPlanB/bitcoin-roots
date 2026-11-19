@@ -35,6 +35,7 @@ enum class Error {
 };
 const char* ErrorName(Error);
 enum class Effect { ReadOnly, Mutation };
+enum class SignerNotice { None, Unconfigured, Absent, Multiple, Locked, Passphrase, Disconnected };
 struct Limits {
     std::chrono::milliseconds connect_timeout{3000};
     std::chrono::milliseconds total_timeout{15000};
@@ -58,6 +59,7 @@ struct Reply {
     std::optional<Json> result;
     // Cancellation/timeout cannot retract an already accepted remote command.
     bool mutation_uncertain{false};
+    SignerNotice signer_notice{SignerNotice::None};
 };
 class Transport {
 public:
@@ -65,7 +67,13 @@ public:
     // Worker operation: owns no UI state. Caller returns this value to the
     // owner thread with its immutable request context. No retry, even on 401.
     Reply Call(const ConnectionProfile&, const Request&, std::stop_token = {}, Limits = {}) const;
+    // The passphrase is borrowed from a transient protected buffer and never
+    // copied into the general-purpose request or its JSON parameter tree.
+    Reply UnlockWallet(const ConnectionProfile&, std::string_view wallet,
+        std::string_view passphrase, unsigned seconds, std::stop_token = {}) const;
 private:
+    Reply Call(const ConnectionProfile&, const Request&, std::stop_token, Limits,
+        std::string_view passphrase, unsigned seconds) const;
     CredentialSource& m_credentials;
 };
 }

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
 #include "domain/receive.h"
+#include "services/device_signers.h"
 #include "services/refresh.h"
 
 namespace roots::gui {
@@ -11,10 +12,11 @@ struct ReceiveRequest {
     RefreshIdentity identity;
     uint64_t profile_revision{}, ticket{};
     std::optional<ReceiveTarget> selected;
+    SelectedDevice device{};
 };
 struct ReceiveReply {
     std::optional<ReceiveTarget> address;
-    bool allocation_dispatched{}, inspected{}, verified_on_device{};
+    bool allocation_dispatched{}, inspected{}, signer_echo{};
     std::string error;
 };
 bool CanAllocateReceive(const BackendCapabilities&);
@@ -33,6 +35,7 @@ public:
     ~ReceiveService();
     bool Start(ReceiveRequest, const ConnectionService&);
     void Cancel();
+    bool CancelDevice();
     bool Busy() const {return worker.joinable();}
     std::optional<std::pair<ReceiveRequest, ReceiveReply>> Poll(
         const ConnectionService*, const std::optional<RefreshIdentity>&, const std::optional<ReceiveTarget>&);

@@ -36,6 +36,7 @@ struct HistoryTransaction {
     bool generated{},removed_event{};
     std::string previous_hex; // bounded public bytes already returned with gettransaction
     std::optional<Money> running_balance; // total incl. immature; Unknown unless reconciled
+    std::optional<Hash256> wire_witness; // observed wtxid; original bytes can be fetched separately
 };
 struct HistoryCoin {
     Outpoint outpoint;

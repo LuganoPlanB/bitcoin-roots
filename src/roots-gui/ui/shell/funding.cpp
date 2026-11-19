@@ -37,7 +37,7 @@ std::optional<Access> Current(State& state, app::Requests& host)
     const auto* connection = host.Connection();
     const auto* refresh = host.Refresh();
     if (!draft || !state.recovery || !connection || connection->Offline() || connection->PrivacyLocked()
-        || !connection->Active() || !refresh || !CanFund(*connection->Active())) return {};
+        || BroadcastFreezes(state,draft->id) || !connection->Active() || !refresh || !CanFund(*connection->Active())) return {};
     const auto* wallet = app::RegisteredWallet(state.documents, *draft->SendWallet());
     if (!wallet) return {};
     const auto identity = app::WalletRefreshIdentity(*connection->Active(), connection->Session(), *wallet,
@@ -262,6 +262,7 @@ bool CanClearSend(const State& state, uint64_t id)
     const auto offline = state.offline_builders.find(id);
     return state.recovery && !state.recovery->Locked() && !state.recovery->Pending()
         && !state.privacy.hidden && !state.semantic_hide_toggle && draft && draft->id == id
+        && !BroadcastFreezes(state,id)
         && draft->SendWallet() && draft->observation != app::ObservationState::Locked
         && (offline == state.offline_builders.end() || !offline->second.open) && draft->draft_revision.value != UINT64_MAX
         && (draft->recipients.Dirty() || !draft->funding_rate.empty() || draft->funding_target || draft->funding_change || draft->coin_draft

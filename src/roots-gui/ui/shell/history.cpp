@@ -91,7 +91,149 @@ void DrawHistory(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,f
     if(selected){ImGui::SameLine();Button(s,f,"copy-txid","Copy txid",theme,true,[&s,&host,id]{auto* doc=s.documents.Find(id);if(!doc || s.documents.ActiveId()!=id || (s.recovery && s.recovery->Locked()))return false;const a::Request request{a::Command::Component,id,a::Section::Transactions,c::CopyIdentifier{"history-txid",doc->history.selected}};return host.CanSubmit(request).available && host.Submit(request).accepted;});}
     if(selected){ImGui::SameLine();Button(s,f,"copy-value","Copy value",theme,!s.privacy.hidden,[&s,&host,id]{auto view=View(s,host,id);const auto* doc=s.documents.Find(id);if(!Usable(s,id) || !view || !doc)return false;const auto found=view->ledger->Rows().find(doc->history.selected);if(found==view->ledger->Rows().end())return false;const a::Request request{a::Command::Component,id,a::Section::Transactions,c::CopyAmount{"history-value",found->second.wallet_delta}};return host.CanSubmit(request).available && host.Submit(request).accepted;});}
     if(runtime.explorer_permission){const auto permission=*runtime.explorer_permission;const auto url=a::ExplorerUrl(permission.identity.context.network,*Hash256::Parse(permission.txid));const auto prompt=url?"Open "+*url+"? This discloses this transaction and your IP/network identity to the explorer/browser. Permission applies once.":"No public explorer default exists for this exact genesis/network. No external request will be made.";ImGui::TextWrapped("%s",prompt.c_str());s.presentation.Annotate("explorer-permission","External explorer permission",prompt);Button(s,f,"explorer-allow","Allow once",theme,url.has_value(),[&s,&host,id,permission]{auto v=View(s,host,id);const auto* doc=s.documents.Find(id);if(!Usable(s,id) || !v || v->offline || !v->identity || *v->identity!=permission.identity || !doc || doc->history.selected!=permission.txid || v->ledger->Observed()!=permission.observed || v->generation!=permission.generation || v->history_sequence!=permission.sequence || !s.histories.at(id).explorer_permission)return false;s.histories.at(id).explorer_permission.reset();const auto receipt=host.OpenExplorer({permission.identity.context,*Hash256::Parse(permission.txid),true,permission.generation,permission.sequence});s.histories.at(id).error=receipt.reason;return receipt.accepted;});ImGui::SameLine();Button(s,f,"explorer-cancel","Cancel",theme,true,[&s,id]{s.histories.at(id).explorer_permission.reset();return true;});}
-    if(runtime.fee_actions && !s.privacy.hidden){for(const auto kind:{a::FeeDraftKind::ReplaceByFee,a::FeeDraftKind::ChildPaysForParent}){if(kind==a::FeeDraftKind::ChildPaysForParent)ImGui::SameLine();Button(s,f,kind==a::FeeDraftKind::ReplaceByFee?"fee-rbf":"fee-cpfp",kind==a::FeeDraftKind::ReplaceByFee?"Replace fee draft":"Child fee draft",theme,selected && online && view->chain_current,[&s,&host,id,kind]{auto v=View(s,host,id);const auto* doc=s.documents.Find(id);if(!Usable(s,id) || !v || v->offline || !v->chain_current || !v->identity || !doc || !v->ledger->Rows().contains(doc->history.selected))return false;const auto receipt=host.FeeDraft({v->identity->context,*Hash256::Parse(doc->history.selected),kind,v->generation,v->history_sequence});s.histories.at(id).error=receipt.reason;return receipt.accepted;});}}
+    if (runtime.fee_actions && !s.privacy.hidden) {
+        const auto txid=Hash256::Parse(d->history.selected);
+        std::optional<a::FeeDraftRequest> action;
+        auto* replacement=host.ReplacementDrafts();
+        const bool busy=replacement && replacement->Busy();
+        if (txid && selected && view->identity) {
+            std::array<char,16> rate{};
+            std::ranges::copy(runtime.replacement_rate,rate.begin());
+            std::optional<std::string> pending_rate;
+            ImGui::TextUnformatted("New fee rate (sat/vB)");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120*scale);
+            ImGui::BeginDisabled(busy);
+            c::TextInput("###replacement-rate","New fee rate (sat/vB)",rate.data(),rate.size(),pending_rate);
+            if (!busy) runtime.replacement_rate=rate.data();
+            const auto edit_rate=s.presentation.Interact("New fee rate (sat/vB)",c::ax::SemanticRole::TextField,
+                c::ax::SemanticAction::SetValue|c::ax::SemanticAction::Focus,busy,false,runtime.replacement_rate);
+            ImGui::EndDisabled();
+            if (edit_rate) s.presentation.Defer(*edit_rate,[&s,&host,id,txid](const c::SemanticRequest& event) {
+                const auto* current=s.documents.Find(id);
+                if (!Usable(s,id) || !current || current->history.selected!=txid->hex()
+                    || (host.ReplacementDrafts() && host.ReplacementDrafts()->Busy()) || event.value.size()>15
+                    || !std::ranges::all_of(event.value,[](char ch){return (ch>='0' && ch<='9') || ch=='.';})) return false;
+                s.histories.at(id).replacement_rate=event.value;
+                return true;
+            });
+            action=a::FeeDraftRequest{view->identity->context,*txid,a::FeeDraftKind::ReplaceByFee,
+                view->generation,view->history_sequence,ParseFundingRate(runtime.replacement_rate).value_or(0)};
+        }
+        const auto available=action ? ReplacementAvailability(s,host,*action) : a::Availability{false,"Select an outgoing wallet transaction."};
+        if (action) ImGui::SameLine();
+        Button(s,f,"fee-rbf","Increase Fee",theme,available.available,[&s,&host,id,action] {
+            if (!action || !Usable(s,id) || ParseFundingRate(s.histories.at(id).replacement_rate)!=action->rate_per_kvb) return false;
+            const auto receipt=host.FeeDraft(*action);
+            s.histories.at(id).error=receipt.reason;
+            return receipt.accepted;
+        });
+        if (busy && replacement->Running() && replacement->Running()->document==id) {
+            ImGui::SameLine();
+            Button(s,f,"fee-rbf-cancel","Cancel fee request",theme,true,[&s,&host,id] {
+                auto* service=host.ReplacementDrafts();
+                return Usable(s,id) && service && service->Running() && service->Running()->document==id && service->Cancel();
+            });
+        } else if (!available.available) {
+            ImGui::TextWrapped("%s",available.reason.c_str());
+            s.presentation.Annotate("fee-rbf-unavailable","Increase Fee availability",available.reason);
+        }
+        auto cancel=action;
+        if (cancel) cancel->kind=a::FeeDraftKind::CancelPayment;
+        if (runtime.cancellation_prompt && runtime.cancellation_prompt!=cancel) runtime.cancellation_prompt.reset();
+        const auto cancellation=cancel ? ReplacementAvailability(s,host,*cancel) : a::Availability{false,"Select an outgoing wallet payment."};
+        if (!runtime.cancellation_prompt) {
+            Button(s,f,"fee-cancel","Attempt cancellation",theme,cancellation.available,[&s,&host,id,cancel] {
+                if (!cancel || !Usable(s,id) || !ReplacementAvailability(s,host,*cancel).available) return false;
+                s.histories.at(id).cancellation_prompt=cancel;
+                return true;
+            });
+            if (!cancellation.available && (!action || available.reason!=cancellation.reason))
+                s.presentation.Annotate("fee-cancel-unavailable","Attempt cancellation availability",cancellation.reason);
+        } else {
+            constexpr auto warning="This draft pays an existing address in your wallet. It competes with the original payment. "
+                "The original may confirm first and node policy can refuse the new transaction. Cancellation is never guaranteed. "
+                "Preparation uses the existing address and makes no wallet changes.";
+            ImGui::TextWrapped("%s",warning);
+            s.presentation.Annotate("fee-cancel-warning","Competing self-payment warning",warning,c::ax::SemanticRole::Alert);
+            Button(s,f,"fee-cancel-prepare","Create competing self-payment",theme,cancellation.available,[&s,&host,id,cancel] {
+                if (!cancel || !Usable(s,id) || s.histories.at(id).cancellation_prompt!=cancel
+                    || ParseFundingRate(s.histories.at(id).replacement_rate)!=cancel->rate_per_kvb) return false;
+                auto result=host.FeeDraft(*cancel);
+                auto& current=s.histories.at(id);
+                current.error=result.reason;
+                current.cancellation_prompt.reset();
+                return result.accepted;
+            });
+            ImGui::SameLine();
+            Button(s,f,"fee-cancel-dismiss","Dismiss",theme,true,[&s,id] {
+                if (!Usable(s,id)) return false;
+                s.histories.at(id).cancellation_prompt.reset();
+                return true;
+            });
+        }
+        if (runtime.child_parent!=txid) {
+            runtime.child_parent.reset();
+            runtime.child_output.reset();
+        }
+        if (!runtime.child_parent) {
+            Button(s,f,"fee-child","Increase effective fee",theme,action.has_value() && online && view->chain_current && !busy,
+                [&s,id,txid] {
+                    const auto* doc=s.documents.Find(id);
+                    if (!Usable(s,id) || !doc || !txid || doc->history.selected!=txid->hex()) return false;
+                    s.histories.at(id).child_parent=txid;
+                    return true;
+                });
+        } else {
+            ImGui::TextWrapped("Select an unconfirmed wallet output. The rate above targets the parent, ancestors and child together. "
+                "The child pays the remaining value to the selected output's existing wallet address.");
+            size_t shown{};
+            for (const auto& coin:view->ledger->Coins()) {
+                if (!txid || coin.outpoint.txid!=*txid || coin.confirmations || !coin.solvable) continue;
+                if (++shown>64) break;
+                const auto index=coin.outpoint.index;
+                const auto text="Select output #"+std::to_string(index)+" ("+std::to_string(coin.amount.sats())+" sat)";
+                const auto key="fee-child-output-"+std::to_string(index);
+                Button(s,f,key.c_str(),text.c_str(),theme,!busy,[&s,&host,id,txid,index] {
+                    auto current=View(s,host,id);
+                    const auto* doc=s.documents.Find(id);
+                    if (!Usable(s,id) || !current || !current->ledger || !doc || !txid
+                        || doc->history.selected!=txid->hex() || s.histories.at(id).child_parent!=txid) return false;
+                    const auto row=std::ranges::find(current->ledger->Coins(),Outpoint{*txid,index},&HistoryCoin::outpoint);
+                    if (row==current->ledger->Coins().end() || row->confirmations || !row->solvable) return false;
+                    s.histories.at(id).child_output=index;
+                    return true;
+                });
+            }
+            if (!shown) ImGui::TextUnformatted("No current wallet-owned unconfirmed outputs are available.");
+            if (runtime.child_output) ImGui::Text("Selected output #%u",*runtime.child_output);
+            auto child=action;
+            if (child) {
+                child->kind=a::FeeDraftKind::ChildPaysForParent;
+                child->parent_output=runtime.child_output;
+            }
+            const auto child_available=child ? ReplacementAvailability(s,host,*child)
+                : a::Availability{false,"Select a parent in current wallet history."};
+            Button(s,f,"fee-child-prepare","Create unsigned child",theme,child_available.available,[&s,&host,id,child] {
+                if (!child || !Usable(s,id) || !child->parent_output || s.histories.at(id).child_output!=child->parent_output
+                    || ParseFundingRate(s.histories.at(id).replacement_rate)!=child->rate_per_kvb) return false;
+                const auto reply=host.FeeDraft(*child);
+                s.histories.at(id).error=reply.reason;
+                return reply.accepted;
+            });
+            ImGui::SameLine();
+            Button(s,f,"fee-child-back","Hide child options",theme,!busy,[&s,id] {
+                if (!Usable(s,id)) return false;
+                s.histories.at(id).child_parent.reset();
+                s.histories.at(id).child_output.reset();
+                return true;
+            });
+            if (!child_available.available) {
+                ImGui::TextWrapped("%s",child_available.reason.c_str());
+                s.presentation.Annotate("fee-child-availability","Child draft availability",child_available.reason);
+            }
+        }
+    }
 
     if(!s.privacy.hidden)for(const auto& [txid,draft]:d->history.drafts)if(!draft.error.empty()){ImGui::TextWrapped("%s",draft.error.c_str());s.presentation.Annotate(("label-error-"+txid).c_str(),"Label save failed",draft.error,c::ax::SemanticRole::Alert);}
     const auto rows=a::OrderedHistory(*ledger,d->history,runtime.labels,s.privacy.hidden);for(const auto* tx:rows)f.history_order.push_back(tx->txid.hex());

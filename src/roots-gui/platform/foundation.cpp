@@ -2,9 +2,12 @@
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "platform/foundation.h"
 #include "platform/native_host.h"
+#include "platform/linux/camera.h"
 #include "ui/shell/workspace.h"
 #include "platform/shell_composition.h"
 #include "app/connection_observations.h"
+#include "app/daemon_signer.h"
+#include "app/broadcast.h"
 #include "app/history_workspace.h"
 #include "services/addresses.h"
 #define GLFW_INCLUDE_NONE
@@ -19,6 +22,10 @@
 namespace roots::gui::platform {
 ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app::Requests& requests,const imkit::Theme& theme,const ui::BootstrapAppearance& appearance)
 {
+    if (workspace.local_document.camera_generation && !glfwGetWindowAttrib(host.Window(),GLFW_FOCUSED)) {
+        workspace.notice="Camera closed when the window lost focus.";
+        ui::shell::RetireLocalDocument(workspace,requests);
+    }
     const bool privacy_locked=requests.Recovery() && requests.Recovery()->Locked();
     if(auto* connection=requests.Connection()) {
         connection->SetPrivacyLocked(privacy_locked);
@@ -104,7 +111,7 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         }
         app::Receipt FeeDraft(const app::FeeDraftRequest& request) override {
             if(!CurrentHistoryAction(request.context,request.txid,true,request.generation,request.sequence))return {false,"Fee draft request retired: wallet, chain or privacy state changed."};
-            return fallback.FeeDraft(request);
+            return ui::shell::BeginReplacement(state,fallback,request);
         }
         app::Receipt OpenExplorer(const app::ExplorerRequest& request) override {
             if(!request.permission || !CurrentHistoryAction(request.context,request.txid,false,request.generation,request.sequence))return {false,"Explorer request retired; permission and current public selection are required."};
@@ -114,15 +121,27 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
         ConnectionService* Connection() override{return fallback.Connection();}
         WalletLifecycle* Wallets() override{return fallback.Wallets();}
         TransactionDocuments* LocalDocuments() const override{return fallback.LocalDocuments();}
+        CameraService* Camera() override{return fallback.Camera();}
+        DeviceSigners* Devices() override{return fallback.Devices();}
         RescanService* Rescanning() override{return fallback.Rescanning();}
         ReceiveService* Receiving() override{return fallback.Receiving();}
         FundingService* Funding() override{return fallback.Funding();}
+        app::DaemonSigner* Signer() override{return fallback.Signer();}
+        app::Broadcaster* Broadcasts() override{return fallback.Broadcasts();}
+        app::Replacements* ReplacementDrafts() override{return fallback.ReplacementDrafts();}
         FeeService* Fees() override{return fallback.Fees();}
         AddressService* Addresses() override{return fallback.Addresses();}
         RefreshService* Refresh() override{return fallback.Refresh();}
         app::RecoverySession* Recovery() override{return fallback.Recovery();}
     } native(host,workspace,requests);
     auto facts=ui::shell::DrawWorkspace(workspace,native,theme,appearance);
+    const bool locked_now=requests.Recovery() && requests.Recovery()->Locked();
+    if (privacy_locked || locked_now) ui::shell::RetireDaemonSigning(workspace,requests);
+    if (workspace.privacy.hidden || workspace.semantic_hide_toggle || locked_now) {
+        if (auto* devices=requests.Devices()) devices->Cancel();
+        if (workspace.local_document.camera_generation) ui::shell::RetireLocalDocument(workspace,requests);
+        if (auto* submission=requests.Broadcasts()) submission->Cancel();
+    }
     if(requests.Recovery() && requests.Recovery()->Locked()){if(auto* connection=requests.Connection())connection->SetPrivacyLocked(true);if(auto* refresh=requests.Refresh())refresh->PrivacyLock();if(auto* addresses=requests.Addresses())addresses->PrivacyLock();if(auto* wallets=requests.Wallets())wallets->Cancel();if(auto* receive=requests.Receiving())receive->Cancel();if(auto* scan=requests.Rescanning())scan->Cancel();if(auto* docs=requests.LocalDocuments())docs->Cancel();if(auto* funding=requests.Funding())funding->Cancel();if(auto* fees=requests.Fees())fees->Cancel();}
     const auto native_notice=host.InputState().notice;if(!native_notice.empty())workspace.notice=native_notice;
     if(facts.appearance_requested>=0)host.SetAppearance(facts.appearance_requested);
@@ -151,9 +170,13 @@ int Run()
         NativeHost* host{};ui::components::SemanticExchange* semantics{};
         app::RecoverySession* recovery{};app::DocumentRegistry* documents{};
         mutable TransactionDocuments local_documents;
+        CameraService camera{NativeCamera()};
+        CameraService* Camera() override{return &camera;}
         TransactionDocuments* LocalDocuments() const override{return &local_documents;}
         rpc::CookieCredentials credentials;
         rpc::Transport transport{credentials};
+        DeviceSigners devices{transport};
+        DeviceSigners* Devices() override{return &devices;}
         AddressService addresses{[this](const RefreshIdentity& id,const std::vector<std::string>& known,std::stop_token stop){return FetchAddresses(transport,id,stop,{},known);}};
         AddressService* Addresses() override{return &addresses;}
         RefreshService refresh{[this](const RefreshRequest& value,std::stop_token stop){return FetchRefresh(transport,value,stop);}};
@@ -167,6 +190,12 @@ int Run()
         ReceiveService* Receiving() override{return &receive;}
         FundingService funding{[this](const FundingRequest& request,std::stop_token stop){return FetchFunding(transport,request,stop);}};
         FundingService* Funding() override{return &funding;}
+        app::DaemonSigner signer{transport,connection};
+        app::DaemonSigner* Signer() override{return &signer;}
+        app::Broadcaster broadcast{transport,connection};
+        app::Broadcaster* Broadcasts() override{return &broadcast;}
+        app::Replacements replacements{transport,connection};
+        app::Replacements* ReplacementDrafts() override{return &replacements;}
         FeeService fees{[this](const FeeRequest& request,std::stop_token stop){return FetchFees(transport,request,stop);}};
         FeeService* Fees() override{return &fees;}
         RefreshService* Refresh() override{return &refresh;}
@@ -198,9 +227,17 @@ int Run()
     struct SemanticLifetime {ui::components::SemanticExchange& exchange;~SemanticLifetime(){exchange.Close();}} lifetime{workspace.presentation.exchange};
     requests.semantics=&workspace.presentation.exchange;
     options.accessibility=&workspace.presentation.exchange;
-    options.before_close=[&workspace] {
+    options.on_draw_suspended=[&workspace,&requests] {
+        if (auto* devices=requests.Devices()) devices->Cancel();
+        if (workspace.local_document.camera_generation) ui::shell::RetireLocalDocument(workspace,requests);
+    };
+    options.before_close=[&workspace,&requests] {
         const auto ids=workspace.documents.CloseTargets(workspace.documents.ActiveId(),false,true);
-        return ui::shell::AllowPolicyClose(workspace,ids) && ui::shell::SaveReceiveLabelsBeforeClose(workspace,ids);
+        if (!ui::shell::AllowPolicyClose(workspace,ids) || !ui::shell::SaveReceiveLabelsBeforeClose(workspace,ids)) return false;
+        ui::shell::RetireDaemonSigning(workspace,requests);
+        if (workspace.local_document.camera_generation) ui::shell::RetireLocalDocument(workspace,requests);
+        if (auto* submission=requests.Broadcasts()) submission->Cancel();
+        return true;
     };
     NativeHost host(options,nullptr,[&](const imkit::Theme& theme,const ui::BootstrapAppearance& appearance) {
         DrawShellFrame(*requests.host,workspace,requests,theme,appearance);

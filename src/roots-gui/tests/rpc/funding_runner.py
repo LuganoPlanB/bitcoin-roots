@@ -34,6 +34,9 @@ READS = frozenset({
 })
 FEE_READS = frozenset({'estimatesmartfee', 'getmempoolinfo', 'getrawmempool', 'getblockstats', 'getblockheader'})
 FUND = 'walletcreatefundedpsbt'
+SIGN = 'walletprocesspsbt'
+UNLOCK = 'walletpassphrase'
+FIXTURE_PASSPHRASE = 'signnativefixture'
 
 
 def maps(source):
@@ -72,7 +75,7 @@ def encode_maps(records):
 
 
 class FundingProxy:
-    def __init__(self, node, capture_flow=False):
+    def __init__(self, node, capture_flow=False, signing=False):
         self.events = []
         self.mutation = None
         proxy = self
@@ -90,10 +93,24 @@ class FundingProxy:
                 if method in FEE_READS:
                     event['params'] = json.loads(body)['params']
                 proxy.events.append(event)
-                if method not in READS | {FUND} or (method == 'listdescriptors' and params != {'private': False}):
+                allowed = READS | {FUND, SIGN, UNLOCK} if signing else READS | {FUND}
+                if method not in allowed or (method == 'listdescriptors' and params != {'private': False}):
                     event['blocked'] = True
                     self.send_error(403)
                     return
+                if method == UNLOCK:
+                    event['timeout'] = params.get('timeout')
+                    if set(params) != {'passphrase','timeout'} or event['timeout'] != 30:
+                        event['blocked'] = True
+                        self.send_error(403)
+                        return
+                if method == SIGN:
+                    event['policy'] = {k: params.get(k) for k in ('sign','finalize','bip32derivs')}
+                    event['psbt'] = params.get('psbt')
+                    if params.get('finalize') is not False or type(params.get('sign')) is not bool or not event['psbt']:
+                        event['blocked'] = True
+                        self.send_error(403)
+                        return
                 if method == FUND:
                     options = params['options']
                     event['options'] = json.loads(body)['params']
@@ -113,6 +130,11 @@ class FundingProxy:
                     if capture_flow and method == FUND:
                         event['requestBody'] = body.decode('utf-8')
                         event['responseBody'] = raw.decode('utf-8')
+                    if method == SIGN:
+                        result = json.loads(raw).get('result')
+                        if result is not None:
+                            event['returnedPsbt'] = result['psbt']
+                            event['daemonReturnedHex'] = 'hex' in result
                     if method == 'listlockunspent' and proxy.mutation == 'lock':
                         value = json.loads(raw)
                         value['result'].append(proxy.new_lock)
@@ -181,7 +203,7 @@ def native_preview(args, out, node, proxy, base, destination):
             destination = familiar
         argv = [sys.executable, '-B', str(TESTS/'platform/owned_display.py'), '--output', str(native),
                 '--timeout', '23', '--', str(args.native), str(frames), str(args.fonts),
-                '--edit-live' if args.edit else '--review-live' if args.review else '--batch-live' if args.batch else '--flow-live' if args.flow else '--fees-live' if args.fees else '--create-live' if args.create else '--funding-live',
+                '--sign-live' if args.sign else '--edit-live' if args.edit else '--review-live' if args.review else '--batch-live' if args.batch else '--flow-live' if args.flow else '--fees-live' if args.fees else '--create-live' if args.create else '--funding-live',
                 str(proxy.port), str(node.data/'regtest/.cookie'), base['genesis'], base['wallet'],
                 str(Path(private) / 'metadata.sqlite'), destination]
         completed = subprocess.run(argv, capture_output=True, text=True, timeout=35)
@@ -217,22 +239,26 @@ def native_preview(args, out, node, proxy, base, destination):
         names = ('transaction-review', 'advanced-sighash')
     if args.edit:
         names = ('review-invalidated',)
+    if args.sign:
+        names = ('daemon-unlock',)
     assert result['frames'] == len(names)
     captures = {name: encode_capture(frames/(name+'.ppm')) for name in names}
     assert all((frames/(name+'.semantics.txt')).is_file() for name in names)
     assert not Path(private).exists()
     record = dict(argv=argv, exit=completed.returncode, checks=result['checks'], displaySettled=True,
                   binary=binary_identity(args.native), metadataRemoved=True)
-    if args.create or args.fees or args.flow or args.batch or args.review or args.edit:
+    if args.create or args.fees or args.flow or args.batch or args.review or args.edit or args.sign:
         record['captures'] = captures
     else:
         record['capture'] = captures['funding-preview']
     if args.batch:
         record.update(files=batch_files, ownedLocalFilesRemoved=True, physicalOsChooser=False)
-    if args.review or args.edit:
+    if args.review or args.edit or args.sign:
         record["approvalProvenance"] = json.loads((frames/"approval-provenance.json").read_bytes())
     if args.edit:
         record["editProvenance"] = json.loads((frames/"edit-provenance.json").read_bytes())
+    if args.sign:
+        record["signingProvenance"] = json.loads((frames/"signing-provenance.json").read_bytes())
     return record
 
 
@@ -251,14 +277,15 @@ def main():
     journeys.add_argument('--batch', action='store_true')
     journeys.add_argument('--review', action='store_true')
     journeys.add_argument('--edit', action='store_true')
+    journeys.add_argument('--sign', action='store_true')
     parser.add_argument('--fonts', type=Path)
     args = parser.parse_args()
     if args.native and not args.fonts:
         parser.error('native evidence requires bundled fonts')
-    if (args.create or args.fees or args.flow or args.batch or args.review or args.edit) and not args.native:
+    if (args.create or args.fees or args.flow or args.batch or args.review or args.edit or args.sign) and not args.native:
         parser.error('Selected journey requires the native executable')
     out = Path(tempfile.mkdtemp(prefix='attempt-', dir=evidence_directory(args.output)))
-    selected = [('connected-edit-invalidates-approval' if args.edit else 'connected-review-then-approve' if args.review else 'connected-send-to-many' if args.batch else 'connected-transaction-flow' if args.flow else 'connected-fee-observations' if args.fees else
+    selected = [('connected-approve-unlock-sign' if args.sign else 'connected-edit-invalidates-approval' if args.edit else 'connected-review-then-approve' if args.review else 'connected-send-to-many' if args.batch else 'connected-transaction-flow' if args.flow else 'connected-fee-observations' if args.fees else
         'connected-create-clear-recovery' if args.create else 'connected-preview')] if args.native else [
         'pinned', 'automatic', 'restricted', 'mixed-script', 'maximum', 'dust', 'insufficient', 'ancestor',
         'unexpected-input', 'unexpected-recipient', 'unexpected-change', 'mismatched-fee', 'final-witness', 'new-lock',
@@ -271,7 +298,12 @@ def main():
             wallet = 'funding & exact wallet'
             bank = 'fixture controller'
             for name in (wallet, bank):
-                node.call('createwallet', {'wallet_name':name})
+                options={'wallet_name':name}
+                if args.sign and name==wallet:
+                    options['passphrase']=FIXTURE_PASSPHRASE
+                node.call('createwallet',options)
+            if args.sign:
+                node.secrets.append(FIXTURE_PASSPHRASE)
             miner = node.call('getnewaddress', wallet=bank)
             node.call('generatetoaddress', [101, miner])
             addresses = [node.call('getnewaddress', {'address_type':script}, wallet=wallet)
@@ -301,7 +333,7 @@ def main():
             balance_before = node.call('getbalances', wallet=wallet)
             base = dict(genesis=node.call('getblockhash',[0]),tip=node.call('getbestblockhash'),
                         wallet=wallet,rate=2125)
-            proxy = FundingProxy(node,args.flow or args.batch or args.review or args.edit)
+            proxy = FundingProxy(node,args.flow or args.batch or args.review or args.edit or args.sign,args.sign)
             proxy.new_lock = point(native)
             try:
                 if args.native:
@@ -349,13 +381,30 @@ def main():
                         after_construction = proxy.events[proxy.events.index(funded[0]) + 1:]
                         assert sum(call['method'] == 'gettxout' for call in after_construction) >= 2
                         assert all(call['method'] in READS for call in after_construction)
-                    if args.review or args.edit:
+                    if args.review or args.edit or args.sign:
                         approval = record['native']['approvalProvenance']
                         unsigned = json.loads(funded[0]['responseBody'], parse_float=Decimal)['result']
                         assert approval['wallet'] == base['wallet'] and approval['genesis'] == base['genesis']
                         assert approval['originalSourceSha256'] == hashlib.sha256(unsigned['psbt'].encode('ascii')).hexdigest()
                         assert approval['feeSats'] == sat(unsigned['fee']) and approval['recipientSats'] == 12345678
                         assert approval['sourceDocument'] != approval['reviewDocument'] and approval['intendedChangeProved']
+                    if args.sign:
+                        enrich, unlock, sign = [event for event in proxy.events if event['method'] in {SIGN,UNLOCK}]
+                        assert [event['method'] for event in (enrich,unlock,sign)] == [SIGN,UNLOCK,SIGN]
+                        assert all(event['path']==funded[0]['path'] and event['status']==200 for event in (enrich,unlock,sign))
+                        assert enrich['policy']==dict(sign=False,finalize=False,bip32derivs=True)
+                        assert sign['policy']==dict(sign=True,finalize=False,bip32derivs=False) and unlock['timeout']==30
+                        exact = record['native']['signingProvenance']
+                        assert enrich['psbt']==sign['psbt']==exact['source']==unsigned['psbt']
+                        assert exact['commitment']==approval['commitment']
+                        input_map = maps(base64.b64decode(exact['signedPsbt']))[1]
+                        sign_map = maps(base64.b64decode(sign['returnedPsbt']))[1]
+                        assert any(k[0]==2 and sign_map.get(k)==v for k,v in input_map.items())
+                        assert not {b'\x07',b'\x08'} & input_map.keys()
+                        assert node.call('getwalletinfo', wallet=wallet)['unlocked_until']>0
+                        assert FIXTURE_PASSPHRASE not in json.dumps(proxy.events)
+                        for path in (out/'captures').glob('*.txt'):
+                            assert FIXTURE_PASSPHRASE not in path.read_text()
                     if args.edit:
                         edited = record['native']['editProvenance']
                         assert edited['originalSource'] == unsigned['psbt'] and edited['workingSource'] != unsigned['psbt']
@@ -427,11 +476,14 @@ def main():
                         assert mutation in result['error']
                     record['passed'] += 1
                 assert not any(event.get('blocked') for event in proxy.events)
-                assert node.call('listdescriptors', {'private':False}, wallet=wallet) == policy_before
+                unchanged_policy = node.call('listdescriptors', {'private':False}, wallet=wallet) == policy_before
+                if not args.sign:
+                    assert unchanged_policy
                 assert node.call('listlockunspent', wallet=wallet) == locks_before
                 assert node.call('getbalances', wallet=wallet) == balance_before
-                record.update(keypoolUnchanged=True, daemonLocksUnchanged=True, walletBalancesUnchanged=True,
-                              applicationSignSendCalls=0)
+                record.update(keypoolUnchanged=unchanged_policy, daemonLocksUnchanged=True, walletBalancesUnchanged=True,
+                              applicationSignSendCalls=int(args.sign), applicationSigningCalls=int(args.sign),
+                              applicationBroadcastCalls=0)
             finally:
                 proxy.close()
                 write_json(out/'transcript.json', proxy.events)

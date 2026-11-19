@@ -39,6 +39,17 @@ SUITES["ui"][1].update({"roots_gui.engine.batch", "roots_gui.theme.batch_live"})
 SUITES["ui"][1].add("roots_gui.engine.workbench")
 SUITES["ui"][1].update({"roots_gui.engine.signing_review","roots_gui.theme.review_live"})
 SUITES["ui"][1].update({"roots_gui.engine.transaction_edit","roots_gui.theme.edit_live"})
+SUITES["ui"][1].add("roots_gui.theme.sign_live")
+SUITES["rpc"][1].add("roots_gui.rpc.daemon_signer")
+DEVICE_SIGNER_RPC="roots_gui.rpc.device_signers"
+DEVICE_SIGNER_UI="roots_gui.theme.device_signers"
+SUITES["rpc"][1].add(DEVICE_SIGNER_RPC)
+SUITES["model"][1].add("roots_gui.protocol.signature_exchange")
+FINALIZED_TRANSACTION="roots_gui.theme.finalized_transaction"
+BROADCAST_NATIVE={"roots_gui.theme.broadcast_preflight","roots_gui.theme.broadcast_recovery","roots_gui.theme.broadcast_monitor"}
+SUITES["ui"][1].update({"roots_gui.theme.signature_exchange",FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
+SUITES["regtest"][1].update({FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
+SUITES["model"][1].add("roots_gui.storage.broadcast_recovery")
 SUITES["model"][1].add("roots_gui.protocol.transaction_edit")
 for group in ("rpc", "regtest"):
  SUITES[group][1].add("roots_gui.rpc.funding")
@@ -47,6 +58,32 @@ NATIVE_UI.update({"roots_gui.theme.send", "roots_gui.theme.funding", "roots_gui.
 NATIVE_UI.add("roots_gui.theme.batch_live")
 NATIVE_UI.add("roots_gui.theme.review_live")
 NATIVE_UI.add("roots_gui.theme.edit_live")
+NATIVE_UI.add("roots_gui.theme.sign_live")
+NATIVE_UI.update({"roots_gui.theme.signature_exchange",FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
+INCREASE_FEE="roots_gui.theme.increase_fee"
+SUITES["ui"][1].add(INCREASE_FEE)
+SUITES["regtest"][1].add(INCREASE_FEE)
+NATIVE_UI.add(INCREASE_FEE)
+ATTEMPT_CANCELLATION="roots_gui.theme.attempt_cancellation"
+SUITES["ui"][1].add(ATTEMPT_CANCELLATION)
+SUITES["regtest"][1].add(ATTEMPT_CANCELLATION)
+NATIVE_UI.add(ATTEMPT_CANCELLATION)
+INCREASE_EFFECTIVE_FEE="roots_gui.theme.increase_effective_fee"
+SUITES["ui"][1].add(INCREASE_EFFECTIVE_FEE)
+SUITES["regtest"][1].add(INCREASE_EFFECTIVE_FEE)
+NATIVE_UI.add(INCREASE_EFFECTIVE_FEE)
+QR_CODEC="roots_gui.protocol.qr_codec"
+QR_EXCHANGE="roots_gui.theme.qr_exchange"
+SUITES["model"][1].add(QR_CODEC)
+SUITES["ui"][1].add(QR_EXCHANGE)
+NATIVE_UI.add(QR_EXCHANGE)
+CAMERA_PROBE="roots_gui.platform.camera"
+CAMERA_UI="roots_gui.theme.camera"
+SUITES["model"][1].add(CAMERA_PROBE)
+SUITES["ui"][1].add(CAMERA_UI)
+NATIVE_UI.add(CAMERA_UI)
+SUITES["ui"][1].add(DEVICE_SIGNER_UI)
+NATIVE_UI.add(DEVICE_SIGNER_UI)
 INVENTORY=set().union(*(expected for _,expected in SUITES.values()),ACCESSIBILITY)
 APPLICABLE=set().union(*(SUITES[x][1] for x in ['model','rpc','ui','regtest','boundary']))-NATIVE_UI
 SUITES['applicable']=('roots-gui',APPLICABLE)
@@ -60,10 +97,16 @@ def configured_suites(build):
    key,value=line.split('=',1);cache[key.split(':',1)[0]]=value
  roots=bool(cache.get('ROOTS_GUI_TEST_ROOTS_DAEMON'))
  omitted=set() if sys.platform.startswith("linux") else {"roots_gui.protocol.documents","roots_gui.protocol.offline_draft","roots_gui.theme.offline_documents","roots_gui.theme.offline_draft","roots_gui.theme.send","roots_gui.theme.funding","roots_gui.theme.funding_live", "roots_gui.theme.create_live", "roots_gui.theme.fees_live", "roots_gui.theme.flow_live"}
- if not roots:omitted|={'roots_gui.rpc.history','roots_gui.rpc.funding','roots_gui.theme.funding_live','roots_gui.theme.create_live','roots_gui.theme.fees_live','roots_gui.theme.flow_live',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
- if not roots or not sys.platform.startswith("linux"):omitted.update({'roots_gui.theme.batch_live','roots_gui.theme.review_live','roots_gui.theme.edit_live'})
+ if not sys.platform.startswith("linux"):omitted.update({CAMERA_PROBE,CAMERA_UI})
+ if not roots:omitted|={'roots_gui.rpc.history','roots_gui.rpc.funding','roots_gui.theme.funding_live','roots_gui.theme.create_live','roots_gui.theme.fees_live','roots_gui.theme.flow_live',*BROADCAST_NATIVE,*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
+ if not roots or not sys.platform.startswith("linux"):omitted.update({INCREASE_FEE,ATTEMPT_CANCELLATION,INCREASE_EFFECTIVE_FEE,'roots_gui.theme.batch_live','roots_gui.theme.review_live','roots_gui.theme.edit_live','roots_gui.theme.sign_live'})
+ if not sys.platform.startswith("linux") or not cache.get('ROOTS_GUI_TEST_OPENSSL') or cache['ROOTS_GUI_TEST_OPENSSL'].endswith('-NOTFOUND'):
+  omitted.update({QR_CODEC,QR_EXCHANGE,'roots_gui.protocol.signature_exchange','roots_gui.theme.signature_exchange',FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
+  omitted.update({DEVICE_SIGNER_RPC,DEVICE_SIGNER_UI})
  if not roots and not cache.get('ROOTS_GUI_TEST_CORE_DAEMON'):omitted.add('roots_gui.regtest.owned')
- return {name:(label,expected-omitted) for name,(label,expected) in SUITES.items()},INVENTORY-omitted,roots
+ suites={name:(label,expected-omitted) for name,(label,expected) in SUITES.items()}
+ if not roots:suites['regtest'][1].discard(FINALIZED_TRANSACTION)
+ return suites,INVENTORY-omitted,roots
 
 def selection_arguments(suite):
  label,expected=SUITES[suite]

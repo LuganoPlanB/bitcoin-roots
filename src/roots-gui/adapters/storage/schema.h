@@ -5,7 +5,7 @@
 #include <string_view>
 namespace roots::gui::storage::schema {
 inline constexpr int ApplicationId=0x52475549;
-inline constexpr int Version=6;
+inline constexpr int Version=8;
 // Version1 owns user metadata. Version2 adds an independent observation cache.
 // Exact definitions also identify supported schemas; unknown schemas fail closed.
 inline constexpr std::array<std::string_view,8> V1{
@@ -26,4 +26,6 @@ inline constexpr std::array<std::string_view,2> V5{
     "CREATE TABLE receive_addresses(scope INTEGER NOT NULL REFERENCES receive_state(scope),serial INTEGER NOT NULL CHECK(serial>0),address TEXT NOT NULL,script TEXT NOT NULL,descriptor TEXT NOT NULL,key_path TEXT NOT NULL,observed INTEGER NOT NULL CHECK(observed>0),queued INTEGER NOT NULL CHECK(queued IN(0,1)),PRIMARY KEY(scope,serial),UNIQUE(scope,address)) STRICT"
 };
 inline constexpr std::string_view V6="CREATE TABLE rescan_state(scope INTEGER PRIMARY KEY REFERENCES scopes(id),serial INTEGER NOT NULL CHECK(serial>0),first INTEGER,last INTEGER,CHECK((first IS NULL AND last IS NULL) OR (first IS NOT NULL AND last IS NOT NULL AND first>=0 AND last>=first AND last<=2147483647))) STRICT";
+inline constexpr std::string_view V7="CREATE TABLE broadcast_attempts(genesis TEXT NOT NULL CHECK(length(genesis)=64),txid TEXT NOT NULL CHECK(length(txid)=64),wtxid TEXT NOT NULL CHECK(length(wtxid)=64),wire_digest TEXT NOT NULL CHECK(length(wire_digest)=64),observed_ms INTEGER NOT NULL CHECK(observed_ms>0),PRIMARY KEY(genesis,txid)) STRICT";
+inline constexpr std::string_view V8="CREATE TABLE broadcast_details(genesis TEXT NOT NULL,txid TEXT NOT NULL,wire TEXT NOT NULL CHECK(length(wire) BETWEEN 2 AND 131072),serial INTEGER NOT NULL CHECK(serial>0),attempted_ms INTEGER NOT NULL CHECK(attempted_ms>0),outcome INTEGER NOT NULL CHECK(outcome BETWEEN 0 AND 4),outcome_ms INTEGER CHECK(outcome_ms IS NULL OR outcome_ms>=attempted_ms),backend TEXT NOT NULL,wallet TEXT NOT NULL,PRIMARY KEY(genesis,txid),FOREIGN KEY(genesis,txid) REFERENCES broadcast_attempts(genesis,txid),CHECK((outcome=0)=(outcome_ms IS NULL))) STRICT";
 }

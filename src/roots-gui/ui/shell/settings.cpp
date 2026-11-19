@@ -501,7 +501,7 @@ void Keystores(State& state, app::Requests& host, Facts& facts, const imkit::The
     const bool paste_source=settings.signer_source==SignerSource::WatchOnly || settings.signer_source==SignerSource::Airgapped;
     if (settings.signer_source==SignerSource::Connected)
         Display(state,"discovery-service","Connected signer availability",caps && caps->external_signer==true
-            ? "The wallet reports a daemon external signer. Device discovery requires the daemon signer service."
+            ? "Open Receive or an approved signing review to rescan and select a matching daemon signer."
             : "Connected signer discovery requires a configured daemon external-signer service.");
     else if (settings.signer_source==SignerSource::Daemon)
         Display(state,"daemon-custody","Daemon software custody",caps && caps->private_keys==true

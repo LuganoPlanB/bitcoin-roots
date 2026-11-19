@@ -402,6 +402,62 @@ bool RecoverySession::CanAdmitPublicDocuments(const DocumentRegistry& documents)
         EncodePublicSession(Snapshot(documents)).has_value()));
 }
 bool RecoverySession::Checkpoint(DocumentRegistry& documents){return SaveDocuments(documents,nullptr);}
+bool RecoverySession::BroadcastJournalAvailable() const
+{
+    return started && path.is_absolute() && !Locked() && !Pending() && error.empty();
+}
+storage::Result<bool> RecoverySession::HasBroadcastAttempt(const NetworkIdentity& network,const Hash256& txid)
+{
+    if (!BroadcastJournalAvailable()) return {{},storage::Error::Io};
+    if (store) return store->HasBroadcastAttempt(network,txid);
+    std::error_code error;
+    if (!std::filesystem::exists(path,error) && !error) return {false,storage::Error::None};
+    if (error || !Open()) return {{},storage::Error::Io};
+    return store->HasBroadcastAttempt(network,txid);
+}
+storage::Result<storage::Done> RecoverySession::RecordBroadcastAttempt(const storage::BroadcastAttempt& attempt)
+{
+    if (!BroadcastJournalAvailable() || !Open()) return {{},storage::Error::Io};
+    return store->RecordBroadcastAttempt(attempt);
+}
+bool RecoverySession::OpenBroadcastJournalForRead()
+{
+    if (!BroadcastJournalAvailable()) return false;
+    if (store) return true;
+    std::error_code error;
+    const bool exists=std::filesystem::exists(path,error);
+    return !error && (!exists || Open());
+}
+storage::Result<std::optional<storage::BroadcastRecord>> RecoverySession::LoadBroadcastAttempt(const NetworkIdentity& net,const Hash256& txid)
+{
+    if (!OpenBroadcastJournalForRead()) return {{},storage::Error::Io};
+    if (!store) return {std::optional<storage::BroadcastRecord>{}};
+    return store->LoadBroadcastAttempt(net,txid);
+}
+storage::Result<std::vector<storage::BroadcastRecord>> RecoverySession::RecentBroadcastAttempts()
+{
+    if (!OpenBroadcastJournalForRead()) return {{},storage::Error::Io};
+    if (!store) return {std::vector<storage::BroadcastRecord>{}};
+    return store->RecentBroadcastAttempts();
+}
+storage::Result<std::shared_ptr<storage::FileGuard>> RecoverySession::BroadcastLease()
+{
+    if (!BroadcastJournalAvailable() || !Open()) return {{},storage::Error::Io};
+    auto guard=storage::FileGuard::Open(path.string()+".broadcast",true);
+    if (!guard) return {{},guard.error};
+    return {std::shared_ptr<storage::FileGuard>(std::move(*guard.value))};
+}
+storage::Result<uint64_t> RecoverySession::BeginBroadcastAttempt(const storage::BroadcastRecord& next,std::optional<uint64_t> expected)
+{
+    if (!BroadcastJournalAvailable() || !Open()) return {{},storage::Error::Io};
+    return store->BeginBroadcastAttempt(next,expected);
+}
+storage::Result<storage::Done> RecoverySession::FinishBroadcastAttempt(const storage::BroadcastAttempt& attempt,uint64_t serial,
+    storage::BroadcastOutcome outcome,int64_t observed_ms)
+{
+    if (!BroadcastJournalAvailable() || !store) return {{},storage::Error::Io};
+    return store->FinishBroadcastAttempt(attempt,serial,outcome,observed_ms);
+}
 bool RecoverySession::SaveDocuments(DocumentRegistry& documents,const Document* unchanged_draft){if(!Enabled() || pending)return !Enabled();if(!error.empty())return false;auto candidate=Snapshot(documents);
     for(const auto& old:saved.documents.Documents())if(!documents.Find(old.id))Retain(candidate.recoverable,old);
     try{for(const auto& d:documents.Documents()){auto* current=candidate.documents.Find(d.id);const auto* old=saved.documents.Find(d.id);if(old){current->draft_revision.value=std::max(d.draft_revision.value,old->draft_revision.value);auto before=*old,after=d;before.draft_revision={};after.draft_revision={};if(Doc(before).Encode()!=Doc(after).Encode()){if(old->draft_revision.value==UINT64_MAX){error="Draft revision exhausted; previous snapshot retained.";return false;}current->draft_revision.value=std::max(d.draft_revision.value,old->draft_revision.value+1);}}}}catch(...){error="Invalid or locked public draft; previous snapshot retained.";return false;}

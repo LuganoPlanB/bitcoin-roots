@@ -36,6 +36,24 @@ No source or binary is bundled here. The observed native provider was Debian
 [protected-session contract](../docs/protected-sessions.md). Eventual binary
 packaging must retain the complete applicable native-library notices.
 
+## QR code inputs
+
+| Input | Pinned upstream source | License and retained notice |
+| --- | --- | --- |
+| Nayuki QR Code Generator C 1.8.0 | [720f62bddb7226106071d4728c292cb1df519ceb](https://github.com/nayuki/QR-Code-generator/tree/720f62bddb7226106071d4728c292cb1df519ceb/c) | MIT text in `qr/nayuki/qrcodegen.c` and `qrcodegen.h` |
+| quirc C decoder | [f2e4271ae43a15d9263704e07bc86cba5697d74d](https://github.com/dlbeer/quirc/tree/f2e4271ae43a15d9263704e07bc86cba5697d74d/lib) | ISC-style permission and disclaimer in `qr/quirc/LICENSE` and source headers |
+| stb_image PNG decoder | [9600522de53973336fa033a289858a4354cbb04c](https://github.com/nothings/stb/tree/9600522de53973336fa033a289858a4354cbb04c) | MIT or public domain, retained in `qr/stb/LICENSE` |
+| Blockchain Commons Bytewords alphabet | [4479fb81b2350ae8bafa042a5572b9c64c2c32ca](https://github.com/BlockchainCommons/bc-ur/blob/4479fb81b2350ae8bafa042a5572b9c64c2c32ca/src/bytewords.cpp) | BSD-2-Clause-Patent, retained in `qr/Bytewords-LICENSE` |
+| Published PSBT QR vector | [BCR-2020-006, e4a4fbb186e2e7625ccdf7149aec4f0a5adaf850](https://github.com/BlockchainCommons/Research/blob/e4a4fbb186e2e7625ccdf7149aec4f0a5adaf850/papers/bcr-2020-006-urtypes.md#partially-signed-bitcoin-transaction-psbt-psbt) | © 2020 Blockchain Commons, exact wire hex and UR data in `qr/vectors/` |
+
+The production binary compiles these inputs from local source. PNG import
+compiles stb_image only with PNG and memory input enabled. The UR transport
+implements the indexed subset of
+[BCR-2020-005](https://github.com/BlockchainCommons/Research/blob/e4a4fbb186e2e7625ccdf7149aec4f0a5adaf850/papers/bcr-2020-005-ur.md)
+and uses the [BCR-2020-012](https://github.com/BlockchainCommons/Research/blob/e4a4fbb186e2e7625ccdf7149aec4f0a5adaf850/papers/bcr-2020-012-bytewords.md)
+alphabet. The full bc-ur reference library is used for independent verification
+outside the production build.
+
 ## Protocol provider source notices
 
 `provider-lock.json` records exact revisions, source URLs, archive/patch hashes

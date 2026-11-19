@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #pragma once
+#include "adapters/protocol/qr.h"
+#include "services/camera.h"
+#include "app/replacement.h"
 #include "app/signing_review.h"
 #include "app/commands.h"
 #include "services/addresses.h"
@@ -60,6 +63,10 @@ struct HistoryRuntime {
     int64_t observed{};
     uint64_t generation{},sequence{};
     bool reveal_selected{},fee_actions{};
+    std::string replacement_rate;
+    std::optional<app::FeeDraftRequest> cancellation_prompt;
+    std::optional<Hash256> child_parent;
+    std::optional<uint32_t> child_output;
     std::optional<HistoryPermission> explorer_permission;
 };
 struct AddressRuntime {bool reveal_selected{},current{},reconciled{};uint64_t generation{},sequence{},history_sequence{};std::string error;bool open_actions{};std::set<std::string> frozen;std::map<std::string,app::CoinRule> policy;std::vector<AddressRow> rows;};
@@ -103,6 +110,11 @@ struct ReceiveRuntime {
     std::optional<ReceiveRequest> inspection;
     std::string status;
     bool label_loaded{}, label_active{}, label_seen_active{};
+    uint64_t qr_session{},qr_profile{};
+    LockEpoch qr_epoch;
+    bool qr_uri{};
+    std::string qr_payload;
+    std::optional<protocol::QrMatrix> qr_matrix;
 };
 enum class SignerSource { None, Connected, Airgapped, Daemon, WatchOnly, Descriptor };
 struct SignerDraft {
@@ -159,7 +171,8 @@ struct InspectionExport {
     uint64_t view_revision{};
     std::optional<protocol::ByteSpan> selection;
 };
-enum class LocalDocumentMode { None, File, Text, Save, Merge, SaveInspection };
+enum class LocalDocumentMode { None, File, Text, Save, Merge, MergeText, SaveInspection, SaveSigningMaterial, SaveFinalized, BroadcastAttempts,
+    Qr, MergeQr, PaymentQr, ShowQr, ShowFinalQr };
 struct LocalDocumentPanel {
     LocalDocumentMode mode{LocalDocumentMode::None};
     imkit::DialogState dialog;
@@ -169,10 +182,31 @@ struct LocalDocumentPanel {
     std::optional<std::string> edited_path;
     components::TextPosition cursor;
     uint64_t file_dialog{}, revision{};
-    bool close_pending{},clipboard_pending{};
+    bool close_pending{},clipboard_pending{},signature_terminal{};
     std::string error;
     std::optional<InspectionOwner> owner;
     std::optional<InspectionExport> inspection;
+    std::optional<app::SigningApproval> signature_approval;
+    std::shared_ptr<const protocol::TransactionDocument> merge_base;
+    std::vector<storage::BroadcastRecord> broadcast_attempts;
+    protocol::QrAssembler qr_assembly;
+    protocol::QrExport qr_export;
+    protocol::QrDensity qr_density{protocol::QrDensity::Standard};
+    protocol::QrAssembler::Clock::time_point qr_started{},qr_changed{};
+    std::array<char,protocol::MAX_QR_TEXT+1> qr_text{};
+    std::optional<std::string> qr_text_edit;
+    components::TextPosition qr_cursor;
+    std::string qr_payment;
+    std::optional<app::WalletBinding> qr_wallet;
+    uint64_t qr_session{},qr_profile{},qr_recipient{};
+    size_t qr_position{},qr_omitted{};
+    bool qr_omit_xpubs{true},qr_force_animation{},qr_paused{};
+    uint64_t camera_generation{},camera_sample{};
+    std::optional<CameraDevice> camera_device;
+    std::optional<CameraMode> camera_mode;
+    std::string camera_last_code;
+    bool camera_validation{},camera_result_from_stream{};
+    std::shared_ptr<const protocol::TransactionDocument> camera_result;
 };
 struct OfflineBuilder {
     components::Edit address{""}, amount{""}, fee{""};
@@ -185,6 +219,7 @@ struct ImportedView {
     std::optional<app::WalletBinding> wallet;
     std::set<std::string> policy_scripts; // verified public cache only; never recovered as ownership
     std::optional<protocol::OfflineReviewEvidence> review_evidence;
+    std::optional<app::ReplacementDraft> replacement;
     std::shared_ptr<const protocol::TransactionDocument> reviewed;
     std::optional<Hash256> review_commitment;
     std::optional<size_t> proved_change_output;
@@ -200,6 +235,12 @@ struct ImportedView {
     std::optional<protocol::ByteSpan> selection;
     std::string selection_label;
     std::string inspection_status;
+    struct SignatureView {
+        bool open{};
+        size_t page{};
+        std::weak_ptr<const protocol::TransactionDocument> source;
+        std::optional<protocol::SignatureProgress> progress;
+    } signatures;
 };
 struct TransactionEditor {
     InspectionOwner owner;
@@ -217,10 +258,24 @@ struct EditedOrigin {
     DraftRevision revision;
     std::weak_ptr<const protocol::TransactionDocument> content;
     std::string affected;
+    bool fee_replacement{};
 };
 struct SigningView {
     bool open{},advanced{};
     size_t output_page{},input_page{};
+    std::shared_ptr<const protocol::TransactionDocument> daemon_signed,daemon_enriched,external_signed;
+    std::weak_ptr<const protocol::TransactionDocument> external_source;
+    std::string daemon_status,cancellation_status;
+    bool signing_uncertain{};
+    std::optional<app::ApprovedFinalTransaction> finalized;
+    std::string finalization_error;
+};
+struct DaemonUnlockView {
+    std::optional<app::SigningBasis> owner;
+    std::array<char,256> passphrase{};
+    ImGuiID field{};
+    bool focus{};
+    ~DaemonUnlockView();
 };
 struct SendView {
     uint64_t document{}, recipient{};
@@ -309,6 +364,7 @@ struct State {
     int unit{};
     uint64_t focus_tab{};
     uint64_t previous_document{};
+    std::optional<app::Section> previous_device_section;
     bool previous_locked{};
     bool focus_empty{},reveal_empty_focus{};
     int reveal_navigation{-1};
@@ -332,6 +388,8 @@ struct State {
     std::map<uint64_t,ImportedView> imported_views;
     app::SigningReviews signing_reviews;
     std::map<uint64_t,SigningView> signing_views;
+    DaemonUnlockView daemon_unlock;
+    uint64_t daemon_operation{};
     std::map<uint64_t,TransactionEditor> transaction_edits;
     std::map<uint64_t,EditedOrigin> edited_origins;
     uint64_t transaction_edit_generation{}, transaction_edit_revision{};
@@ -345,6 +403,7 @@ struct State {
     std::unique_ptr<BatchFileRead> batch_read;
     uint64_t batch_generation{},batch_read_generation{},batch_read_revision{};
     app::RecoverySession* recovery{}; // borrowed owner-thread application service
+    app::Broadcaster* broadcasts{}; // borrowed owner-thread application service
     imkit::DialogState recovery_dialog;
     bool recovery_prompted{},close_recovery_popup{};
     PrivacyPanel lock_panel;
@@ -429,17 +488,31 @@ DraftFeeTerms FeeTerms(const State&, const app::Document&, const FeeContext&, st
 bool BeginClearSend(State&,uint64_t);
 bool CanClearSend(const State&,uint64_t);
 bool ConfirmClearSend(State&,app::Requests&);
-bool BeginLocalDocument(State&,app::Requests&,LocalDocumentMode,std::string_view local_path={});
+bool DrawQrMatrix(const protocol::QrMatrix&,float maximum);
+void RetireLocalDocument(State&,app::Requests&);
+bool BeginLocalDocument(State&,app::Requests&,LocalDocumentMode,std::string_view local_path={},bool collect=false);
 void DrawLocalDocumentDialog(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawImportedDocument(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 std::optional<InspectionOwner> CurrentInspectionOwner(const State&,app::Requests&);
 bool ValidInspectionExport(const State&,app::Requests&,const InspectionExport&);
 bool ToggleTransactionHex(State&,app::Requests&);
 bool IsSigningCommand(app::Command);
+bool BroadcastFreezes(const State&,uint64_t document);
+void PollBroadcast(State&,app::Requests&);
+app::Availability ReplacementAvailability(State&,app::Requests&,const app::FeeDraftRequest&);
+app::Receipt BeginReplacement(State&,app::Requests&,const app::FeeDraftRequest&);
+void PollReplacement(State&,app::Requests&);
+void DrawBroadcastStatus(State&,app::Requests&,Facts&,const imkit::Theme&);
 app::Availability SigningCommandAvailability(State&,app::Requests&,const app::Request&);
 app::Receipt DispatchSigningCommand(State&,app::Requests&,const app::Request&);
-const app::SigningApproval* CurrentSigningApproval(State&,app::Requests&,uint64_t);
+const app::SigningApproval* CurrentSigningApproval(State&,app::Requests&,uint64_t,bool completing_exchange=false);
+std::shared_ptr<const protocol::TransactionDocument> SigningMaterial(const State&,uint64_t);
+const app::ApprovedFinalTransaction* FinalizedMaterial(const State&,uint64_t);
+const protocol::SignatureProgress& SignatureProgressFor(State&,uint64_t,
+    const std::shared_ptr<const protocol::TransactionDocument>&);
+void DrawSignatureExchange(State&,app::Requests&,Facts&,const imkit::Theme&,const InspectionOwner&,bool collect);
 void PollSigningReviews(State&,app::Requests&);
+void RetireDaemonSigning(State&,app::Requests&);
 void RevokeSigningReview(State&,uint64_t,std::string);
 bool DrawSigningReview(State&,app::Requests&,Facts&,const imkit::Theme&);
 bool IsTransactionEditCommand(app::Command);
@@ -458,7 +531,7 @@ void DrawAccountService(State&,app::Requests&,Facts&,const imkit::Theme&);
 void PolicyWalletApplied(State&,uint64_t previous,uint64_t created,const protocol::PublicWalletPreview&,uint64_t session);
 bool AllowPolicyClose(State&,std::span<const uint64_t>);
 void RetireOnboarding(State&,app::Requests&);
-bool RequestPrivacyLock(State&);
+bool RequestPrivacyLock(State&,app::Requests&);
 void DrawPrivacyPanel(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawTabActions(State&,app::Requests&,Facts&,uint64_t,const imkit::Theme&);
 void BeginHistoryLabelFrame(State&);
@@ -472,6 +545,7 @@ void DrawAddressActions(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawCoins(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void DrawAddresses(State&,app::Requests&,Facts&,const imkit::Theme&,float);
 void PollReceive(State&,app::Requests&);
+void DrawDeviceSigner(State&,app::Requests&,std::map<std::string,components::ItemFacts>&,const imkit::Theme&,bool blocked);
 void BeginReceiveLabelFrame(State&);
 void FinishReceiveLabelFrame(State&);
 bool SaveReceiveLabelsBeforeClose(State&,std::span<const uint64_t>);

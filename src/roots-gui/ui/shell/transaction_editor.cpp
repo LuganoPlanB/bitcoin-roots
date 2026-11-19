@@ -131,6 +131,8 @@ a::Receipt Adopt(State& state,a::Requests& host,const TransactionEditor& editor,
     const auto existing=state.edited_origins.find(id);
     const bool working=existing!=state.edited_origins.end();
     auto lineage=working ? existing->second : EditedOrigin{id,original->draft_revision,original->imported->parsed};
+    if (const auto source=state.imported_views.find(id);source!=state.imported_views.end() && source->second.replacement)
+        lineage.fee_replacement=true;
     lineage.affected=changed.affected;
     auto proposed=state.documents;
     auto target=id;
@@ -259,6 +261,7 @@ a::Availability TransactionEditAvailability(State& state,a::Requests& host,const
         return {false,"The current transaction edit context is unavailable."};
     const auto owner=CurrentInspectionOwner(state,host);
     if (!owner) return {false,"Open a current unsigned transaction first."};
+    if (BroadcastFreezes(state,owner->id)) return {false,"Wait for the pending submission before editing this transaction."};
     if (const auto blocked=protocol::TransactionEditBlock(*owner->content);!blocked.empty()) return {false,blocked};
     const auto found=state.transaction_edits.find(owner->id);
     if (request.command==a::Command::BeginTransactionEdit)

@@ -98,3 +98,35 @@ mixed-DPI work remain owned, unqualified follow-on obligations, nonblocking for
 this plan under the same approved revision. Evidence is still required before
 claiming those capabilities. Linux adapter results do not qualify another
 operating system.
+
+## QR camera
+
+The GUI platform maintainers own the portable `CameraDriver` and
+`CameraService` interfaces, platform adapters, and native qualification. The
+L6.11 source candidate is based on HEAD
+`28d0e43fdbc74128f39700bc283afe136b7c4939`. The complete candidate and
+evidence identities are in the milestone's immutable
+`qr-camera/report.ledger-corrected.json` and
+`qr-camera/delta-ledger-corrected.patch` evidence records.
+
+| Platform | Status and evidence | Remaining work and evidence |
+| --- | --- | --- |
+| Linux | **Implemented and native-tested with controlled device input.** The real V4L2 adapter ran through a controlled syscall port in an owned X11 NativeHost. Independent decoding verified QR content in the actual preview framebuffer. The test host exposed no V4L2 device nodes, so no physical camera was exercised. | Qualify physical cameras, representative drivers and supported formats, permission changes, real disconnects, and QR readability across lighting conditions. Installed delivery remains unverified. |
+| macOS | **Unavailable.** The portable interface is present. Native camera tests remain unexecuted. | Implement an AVFoundation adapter and camera usage description. Verify TCC grant, denial and revocation, device and format negotiation, capture lifetime and cleanup, and native preview and import. Installed delivery remains unverified. |
+| Windows | **Unavailable.** The portable interface is present. Native camera tests remain unexecuted. | Implement a Media Foundation adapter. Verify system camera privacy grants, denial and revocation, device and format negotiation, capture lifetime and cleanup, and native preview and import. Installed delivery remains unverified. |
+
+## External signer devices
+
+GUI platform and wallet maintainers own the portable `DeviceSigners` RPC
+boundary and the device views in Receive and signing review. The L6.12 source
+candidate is based on HEAD `28d0e43fdbc74128f39700bc283afe136b7c4939`.
+The immutable `device-signers/report.full.json` and
+`device-signers/delta.patch` evidence records identify the exact candidate.
+See the [capability contract](capabilities.md#daemon-external-signers) for
+runtime prerequisites and airgapped exchange.
+
+| Platform | Status and evidence | Remaining work and evidence |
+| --- | --- | --- |
+| Linux | **Implemented and native-tested with a controlled daemon signer.** The owned loopback emulator exercises discovery, signing and exact address results. Actual X11 NativeHost captures cover explicit selection, a pending device confirmation request, the exact daemon echo and rejection. Airgapped file and QR PSBT exchange is available. | Physical device use and certification remain unqualified. Before making a device claim, record the actual model, firmware, external signer/backend versions, configuration, display comparison, signing, cancellation/disconnect, and recovery evidence. Installed delivery remains unverified. |
+| macOS | **Portable source only.** Native signer UI, daemon integration and physical devices remain unexecuted. | Qualify native device flows with an explicitly configured daemon. Record model, firmware and backend evidence before certification. Installed delivery remains unverified. |
+| Windows | **Portable source only.** Native signer UI, daemon integration and physical devices remain unexecuted. | Qualify native device flows with an explicitly configured daemon. Record model, firmware and backend evidence before certification. Installed delivery remains unverified. |

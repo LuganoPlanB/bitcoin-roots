@@ -39,6 +39,12 @@ double; native keychain integration belongs to the protected-store work package.
 Credential buffers are cleared on destruction where owned, without promising
 complete erasure of allocator, library or OS copies.
 
+The dedicated daemon wallet unlock sends a bounded passphrase only to the exact
+wallet route over verified TLS or direct numeric loopback. The transport builds
+its request body directly in a buffer that is cleared on exit and returns only
+a typed error or the empty success result. Unlock responses and credentials
+never enter diagnostic text. The daemon owns the unlock timeout.
+
 Connect and total deadlines, request/body/header sizes, JSON nesting and node
 counts have enforced hard maxima. The multi loop checks cancellation at most
 50ms between polls, with asynchronous DNS required at runtime. Callers still

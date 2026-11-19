@@ -62,6 +62,22 @@ struct OpenOptions { int busy_ms{100}; int max_pages{65536}; };
 // A bounded public-document codec owns the contents. This record is never a
 // command queue; restoring it grants no RPC capability or transaction approval.
 struct RecoveryRecord { uint64_t revision{}; bool enabled{}; std::string public_documents; };
+// An exclusion record, never a command or an authorization to replay.
+struct BroadcastAttempt {
+    NetworkIdentity network;
+    Hash256 txid, wtxid, wire_digest;
+    int64_t observed_ms{};
+};
+enum class BroadcastOutcome { Pending, Unsent, Rejected, Acknowledged, Uncertain };
+struct BroadcastRecord {
+    BroadcastAttempt identity;
+    std::string wire_hex;
+    uint64_t serial{};
+    int64_t attempted_ms{};
+    BroadcastOutcome outcome{BroadcastOutcome::Pending};
+    std::optional<int64_t> outcome_ms;
+    std::string backend, wallet;
+};
 struct ReceivePool {
     static constexpr size_t MAX_RESERVED = 8, MAX_RECORDS = 4096;
     uint64_t pending{};
@@ -87,6 +103,12 @@ public:
     Result<uint64_t> SaveWorkspace(const Workspace&);
     Result<RecoveryRecord> LoadRecovery();
     Result<uint64_t> SaveRecovery(const RecoveryRecord&); // atomic CAS, disabled => no documents
+    Result<bool> HasBroadcastAttempt(const NetworkIdentity&,const Hash256& txid);
+    Result<Done> RecordBroadcastAttempt(const BroadcastAttempt&);
+    Result<std::optional<BroadcastRecord>> LoadBroadcastAttempt(const NetworkIdentity&,const Hash256&);
+    Result<std::vector<BroadcastRecord>> RecentBroadcastAttempts();
+    Result<uint64_t> BeginBroadcastAttempt(const BroadcastRecord&,std::optional<uint64_t> expected_serial);
+    Result<Done> FinishBroadcastAttempt(const BroadcastAttempt&,uint64_t serial,BroadcastOutcome,int64_t observed_ms);
     Result<std::vector<Scope>> LoadRecentWallets();
     Result<Done> RememberWallet(const Scope&); // merge recency under the writer transaction
     Result<ReceivePool> LoadReceivePool(const Scope&);

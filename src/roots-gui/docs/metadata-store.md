@@ -94,3 +94,21 @@ serialize dispatch and acknowledgment across GUI instances sharing the store.
 The record survives restart and protection with the rest of the metadata.
 Opening a recovered workspace never dispatches a scan. An unconfirmed result
 requires a fresh wallet check and explicit acknowledgment before another review.
+
+## Transaction submission attempts
+
+Schema version 7 introduced the genesis, transaction ID, witness transaction
+ID, SHA-256 of the final wire and local time of the first submission attempt.
+Version 8 preserves that identity and records the exact public wire, the latest
+attempt number and times, target wallet and backend, and the last outcome.
+An interrupted attempt remains pending with an unknown outcome. Older records
+retain their exclusion key and original time.
+
+The write is unique by genesis and transaction ID. A different witness, another
+tab or another instance sharing the same store cannot replace those bytes.
+An explicit same-byte retry advances the attempt number conditionally.
+A store-scoped lease serializes the pre-send commit, request and outcome write.
+Failed writes before dispatch leave the request unsent. The store holds up to
+4,096 identities and 8 MiB of encoded wire data. It follows the workspace's
+private metadata and encryption settings. Opening it restores public records
+without restoring approval, credentials or pending commands.

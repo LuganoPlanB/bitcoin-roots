@@ -20,6 +20,7 @@ app::Document* Editable(State& state, uint64_t document, uint64_t recipient)
         || !active->SendWallet() || !active->complete
         || (active->kind == app::DocumentKind::Wallet && active->section != app::Section::Send)
         || active->observation == app::ObservationState::Locked
+        || BroadcastFreezes(state,document)
         || state.privacy.hidden || state.semantic_hide_toggle
         || (state.recovery && (state.recovery->Locked() || state.recovery->Pending()))) return nullptr;
     return active;
@@ -229,6 +230,11 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
     Text(state, "send-heading", "Send", "Send");
     imkit::PopTextRole();
     Text(state, "send-network", "Wallet network", "Network: " + std::string(protocol::DocumentNetworkName(network)));
+    if (BroadcastFreezes(state,document)) {
+        Text(state,"send-submission","Pending submission","Wait for the pending submission before editing this draft.",SemanticRole::Alert);
+        ImGui::PopID();
+        return;
+    }
     if (DrawBatchOrAnalysis(state,host,facts,theme)) {
         ImGui::PopID();
         return;
@@ -255,9 +261,10 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
                 return true;
             }, view.wallet_destinations);
         ImGui::SameLine();
-        Button(state, facts, theme, "qr", "QR", "QR scanning requires payment QR transport", false, [] {return false;});
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Payment QR scanning requires the QR transport.");
+        Button(state, facts, theme, "qr", "Import QR", "Import payment QR", edit && host.LocalDocuments(),
+            [&state,&host,document,recipient] {
+                return Editable(state,document,recipient) && BeginLocalDocument(state,host,LocalDocumentMode::PaymentQr);
+            });
         if (view.wallet_destinations) WalletDestinations(state, host, facts, theme, *active, recipient, edit);
         Field<MAX_RECIPIENT_LABEL>(state, facts, document, row, RecipientField::Label, "label",
             "Label (local)", row.label, !edit);

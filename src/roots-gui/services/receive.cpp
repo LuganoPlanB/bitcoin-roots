@@ -41,7 +41,7 @@ bool CanAllocateReceive(const BackendCapabilities& backend)
 }
 bool CanVerifyReceiveOnDevice(const BackendCapabilities& backend)
 {
-    return backend.external_signer == true && backend.Supports("walletdisplayaddress", "address") == SupportReason::Available
+    return CanDiscoverDevice(backend) && backend.Supports("walletdisplayaddress", "address") == SupportReason::Available
         && backend.Supports("getaddressinfo", "address") == SupportReason::Available
         && backend.Supports("getwalletinfo") == SupportReason::Available;
 }
@@ -58,10 +58,29 @@ ReceiveReply FetchReceive(rpc::Transport& transport, const ReceiveRequest& opera
     auto network = identity.context.network.genesis.hex();
     const auto chain = protocol::ReceiveChain(network);
     if (!profile.wallet || profile.expected_genesis != network || chain.empty()) return fail("Receive is unavailable for this wallet network.");
+    const bool displaying = operation.action == ReceiveAction::VerifyDevice;
+    if (!displaying && !ReceiveAllocation(operation.action) && operation.action != ReceiveAction::Inspect)
+        return fail("Unsupported receive operation.");
+    const auto& device = operation.device;
+    if (displaying && (!device || !device->Matches(profile, identity.connection_session, operation.profile_revision)))
+        return fail("Select the current wallet's matching daemon signer first.");
+    std::optional<DeviceSelection::Operation> device_operation;
+    if (displaying) {
+        device_operation.emplace(*device);
+        if (!*device_operation) return fail("Wait for the current signer operation to settle.");
+    }
+    const auto device_failure = [&](DeviceState state) {
+        device->Retire(state);
+        return fail(DeviceStateText(state));
+    };
     uint64_t request_id{};
     auto call = [&](const char* method, std::string params, bool wallet, rpc::Effect effect = rpc::Effect::ReadOnly) {
         rpc::Limits limits;
         limits.response_bytes = 1024 * 1024;
+        if (effect == rpc::Effect::Mutation && displaying) {
+            limits.response_bytes = 4096;
+            limits.total_timeout = std::chrono::seconds(30);
+        }
         return transport.Call(profile.connection, {++request_id, method, std::move(params), wallet ? profile.wallet : std::nullopt, effect}, stop, limits);
     };
     const auto verify_wallet = [&] {
@@ -72,7 +91,10 @@ ReceiveReply FetchReceive(rpc::Transport& transport, const ReceiveRequest& opera
         return wallet.error == rpc::Error::None && wallet.result && StringIs(wallet.result->Find("walletname"), *profile.wallet)
             && True(wallet.result->Find("descriptors")) && !stop.stop_requested();
     };
-    if (!verify_wallet()) return fail("Authenticated wallet and network could not be reverified.");
+    if (!verify_wallet()) {
+        if (displaying) device->Retire(DeviceState::Disconnected);
+        return fail("Authenticated wallet and network could not be reverified.");
+    }
     if (operation.action == ReceiveAction::Inspect) {
         result.inspected = true;
         return result;
@@ -95,7 +117,10 @@ ReceiveReply FetchReceive(rpc::Transport& transport, const ReceiveRequest& opera
     const auto params = "{\"address\":" + rpc::Quote(address) + '}';
     const auto detail = call("getaddressinfo", params, true);
     if (detail.error != rpc::Error::None || !detail.result || !StringIs(detail.result->Find("address"), address)
-        || !True(detail.result->Find("ismine"))) return fail("The daemon did not prove ownership of this exact address.");
+        || !True(detail.result->Find("ismine"))) {
+        if (displaying) device->Retire(DeviceState::Failure);
+        return fail("The daemon did not prove ownership of this exact address.");
+    }
     const auto* script = detail.result->Find("scriptPubKey");
     const auto* descriptor = detail.result->Find("desc");
     const auto* path = detail.result->Find("hdkeypath");
@@ -109,11 +134,19 @@ ReceiveReply FetchReceive(rpc::Transport& transport, const ReceiveRequest& opera
         result.address = std::move(proven);
         return result;
     }
-    if (proven.script != operation.selected->script || stop.stop_requested()) return fail("The selected address proof changed before device verification.");
+    if (proven.script != operation.selected->script || !device->Owns(operation.selected->descriptor, proven.script, true,operation.selected->index)
+        || !device->Owns(proven.descriptor, proven.script, true))
+        return device_failure(DeviceState::NoMatch);
+    const auto before = device->Recheck(transport, stop);
+    if (before != DeviceState::Ready) return device_failure(before);
+    if (!device->Live() || stop.stop_requested()) return device_failure(DeviceState::Idle);
     const auto shown = call("walletdisplayaddress", params, true, rpc::Effect::Mutation);
-    if (shown.error != rpc::Error::None || !shown.result || !StringIs(shown.result->Find("address"), address))
-        return fail("The daemon signer did not confirm this exact address.");
-    result.verified_on_device = true;
+    if (shown.error != rpc::Error::None) return device_failure(SignerFailure(shown));
+    if (!shown.result || !StringIs(shown.result->Find("address"), address))
+        return device_failure(DeviceState::Failure);
+    const auto after = device->Recheck(transport, stop);
+    if (after != DeviceState::Ready) return device_failure(after);
+    result.signer_echo = true;
     return result;
 }
 
@@ -159,9 +192,11 @@ bool ReceiveService::Start(ReceiveRequest operation, const ConnectionService& co
 {
     if (std::this_thread::get_id() != owner || Busy() || !fetch || !Current(operation, &connection)) return false;
     const auto& caps = *connection.Active();
+    if (operation.action != ReceiveAction::VerifyDevice && operation.device) return false;
     if (ReceiveAllocation(operation.action) && (!operation.ticket || !CanAllocateReceive(caps))) return false;
     if (operation.action == ReceiveAction::Inspect && (!operation.ticket || caps.Supports("getwalletinfo") != SupportReason::Available)) return false;
-    if (operation.action == ReceiveAction::VerifyDevice && (!operation.selected || !CanVerifyReceiveOnDevice(caps))) return false;
+    if (operation.action == ReceiveAction::VerifyDevice && (!operation.selected || !operation.device
+        || !operation.device->Current(connection) || operation.device->Busy() || !CanVerifyReceiveOnDevice(caps))) return false;
     try {
         running = operation;
         retired = false;
@@ -186,14 +221,22 @@ void ReceiveService::Cancel()
 {
     if (std::this_thread::get_id() != owner || !Busy()) return;
     retired = true;
+    if (running && running->device) running->device->Retire();
     worker.request_stop();
+}
+bool ReceiveService::CancelDevice()
+{
+    if (std::this_thread::get_id()!=owner || !running || running->action!=ReceiveAction::VerifyDevice) return false;
+    Cancel();
+    return true;
 }
 std::optional<std::pair<ReceiveRequest, ReceiveReply>> ReceiveService::Poll(const ConnectionService* connection,
     const std::optional<RefreshIdentity>& identity, const std::optional<ReceiveTarget>& selected)
 {
     if (std::this_thread::get_id() != owner || !running) return {};
     if (!Current(*running, connection) || running->identity != identity
-        || (running->action == ReceiveAction::VerifyDevice && running->selected != selected)) Cancel();
+        || (running->action == ReceiveAction::VerifyDevice && (running->selected != selected
+            || (running->device && !running->device->Live() && running->device->RetiredState() == DeviceState::Idle)))) Cancel();
     std::optional<ReceiveReply> result;
     {
         std::lock_guard guard(mutex);
@@ -205,6 +248,7 @@ std::optional<std::pair<ReceiveRequest, ReceiveReply>> ReceiveService::Poll(cons
     auto operation = std::move(*running);
     running.reset();
     if (retired) return {};
+    if (result->signer_echo && (!operation.device || !operation.device->Current(*connection))) return {};
     return std::pair{std::move(operation), std::move(*result)};
 }
 }

@@ -31,6 +31,7 @@ class RecoverySession {
     std::vector<unsigned char> locked_documents;
     std::string error;
     bool Open();
+    bool OpenBroadcastJournalForRead();
     bool LoadOpen();
     bool Commit(PublicSession&,bool enabled);
     PublicSession Snapshot(const DocumentRegistry&) const;
@@ -62,6 +63,15 @@ public:
     bool Unlock(std::string_view password,DocumentRegistry&,bool choose_latest=false,bool preserve_other_copy=false);
     bool CanAdmitPublicDocuments(const DocumentRegistry&) const;
     bool Checkpoint(DocumentRegistry&);
+    bool BroadcastJournalAvailable() const;
+    storage::Result<bool> HasBroadcastAttempt(const NetworkIdentity&,const Hash256&);
+    storage::Result<storage::Done> RecordBroadcastAttempt(const storage::BroadcastAttempt&);
+    storage::Result<std::optional<storage::BroadcastRecord>> LoadBroadcastAttempt(const NetworkIdentity&,const Hash256&);
+    storage::Result<std::vector<storage::BroadcastRecord>> RecentBroadcastAttempts();
+    storage::Result<std::shared_ptr<storage::FileGuard>> BroadcastLease();
+    storage::Result<uint64_t> BeginBroadcastAttempt(const storage::BroadcastRecord&,std::optional<uint64_t> expected_serial);
+    storage::Result<storage::Done> FinishBroadcastAttempt(const storage::BroadcastAttempt&,uint64_t serial,
+        storage::BroadcastOutcome,int64_t observed_ms);
     uint64_t CreateFunded(DocumentRegistry&, ImportedDocument, std::string& error);
     bool Close(DocumentRegistry&,std::span<const uint64_t>);
     bool Clear(DocumentRegistry&,uint64_t);

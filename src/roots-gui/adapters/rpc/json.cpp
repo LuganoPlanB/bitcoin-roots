@@ -146,16 +146,22 @@ const Json* Json::Find(std::string_view key) const
     for (const auto& [name, value] : members) if (name == key) return &value;
     return nullptr;
 }
-std::string Quote(std::string_view text)
+void AppendQuoted(std::string& out,std::string_view text)
 {
     constexpr char hex[] = "0123456789abcdef";
-    std::string out = "\"";
+    out += '"';
     for (unsigned char c : text) {
         if (c == '"' || c == '\\') { out += '\\'; out += char(c); }
         else if (c < 32) { out += "\\u00"; out += hex[c >> 4]; out += hex[c & 15]; }
         else out += char(c);
     }
-    return out + '"';
+    out += '"';
+}
+std::string Quote(std::string_view text)
+{
+    std::string out;
+    AppendQuoted(out,text);
+    return out;
 }
 std::string Json::Encode() const
 {

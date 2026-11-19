@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 using namespace roots::gui;
@@ -57,7 +58,7 @@ int64_t VersionOne(const std::filesystem::path& path){Raw raw(path);raw.Exec("BE
 void Migrations(const std::filesystem::path& path){VersionOne(path);auto store=Take(s::MetadataStore::Open(path));const auto m=Take(store->Load(Scope()));Check(m.revision==7 && m.display_name=="Preserved display" && m.labels[0].text=="Preserved label");Check(store->LoadObservation(Scope(),"new-cache").error==s::Error::NotFound);store.reset();
     {Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);Check(raw.Number("PRAGMA application_id")==s::schema::ApplicationId);Check(raw.Number("SELECT count(*) FROM observations")==0);Check(raw.Number("SELECT count(*) FROM recovery")==0);}
     store=Take(s::MetadataStore::Open(path));Take(store->SaveObservation(Scope(),"existing-cache",ProvenanceFor(Scope()),Money::Satoshis(9)));store.reset();
-    {Raw raw(path);raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
+    {Raw raw(path);raw.Exec("DROP TABLE broadcast_details");raw.Exec("DROP TABLE broadcast_attempts");raw.Exec("DROP TABLE rescan_state");raw.Exec("DROP TABLE receive_addresses");raw.Exec("DROP TABLE receive_state");raw.Exec("DROP TABLE recent_wallets");raw.Exec("DROP TABLE recovery");raw.Exec("PRAGMA user_version=2");}
     store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==m);Check(Take(store->LoadObservation(Scope(),"existing-cache")).amount==Money::Satoshis(9));Check(!Take(store->LoadRecovery()).enabled);store.reset();Raw raw(path);Check(raw.Number("PRAGMA user_version")==s::schema::Version);
 }
 void ReceiveReservations(const std::filesystem::path& path)
@@ -113,6 +114,8 @@ void RescanTickets(const std::filesystem::path& path)
     store.reset();
     {
         Raw raw(path);
+        raw.Exec("DROP TABLE broadcast_details");
+        raw.Exec("DROP TABLE broadcast_attempts");
         raw.Exec("DROP TABLE rescan_state");
         raw.Exec("PRAGMA user_version=5");
     }
@@ -155,11 +158,61 @@ struct FaultVfs {
     ~FaultVfs(){sqlite3_vfs_register(original,1);sqlite3_vfs_unregister(&vfs);current=nullptr;}
 };
 void Rollback(const std::filesystem::path& path){FaultVfs fault;{auto store=Take(s::MetadataStore::Open(path));auto before=Example();Take(store->Save(Scope(),before));before.revision=1;auto after=before;after.display_name="Uncommitted replacement";after.labels.clear();after.freezes.clear();fault.fail=true;const auto result=store->Save(Scope(),after);Check(result.error==s::Error::Io && fault.sync_failures==1 && !fault.fail);Check(Take(store->Load(Scope()))==before);store.reset();store=Take(s::MetadataStore::Open(path));Check(Take(store->Load(Scope()))==before);Check(Take(store->Save(Scope(),after))==2);}Check(fault.files.empty());}
-void DiskFull(const std::filesystem::path& path){
-    {auto store=Take(s::MetadataStore::Open(path,{50,32}));auto before=Example();Take(store->Save(Scope(),before));before.revision=1;auto large=before;large.display_name="Must roll back";large.drafts.clear();for(int i=0;i<32;++i)large.drafts.push_back({"draft-"+std::to_string(i),{1},std::string(65536,'x'),Money::Satoshis(i)});Check(store->Save(Scope(),large).error==s::Error::Full);Check(Take(store->Load(Scope()))==before);}
-    const auto migration_path=path.parent_path()/"migration-full.sqlite";const auto pages=VersionOne(migration_path);auto failed=s::MetadataStore::Open(migration_path,{50,int(pages)});Check(failed.error==s::Error::Full);
-    {Raw raw(migration_path);Check(raw.Number("PRAGMA user_version")==1);Check(raw.Number("SELECT revision FROM scopes")==7);Check(raw.Number("SELECT count(*) FROM sqlite_schema WHERE name='observations'")==0);}
-    auto recovered=Take(s::MetadataStore::Open(migration_path));Check(Take(recovered->Load(Scope())).display_name=="Preserved display");
+struct DiskFullBounds {int64_t page_size, seeded_pages, legacy_pages;};
+DiskFullBounds DiskFull(const std::filesystem::path& path)
+{
+    const auto scope=Scope();
+    auto before=Example();
+    {
+        auto store=Take(s::MetadataStore::Open(path));
+        before.revision=Take(store->Save(scope,before));
+        Check(before.revision==1);
+    }
+    const auto [page_size,seeded_pages]=[&] {
+        Raw raw(path);
+        Check(raw.Number("PRAGMA user_version")==s::schema::Version);
+        return std::pair{raw.Number("PRAGMA page_size"),raw.Number("PRAGMA page_count")};
+    }();
+    Check(page_size>0 && seeded_pages>0 && seeded_pages<s::OpenOptions{}.max_pages);
+    // Use the committed current schema as the floor and admit no extra pages.
+    const s::OpenOptions bounded{50,int(seeded_pages)};
+    auto large=before;
+    large.display_name="Must roll back";
+    large.drafts.clear();
+    for (int i=0;i<32;++i) {
+        large.drafts.push_back({"draft-"+std::to_string(i),{1},std::string(65536,'x'),Money::Satoshis(i)});
+    }
+    {
+        auto store=Take(s::MetadataStore::Open(path,bounded));
+        Check(Take(store->Load(scope))==before);
+        Check(store->Save(scope,large).error==s::Error::Full);
+        Check(Take(store->Load(scope))==before);
+    }
+    {
+        Raw raw(path);
+        Check(raw.Number("PRAGMA page_count")==seeded_pages);
+    }
+    {
+        auto store=Take(s::MetadataStore::Open(path,bounded));
+        Check(Take(store->Load(scope))==before);
+    }
+    const auto migration_path=path.parent_path()/"migration-full.sqlite";
+    const auto legacy_pages=VersionOne(migration_path);
+    Check(legacy_pages>0 && legacy_pages<seeded_pages);
+    const auto failed=s::MetadataStore::Open(migration_path,{50,int(legacy_pages)});
+    Check(failed.error==s::Error::Full);
+    {
+        Raw raw(migration_path);
+        Check(raw.Number("PRAGMA user_version")==1);
+        Check(raw.Number("PRAGMA page_count")==legacy_pages);
+        Check(raw.Number("SELECT revision FROM scopes")==7);
+        Check(raw.Number("SELECT count(*) FROM sqlite_schema WHERE name='observations'")==0);
+    }
+    auto recovered=Take(s::MetadataStore::Open(migration_path));
+    const auto migrated=Take(recovered->Load(scope));
+    Check(migrated.revision==7 && migrated.display_name=="Preserved display"
+        && migrated.labels.size()==1 && migrated.labels[0].text=="Preserved label");
+    return {page_size,seeded_pages,legacy_pages};
 }
 std::string Bytes(const std::filesystem::path& p){std::ifstream f(p,std::ios::binary);return {std::istreambuf_iterator<char>(f),{}};}
 void Corruption(const std::filesystem::path& path){
@@ -198,6 +251,109 @@ void SchemaCollision(const std::filesystem::path& path){
         {auto store=Take(s::MetadataStore::Open(file));Check(Take(store->Load(Scope()))==before);Check(Take(store->LoadObservation(Scope(),"balance")).amount==Money::Satoshis(7));}
     }
 }
+void BroadcastAttempts(const std::filesystem::path& path)
+{
+    auto store=Take(s::MetadataStore::Open(path));
+    auto previous=Example();
+    previous.revision=Take(store->Save(Scope(),previous));
+    store.reset();
+    {
+        Raw raw(path);
+        raw.Exec("DROP TABLE broadcast_details");
+        raw.Exec("DROP TABLE broadcast_attempts");
+        raw.Exec("PRAGMA user_version=6");
+    }
+    store=Take(s::MetadataStore::Open(path));
+    Check(Take(store->Load(Scope()))==previous);
+    const auto digest=[](char c){return *Hash256::Parse(std::string(64,c));};
+    const s::BroadcastAttempt first{{digest('1')},digest('a'),digest('b'),digest('c'),1700000000000};
+    auto alias=first;
+    alias.wtxid=digest('d');
+    alias.wire_digest=digest('e');
+    Check(!Take(store->HasBroadcastAttempt(first.network,first.txid)));
+    Take(store->RecordBroadcastAttempt(first));
+    auto separate=Take(s::MetadataStore::Open(path));
+    Check(Take(separate->HasBroadcastAttempt(first.network,first.txid)));
+    Check(separate->RecordBroadcastAttempt(alias).error==s::Error::Conflict);
+    alias.network.genesis=digest('2');
+    Check(!Take(separate->HasBroadcastAttempt(alias.network,alias.txid)));
+    Take(separate->RecordBroadcastAttempt(alias));
+    auto invalid=first;
+    invalid.observed_ms=0;
+    invalid.txid=digest('3');
+    Check(store->RecordBroadcastAttempt(invalid).error==s::Error::Invalid);
+    Check(!Take(store->HasBroadcastAttempt(invalid.network,invalid.txid)));
+    {
+        Raw raw(path);
+        Check(raw.Number("SELECT count(*) FROM broadcast_attempts")==2);
+        Check(raw.Number("SELECT count(*) FROM broadcast_attempts WHERE genesis LIKE '1%' AND wire_digest LIKE 'c%' AND wtxid LIKE 'b%'")==1);
+    }
+    separate.reset();
+    auto protected_store=Take(store->Protect("disposable-fixture-password"));
+    store.reset();
+    Check(!std::filesystem::exists(path) && Take(protected_store->HasBroadcastAttempt(first.network,first.txid)));
+    auto later=first;
+    later.txid=digest('f');
+    Take(protected_store->RecordBroadcastAttempt(later));
+    protected_store.reset();
+    protected_store=Take(s::MetadataStore::OpenProtected(path,"disposable-fixture-password"));
+    Check(Take(protected_store->HasBroadcastAttempt(first.network,first.txid))
+        && Take(protected_store->HasBroadcastAttempt(alias.network,alias.txid))
+        && Take(protected_store->HasBroadcastAttempt(later.network,later.txid)));
+    Check(protected_store->RecordBroadcastAttempt(later).error==s::Error::Conflict);
+}
+void BroadcastRecovery(const std::filesystem::path& path)
+{
+    using Outcome=s::BroadcastOutcome;
+    const auto txid=*Hash256::Parse("e5c502b049318a05d97fd5765758d878c84c1e747744b852b4d0badbd9b51586");
+    const auto digest=*Hash256::Parse("fb07b331126f5ce4d26e3e5b82f471b63cc106e6aee1fdebb665af8c5b64614a");
+    const NetworkIdentity regtest{*Hash256::Parse("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")};
+    const std::string wire="0200000001"+std::string(64,'1')+"0000000000fdffffff010100000000000000016a00000000";
+    const s::BroadcastAttempt first{regtest,txid,txid,digest,1700000000000};
+    auto store=Take(s::MetadataStore::Open(path));
+    Take(store->RecordBroadcastAttempt(first));
+    store.reset();
+    {
+        Raw raw(path);
+        raw.Exec("DROP TABLE broadcast_details");
+        raw.Exec("PRAGMA user_version=7");
+    }
+    store=Take(s::MetadataStore::Open(path));
+    auto legacy=Take(store->LoadBroadcastAttempt(regtest,txid));
+    Check(legacy && legacy->serial==0 && legacy->wire_hex.empty() && legacy->outcome==Outcome::Pending);
+    s::BroadcastRecord next{first,wire,0,first.observed_ms,Outcome::Pending,{},"verified-backend","watch-only"};
+    auto alternate=next;
+    alternate.wire_hex.back()='1';
+    Check(store->BeginBroadcastAttempt(alternate,0).error==s::Error::Invalid);
+    Check(store->BeginBroadcastAttempt(next,{}).error==s::Error::Conflict);
+    Check(Take(store->BeginBroadcastAttempt(next,0))==1);
+    store.reset();
+    store=Take(s::MetadataStore::Open(path));
+    const auto pending=Take(store->LoadBroadcastAttempt(regtest,txid));
+    Check(pending && pending->serial==1 && pending->outcome==Outcome::Pending && !pending->outcome_ms && pending->wire_hex==wire);
+    Take(store->FinishBroadcastAttempt(first,1,Outcome::Uncertain,first.observed_ms+1));
+    Check(store->FinishBroadcastAttempt(first,1,Outcome::Acknowledged,first.observed_ms+2).error==s::Error::Conflict);
+    auto stale=next;
+    stale.identity.wire_digest=txid;
+    Check(store->BeginBroadcastAttempt(stale,1).error==s::Error::Invalid);
+    next.identity.observed_ms+=2;
+    next.attempted_ms=next.identity.observed_ms;
+    auto competing=Take(s::MetadataStore::Open(path));
+    Check(Take(competing->BeginBroadcastAttempt(next,1))==2);
+    Check(store->BeginBroadcastAttempt(next,1).error==s::Error::Conflict);
+    Check(store->FinishBroadcastAttempt(first,1,Outcome::Rejected,next.attempted_ms).error==s::Error::Conflict);
+    Take(store->FinishBroadcastAttempt(next.identity,2,Outcome::Acknowledged,next.attempted_ms));
+    competing.reset();
+    auto protected_store=Take(store->Protect("disposable-fixture-password"));
+    store.reset();
+    Check(!std::filesystem::exists(path));
+    protected_store.reset();
+    protected_store=Take(s::MetadataStore::OpenProtected(path,"disposable-fixture-password"));
+    const auto recent=Take(protected_store->RecentBroadcastAttempts());
+    Check(recent.size()==1 && recent.front().serial==2 && recent.front().wire_hex==wire
+        && recent.front().outcome==Outcome::Acknowledged && recent.front().identity.observed_ms==first.observed_ms
+        && recent.front().attempted_ms==next.attempted_ms && recent.front().outcome_ms==next.attempted_ms);
+}
 void Actor(const std::filesystem::path& path){
     auto store=Take(s::MetadataStore::Open(path));auto snapshot=Take(store->Load(Scope()));Raw raw(path);std::cout<<"ready\n"<<std::flush;std::string command;
     while(std::getline(std::cin,command)){
@@ -215,7 +371,13 @@ int main(int argc,char** argv){
     try{
         const std::string mode=argv[1];const std::filesystem::path path=argv[2];
         if(mode=="actor"){Actor(path);return 0;}
-        if(mode=="persistence")Persistence(path);else if(mode=="migrations")Migrations(path);else if(mode=="rollback")Rollback(path);else if(mode=="disk-full")DiskFull(path);else if(mode=="corruption")Corruption(path);else if(mode=="schema-collision")SchemaCollision(path);else if(mode=="receive-reservations")ReceiveReservations(path);else if(mode=="rescan-tickets")RescanTickets(path);else return 2;
-        std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"checks\":"<<checks<<",\"sqliteVersion\":\""<<sqlite3_libversion()<<"\",\"openConnectionsSettled\":true}\n";
+        std::optional<DiskFullBounds> bounds;
+        if(mode=="persistence")Persistence(path);else if(mode=="migrations")Migrations(path);else if(mode=="rollback")Rollback(path);else if(mode=="disk-full")bounds=DiskFull(path);else if(mode=="corruption")Corruption(path);else if(mode=="schema-collision")SchemaCollision(path);else if(mode=="receive-reservations")ReceiveReservations(path);else if(mode=="rescan-tickets")RescanTickets(path);else if(mode=="broadcast-attempts")BroadcastAttempts(path);else if(mode=="broadcast-recovery")BroadcastRecovery(path);else return 2;
+        std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"checks\":"<<checks<<",\"sqliteVersion\":\""<<sqlite3_libversion()<<"\",\"openConnectionsSettled\":true";
+        if (bounds) {
+            std::cout<<",\"pageSize\":"<<bounds->page_size<<",\"seededPagesAndWriteCap\":"<<bounds->seeded_pages
+                <<",\"legacyPagesAndMigrationCap\":"<<bounds->legacy_pages;
+        }
+        std::cout<<"}\n";
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

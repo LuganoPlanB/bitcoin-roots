@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
 #include "services/transaction_documents.h"
+#include "adapters/protocol/qr.h"
 #include "adapters/rpc/json.h"
 #include <sodium.h>
 #include <algorithm>
@@ -19,20 +20,26 @@ struct CleanText {
     std::string text;
     ~CleanText(){if (!text.empty()) sodium_memzero(text.data(),text.size());}
 };
-LocalDocumentReply Read(std::string argument, protocol::DisplayNetwork network,bool path,std::stop_token stop)
+}
+LocalDocumentReply TransactionDocuments::Read(std::string argument,protocol::DisplayNetwork network,Source mode,std::stop_token stop)
 {
     if (stop.stop_requested()) return {protocol::DocumentResult{{},protocol::DocumentError::Cancelled}};
     CleanText source;
-    if (!path) source.text=std::move(argument);
+    if (mode==Source::Text || mode==Source::Binary) source.text=std::move(argument);
     else {
-        auto read=ReadPublicFile(argument,protocol::MAX_TRANSACTION_SOURCE,stop,false);
+        const size_t limit=mode==Source::QrImage ? protocol::MAX_QR_IMAGE : protocol::MAX_TRANSACTION_SOURCE;
+        auto read=ReadPublicFile(argument,limit,stop,mode==Source::QrImage);
         source.text=std::move(read.bytes);
         if (read.cancelled) return {protocol::DocumentResult{{},protocol::DocumentError::Cancelled}};
         if (read.limited) return {protocol::DocumentResult{{},protocol::DocumentError::Limit}};
         if (!read.error.empty()) return {{},std::move(read.error)};
     }
-    return {protocol::ParseTransactionDocument(source.text,network,stop,!path)};
-}
+    if (mode==Source::QrImage) {
+        auto text=protocol::DecodeQrImage(source.text,stop);
+        if (text) return {.qr_text=std::move(text)};
+        return {.file_error="Choose a PNG within 1536 pixels per side containing one readable QR code."};
+    }
+    return {protocol::ParseTransactionDocument(source.text,network,stop,mode==Source::Text)};
 }
 bool ValidLocalDocumentPath(std::string_view text)
 {
@@ -47,22 +54,30 @@ TransactionDocuments::~TransactionDocuments()
 }
 bool TransactionDocuments::ReadFile(LocalDocumentContext context,std::string path,protocol::DisplayNetwork network)
 {
-    return ValidLocalDocumentPath(path) && Start(context,std::move(path),network,true);
+    return ValidLocalDocumentPath(path) && Start(context,std::move(path),network,Source::File);
 }
 bool TransactionDocuments::ReadText(LocalDocumentContext context,std::string text,protocol::DisplayNetwork network)
 {
-    return Start(context,std::move(text),network,false);
+    return Start(context,std::move(text),network,Source::Text);
 }
-bool TransactionDocuments::Start(LocalDocumentContext context,std::string source,protocol::DisplayNetwork network,bool path)
+bool TransactionDocuments::ReadQrImage(LocalDocumentContext context,std::string path)
+{
+    return ValidLocalDocumentPath(path) && Start(context,std::move(path),protocol::DisplayNetwork::Unknown,Source::QrImage);
+}
+bool TransactionDocuments::ReadBinary(LocalDocumentContext context,std::string payload,protocol::DisplayNetwork network)
+{
+    return Start(context,std::move(payload),network,Source::Binary);
+}
+bool TransactionDocuments::Start(LocalDocumentContext context,std::string source,protocol::DisplayNetwork network,Source mode)
 {
     CleanText scrub{std::move(source)};
     if (std::this_thread::get_id()!=owner || Busy() || !context.generation) return false;
     try {
         active=context;
         retired=false;
-        worker=std::jthread([this,source=std::move(scrub.text),network,path](std::stop_token stop) mutable {
+        worker=std::jthread([this,source=std::move(scrub.text),network,mode](std::stop_token stop) mutable {
             LocalDocumentReply reply;
-            try {reply=Read(std::move(source),network,path,stop);}
+            try {reply=Read(std::move(source),network,mode,stop);}
             catch (...) {reply.file_error="The local document could not be read within the available resources.";}
             std::lock_guard guard(mutex);
             completed=std::move(reply);

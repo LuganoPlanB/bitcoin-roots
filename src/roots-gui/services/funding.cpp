@@ -55,19 +55,6 @@ uint32_t OutputVsize(std::string_view script)
     const auto bytes = uint32_t(script.size() / 2);
     return bytes + 8 + (bytes < 253 ? 1 : 3);
 }
-uint32_t InputVsize(const FundingCoin& coin)
-{
-    if (coin.script.starts_with("76a914")) return 182; // compressed or uncompressed public key
-    if (coin.script.starts_with("0014")) return 70;
-    if (coin.script.starts_with("5120")) return 60;
-    // All remaining supported input policies were independently checked as
-    // standard public single-key or up-to-15-key multisig. These bound the
-    // serialized satisfaction, including redeem/witness scripts and framing.
-    if (coin.script.starts_with("0020")) return 460;
-    if (coin.proof.redeem_script.starts_with("0014")) return 95;
-    if (coin.proof.redeem_script.starts_with("0020")) return 500;
-    return 1720;
-}
 int64_t RateFee(uint32_t rate, uint32_t size)
 {
     return (int64_t(rate) * size + 999) / 1000;
@@ -156,7 +143,7 @@ FundingPlan Plan(const FundingRequest& request, protocol::DisplayNetwork network
     for (size_t n = 0; n < plan.exact.size(); ++n) {
         const auto& coin = *plan.exact[n];
         Add(selected, coin.amount);
-        vsize += InputVsize(coin);
+        vsize += FundingInputVsizeBound(coin.script,coin.proof.redeem_script);
         if (selected - plan.fixed >= RateFee(request.rate_per_kvb, vsize)) {
             plan.exact.resize(n + 1);
             break;
@@ -230,7 +217,7 @@ FundingPreview Verify(std::string_view encoded, Money reported_fee, int64_t posi
             && input.previous_script == coin.script, "The PSBT previous output conflicts with independently observed wallet evidence.");
         Add(total_in, coin.amount);
         minimum_vsize += 41;
-        maximum_vsize += InputVsize(coin);
+        maximum_vsize += FundingInputVsizeBound(coin.script,coin.proof.redeem_script);
         proofs.push_back({coin.point, coin.amount, coin.proof.descriptor});
         if (request.recheck) verified_coins.push_back(coin);
     }
@@ -263,6 +250,20 @@ FundingPreview Verify(std::string_view encoded, Money reported_fee, int64_t posi
     return {std::move(document), std::move(proofs), has_change ? std::optional(change) : std::nullopt,
         Money::Satoshis(total_in), reported_fee, maximum, std::move(verified_coins)};
 }
+}
+
+uint32_t FundingInputVsizeBound(std::string_view script,std::string_view redeem)
+{
+    if (script.starts_with("76a914")) return 182; // compressed or uncompressed public key
+    if (script.starts_with("0014")) return 70;
+    if (script.starts_with("5120")) return 60;
+    // All remaining supported input policies were independently checked as
+    // standard public single-key or up-to-15-key multisig. These bound the
+    // serialized satisfaction, including redeem/witness scripts and framing.
+    if (script.starts_with("0020")) return 460;
+    if (redeem.starts_with("0014")) return 95;
+    if (redeem.starts_with("0020")) return 500;
+    return 1720;
 }
 
 std::optional<FundingChange> DeriveFundingChange(std::string_view descriptor,uint32_t index,protocol::DisplayNetwork network)

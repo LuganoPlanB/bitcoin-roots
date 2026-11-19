@@ -221,6 +221,7 @@ void Verify(const std::filesystem::path& directory,const std::filesystem::path& 
 }
 void PolicyVector(const std::filesystem::path& path,bool rejected)
 {
+    std::optional<p::FinalTransaction> reviewed_final;
     const auto base=Parsed(path/"base.psbt");
     const auto signed_psbt=Parsed(path/"signature.psbt");
     const auto merged=p::MergeOfflineSignatures(*base,*signed_psbt);
@@ -253,8 +254,31 @@ void PolicyVector(const std::filesystem::path& path,bool rejected)
         for(size_t i=0;i<actual.outputs.size();++i)
             Check(actual.outputs[i].value==expected.outputs[i].value && actual.outputs[i].script==expected.outputs[i].script,
                 "exact ordered output survives finalization");
+        if (std::filesystem::exists(path/"descriptor.txt")) {
+            const auto& input=expected.inputs.front();
+            Check(input.previous_value && expected.fee,"known independent previous value and fee");
+            const auto descriptor=p::PreviewPublicWallet(p::PublicImportKind::Descriptor,Read(path/"descriptor.txt"),"regtest");
+            Check(descriptor.preview && descriptor.preview->descriptors.size()==1,"independent public vector descriptor");
+            const p::OfflineReviewEvidence proof{p::DisplayNetwork::Regtest,
+                {{input.outpoint,*input.previous_value,descriptor.preview->descriptors.front().descriptor}},
+                expected.outputs,*expected.fee,{}};
+            const auto approved=p::FinalizeReviewedDraft(*base,*merged.document,proof,{});
+            if (!approved.final) throw std::runtime_error(approved.error);
+            Check(approved.final->document->wire==final.document->wire && approved.final->fee==*expected.fee,
+                "approved final bytes are identical to strict assembly");
+            Check(!p::FinalizeReviewedDraft(*base,*base,proof,{}).final,"incomplete input cannot finalize under approval");
+            reviewed_final=approved.final;
+        }
     }
-    std::cout<<"{\"checks\":"<<checks<<",\"expectedRejection\":"<<(rejected?"true":"false")<<"}\n";
+    std::cout<<"{\"checks\":"<<checks<<",\"expectedRejection\":"<<(rejected?"true":"false");
+    if (reviewed_final) {
+        const auto& facts=*reviewed_final;
+        const auto& tx=*facts.document->transaction;
+        std::cout<<",\"final\":{\"txid\":"<<rpc::Quote(tx.txid->hex())<<",\"wtxid\":"<<rpc::Quote(tx.wtxid->hex())
+            <<",\"size\":"<<facts.size<<",\"stripped\":"<<facts.stripped_size<<",\"weight\":"<<facts.weight
+            <<",\"vsize\":"<<facts.vsize<<",\"wire\":"<<rpc::Quote(p::TransactionHex(facts.document->wire))<<"}";
+    }
+    std::cout<<"}\n";
 }
 void CheckSpent(Online& online,const std::filesystem::path& metadata)
 {

@@ -67,3 +67,37 @@ the same native owner and immutable publications. Its real AT-SPI bus, Orca
 braille-monitor journey and failure/teardown evidence are separate from the
 historical bootstrap matrix above. Speech/audio, hardware braille, complete IME
 and physical/mixed-DPI/platform follow-ons are not implied by monitor evidence.
+
+
+## Linux QR camera
+
+From a QR import dialog, Find cameras checks a bounded list of local V4L2
+character-device identities without opening them. Open selected camera makes
+the explicit access request and confirms the device still matches. Start capture
+begins streaming at the selected discrete resolution. Linux reports permission
+and device failures through the adapter. PNG and decoded-text import remain
+available when the camera is stopped or unavailable.
+
+The capture path accepts single-plane V4L2 MMAP streams with uncompressed YUYV
+or grayscale at 160×120 through 1280×960. It validates format, stride, mapping
+identity, offsets and frame lengths before accessing any pixels. It uses at
+most four mapped buffers and 12 MiB of mappings, with at most four decoding
+attempts per second and one published frame. Capture ends after two minutes,
+or after five seconds without frames. MJPEG, multiplanar capture, and modes
+without discrete resolution evidence are unavailable. The kernel interface and
+buffer contract are described in the
+[V4L2 capture documentation](https://docs.kernel.org/userspace-api/media/v4l/mmap.html).
+
+Stopping, closing, hiding, losing window focus, or changing document context
+retires the stream and any pending validation. The worker sends STREAMOFF,
+unmaps buffers and closes the descriptor. Reopening requires an explicit action.
+A driver call already blocked in the kernel is governed by the driver; polling
+for normal frames waits no more than 50 ms per iteration.
+
+The portable camera interface reports unavailable on macOS and Windows.
+Follow-on work includes an AVFoundation capture adapter and usage description,
+TCC permission/denial/revocation, selected device and format validation, and
+real preview/lifetime evidence on macOS. Windows needs a Media Foundation
+capture adapter, system camera privacy/denial/revocation handling, format and
+buffer validation, and real preview/lifetime evidence. Physical Linux camera
+model, driver and lighting interoperability also requires device evidence.

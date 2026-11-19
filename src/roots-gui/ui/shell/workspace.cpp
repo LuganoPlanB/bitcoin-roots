@@ -23,7 +23,7 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
     s.invocation=Invocation{id,active?active->id:0,availability.available,false,false,availability.reason};
     if(!availability.available){s.notice=availability.reason;return;}
     s.invocation->accepted=true;s.notice.clear();
-    if((id==a::Command::LockCurrent || id==a::Command::LockAll) && s.recovery){s.invocation->accepted=RequestPrivacyLock(s);return;}
+    if((id==a::Command::LockCurrent || id==a::Command::LockAll) && s.recovery){s.invocation->accepted=RequestPrivacyLock(s,host);return;}
     if(id==a::Command::Recovery && s.recovery){s.recovery_dialog.open=true;s.recovery_dialog.initialFocus=true;return;}
     if (host.Wallets()) {
         OnboardingPage page = OnboardingPage::None;
@@ -59,10 +59,18 @@ void Execute(State& s,a::Command id,a::Requests& host,Facts& f,bool semantic=fal
     if(id==a::Command::RenameWallet){BeginRename(s,s.documents.ActiveId());return;}
     if(id==a::Command::DeleteWallet){BeginDelete(s,s.documents.ActiveId());return;}
     if(host.LocalDocuments()) {
+        if (id==a::Command::SubmissionAttempts) {
+            s.invocation->accepted=BeginLocalDocument(s,host,LocalDocumentMode::BroadcastAttempts);
+            return;
+        }
         if (id==a::Command::TransactionFile || id==a::Command::TransactionText || id==a::Command::SaveTransaction) {
             const auto mode=id==a::Command::TransactionFile ? LocalDocumentMode::File
                 : id==a::Command::TransactionText ? LocalDocumentMode::Text : LocalDocumentMode::Save;
             s.invocation->accepted=BeginLocalDocument(s,host,mode);
+            return;
+        }
+        if (id==a::Command::TransactionQR || id==a::Command::ShowQR) {
+            s.invocation->accepted=BeginLocalDocument(s,host,id==a::Command::ShowQR ? LocalDocumentMode::ShowQr : LocalDocumentMode::Qr);
             return;
         }
         if (id==a::Command::TransactionHex) {
@@ -444,11 +452,19 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     if(s.recovery && s.recovery->Pending() && !s.recovery_prompted){s.recovery_dialog.open=true;s.recovery_dialog.initialFocus=true;s.recovery_prompted=true;}
     if(s.semantic_hide_toggle){s.privacy.hidden=!s.privacy.hidden;s.semantic_hide_toggle=false;}
     if(components::native_input)components::native_input->Privacy(s.privacy.hidden);
+    PollReplacement(s,host);
     const auto* active=s.documents.Active();const auto active_id=active?active->id:0;
     if (s.send_view.document && (!active || active_id != s.send_view.document || s.privacy.hidden
         || (active->kind == app::DocumentKind::Wallet && active->section != a::Section::Send)))
         RetireSendView(s);
     const bool locked=active && active->observation==app::ObservationState::Locked;
+    if (auto* devices=host.Devices()) {
+        const auto section=active ? std::optional{active->section} : std::nullopt;
+        if (s.previous_document!=active_id || s.previous_device_section!=section || locked || s.privacy.hidden
+            || (s.recovery && s.recovery->Locked())) devices->Cancel();
+        s.previous_device_section=section;
+        devices->Poll(host.Connection());
+    }
     // A retired body must leave a real focus target for keyboard/native readers.
     // Observe the model so external lock observations take the same path as UI
     // commands; this one-shot transition never steals focus on later frames.
@@ -472,6 +488,8 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     PollFunding(s,host);
     PollTransactionEditors(s,host);
     PollSigningReviews(s,host);
+    s.broadcasts=host.Broadcasts();
+    PollBroadcast(s,host);
     Facts f;s.native_drop_target={};s.observations=host.Observe();s.presentation.Begin(SemanticScope(s),[&s]{return SemanticScope(s);});s.presentation.Suppress(s.actions.kind!=DocumentDialog::None || s.recovery_dialog.open || s.onboarding.dialog.open || s.local_document.dialog.open);const float scale=appearance.font_scale*appearance.dpi_scale;const auto* vp=ImGui::GetMainViewport();
     if(work_size.x<=0 || work_size.y<=0)work_size=vp->WorkSize;
     ImGui::SetNextWindowPos(vp->WorkPos);ImGui::SetNextWindowSize(work_size);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});

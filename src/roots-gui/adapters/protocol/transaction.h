@@ -37,6 +37,9 @@ struct PsbtPolicy {
     bool final_fields{};
     bool signature_fields{};
 };
+struct RawTransactionSizes {
+    size_t stripped{},weight{},vsize{};
+};
 struct TransactionInspection {
     uint32_t version{};
     std::optional<uint32_t> locktime;
@@ -47,6 +50,7 @@ struct TransactionInspection {
     std::optional<Money> fee;
     bool witness{}, coinbase{};
     bool script_sig{};
+    std::optional<RawTransactionSizes> sizes; // exact raw serialization only
 };
 struct ByteSpan {
     size_t offset{},length{};
@@ -118,10 +122,18 @@ std::string_view DocumentNetworkName(DisplayNetwork);
 std::string_view DocumentChain(DisplayNetwork);
 DisplayNetwork DocumentNetwork(const NetworkIdentity&);
 std::string TransactionHex(std::string_view);
+struct PsbtOutboundCopy {
+    std::string wire;
+    size_t omitted_global_xpubs{};
+};
+std::optional<PsbtOutboundCopy> PsbtForQr(const TransactionDocument&,DisplayNetwork,bool omit_global_xpubs);
 std::string TransactionBase64(std::string_view);
 std::optional<std::string> DecodeTransactionBase64(std::string_view, size_t maximum);
 std::optional<std::string> OutputAddress(std::string_view script_hex, DisplayNetwork);
 std::optional<std::string> AddressScript(std::string_view address, DisplayNetwork);
+// Add missing non-witness UTXOs from independently read, exact previous transactions.
+std::shared_ptr<const TransactionDocument> WithMatchedPreviousOutputs(const TransactionDocument&,
+    DisplayNetwork, std::span<const std::shared_ptr<const TransactionDocument>>);
 std::optional<std::string> MergePsbtMaps(const TransactionDocument& target, const TransactionDocument& supplied);
 std::optional<Hash256> TransactionCommitment(const TransactionDocument&);
 // Returns the first policy or transaction change. Independent of format and map order.

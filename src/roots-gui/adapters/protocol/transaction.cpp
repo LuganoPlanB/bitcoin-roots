@@ -441,6 +441,12 @@ void ReadTx(TransactionDocument& document,const Budget& budget)
         std::ranges::reverse(witness_id);
         data.wtxid=Hash256::Parse(TransactionHex(Data(witness_id.data(),witness_id.size())));
     }
+    size_t stripped{};
+    if (wally_tx_get_length(tx.get(),0,&stripped)==WALLY_OK && stripped && stripped<=document.wire.size()
+        && (shape.witness || stripped==document.wire.size())) {
+        const size_t weight=3*stripped+document.wire.size();
+        data.sizes=RawTransactionSizes{stripped,weight,(weight+3)/4};
+    }
     data.witness=shape.witness;
     data.coinbase=shape.coinbase;
     for (size_t i=0;i<tx->num_inputs;++i) {
@@ -594,6 +600,31 @@ std::string TransactionHex(Bytes bytes)
     if (result!=WALLY_OK || !hex) throw std::bad_alloc();
     return hex.get();
 }
+std::optional<PsbtOutboundCopy> PsbtForQr(const TransactionDocument& source,DisplayNetwork network,bool omit)
+{
+    if (!source.psbt_version || !source.transaction || !source.wire.starts_with(PSBT_MAGIC)) return {};
+    if (!omit) return PsbtOutboundCopy{source.wire,0};
+    try {
+        Reader reader(source.wire);
+        Require(reader.Take(PSBT_MAGIC.size())==PSBT_MAGIC);
+        PsbtOutboundCopy copy{std::string(PSBT_MAGIC),0};
+        while (true) {
+            const auto begin=reader.Offset();
+            auto key=reader.Vector(MAX_TRANSACTION_WIRE);
+            if (key.empty()) {
+                copy.wire+=std::string_view(source.wire).substr(begin);
+                break;
+            }
+            reader.Vector(MAX_TRANSACTION_WIRE);
+            if (key.size()==79 && key.front()==1) ++copy.omitted_global_xpubs;
+            else copy.wire+=reader.Range(begin);
+        }
+        const auto parsed=ParseTransactionDocument(copy.wire,network).document;
+        Require(parsed && parsed->psbt_version==source.psbt_version && parsed->unsigned_wire==source.unsigned_wire);
+        return copy;
+    } catch (...) {return {};}
+}
+
 std::string TransactionBase64(Bytes bytes)
 {
     if (bytes.empty()) return {};
@@ -1040,6 +1071,39 @@ std::string EditedSource(const TransactionDocument& original,std::string wire)
     default: return wire;
     }
 }
+}
+
+std::shared_ptr<const TransactionDocument> WithMatchedPreviousOutputs(const TransactionDocument& target,
+    DisplayNetwork network,std::span<const std::shared_ptr<const TransactionDocument>> previous)
+{
+    if (!target.psbt_version || !target.transaction || previous.size()!=target.transaction->inputs.size()) return {};
+    try {
+        Reader reader(target.wire);
+        Require(reader.Take(5)==PSBT_MAGIC);
+        std::string wire(PSBT_MAGIC);
+        EditMap(reader).Write(wire);
+        for (size_t i=0;i<previous.size();++i) {
+            EditMap map(reader);
+            const auto& input=target.transaction->inputs[i];
+            const auto& source=previous[i];
+            Require(source && !source->psbt_version && source->transaction && source->transaction->txid==input.outpoint.txid
+                && input.outpoint.index<source->transaction->outputs.size() && input.evidence!=PrevoutEvidence::Conflict);
+            const auto& output=source->transaction->outputs[input.outpoint.index];
+            Require((!input.previous_value || input.previous_value==output.value)
+                && (input.previous_script.empty() || input.previous_script==output.script));
+            if (!map.Contains(0)) map.changes.emplace(0,source->wire);
+            map.Write(wire);
+            Require(wire.size()<=MAX_TRANSACTION_WIRE,Error::Limit);
+        }
+        for (const auto& output:target.transaction->outputs) {
+            (void)output;
+            EditMap(reader).Write(wire);
+        }
+        Require(reader.Empty() && wire.size()<=MAX_TRANSACTION_WIRE);
+        auto result=ParseTransactionDocument(wire,network).document;
+        Require(result && result->unsigned_wire==target.unsigned_wire);
+        return result;
+    } catch (...) {return {};}
 }
 
 EditedTransaction EditTransaction(const TransactionDocument& original,DisplayNetwork network,const TransactionEdit& edit)
