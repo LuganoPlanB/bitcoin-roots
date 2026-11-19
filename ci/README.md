@@ -176,7 +176,9 @@ job remain required. Skipped assurance is reported as skipped, never as a pass.
 Removing the label restores normal selection. Unknown or incomplete file lists
 ignore this reduction and retain broad coverage. Explicit assurance labels take
 precedence, so `ci:full` restores all coverage even alongside `ci:quick`.
-Core-only PRs retain their existing default selection even with `ci:quick`.
+Core-only PRs and mixed GUI/Core runtime changes retain their existing default
+selection even with `ci:quick`. The reduction is limited to GUI sources, docs,
+CI/lint support, the two parent CMake hooks and Ruff configuration.
 
 Labels `ci:sanitizers`, `ci:fuzz`, `ci:platforms` and `ci:full` request heavy
 reusable assurance; `ci:compat` requests fresh fast compatibility regressions.

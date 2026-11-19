@@ -99,13 +99,16 @@ class ChangeClassifierTest(unittest.TestCase):
 
     def test_quick_cannot_suppress_uncertain_inputs_or_core_only_prs(self):
         for files, truncated, error in ((["src/roots-gui/main.cpp", "unknown-file"], False, False),
+                                         (["src/roots-gui/main.cpp", 17], False, False),
                                          (["src/roots-gui/main.cpp"], True, False),
                                          (["src/roots-gui/main.cpp"], False, True),
+                                         (["src/roots-gui/main.cpp", "src/validation.cpp"], False, False),
+                                         (["src/roots-gui/main.cpp", "src/wallet/wallet.cpp"], False, False),
                                          (["src/validation.cpp"], False, False)):
             with self.subTest(files=files, truncated=truncated, error=error):
                 result = MODULE.result_for(files, ["ci:quick"], truncated, error, self.policy)
                 self.assertTrue(result["selected"]["sanitizers"])
-                self.assertTrue(result["selected"]["gui"])
+                self.assertTrue(result["selected"]["compat"])
 
     def test_v32_profiles_schemas_and_system_library_inputs_keep_fast_coverage(self):
         for path in ['CMakePresets.json', 'vcpkg.json', 'depends/packages/qt.mk',

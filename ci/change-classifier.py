@@ -75,7 +75,12 @@ def result_for(files, labels, truncated, error, policy, reuse_canonical_ci=False
     # A maintainer may opt a GUI PR into a bounded routine profile after its
     # one-off assurance. Missing/unknown input must still fail open. Explicit
     # assurance labels below always take precedence over this cost reduction.
-    quick = "ci:quick" in labels and complete and "unknown" not in categories and "roots-gui" in categories
+    quick_paths = complete and "unknown" not in categories and all(
+        path.startswith(("src/roots-gui/", ".github/", "ci/", "test/lint/", "doc/"))
+        or path in ("CMakeLists.txt", "src/CMakeLists.txt", "ruff.toml")
+        for path in files)
+    quick = ("ci:quick" in labels and quick_paths and "unknown" not in categories
+             and "roots-gui" in categories)
     if quick:
         selected.update({name: False for name in BROAD_SELECTION if name != "standalone_gui"})
         broad = False
