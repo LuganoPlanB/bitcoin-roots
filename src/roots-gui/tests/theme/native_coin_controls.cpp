@@ -32,7 +32,7 @@ struct Observer final:platform::NativeObserver {
         if(stage==3 && after(0)){Release();stage=4;base=int(f.rendered_frames);return;}
         if(stage==4 && after()){press("toggle-group");stage=5;return;}
         if(stage==5 && after(0)){Release();stage=6;base=int(f.rendered_frames);return;}
-        if(stage==6 && after()){Check(wallet->coins.selected.size()==1,"native exact first group selection");keys={*wallet->coins.selected.begin()};Check(state.coins.at(1).inventory->Rows().at(keys[0]).eligible==true,"chosen actual output locally eligible");Click(host,facts.coin.at("row-"+keys[0]),true,3);stage=7;base=int(f.rendered_frames);return;}
+        if(stage==6 && after()){Check(wallet->coins.Selection().size()==1,"native exact first group selection");keys={*wallet->coins.Selection().begin()};Check(state.coins.at(1).inventory->Rows().at(keys[0]).eligible==true,"chosen actual output locally eligible");Click(host,facts.coin.at("row-"+keys[0]),true,3);stage=7;base=int(f.rendered_frames);return;}
         if(stage==7 && after(0)){Release(3);stage=8;base=int(f.rendered_frames);return;}
         if(stage==8 && after()){Check(facts.coin.contains("freeze"),"actual native outpoint context opens");Capture(f,"coin-context-actions");press("freeze");stage=9;return;}
         if(stage==9 && after(0)){Release();stage=10;base=int(f.rendered_frames);return;}
@@ -44,7 +44,7 @@ struct Observer final:platform::NativeObserver {
         if(stage==15 && after(0)){Release();stage=16;base=int(f.rendered_frames);return;}
         if(stage==16 && after()){press("toggle-group");stage=17;return;}
         if(stage==17 && after(0)){Release();stage=18;base=int(f.rendered_frames);return;}
-        if(stage==18 && after()){selected=wallet->coins.selected;Check(selected.size()==2,"actual two exact chart/table selections");press("send-selected");stage=19;return;}
+        if(stage==18 && after()){selected=wallet->coins.Selection();Check(selected.size()==2,"actual two exact chart/table selections");press("send-selected");stage=19;return;}
         if(stage==19 && after(0)){Release();stage=20;base=int(f.rendered_frames);return;}
         if(stage==20 && after()){draft=state.documents.ActiveId();const auto* d=state.documents.Find(draft);Check(draft!=1 && d && d->coin_draft && d->coin_draft->inputs.size()==2,"actual typed pinned draft document");for(const auto& p:d->coin_draft->inputs)Check(selected.contains(a::CoinKey(p.outpoint)),"every selected identity transferred exactly");Check(!state.coin_controls.Owner(draft),"pinning alone confers no reservation");Capture(f,"send-pinned-coins");press("validate-pins");stage=21;return;}
         if(stage==21 && after(0)){Release();stage=22;base=int(f.rendered_frames);return;}
@@ -54,11 +54,11 @@ struct Observer final:platform::NativeObserver {
         if(stage==25 && after(0)){Release();stage=26;base=int(f.rendered_frames);return;}
         if(stage==26){const auto* d=state.documents.Find(draft);if(!d || !d->coin_draft || d->coin_draft->inputs[0].current_reason.find("external daemon lock")==std::string::npos || d->coin_draft->inputs[1].current_reason.find("absent")==std::string::npos)return;Check(!state.coin_controls.Owner(draft) && state.coin_controls.DraftStatus(draft).find("denied")!=std::string::npos,"actual external lock and spent-between-selection/preflight deny ownership/funding");Check(d->selected_coins.size()==2,"actual denied pins not dropped or substituted");for(const auto& p:d->selected_coins)Check(selected.contains(a::CoinKey(p)),"same exact denied outpoints retained");Capture(f,"pinned-newly-unavailable");press("show-coins");stage=27;return;}
         if(stage==27 && after(0)){Release();stage=28;base=int(f.rendered_frames);return;}
-        if(stage==28 && after()){Check(state.documents.ActiveId()==1 && wallet->coins.selected==selected,"return preserves selected locked/spent identities");Key(XK_Control_L,true);Key(XK_Shift_L,true);Key(XK_h,true);stage=29;base=int(f.rendered_frames);return;}
+        if(stage==28 && after()){Check(state.documents.ActiveId()==1 && wallet->coins.Selection()==selected,"return preserves selected locked/spent identities");Key(XK_Control_L,true);Key(XK_Shift_L,true);Key(XK_h,true);stage=29;base=int(f.rendered_frames);return;}
         if(stage==29 && after(0)){Key(XK_h,false);Key(XK_Shift_L,false);Key(XK_Control_L,false);stage=30;base=int(f.rendered_frames);return;}
         if(stage==30 && after()){Check(state.privacy.hidden && !facts.coin.at("clear-selection").disabled && state.presentation.ChartSamples().empty(),"Clear remains available for hidden/unavailable exact selection");Capture(f,"clear-pinned-selection-hidden");press("clear-selection");stage=31;return;}
         if(stage==31 && after(0)){Release();stage=32;base=int(f.rendered_frames);return;}
-        if(stage==32 && after()){Check(wallet->coins.selected.empty() && state.documents.Find(draft)->selected_coins.size()==2 && !state.coin_controls.Owner(draft),"Clear selection works independently of retained public draft pins");requests.connection.SetOffline(true);requests.refresh.Unbind();stage=33;return;}
+        if(stage==32 && after()){Check(wallet->coins.Selection().empty() && state.documents.Find(draft)->selected_coins.size()==2 && !state.coin_controls.Owner(draft),"Clear selection works independently of retained public draft pins");requests.connection.SetOffline(true);requests.refresh.Unbind();stage=33;return;}
         if(stage==33 && !requests.refresh.Busy()){done=true;host.RequestClose();}
     }
     void Key(KeySym sym,bool down){Check(key(display,XKeysymToKeycode(display,sym),down,0),"native coin key");XSync(display,False);}

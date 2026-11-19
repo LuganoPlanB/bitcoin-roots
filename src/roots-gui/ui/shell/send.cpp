@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "adapters/protocol/public_wallet.h"
 #include "ui/theme/theme.h"
@@ -29,8 +30,9 @@ app::Document* Editable(State& state, uint64_t document, uint64_t recipient)
 void Text(State& state, const char* id, const char* label, const std::string& value,
     SemanticRole role = SemanticRole::Text)
 {
-    ImGui::TextWrapped("%s", value.c_str());
-    state.presentation.Annotate(id, label, value, role);
+    const auto shown = locale::Translate(value, locale::Messages());
+    ImGui::TextWrapped("%.*s", int(shown.size()), shown.data());
+    state.presentation.Annotate(id, locale::Text(label), shown, role);
 }
 
 c::ItemFacts Item(bool pressed, bool disabled)
@@ -47,10 +49,10 @@ void Button(State& state, Facts& facts, const imkit::Theme& theme, const std::st
 {
     ImGui::PushID(key.c_str());
     ImGui::BeginDisabled(!enabled);
-    const bool pressed = theme::ActionButton(visible, selected ? imkit::ActionVariant::Primary
+    const bool pressed = theme::ActionButton(locale::Text(visible), selected ? imkit::ActionVariant::Primary
         : imkit::ActionVariant::Secondary, {width, 0}, theme);
     facts.send[key] = Item(pressed, !enabled);
-    const auto semantic = state.presentation.Interact(accessible, SemanticRole::Button,
+    const auto semantic = state.presentation.Interact(locale::Text(accessible), SemanticRole::Button,
         SemanticAction::Press | SemanticAction::Focus, !enabled, selected);
     ImGui::EndDisabled();
     ImGui::PopID();
@@ -81,7 +83,8 @@ void Field(State& state, Facts& facts, uint64_t document, const SendRecipient& r
     if (last != value) external = value;
     last = value;
     c::TextPosition cursor;
-    ImGui::TextUnformatted(label);
+    const char* translated = locale::Text(label);
+    ImGui::TextWrapped("%s", translated);
     ImGui::PushID(id);
     ImGui::SetNextItemWidth(-1);
     ImGui::BeginDisabled(disabled);
@@ -93,8 +96,10 @@ void Field(State& state, Facts& facts, uint64_t document, const SendRecipient& r
         if (auto* active = Editable(state, document, row.id);
             active && active->recipients.Edit(row.id, field, edited, active->draft_revision)) last = edited;
     }
-    const auto semantic = state.presentation.Interact(label, SemanticRole::TextField,
-        SemanticAction::SetValue | SemanticAction::Focus, disabled, false, last);
+    const char* instructions = field == RecipientField::Amount && row.unit == RecipientUnit::BTC
+        ? locale::Text("A comma or period marks decimals. Enter amounts without digit grouping.") : "";
+    const auto semantic = state.presentation.Interact(translated, SemanticRole::TextField,
+        SemanticAction::SetValue | SemanticAction::Focus, disabled, false, last, instructions);
     state.presentation.BindTextPosition(ImGui::GetItemID(), last, cursor);
     if (semantic) state.presentation.Defer(*semantic, [&state, document, recipient = row.id, field](const auto& action) {
         auto* active = Editable(state, document, recipient);
@@ -244,23 +249,34 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
         ImGui::PopID();
         return;
     }
-    if (ImGui::BeginTable("recipients", 2, ImGuiTableFlags_SizingStretchProp)) {
+    const float recipient_width = std::max(92*scale, theme::ActionWidth(locale::Text("Recipients")));
+    const float destination_width = row.address.empty() ? 0.F : theme::ActionWidth(row.address.c_str());
+    const float payment_width = std::max({
+        theme::ActionWidth(locale::Text("Apply destination")), theme::ActionWidth(locale::Text("Wallet address")),
+        theme::ActionWidth(locale::Text("Import QR")), theme::ActionWidth(locale::Text("Unset Max")), destination_width
+    });
+    const float cell_insets = 4 * ImGui::GetStyle().CellPadding.x + ImGui::GetStyle().ScrollbarSize;
+    const bool split = ImGui::GetContentRegionAvail().x >= payment_width + recipient_width + cell_insets;
+    if (ImGui::BeginTable("recipients", split ? 2 : 1, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("Payment", ImGuiTableColumnFlags_WidthStretch, 1);
-        ImGui::TableSetupColumn("Recipients", ImGuiTableColumnFlags_WidthFixed, 92 * scale);
+        if (split) ImGui::TableSetupColumn("Recipients", ImGuiTableColumnFlags_WidthFixed, recipient_width);
         ImGui::TableNextColumn();
+        const auto* draw = ImGui::GetWindowDrawList();
+        state.presentation.Group("send-payment", locale::Text("Payment recipient"), SemanticRole::Group,
+            draw->GetClipRectMin(), draw->GetClipRectMax());
         ImGui::PushID(scope.c_str());
         Field<MAX_PAYMENT_TEXT>(state, facts, document, row, RecipientField::Destination, "pay-to",
             "Pay to", row.pay_to, !edit);
         Button(state, facts, theme, "apply", "Apply destination", "Apply destination", edit && row.pay_to != row.address,
             [&state, document, recipient] {return Apply(state, document, recipient);});
-        ImGui::SameLine();
+        theme::SameLineForAction(locale::Text("Wallet address"));
         Button(state, facts, theme, "wallet", "Wallet address", "Choose an open wallet address", edit,
             [&state, document, recipient] {
                 if (!Editable(state, document, recipient)) return false;
                 state.send_view.wallet_destinations = !state.send_view.wallet_destinations;
                 return true;
             }, view.wallet_destinations);
-        ImGui::SameLine();
+        theme::SameLineForAction(locale::Text("Import QR"));
         Button(state, facts, theme, "qr", "Import QR", "Import payment QR", edit && host.LocalDocuments(),
             [&state,&host,document,recipient] {
                 return Editable(state,document,recipient) && BeginLocalDocument(state,host,LocalDocumentMode::PaymentQr);
@@ -277,7 +293,7 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
                 return doc && doc->recipients.SetUnit(recipient, sats ? RecipientUnit::BTC : RecipientUnit::Sats,
                     doc->draft_revision);
             });
-        ImGui::SameLine();
+        theme::SameLineForAction(locale::Text(row.maximum ? "Unset Max" : "Max"));
         Button(state, facts, theme, "max", row.maximum ? "Unset Max" : "Max", "Use remaining funds for this recipient",
             edit, [&state, document, recipient] {
                 auto* doc = Editable(state, document, recipient);
@@ -296,9 +312,10 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
         if (current->maximum && !current_max)
             Text(state, "send-max-unknown", "Max amount", "Max amount is Unknown until funding is calculated.");
         ImGui::PopID();
+        state.presentation.EndGroup();
 
         ImGui::TableNextColumn();
-        ImGui::TextUnformatted("Recipients");
+        ImGui::TextWrapped("%s", locale::Text("Recipients"));
         // Selection itself does not change the draft, and IDs survive deletion
         // and renumbering. The visible number follows the actual recipient order.
         const auto& rows = active->recipients.rows;
@@ -334,7 +351,12 @@ void DrawSendRecipients(State& state, app::Requests& host, Facts& facts, const i
         ImGui::EndTable();
     }
     const auto eligible = EligibleFunds(state, host, *active);
-    const auto totals = CheckSendFunds(active->recipients, eligible);
+    auto& cache=view.totals;
+    if (!cache || cache->revision!=active->draft_revision || cache->eligible!=eligible) {
+        facts.work.send_counted=active->recipients.rows.size();
+        cache=SendView::Totals{active->draft_revision,eligible,CheckSendFunds(active->recipients,eligible)};
+    }
+    const auto& totals=cache->amounts;
     if (totals.above_money_limit)
         Text(state, "send-bounded-amounts", "Payment validation", "Fixed amounts exceed the Bitcoin supply.", SemanticRole::Alert);
     if (totals.insufficient)

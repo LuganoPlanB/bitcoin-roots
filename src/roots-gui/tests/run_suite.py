@@ -16,12 +16,13 @@ import tempfile
 import xml.etree.ElementTree as ET
 from support.runtime import evidence_directory,write_json
 
+RELEASE_WORKSPACE="roots_gui.visual.release_workspace"
 SUITES={
  'model':('roots-gui.model',{'roots_gui.models','roots_gui.preferences.models','roots_gui.fixture_contracts','roots_gui.screen_contracts','roots_gui.wallet_import.models','roots_gui.receive.models','roots_gui.settings.models','roots_gui.keystore.models','roots_gui.rescan.models','roots_gui.protocol.documents','roots_gui.protocol.offline_draft',*[f'roots_gui.{x}' for x in ['connection.models','refresh.models','history.model','history.workspace','history.states','address.models','coin.models','coin.controls','storage.schema','storage.protected','storage.conversion','storage.recovery']]}),
  'rpc':('rpc',{'roots_gui.connection.models','roots_gui.refresh.models',*[f'roots_gui.rpc.{x}' for x in ['fake_http','scratch','json','transport','capabilities','refresh','history','history_bounds','addresses']]}),
  'ui':('ui',{'roots_gui.theme.contracts','roots_gui.theme.assets','roots_gui.theme.focus_checker','roots_gui.theme.privacy_checker','roots_gui.theme.shell_checker','roots_gui.theme.status_focus_checker',*[f'roots_gui.engine.{x}' for x in ['preferences','bootstrap','appearance','components','privacy','shell','documents','commands','semantics','server','history','addresses','coins','coin_controls','wallet_onboarding']],*[f'roots_gui.theme.{x}' for x in ['session_recovery','wallet_locked','connection_offline_stale','history','addresses','coins','coin_controls','wallet_onboarding']],*[f'roots_gui.imkit.{x}' for x in ['theme','design_system','workflow','charts','api_compile','design_api_compile','charts_api_compile']]}),
  'regtest':('regtest',{'roots_gui.regtest.owned','roots_gui.rpc.history',*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding']]}),
- 'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts','roots_gui.theme.native_gallery','roots_gui.theme.native_appearance','roots_gui.theme.native_components','roots_gui.theme.native_shell','roots_gui.theme.native_shell_appearance','roots_gui.theme.native_documents','roots_gui.theme.native_commands','roots_gui.theme.native_semantics'}),
+ 'visual':('visual',{'roots_gui.visual.native','roots_gui.visual.contracts',RELEASE_WORKSPACE,'roots_gui.theme.native_gallery','roots_gui.theme.native_appearance','roots_gui.theme.native_components','roots_gui.theme.native_shell','roots_gui.theme.native_shell_appearance','roots_gui.theme.native_documents','roots_gui.theme.native_commands','roots_gui.theme.native_semantics'}),
  'boundary':('boundary',{'roots_gui.boundary.actual','roots_gui.boundary.rejections','roots_gui.build_contract',*[f'roots_gui.runner.{x}' for x in ['failure','unknown','count','undrained','timeout']]}),
 }
 ACCESSIBILITY={f'roots_gui.accessibility.{x}' for x in ['native','transport','input','orca','display_allocation']}
@@ -129,8 +130,9 @@ def configured_suites(build):
  if cache.get('ROOTS_GUI_DOWNLOAD_FIXTURES')!='ON':omitted.update({'roots_gui.download.verify','roots_gui.theme.download'})
  if not roots:omitted|={'roots_gui.rpc.history','roots_gui.rpc.funding','roots_gui.theme.funding_live','roots_gui.theme.create_live','roots_gui.theme.fees_live','roots_gui.theme.flow_live',*BROADCAST_NATIVE,*[f'roots_gui.theme.{x}' for x in ['history','addresses','coins','coin_controls','wallet_onboarding','wallet_import','receive','settings_policy','keystore','advanced','offline_draft']]}
  if not roots or not sys.platform.startswith("linux"):omitted.update({INCREASE_FEE,ATTEMPT_CANCELLATION,INCREASE_EFFECTIVE_FEE,'roots_gui.theme.batch_live','roots_gui.theme.review_live','roots_gui.theme.edit_live','roots_gui.theme.sign_live'})
- if not sys.platform.startswith("linux") or not cache.get('ROOTS_GUI_TEST_OPENSSL') or cache['ROOTS_GUI_TEST_OPENSSL'].endswith('-NOTFOUND'):
-  omitted.update({QR_CODEC,QR_EXCHANGE,'roots_gui.protocol.signature_exchange','roots_gui.theme.signature_exchange',FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
+ openssl=cache.get('ROOTS_GUI_TEST_OPENSSL','').upper()
+ if not sys.platform.startswith("linux") or openssl in {'','0','OFF','NO','FALSE','N','IGNORE','NOTFOUND'} or openssl.endswith('-NOTFOUND'):
+  omitted.update({RELEASE_WORKSPACE,QR_CODEC,QR_EXCHANGE,'roots_gui.protocol.signature_exchange','roots_gui.theme.signature_exchange',FINALIZED_TRANSACTION,*BROADCAST_NATIVE})
   omitted.update({DEVICE_SIGNER_RPC,DEVICE_SIGNER_UI})
  if not roots and not cache.get('ROOTS_GUI_TEST_CORE_DAEMON'):omitted.add('roots_gui.regtest.owned')
  suites={name:(label,expected-omitted) for name,(label,expected) in SUITES.items()}

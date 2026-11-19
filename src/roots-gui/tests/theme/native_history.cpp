@@ -15,12 +15,39 @@ using namespace roots::gui;namespace sh=ui::shell;namespace a=app;
 namespace {
 struct Requests final:a::Requests {std::atomic<bool> states{};a::RecoverySession* recovery{};rpc::CookieCredentials credentials;rpc::Transport transport{credentials};RefreshService refresh{[this](const auto& r,std::stop_token s){auto request=r;if(states)request.history_limits.transactions=std::max(size_t(1),r.history_limits.transactions/256);return FetchRefresh(transport,request,s);}};ConnectionService connection{[this](const auto& c,std::stop_token s){return ProbeCapabilities(transport,c,s);},[this](bool b){refresh.SetOffline(b,RefreshMonotonicMs());}};ConnectionService* Connection() override{return &connection;}RefreshService* Refresh() override{return &refresh;}a::RecoverySession* Recovery() override{return recovery;}a::HostObservations Observe() const override{return a::ConnectionObservations(connection,refresh);}a::Availability CanSubmit(const a::Request&) const override{return {false,"No daemon mutation port"};}a::Receipt Submit(const a::Request&) override{throw std::runtime_error("unexpected host mutation");}};
 struct Observer final:platform::NativeObserver {
-    Requests requests;sh::State state;sh::Facts facts;std::filesystem::path out;ServerCandidate empty;int64_t expected{};Display* display{};void* xtst{};int(*motion)(Display*,int,int,int,unsigned long){};int(*button)(Display*,unsigned int,Bool,unsigned long){};int(*key)(Display*,unsigned int,Bool,unsigned long){};int checks{},base{},empty_stage{};bool states{},done{},cleaned{};int state_stage{},click_frame{};int64_t stale_date{};std::string selected,capacity_selected;std::vector<uint64_t> capacity_fillers;std::map<uint64_t,std::string> capacity_notes;const std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
+    Requests requests;sh::State state;sh::Facts facts;std::filesystem::path out;ServerCandidate empty;int64_t expected{};Display* display{};void* xtst{};int(*motion)(Display*,int,int,int,unsigned long){};int(*button)(Display*,unsigned int,Bool,unsigned long){};int(*key)(Display*,unsigned int,Bool,unsigned long){};int checks{},base{},empty_stage{};bool states{},done{},cleaned{};int state_stage{},click_frame{},scroll_reveal_frames{};int64_t stale_date{};std::string selected,capacity_selected;std::vector<uint64_t> capacity_fillers;std::map<uint64_t,std::string> capacity_notes;const std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
     void Check(bool b,const char* label){++checks;if(!b)throw std::runtime_error(label);}
     bool CaptureFramebuffer() const override{return true;}
     void Idle(platform::NativeHost&,const platform::NativeFrame&) override{if(std::chrono::steady_clock::now()-started>std::chrono::seconds(25))throw std::runtime_error("native history deadline");}
     void Key(KeySym sym,bool down){Check(key(display,XKeysymToKeycode(display,sym),down,0),"native history key");XSync(display,False);}
     void Click(platform::NativeHost& host,const std::string& name,bool down){const auto& item=facts.history.at(name);const auto& r=item.rect;Check(item.visible && !item.disabled && r[0]>=0 && r[1]>=0 && r[2]<=960 && r[3]<=640,("native history action reachable at 150 percent: "+name).c_str());int x{},y{};glfwGetWindowPos(host.Window(),&x,&y);Check(motion(display,-1,x+int((r[0]+r[2])/2),y+int((r[1]+r[3])/2),0),"native history pointer");Check(button(display,1,down,0),"native history click");XSync(display,False);}
+    bool RevealLabel(platform::NativeHost& host,const std::string& name)
+    {
+        const auto item=facts.history.find(name);
+        if(item==facts.history.end())return false;
+        for(const auto& grid:state.presentation.Tree().nodes){
+            if(grid.name!="Wallet transactions" || grid.role!=ui::components::ax::SemanticRole::Grid)continue;
+            const auto& r=item->second.rect;
+            if(item->second.visible && r[0]>=grid.minimum.x && r[2]<=grid.maximum.x
+                    && r[1]>=grid.minimum.y && r[3]<=grid.maximum.y)return true;
+            int x{},y{};glfwGetWindowPos(host.Window(),&x,&y);
+            if(facts.work.history_drawn && (++scroll_reveal_frames%6!=1))return false;
+            if(scroll_reveal_frames%60==1){
+                std::ofstream geometry(out/"selected-label-reveal.txt",std::ios::app);
+                geometry<<r[0]<<' '<<r[1]<<' '<<r[2]<<' '<<r[3]<<" clip "
+                        <<grid.minimum.x<<' '<<grid.minimum.y<<' '<<grid.maximum.x<<' '<<grid.maximum.y
+                        <<" showing "<<item->second.visible<<'\n';
+            }
+            const unsigned wheel=r[1]<grid.minimum.y?4:5;
+            Check(motion(display,-1,x+int((grid.minimum.x+grid.maximum.x)/2),
+                         y+int((grid.minimum.y+grid.maximum.y)/2),0)
+                    && button(display,wheel,True,0) && button(display,wheel,False,0),
+                  "native history table scroll to the selected label");
+            XSync(display,False);
+            return false;
+        }
+        return false;
+    }
     void Capture(const platform::NativeFrame& f,const char* name){std::ofstream file(out/(std::string(name)+".ppm"),std::ios::binary);file<<"P6\n"<<f.framebuffer_width<<' '<<f.framebuffer_height<<"\n255\n";for(int y=f.framebuffer_height-1;y>=0;--y)for(int x=0;x<f.framebuffer_width;++x)file.write(reinterpret_cast<const char*>(f.rgba.data()+(size_t(y)*f.framebuffer_width+x)*4),3);Check(bool(file),"native history capture retained");Check(state.presentation.Tree().Validate() && !state.presentation.Tree().overflow,"history accessibility tree valid and bounded");std::ofstream(out/(std::string(name)+".semantics.txt"))<<state.presentation.Snapshot();}
     bool VisibleRow(const char* stage){
         std::ofstream geometry(out/(std::string(stage)+"-row-geometry.txt"));
@@ -46,7 +73,7 @@ struct Observer final:platform::NativeObserver {
         const int n=int(f.rendered_frames)-base;
         if(n==1 || n==2)Click(host,"chart-next",n==1);
         if(n==5){selected=doc->history.selected;Check(!selected.empty(),"chart selects stable transaction");Capture(f,"history-chart");Click(host,"expand-"+selected,true);}if(n==6)Click(host,"expand-"+selected,false);
-        if(n==10){Check(doc->history.expanded.contains(selected),"native expansion persists");Click(host,"label-"+selected,true);}if(n==11)Click(host,"label-"+selected,false);
+        if(n==10){Check(doc->history.expanded.contains(selected),"native expansion persists");if(!RevealLabel(host,"label-"+selected)){base=int(f.rendered_frames)-9;return;}Click(host,"label-"+selected,true);}if(n==11)Click(host,"label-"+selected,false);
         if(n==12){Key(XK_Control_L,true);Key(XK_a,true);}if(n==13){Key(XK_a,false);Key(XK_Control_L,false);}
         constexpr std::string_view text="native";if(n>=14 && n<26){const auto at=(n-14)/2;Key(KeySym(text[size_t(at)]),(n-14)%2==0);}if(n==27 || n==28)Click(host,"filter",n==27);
         if(n==32){const auto& draft=doc->history.drafts.at(selected);auto stored=requests.recovery->HistoryMetadata(a::HistoryMetadataScope(*doc->binding));Check(stored && stored.value->labels.size()==1 && stored.value->labels[0].text==text && draft.saved==text && draft.draft==text,"native focus loss without Enter acknowledges scoped metadata");Capture(f,"label-focus-saved");}

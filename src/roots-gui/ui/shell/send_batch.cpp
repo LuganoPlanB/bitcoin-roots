@@ -49,6 +49,7 @@ void ForgetValidation(BatchEditor& editor)
 }
 void Changed(BatchEditor& editor)
 {
+    editor.selected_index.reset();
     ForgetValidation(editor);
     editor.status.clear();
     ++editor.revision;
@@ -259,10 +260,10 @@ void Grid(State& state,app::Requests& host,Facts& facts,const imkit::Theme& them
         ImGui::TableSetupColumn("Unit",ImGuiTableColumnFlags_WidthFixed,ImGui::GetFontSize()*3.4f);
         ImGui::TableHeadersRow();
         for (size_t i=first;i<last;++i) {
-            if (!editor.checked) editor.checked=ValidateBatch(editor.work,protocol::DocumentNetwork(editor.binding.wallet.network));
+            ++facts.work.batch_drawn;
             const auto& row=editor.work.rows[i];
             const auto id=row.id;
-            const auto issue=editor.checked->rows.empty() ? BatchIssue{} : editor.checked->rows[i];
+            const auto issue=!editor.checked || editor.checked->rows.empty() ? BatchIssue{} : editor.checked->rows[i];
             ImGui::PushID(std::to_string(id).c_str());
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
@@ -327,12 +328,15 @@ void Grid(State& state,app::Requests& host,Facts& facts,const imkit::Theme& them
 void Review(State& state,app::Requests& host,Facts& facts,const imkit::Theme& theme,bool busy)
 {
     auto& panel=*state.batch;
-    if (!panel.checked) panel.checked=ValidateBatch(panel.work,protocol::DocumentNetwork(panel.binding.wallet.network));
+    if (!panel.checked) return;
     const auto& result=*panel.checked;
     if (!result.error.empty()) Text(state,"batch-error","Batch validation",result.error,SemanticRole::Alert);
-    const auto selected=std::ranges::find(panel.work.rows,panel.work.selected,&SendRecipient::id);
-    if (selected!=panel.work.rows.end() && !result.rows.empty()) {
-        const auto index=size_t(selected-panel.work.rows.begin());
+    if (!panel.selected_index || panel.selected_index->first!=panel.work.selected) {
+        const auto selected=std::ranges::find(panel.work.rows,panel.work.selected,&SendRecipient::id);
+        panel.selected_index=std::pair{panel.work.selected,size_t(selected-panel.work.rows.begin())};
+    }
+    const auto index=panel.selected_index->second;
+    if (index<result.rows.size()) {
         const auto& issue=result.rows[index];
         std::string detail;
         for (const auto* field:{&issue.address,&issue.amount,&issue.label,&issue.unit}) if (!field->empty()) {
@@ -360,7 +364,7 @@ void Review(State& state,app::Requests& host,Facts& facts,const imkit::Theme& th
     } else if (result.fixed) {
         Text(state,"batch-total","Exact fixed recipient total","Fixed total "+result.fixed->btc()+" BTC · "
             +std::to_string(result.fixed->sats())+" sats");
-        if (std::ranges::any_of(panel.work.rows,[](const auto& row){return row.amount=="Max";}))
+        if (result.maximum)
             Text(state,"batch-max","Batch Max","Max is calculated only in a fresh funding preview.");
     }
     if (panel.work.rows.size()>MAX_FUNDING_OUTPUTS)
@@ -380,7 +384,10 @@ void DrawBatch(State& state,app::Requests& host,Facts& facts,const imkit::Theme&
         return true;
     })) return;
     ImGui::SameLine();
-    if (!panel.checked) panel.checked=ValidateBatch(panel.work,protocol::DocumentNetwork(panel.binding.wallet.network));
+    if (!panel.checked) {
+        facts.work.batch_validated=panel.work.rows.size();
+        panel.checked=ValidateBatch(panel.work,protocol::DocumentNetwork(panel.binding.wallet.network));
+    }
     if (Button(state,facts,theme,"apply","Apply batch",!busy && panel.checked->ready
         && panel.binding.revision.value!=UINT64_MAX,[&state,&host,token]{return Apply(state,host,token);},true)) return;
     ImGui::SameLine();

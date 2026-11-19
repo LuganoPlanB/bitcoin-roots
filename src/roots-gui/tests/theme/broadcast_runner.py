@@ -9,6 +9,7 @@ import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 from shutil import copytree
 import sqlite3
@@ -39,6 +40,25 @@ MONITOR_READS={"getblockhash","getblockchaininfo","getbestblockhash","getblockhe
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def native_environment(profile):
+    environment = os.environ.copy()
+    environment.pop("ROOTS_GUI_BROADCAST_VISUAL_PROFILE", None)
+    if profile:
+        environment["ROOTS_GUI_BROADCAST_VISUAL_PROFILE"] = profile
+    return environment
+
+
+def capture_for_profile(out, name, profile):
+    capture = encode_capture(out/(name+".ppm"))
+    native = json.loads((out/(name+".native.json")).read_text())
+    if profile:
+        reference = profile.startswith("reference-")
+        expected = (1200, 820, 1, profile.endswith("-dark")) if reference else (960, 640, 1.5, profile.endswith("-dark"))
+        assert tuple(native[key] for key in ("width", "height", "scale", "dark")) == expected
+    capture["native"] = native
+    return capture
 
 
 def prepare(node,directory,openssl,recovery=False,monitor=False):
@@ -408,7 +428,7 @@ def monitor_journey(args,out):
                       "--",str(args.native),str(out),str(args.fonts),str(source),str(proxy.port),str(node.data/"regtest/.cookie"),"monitor"]
                 try:
                     started_native=now()
-                    child=subprocess.run(argv,text=True,capture_output=True,timeout=105)
+                    child=subprocess.run(argv,text=True,capture_output=True,timeout=105,env=native_environment(args.profile))
                     completed_native=now()
                     (out/"native.log").write_text(child.stdout+child.stderr)
                 finally:
@@ -433,12 +453,12 @@ def monitor_journey(args,out):
         display=json.loads((out/"display/processes.json").read_text())
         assert process["settled"] and process["datadirRemoved"] and process["authMaterialAbsentFromRetainedLogs"]
         assert display["child"]["settled"] and all(row["settled"] and not row.get("remainingLiveGroupMembers") for row in display["processes"])
-        captures={name:encode_capture(out/(name+".ppm")) for name in ("in-mempool","confirmed","reorged")}
+        captures={name:capture_for_profile(out,name,args.profile) for name in ("in-mempool","confirmed","reorged")}
         write_json(out/"report.json",dict(startedUTC=start,completedUTC=now(),nativeStartedUTC=started_native,
             nativeCompletedUTC=completed_native,argv=argv,cwd=str(Path.cwd()),exit=child.returncode,
             binary=binary_identity(args.native),scratchRemoved=not Path(temporary).exists(),
             proxySettled=not proxy.thread.is_alive(),controllerSettled=not controller_thread.is_alive(),roots=process["backend"],
-            native=json.loads((out/"native-result.json").read_text()),captures=captures,
+            native=json.loads((out/"native-result.json").read_text()),captures=captures,profile=args.profile,
             selected=1,executed=1,passed=1,failed=0,skipped=0))
         print("Broadcast monitor evidence:",out)
         return 0
@@ -449,6 +469,70 @@ def monitor_journey(args,out):
         raise
 
 
+def reader_journey(args, out):
+    started = now()
+    profile = args.profile or "reference-light"
+    env = native_environment(profile)
+    # Keep the reader itself in the installed environment; only Roots adopts
+    # the GNU-style message, date, and numeric categories under test.
+    env["ROOTS_GUI_READER_LOCALE"] = "de_DE.UTF-8"
+    with tempfile.TemporaryDirectory(prefix="broadcast-reader-", dir=validated_scratch()) as temporary:
+        source = Path(temporary)/"public"
+        source.mkdir(mode=0o700)
+        store = source/"metadata.sqlite"
+        with OwnedRegtest(args.daemon, out/"node", monitor_fixture=True) as node:
+            node.ready()
+            known = prepare(node, source, args.openssl, monitor=True)
+            proxy = BroadcastProxy(node, known, store, monitor=True)
+            argv = [sys.executable, "-B", str(TESTS/"platform/owned_display.py"), "--output", str(out/"display"),
+                    "--timeout", "213", "--", "/usr/bin/python3", "-B", str(TESTS/"platform/a11y_session.py"),
+                    "--binary", str(args.native), "--fonts", str(args.fonts), "--output", str(out/"journey"),
+                    "--orca", "--orca-output", "braille-monitor", "--send-fixture",
+                    str(source), str(proxy.port), str(node.data/"regtest/.cookie")]
+            try:
+                begin = now()
+                with (out/"native.log").open("w") as log:
+                    child = subprocess.run(argv, stdout=log, stderr=subprocess.STDOUT, timeout=227, env=env)
+                end = now()
+            finally:
+                proxy.close()
+                write_json(out/"transcript.json", proxy.events)
+                write_json(out/"fixtures.json", known)
+                copytree(source, out/"public-fixtures",
+                         ignore=lambda _, names: [name for name in names if name.startswith("metadata.sqlite")])
+            write_json(out/"command.json", dict(argv=argv, cwd=str(Path.cwd()), exit=child.returncode,
+                                                 startedUTC=begin, completedUTC=end))
+            if child.returncode:
+                raise RuntimeError(f"native Orca journey exited {child.returncode}; see {out}")
+            accepted = known["accepted"]
+            received, = [event for event in proxy.events if event["method"] == SUBMIT]
+            assert received["case"] == "accepted" and received["attemptBeforeForwarding"]["serial"] == 1
+            assert received["attemptBeforeForwarding"]["pending"]
+            assert not any(event.get("blocked") for event in proxy.events)
+            with closing(sqlite3.connect(store.as_uri()+"?mode=ro", uri=True)) as db:
+                rows = db.execute("SELECT genesis,txid,wire,serial,outcome FROM broadcast_details").fetchall()
+            assert rows == [(GENESIS, accepted["facts"]["txid"], accepted["wire"], 1, 3)]
+            write_json(out/"journal.json", rows)
+    process = json.loads((out/"node/process.json").read_text())
+    display = json.loads((out/"display/processes.json").read_text())
+    reader = json.loads((out/"journey/result.json").read_text())
+    assert reader["readerOutputVerified"] and reader["selected"] == reader["passed"]
+    assert process["settled"] and process["datadirRemoved"] and process["authMaterialAbsentFromRetainedLogs"]
+    assert display["child"]["settled"] and all(row["settled"] and not row.get("remainingLiveGroupMembers") for row in display["processes"])
+    assert not proxy.thread.is_alive() and not Path(temporary).exists()
+    reader_processes = json.loads((out/"journey/processes.json").read_text())
+    assert all(row["settled"] and not row["remainingLiveGroupMembers"] for row in reader_processes)
+    native = out/"journey/fixture"
+    captures = {view: capture_for_profile(native, "reader-"+view, profile)
+                for view in ("send", "review", "signed", "final", "monitor")}
+    write_json(out/"report.json", dict(startedUTC=started, completedUTC=now(), command="command.json", binary=binary_identity(args.native),
+              profile=profile, locale=env["ROOTS_GUI_READER_LOCALE"], reader=reader, captures=captures,
+              native=json.loads((native/"native-result.json").read_text()), roots=process["backend"],
+              scratchRemoved=True, ownedProcessesSettled=True, selected=1, executed=1, passed=1, failed=0, skipped=0))
+    print("Broadcast reader evidence:", out)
+    return 0
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for key in ("native","openssl","fonts","daemon","output"):
@@ -456,12 +540,18 @@ def main():
     journey=parser.add_mutually_exclusive_group()
     journey.add_argument("--recovery",action="store_true")
     journey.add_argument("--monitor",action="store_true")
+    journey.add_argument("--reader",action="store_true")
+    parser.add_argument("--profile", choices=("reference-light", "reference-dark", "compact-light", "compact-dark"))
     args=parser.parse_args()
+    if args.recovery and args.profile:
+        parser.error("--profile applies to the broadcast and monitor journeys")
     out=Path(tempfile.mkdtemp(prefix="attempt-",dir=evidence_directory(args.output)))
     if args.recovery:
         return recovery_journey(args,out)
     if args.monitor:
         return monitor_journey(args,out)
+    if args.reader:
+        return reader_journey(args,out)
     start=now()
     outcome=None
     try:
@@ -478,7 +568,7 @@ def main():
                       "--timeout","40","--",str(args.native),str(out),str(args.fonts),str(source),str(proxy.port),
                       str(node.data/"regtest/.cookie")]
                 try:
-                    outcome=subprocess.run(argv,text=True,capture_output=True,timeout=50)
+                    outcome=subprocess.run(argv,text=True,capture_output=True,timeout=50,env=native_environment(args.profile))
                     (out/"native.log").write_text(outcome.stdout+outcome.stderr)
                 finally:
                     proxy.close()
@@ -513,7 +603,8 @@ def main():
                       scratchRemoved=not Path(temporary).exists(),fixturesPrivateKeysRetained=False,
                       proxySettled=not proxy.thread.is_alive(),binary=binary_identity(args.native),
                       native=json.loads((out/"native-result.json").read_text()),roots=process["backend"],
-                      captures={name:encode_capture(out/(name+".ppm")) for name in ("broadcast-ready","broadcast-rejected")},
+                      captures={name:capture_for_profile(out,name,args.profile) for name in ("broadcast-ready","broadcast-rejected")},
+                      profile=args.profile,
                       selected=1,executed=1,passed=1,failed=0,skipped=0)
         write_json(out/"report.json",metadata)
         print("Broadcast evidence:",out)

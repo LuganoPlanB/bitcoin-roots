@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "app/history_workspace.h"
 #include "ui/theme/theme.h"
@@ -163,7 +164,7 @@ bool Start(State& state, app::Requests& host, uint64_t id, ScanAction action)
 void DrawObservations(State& state, Facts& facts, const imkit::Theme& theme, AdvancedSettings& runtime)
 {
     const auto& info=*runtime.observation;
-    Text(state,"scan-birth","Daemon wallet birth time","Wallet birth time   "+(info.birthtime ? app::HistoryDate(*info.birthtime,true) : std::string("Unknown")));
+    Text(state,"scan-birth","Daemon wallet birth time","Wallet birth time   "+(info.birthtime ? locale::LocalDate(*info.birthtime,true) : std::string("Unknown")));
     const auto count=[](auto n){return n ? std::to_string(*n) : std::string("Unknown");};
     Text(state,"scan-keypool","Daemon keypool counts",
         "Pregenerated keys   Receive "+count(info.receive_keys)+"  ·  Change "+count(info.change_keys));

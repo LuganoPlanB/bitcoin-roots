@@ -35,9 +35,23 @@ struct AddressPresentation {
     float split{0.5F},receive_x{},receive_y{},change_x{},change_y{};
 };
 struct CoinPresentation {
-    std::set<std::string> selected;std::string focused;bool by_value{true},descending{true};
+    std::string focused;bool by_value{true},descending{true};
     std::map<std::string,HistoryLabelDraft> drafts;
     uint64_t metadata_revision{};bool metadata_loaded{}; // acknowledgement never recovered
+
+    const auto& Selection() const { return selected; }
+    uint64_t SelectionRevision() const { return selection_revision; }
+    bool ReplaceSelection(std::set<std::string> next)
+    {
+        if (next==selected) return true;
+        if (next.size()>4096 || selection_revision==UINT64_MAX) return false;
+        selected=std::move(next);
+        ++selection_revision;
+        return true;
+    }
+private:
+    std::set<std::string> selected;
+    uint64_t selection_revision{};
 };
 struct ObservedTransaction {WalletBinding wallet;Hash256 txid;bool operator==(const ObservedTransaction&) const=default;};
 struct PinnedCoin {

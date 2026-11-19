@@ -6,6 +6,7 @@
 #include <GLFW/glfw3.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -33,7 +34,7 @@ struct Requests final : app::Requests {
     app::HostObservations Observe() const override { return app::ConnectionObservations(connection, refresh); }
     app::Availability CanSubmit(const app::Request& request) const override {
         return {request.command == app::Command::Introduction || request.command == app::Command::OpenWallet ||
-            request.command == app::Command::NewWallet || request.command == app::Command::Preferences, {}};
+            request.command == app::Command::NewWallet || request.command == app::Command::Server, {}};
     }
     app::Receipt Submit(const app::Request&) override { return {}; }
 };
@@ -106,6 +107,18 @@ struct Observer final : platform::NativeObserver {
         Key(symbol, down);
         if (!down) Key(XK_Control_L, false);
     }
+    bool PointToMenu(platform::NativeHost& host,std::string_view name)
+    {
+        const auto packet=state.presentation.exchange.Published();
+        if(!packet || !packet->valid)return false;
+        const auto item=std::ranges::find_if(packet->nodes,[name](const auto& node){
+            return node.name==name && node.showing && !node.state.disabled;
+        });
+        if(item==packet->nodes.end())return false;
+        Point(host,{{item->minimum.x,item->minimum.y,item->maximum.x,item->maximum.y},
+            0,false,false,false,false,true});
+        return true;
+    }
     void Frame(platform::NativeHost& host, const platform::NativeFrame& frame) override
     {
         if (frame.rendered_frames < 3) return;
@@ -122,14 +135,38 @@ struct Observer final : platform::NativeObserver {
             if (panel.dialog.open || panel.close_pending || !PublicationReady()) break;
             Check(connection.Offline() && !connection.Active() && state.documents.Documents().empty(), "offline public workspace and no fabricated documents");
             Capture(frame, "offline");
-            Chord(XK_comma, true); ++stage; break;
-        case 3: Chord(XK_comma, false); ++stage; break;
-        case 4:
+            if(PointToMenu(host,"Tools"))++stage;
+            break;
+        case 3: Lift(); stage=30; break;
+        case 30:
+            if(facts.menu_rows.contains(app::Command::Server)
+                    && facts.menu_rows.at(app::Command::Server).visible){
+                Point(host,facts.menu_rows.at(app::Command::Server));
+                stage=31;
+            }
+            break;
+        case 31: Lift(); stage=4; break;
+        case 4: {
             if (!facts.server.visible) break;
-            Point(host, facts.server.items.at("offline")); ++stage; break;
-        case 5: Lift(); ++stage; break;
+            const auto packet=state.presentation.exchange.Published();
+            if(!packet || !packet->valid)break;
+            namespace ax=ui::components::ax;
+            const auto item=std::ranges::find_if(packet->nodes,[](const auto& node){
+                return node.name=="Offline mode" && node.showing && ax::Supports(node.actions,ax::SemanticAction::Toggle);
+            });
+            if(item==packet->nodes.end())break;
+            Check(state.presentation.exchange.QueueNext(packet->generation,item->id,ax::SemanticAction::Toggle).second
+                  ==ui::components::ActionResult::Queued,"native offline toggle through the current server dialog");
+            stage=6;
+            break;
+        }
         case 6:
-            if (connection.Offline()) break;
+            if (connection.Offline() || !facts.server.visible || !facts.server.items.contains("test")) break;
+            if (facts.server.items.at("test").disabled || !facts.server.items.at("test").visible) {
+                Check(connection.Draft()==state.server.Candidate() && ValidServerCandidate(connection.Draft()),
+                    "the server editor retains the exact valid fixture target after going online");
+                break;
+            }
             Point(host, facts.server.items.at("test")); ++stage; break;
         case 7: Lift(); ++stage; break;
         case 8:

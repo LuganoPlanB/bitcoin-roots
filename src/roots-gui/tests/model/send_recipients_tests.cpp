@@ -66,7 +66,15 @@ void ExactEditorAndPolicy()
 {
     Check(ParseRecipientAmount("0,00000001", RecipientUnit::BTC) == Money::Satoshis(1), "manual comma decimal");
     Check(ParseRecipientAmount("90071992", RecipientUnit::Sats) == Money::Satoshis(90071992), "integer sats");
-    Check(!ParseRecipientAmount("1,000.01", RecipientUnit::BTC), "no grouping");
+    Check(ParseRecipientAmount("0.00000001", RecipientUnit::BTC) == Money::Satoshis(1), "manual point decimal");
+    Check(ParseRecipientAmount("1,000", RecipientUnit::BTC) == Money::Satoshis(100000000), "single separator is decimal");
+    for (const std::string_view malformed : {"1,000.01", "1.000,01", "1,000,000", "1 000", "1.", ",1", "1e-8"})
+        Check(!ParseRecipientAmount(malformed, RecipientUnit::BTC), "grouping and malformed output input refused");
+    Check(ParseRecipientAmount("21000000,00000000", RecipientUnit::BTC) == Money::Satoshis(2100000000000000), "maximum Bitcoin amount");
+    Check(!ParseRecipientAmount("21000000.00000001", RecipientUnit::BTC), "one sat above maximum");
+    Check(ParseRecipientAmount("2100000000000000", RecipientUnit::Sats) == Money::Satoshis(2100000000000000), "integer sat maximum");
+    Check(!ParseRecipientAmount("2100000000000001", RecipientUnit::Sats), "integer sat above maximum");
+    Check(!ParseRecipientAmount("1,5", RecipientUnit::Sats), "integer sat input has no comma");
     Check(!ParseRecipientAmount("0.000000010", RecipientUnit::BTC), "manual precision limit");
     Check(!ParseRecipientAmount("1.0", RecipientUnit::Sats), "no fractional sat editor");
     Check(!ParseRecipientAmount("0", RecipientUnit::Sats), "positive output");

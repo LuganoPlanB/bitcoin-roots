@@ -200,7 +200,7 @@ struct Observer final:platform::NativeObserver {
             break;
         case 10:
             if (!buttons.contains("record-review"))return;
-            local("record-review");
+            Press("Record local review");
             break;
         case 11:
             if (!semantic("Local review recorded") || !semantic("Unsigned transaction commitment"))return;
@@ -252,13 +252,16 @@ struct Observer final:platform::NativeObserver {
                   && state.imported_views.at(unsigned_id).reviewed,"review revocation is tied to the exact target tab");
             click("cancel");
             break;
-        case 21:
+        case 21: {
             if (!semantic("Review revoked. Output 1 amount or order changed."))return;
-            Check(!semantic("Unsigned transaction commitment") && buttons.contains("record-review")
-                  && !buttons.at("record-review").disabled,"review status remains visible after cancelling the rejected file");
+            const auto& revoked=state.imported_views.at(signed_id);
+            Check(!revoked.reviewed && !revoked.proved_change_output && buttons.contains("record-review")
+                  && !buttons.at("record-review").disabled,
+                  "revocation removes review authority while retaining public transaction identity and fresh review");
             Capture(frame,"offline-review-revoked");
-            local("finalize");
+            Press("Finalize locally");
             break;
+        }
         case 22:
             if (!doc || !doc->imported || !semantic("Raw transaction ID"))return;
             Check(doc->id!=signed_id && doc->imported->parsed->transaction->witness &&

@@ -1047,11 +1047,11 @@ void DrawSignatureExchange(State& state,app::Requests& host,Facts& facts,const i
         Button(state,controls,theme,"merge","Merge signed file",can_merge,[&state,&host,current,collect] {
             return current() && BeginLocalDocument(state,host,LocalDocumentMode::Merge,{},collect);
         });
-        ImGui::SameLine();
+        theme::SameLineForAction("Merge signed text");
         Button(state,controls,theme,"merge-text","Merge signed text",can_merge && c::native_input,[&state,&host,current,collect] {
             return current() && BeginLocalDocument(state,host,LocalDocumentMode::MergeText,{},collect);
         });
-        ImGui::SameLine();
+        theme::SameLineForAction("Copy PSBT text");
     }
     Button(state,controls,theme,"copy-psbt-text","Copy PSBT text",c::native_input,[&state,&host,current,owner,material] {
         if (!current()) return false;
@@ -1072,7 +1072,7 @@ void DrawSignatureExchange(State& state,app::Requests& host,Facts& facts,const i
         return current() && BeginLocalDocument(state,host,LocalDocumentMode::ShowQr);
     });
     if (merge_controls) {
-        ImGui::SameLine();
+        theme::SameLineForAction("Import signature QR");
         Button(state,controls,theme,"psbt-qr-import","Import signature QR",can_merge,[&state,&host,current,collect]{
             return current() && BeginLocalDocument(state,host,LocalDocumentMode::MergeQr,{},collect);
         });

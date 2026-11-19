@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
 
@@ -293,7 +294,7 @@ void Inspect(const FlowGuard& guard,app::Requests& host,Facts& facts,const imkit
     const auto key=*view.selected;
     const auto* item=guard.preview->flow->Find(key);
     if (!item) return;
-    Text(state,"flow-selected","Selected flow item",Name(item->kind,key.index)+" · "+item->amount.btc()+" BTC · "
+    Text(state,"flow-selected","Selected flow item",Name(item->kind,key.index)+" · "+locale::Btc(item->amount)+" BTC · "
         +std::to_string(item->amount.sats())+" sats");
     if (!item->identifier.empty()) {
         Text(state,"flow-identifier",item->kind==FlowKind::Input ? "Full outpoint" : "Full address",item->identifier);

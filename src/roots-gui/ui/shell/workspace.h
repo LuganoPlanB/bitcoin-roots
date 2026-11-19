@@ -154,7 +154,37 @@ struct GeneralPanel {
     components::Edit explorer_template;
     std::string error;
 };
+struct HistoryProjectionKey {
+    const HistoryLedger* ledger{};
+    uint64_t generation{}, sequence{}, revision{};
+    bool operator==(const HistoryProjectionKey&) const = default;
+};
+struct HistoryRowProjection {
+    struct Row {
+        const HistoryTransaction* tx;
+        const HistoryDetail* detail{};
+        const HistoryIO* io{};
+    };
+    HistoryProjectionKey source;
+    uint64_t metadata_revision{};
+    std::string filter;
+    int sort{};
+    bool descending{}, hidden{}, expanded_dirty{};
+    std::vector<const HistoryTransaction*> transactions;
+    std::vector<std::string> keys;
+    std::vector<Row> rows;
+    std::map<std::string, size_t> positions;
+};
+struct HistoryChartProjection {
+    HistoryProjectionKey source;
+    std::vector<const HistoryTransaction*> transactions;
+    std::vector<size_t> geometry;
+    std::map<std::string, size_t> positions;
+    int64_t low{},high{};
+};
 struct HistoryRuntime {
+    HistoryRowProjection projection;
+    HistoryChartProjection chart;
     std::optional<HistoryLabelEditor> editor; // transient activation proof, never recovered
     std::optional<std::pair<std::string,std::string>> label_update; // native buffer sync, never a recovered action
     std::map<std::string,std::string> labels;
@@ -172,6 +202,18 @@ struct HistoryRuntime {
 };
 struct AddressRuntime {bool reveal_selected{},current{},reconciled{};uint64_t generation{},sequence{},history_sequence{};std::string error;bool open_actions{};std::set<std::string> frozen;std::map<std::string,app::CoinRule> policy;std::vector<AddressRow> rows;};
 struct CoinRuntime {
+    struct Projection {
+        bool by_value{},descending{},hidden{};
+        std::vector<const app::CoinRow*> rows;
+        std::vector<std::string> keys;
+        std::map<std::string,size_t> positions;
+    };
+    std::optional<Projection> projection;
+    std::optional<app::CoinSummary> summary;
+    std::shared_ptr<const std::vector<app::CoinGroup>> groups;
+    std::vector<size_t> group_selection;
+    uint64_t selection_revision{};
+    bool groups_prepared{},policy_known{};
     std::optional<app::CoinInventory> inventory;std::optional<RefreshIdentity> identity;
     std::map<std::string,std::string> labels;std::optional<HistoryLabelEditor> editor;
     std::optional<std::pair<std::string,std::string>> label_update;
@@ -316,8 +358,26 @@ struct OfflineBuilder {
     bool open{}, use_change{};
     uint64_t revision{};
 };
+struct TransactionOverviewProjection {
+    std::weak_ptr<const protocol::TransactionDocument> source;
+    bool funded{};
+    int64_t output_total{},input_total{};
+    size_t known_inputs{};
+    std::string locktime,input_mix,output_mix;
+    std::optional<Hash256> commitment;
+};
 struct ImportedView {
+    struct SpendingProjection {
+        const HistoryLedger* ledger{};
+        std::optional<RequestContext> context;
+        uint64_t generation{},revision{};
+        std::optional<Outpoint> point;
+        std::optional<Hash256> current;
+        std::string status;
+    };
     uint64_t revision{};
+    TransactionOverviewProjection overview;
+    SpendingProjection spending;
     std::optional<app::WalletBinding> wallet;
     std::set<std::string> policy_scripts; // verified public cache only; never recovered as ownership
     std::optional<protocol::OfflineReviewEvidence> review_evidence;
@@ -390,6 +450,12 @@ struct SendView {
         std::optional<Money> value;
     };
     std::optional<Funds> funds;
+    struct Totals {
+        DraftRevision revision;
+        std::optional<Money> eligible;
+        SendFundsCheck amounts;
+    };
+    std::optional<Totals> totals;
 };
 struct BatchBinding {
     uint64_t document,session,profile_revision;
@@ -404,6 +470,7 @@ struct BatchEditor {
     uint64_t generation{},revision{};
     SendRecipients work;
     std::optional<BatchValidation> checked;
+    std::optional<std::pair<uint64_t,size_t>> selected_index;
     bool file_panel{};
     size_t page{};
     uint64_t file_dialog{};
@@ -485,6 +552,7 @@ struct State {
     MetadataBackupPanel metadata_backup;
     app::ActivityJournal activity_log;
     std::optional<RetainedAddressNavigation> retained_address_navigation;
+    std::optional<std::pair<RefreshIdentity,HistoryProjectionKey>> known_address_source;
     uint64_t activity_session{};
     LockEpoch activity_epoch;
     ToolExport activity_export;
@@ -525,7 +593,13 @@ struct State {
     bool recovery_prompted{},close_recovery_popup{};
     PrivacyPanel lock_panel;
 };
+struct FrameWork {
+    size_t history_indexed{}, history_flattened{}, history_drawn{}, history_chart_indexed{}, history_chart_drawn{};
+    size_t coins_adopted{}, coins_indexed{}, coins_drawn{}, coins_summarized{}, coin_chart_indexed{};
+    size_t batch_validated{}, batch_drawn{}, send_counted{}, psbt_overview_items{}, psbt_hex_bytes{};
+};
 struct Facts {
+    FrameWork work;
     Layout layout;
     uint64_t active_document{};
     int section{-1};
@@ -572,8 +646,9 @@ struct Facts {
     ServerFacts server;
     std::map<std::string,components::ItemFacts> onboarding,local_document,transaction_document;
     std::map<std::string,components::ItemFacts> history;
-    std::vector<std::string> history_order;
-    std::map<std::string,components::ItemFacts> coin;std::vector<std::string> coin_order;
+    // Borrowed projection identifiers, valid until the next workspace draw.
+    std::span<const std::string> history_order;
+    std::map<std::string,components::ItemFacts> coin;std::span<const std::string> coin_order;
     std::map<std::string,components::ItemFacts> address,receive,settings,advanced;
     std::map<std::string,components::ItemFacts> send;
     std::map<std::string,components::ItemFacts> batch;

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
 
@@ -100,7 +101,7 @@ std::string_view ScriptKind(std::string_view script)
 
 std::string Amount(Money value)
 {
-    return value.btc()+" BTC · "+std::to_string(value.sats())+(value.sats()==1 ? " sat" : " sats");
+    return locale::BothUnits(value);
 }
 
 const HistoryLedger* LiveLedger(const Guard& guard)
@@ -134,6 +135,22 @@ std::string Spending(const HistoryLedger* ledger,const Outpoint& point,const std
     if (ledger->InventoryAvailable() && std::ranges::any_of(ledger->Coins(),[&](const auto& coin){return coin.outpoint==point;}))
         return "Observed in the current wallet's unspent output inventory. Spendability is Unknown.";
     return "Spending history: Unknown";
+}
+
+std::string CurrentSpending(const Guard& guard,const Outpoint& point,const std::optional<Hash256>& transaction={})
+{
+    auto& cache=guard.state.imported_views.at(guard.owner.id).spending;
+    const auto* ledger=LiveLedger(guard);
+    if (!ledger) {
+        cache={};
+        return "Spending history: Unknown";
+    }
+    const auto generation=guard.host.Refresh()->View().generation;
+    if (cache.ledger!=ledger || cache.context!=ledger->Context() || cache.generation!=generation || cache.revision!=ledger->Revision()
+        || cache.point!=point || cache.current!=transaction) {
+        cache={ledger,ledger->Context(),generation,ledger->Revision(),point,transaction,Spending(ledger,point,transaction)};
+    }
+    return cache.status;
 }
 
 std::string Locktime(const protocol::TransactionInspection& tx)
@@ -209,16 +226,17 @@ void CopyValue(const Guard& guard,Facts& facts,const imkit::Theme& theme,const c
         });
 }
 
-void Overview(const Guard& guard,Facts& facts,const imkit::Theme& theme,const app::ImportedDocument& imported)
+const TransactionOverviewProjection& PrepareOverview(ImportedView& view,const app::ImportedDocument& imported,FrameWork& work)
 {
-    auto& state=guard.state;
-    const auto& decoded=*imported.parsed;
-    const auto& tx=*decoded.transaction;
-    Text(state,"overview","Transaction overview","Transaction overview");
-    Text(state,"transaction-header","Transaction header",std::to_string(tx.inputs.size())+(tx.inputs.size()==1 ? " input · " : " inputs · ")+
-        std::to_string(tx.outputs.size())+(tx.outputs.size()==1 ? " output · Version " : " outputs · Version ")
-        +std::to_string(std::bit_cast<int32_t>(tx.version)));
-    Text(state,"locktime","Absolute locktime",Locktime(tx));
+    auto& overview=view.overview;
+    if (overview.source.lock()==imported.parsed && overview.funded==bool(imported.funding)) return overview;
+    overview={};
+    overview.source=imported.parsed;
+    overview.funded=bool(imported.funding);
+    const auto& parsed=*imported.parsed;
+    const auto& tx=*parsed.transaction;
+    work.psbt_overview_items=tx.inputs.size()+tx.outputs.size();
+    overview.locktime=Locktime(tx);
     std::map<std::string_view,size_t> output_scripts,input_scripts;
     const auto mix=[](const auto& scripts) {
         std::string text;
@@ -228,39 +246,53 @@ void Overview(const Guard& guard,Facts& facts,const imkit::Theme& theme,const ap
         }
         return text;
     };
-    int64_t output_total{};
     for (const auto& output:tx.outputs) {
         ++output_scripts[ScriptKind(output.script)];
-        output_total+=output.value.sats();
+        overview.output_total+=output.value.sats();
     }
-    Text(state,"output-total","Total output amount","Outputs "+Amount(Money::Satoshis(output_total))+
-        (output_scripts.empty() ? "" : " · "+mix(output_scripts)));
-    size_t known{};
-    int64_t input_total{};
-    const auto& funding=imported.funding;
     for (const auto& input:tx.inputs) {
-        const bool matched=input.evidence==protocol::PrevoutEvidence::TxidMatched || funding;
+        const bool matched=input.evidence==protocol::PrevoutEvidence::TxidMatched || overview.funded;
         ++input_scripts[tx.coinbase ? "Coinbase" : matched && input.previous_value ? ScriptKind(input.previous_script) : "Unknown script"];
         if (input.evidence!=protocol::PrevoutEvidence::TxidMatched || !input.previous_value
-            || input.previous_value->sats()>MAX_MONEY-input_total) continue;
-        ++known;
-        input_total+=input.previous_value->sats();
+            || input.previous_value->sats()>MAX_MONEY-overview.input_total) continue;
+        ++overview.known_inputs;
+        overview.input_total+=input.previous_value->sats();
     }
+    overview.output_mix=mix(output_scripts);
+    overview.input_mix=mix(input_scripts);
+    if (parsed.psbt_version) overview.commitment=protocol::TransactionCommitment(parsed);
+    return overview;
+}
+
+void Overview(const Guard& guard,Facts& facts,const imkit::Theme& theme,const app::ImportedDocument& imported)
+{
+    auto& state=guard.state;
+    const auto& decoded=*imported.parsed;
+    const auto& tx=*decoded.transaction;
+    Text(state,"overview","Transaction overview","Transaction overview");
+    Text(state,"transaction-header","Transaction header",std::to_string(tx.inputs.size())+(tx.inputs.size()==1 ? " input · " : " inputs · ")+
+        std::to_string(tx.outputs.size())+(tx.outputs.size()==1 ? " output · Version " : " outputs · Version ")
+        +std::to_string(std::bit_cast<int32_t>(tx.version)));
+    const auto& overview=PrepareOverview(state.imported_views.at(guard.owner.id),imported,facts.work);
+    Text(state,"locktime","Absolute locktime",overview.locktime);
+    Text(state,"output-total","Total output amount","Outputs "+Amount(Money::Satoshis(overview.output_total))+
+        (overview.output_mix.empty() ? "" : " · "+overview.output_mix));
+    const auto& funding=imported.funding;
     if (funding) {
-        const auto total=Money::Satoshis(output_total+funding->fee.sats());
+        const auto total=Money::Satoshis(overview.output_total+funding->fee.sats());
         Text(state,"input-total","Total input amount","Inputs "+Amount(total)+" · matched saved prevouts.");
-    } else Text(state,"input-total","Total input amount",known && known==tx.inputs.size()
-        ? "Inputs "+Amount(Money::Satoshis(input_total))
-        : "Inputs Unknown · "+std::to_string(known)+" of "+std::to_string(tx.inputs.size())+" previous amounts matched.");
-    if (!input_scripts.empty()) Text(state,"input-mix","Input script distribution","Input scripts · "+mix(input_scripts));
-    if (funding) Text(state,"transaction-fee","Verified funding fee","Fee: "+funding->fee.btc()+" BTC · matched saved prevouts");
+    } else Text(state,"input-total","Total input amount",overview.known_inputs && overview.known_inputs==tx.inputs.size()
+        ? "Inputs "+Amount(Money::Satoshis(overview.input_total))
+        : "Inputs Unknown · "+std::to_string(overview.known_inputs)+" of "+std::to_string(tx.inputs.size())+" previous amounts matched.");
+    if (!overview.input_mix.empty()) Text(state,"input-mix","Input script distribution","Input scripts · "+overview.input_mix);
+    if (funding) Text(state,"transaction-fee","Verified funding fee","Fee: "+locale::Btc(funding->fee)+" BTC · matched saved prevouts");
     else if (tx.fee) Text(state,"transaction-fee","Offline calculated fee","Fee: "+tx.fee->btc()+" BTC · matched supplied prevouts");
     else Text(state,"transaction-fee","Offline calculated fee",tx.coinbase ? "Fee: not applicable to a coinbase transaction." : "Fee: Unknown");
     if (!guard.owner.wallet) Text(state,"overview-ownership","Wallet evidence","Wallet ownership: Unknown");
     if (decoded.psbt_version) {
         Text(state,"psbt-status","PSBT container status","PSBT v"+std::to_string(*decoded.psbt_version)+
             " · "+std::to_string(decoded.psbt_entries)+" serialized map entries. Signed transaction ID: Unknown.");
-        if (auto commitment=protocol::TransactionCommitment(decoded)) {
+        if (const auto& commitment=overview.commitment) {
             Text(state,"unsigned-commitment","Unsigned transaction commitment","Unsigned commitment: "+commitment->hex());
             CopyValue(guard,facts,theme,"copy-commitment","Copy unsigned commitment",commitment->hex());
         } else Text(state,"unsigned-commitment","Unsigned transaction commitment","Unsigned commitment: Unknown");
@@ -299,7 +331,7 @@ void Input(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Impor
     if (!tx.coinbase) {
         Text(state,"input-ownership","Input wallet evidence",proof ? "Matches independently saved wallet policy evidence."
             : cached ? "Matched previous script is in the cached public wallet policy." : "Wallet ownership: Unknown");
-        Text(state,"input-spent","Previous output spending history",Spending(LiveLedger(guard),input.outpoint,tx.txid));
+        Text(state,"input-spent","Previous output spending history",CurrentSpending(guard,input.outpoint,tx.txid));
     }
     Text(state,"sequence","Input sequence","Sequence "+Sequence(tx,input.sequence));
     Text(state,"sighash","Input sighash","Sighash: "+Sighash(*imported.parsed,view.index));
@@ -326,7 +358,7 @@ void Output(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Impo
         : reviewed_change ? "Intended change matches the separately read internal wallet descriptor."
         : known ? "Exact match to previously read wallet script. Change intent: Unknown." : "Wallet ownership and change intent: Unknown");
     Text(state,"output-spent","Output spending history",tx.txid
-        ? Spending(LiveLedger(guard),{*tx.txid,uint32_t(view.index)}) : "Spending history: Unknown");
+        ? CurrentSpending(guard,{*tx.txid,uint32_t(view.index)}) : "Spending history: Unknown");
     Text(state,"output-script","Selected output script",std::string(ScriptKind(output.script))+" · "+
         (output.script.size()<=96 ? output.script : output.script.substr(0,96)+"… Open byte fields for the full script."));
     if (address) CopyValue(guard,facts,theme,"copy-output-address","Copy output address",*address);
@@ -402,12 +434,12 @@ void Hex(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Importe
     };
     Button(state,facts,theme,"hex-source","Original source",true,[repr]{return repr(InspectionBytes::Source);},view.bytes==InspectionBytes::Source);
     if (!doc.wire.empty()) {
-        ImGui::SameLine();
+        theme::SameLineForAction(doc.psbt_version ? "Decoded PSBT" : "Raw wire");
         Button(state,facts,theme,"hex-wire",doc.psbt_version ? "Decoded PSBT" : "Raw wire",true,
             [repr]{return repr(InspectionBytes::Wire);},view.bytes==InspectionBytes::Wire);
     }
     if (!doc.unsigned_wire.empty()) {
-        ImGui::SameLine();
+        theme::SameLineForAction("Derived unsigned");
         Button(state,facts,theme,"hex-unsigned","Derived unsigned",true,[repr]{return repr(InspectionBytes::Unsigned);},view.bytes==InspectionBytes::Unsigned);
     }
     const auto pages=(data.size()+HEX_PAGE-1)/HEX_PAGE;
@@ -420,7 +452,7 @@ void Hex(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Importe
     };
     if (pages>1) {
         Button(state,facts,theme,"bytes-back","Previous bytes",view.bytes_page>0,[move,page=view.bytes_page]{return page && move(page-1);});
-        ImGui::SameLine();
+        theme::SameLineForAction("Next bytes");
         Button(state,facts,theme,"bytes-next","Next bytes",view.bytes_page+1<pages,[move,page=view.bytes_page]{return move(page+1);});
     }
     const auto selection=view.selection;
@@ -429,6 +461,7 @@ void Hex(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Importe
     else Text(state,"selected-range","Selected byte range","Select a field to map its exact bytes.");
     const auto start=view.bytes_page*HEX_PAGE;
     const auto page=data.substr(std::min(start,data.size()),HEX_PAGE);
+    facts.work.psbt_hex_bytes=page.size();
     Text(state,"page-summary","Visible byte page","Page "+std::to_string(view.bytes_page+1)+" of "+std::to_string(pages)+
         " · "+std::to_string(data.size())+" bytes");
     std::string accessible;
@@ -479,7 +512,7 @@ void Hex(const Guard& guard,Facts& facts,const imkit::Theme& theme,const Importe
         ++current->revision;
         return receipt.accepted;
     },false,nullptr,selected.size()>max_clipboard_bytes ? "Save the bytes to export beyond the clipboard limit." : "");
-    ImGui::SameLine();
+    theme::SameLineForAction(selection ? "Save selected bytes" : "Save representation");
     Button(state,facts,theme,"save-representation",selection ? "Save selected bytes" : "Save representation",
         !selected.empty() && guard.host.LocalDocuments(),[guard,representation=view.bytes,selection]{
             if (!guard.Current() || !BeginLocalDocument(guard.state,guard.host,LocalDocumentMode::SaveInspection)) return false;

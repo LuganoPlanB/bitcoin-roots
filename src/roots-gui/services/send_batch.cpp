@@ -104,6 +104,7 @@ BatchValidation ValidateBatch(const SendRecipients& staged,protocol::DisplayNetw
             issue.reference_dust=checked.below_reference_dust;
         }
     }
+    result.maximum=maximum.has_value();
     result.errors=std::ranges::count_if(result.rows,&BatchIssue::Invalid);
     if (result.errors) return result;
     const auto sum=CheckSendFunds(normalized,{});

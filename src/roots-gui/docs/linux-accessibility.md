@@ -61,3 +61,31 @@ collector closes and joins after the reader exits. Authenticated displays use
 an atomic managed-scratch reservation held until Xvfb exits; a forced concurrent
 startup regression exercises the former cookie collision without weakening
 authentication or retrying failures.
+
+## Interface language and exact values
+
+Roots reads `LC_ALL`, then the applicable `LC_MESSAGES`, `LC_NUMERIC` or
+`LC_TIME`, then `LANG` at startup. English is the default. The German catalog
+covers the wallet rail, core Send fields and actions, signing and submission
+actions, and common amount and date states. Entries outside the catalog and
+unsupported language settings fall back to English. The catalog does not
+require a generated German system locale. The `qps-ploc` profile expands
+selected labels for layout testing.
+
+German BTC presentation uses a decimal comma and dates use day-month-year
+order. Dates continue to represent UTC. The Send BTC editor accepts one comma
+or period as the decimal separator and rejects digit grouping. For example,
+`1,000` represents one BTC. Satoshi entry accepts integers. Amount copies,
+CSV, payment URLs, descriptors, addresses, transaction IDs, PSBTs and JSON
+retain their canonical formats. The shipped renderer and fonts have no
+qualified right-to-left shaping or bidirectional layout.
+
+The broadcast fixture runner's `--reader` mode pairs the native wallet with an
+independent AT-SPI client and installed Orca. The client requests keyboard
+focus and sends X11 keys for payment entry and each deliberate action. It
+enters the payment intent, opens the matching independently prepared public
+PSBT, records and approves its review, validates independently signed
+clipboard material, finalizes, checks policy, sends to owned regtest and
+starts and stops monitoring. The journey uses Orca's braille monitor and
+retains its formatted output. The input fixture separately exercises X11
+dead-key composition and commit plus native reduced-motion updates.

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "ui/theme/theme.h"
 #include "app/daemon_signer.h"
@@ -571,11 +572,11 @@ bool Button(State& state,Facts& facts,const imkit::Theme& theme,const char* key,
 {
     ImGui::PushID(key);
     ImGui::BeginDisabled(!enabled);
-    const auto pressed=theme::ActionButton(label,primary ? imkit::ActionVariant::Primary : imkit::ActionVariant::Secondary,{},theme);
+    const auto pressed=theme::ActionButton(locale::Text(label),primary ? imkit::ActionVariant::Primary : imkit::ActionVariant::Secondary,{},theme);
     const auto lo=ImGui::GetItemRectMin(),hi=ImGui::GetItemRectMax();
     facts.transaction_document[key]={{lo.x,lo.y,hi.x,hi.y},ImGui::GetItemID(),ImGui::IsItemFocused(),!enabled,
         pressed,pressed,ImGui::IsItemVisible()};
-    const auto accessible=state.presentation.Interact(label,SemanticRole::Button,SemanticAction::Press|SemanticAction::Focus,
+    const auto accessible=state.presentation.Interact(locale::Text(label),SemanticRole::Button,SemanticAction::Press|SemanticAction::Focus,
         !enabled,false,{},detail);
     ImGui::EndDisabled();
     ImGui::PopID();
@@ -588,7 +589,7 @@ bool Button(State& state,Facts& facts,const imkit::Theme& theme,const char* key,
 
 std::string Amount(Money value)
 {
-    return value.btc()+" BTC · "+std::to_string(value.sats())+(value.sats()==1 ? " sat" : " sats");
+    return locale::BothUnits(value);
 }
 std::string SighashLabel(std::optional<uint32_t> mode)
 {
@@ -990,12 +991,12 @@ void DrawBroadcastStatus(State& state,a::Requests& host,Facts& facts,const imkit
         },false,available.available ? "" : available.reason);
     };
     action(a::Command::CheckBroadcastStatus,"check-broadcast-status","Check Status");
-    ImGui::SameLine();
+    theme::SameLineForAction(locale::Text(submission->Monitoring(owner->id) ? "Stop monitoring" : "Monitor transaction"));
     action(a::Command::MonitorBroadcast,"monitor-broadcast",submission->Monitoring(owner->id) ? "Stop monitoring" : "Monitor transaction");
     const auto& result=submission->View();
     if (result.document!=owner->id) return;
     if (submission->Busy()) {
-        ImGui::SameLine();
+        theme::SameLineForAction(locale::Text("Cancel wait"));
         action(a::Command::CancelBroadcast,"broadcast-cancel","Cancel wait");
     }
     if (!result.message.empty()) {
@@ -1053,7 +1054,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     if (Button(state,facts,theme,"review-back","Back to inspection",!state.daemon_unlock.owner,[&state,&host,id,permitted]{
         return permitted() && CloseSigningReview(state,host,id);
     })) return false;
-    ImGui::SameLine();
+    theme::SameLineForAction(panel.advanced ? "Hide sighash details" : "Advanced sighash");
     Button(state,facts,theme,"advanced-sighash",panel.advanced ? "Hide sighash details" : "Advanced sighash",true,[change]{
         return change([](SigningView& view){view.advanced=!view.advanced;});
     });
@@ -1147,7 +1148,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
     const auto record=Can(state,host,{a::Command::ReviewForSigning,id},current);
     Button(state,facts,theme,"review-record","Record signing review",record.available,[command]{return command(a::Command::ReviewForSigning);},
         !review,record.available ? "" : record.reason);
-    ImGui::SameLine();
+    theme::SameLineForAction(locale::Text("Approve for signing"));
     const auto approve=Can(state,host,{a::Command::ApproveSigning,id},current);
     Button(state,facts,theme,"review-approve","Approve for signing",approve.available,[command]{return command(a::Command::ApproveSigning);},
         bool(review) && !approval,approve.available ? "" : approve.reason);
@@ -1190,7 +1191,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
             [&state,&host,artifact_current] {
                 return artifact_current() && BeginLocalDocument(state,host,LocalDocumentMode::SaveFinalized);
             });
-        ImGui::SameLine();
+        theme::SameLineForAction("View final transaction");
         if (Button(state,facts,theme,"view-final-transaction","View final transaction",state.documents.Documents().size()<32,
             [&state,artifact_current,data,network=owner->network] {
                 if (!artifact_current()) return false;
@@ -1199,7 +1200,7 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
                 state.notice=std::move(error);
                 return false;
             })) return;
-        ImGui::SameLine();
+        theme::SameLineForAction("Show final transaction QR");
         Button(state,facts,theme,"final-transaction-qr","Show final transaction QR",host.LocalDocuments(),[&state,&host,id]{
             return state.documents.ActiveId()==id && BeginLocalDocument(state,host,LocalDocumentMode::ShowFinalQr);
         });
@@ -1211,9 +1212,9 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
             };
             Text(state,"broadcast-fee-limit","Broadcast fee policy","Maximum submission fee rate: 100 sat/vB.");
             action(a::Command::CheckBroadcast,"broadcast-check","Check node policy");
-            ImGui::SameLine();
+            theme::SameLineForAction(locale::Text("Broadcast"));
             action(a::Command::BroadcastTransaction,"broadcast-submit","Broadcast",true);
-            ImGui::SameLine();
+            theme::SameLineForAction("Rebroadcast same bytes");
             action(a::Command::RebroadcastTransaction,"broadcast-retry","Rebroadcast same bytes");
             DrawBroadcastStatus(state,host,facts,theme);
         }
@@ -1248,11 +1249,11 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
             ImGuiInputTextFlags_Password|ImGuiInputTextFlags_NoUndoRedo|ImGuiInputTextFlags_EnterReturnsTrue);
         unlock.field=ImGui::GetItemID();
         const auto lo=ImGui::GetItemRectMin(),hi=ImGui::GetItemRectMax();
+        const bool typing=ImGui::IsItemActive();
         facts.transaction_document["daemon-wallet-passphrase"]={{lo.x,lo.y,hi.x,hi.y},unlock.field,ImGui::IsItemFocused(),
-            false,false,false,ImGui::IsItemVisible()};
+            false,typing,false,ImGui::IsItemVisible()};
         state.presentation.Interact("Wallet passphrase",SemanticRole::TextField,SemanticAction::None,
             false,false,{},"Protected keyboard input. The value is never published.");
-        const bool typing=ImGui::IsItemActive();
         if (typing) ClearUnlockInputEvents(*ImGui::GetCurrentContext(),false);
         if (ImGui::IsItemDeactivated()) ClearUnlockEditor(unlock.field);
         const auto submit=[&state,&host,&unlock,id,permitted] {
@@ -1290,10 +1291,10 @@ bool DrawSigningReview(State& state,a::Requests& host,Facts& facts,const imkit::
         operation(a::Command::SignTransaction,external ? "sign-on-device" : "sign-with-daemon",
             external ? "Sign on device" : "Sign with daemon",true);
         if (!external) {
-            ImGui::SameLine();
+            theme::SameLineForAction(locale::Text("Unlock daemon wallet"));
             operation(a::Command::OpenDaemonUnlock,"open-daemon-unlock","Unlock daemon wallet");
         }
-        ImGui::SameLine();
+        theme::SameLineForAction(locale::Text("Enrich PSBT"));
         operation(a::Command::EnrichTransaction,"enrich-psbt","Enrich PSBT");
         const auto open=[&](const auto& data,const char* key,const char* label) {
             if (!data) return;

@@ -141,7 +141,18 @@ struct Observer final:platform::NativeObserver {
         const auto settings=state.settings.find(doc->id);
         const auto* current=settings==state.settings.end()?nullptr:&settings->second;
         const auto click=[&](const char* id){Click(host,facts.settings.at(id));};
-        const auto paste=[&] {Check(host.Input().Copy(multi),"fixture public descriptor clipboard");click("paste");};
+        const auto paste=[&] {
+            const auto packet=state.presentation.exchange.Published();
+            Check(packet && packet->valid,"current native settings publication");
+            const auto field=std::ranges::find_if(packet->nodes,[](const auto& item){
+                return item.name=="Paste public descriptor" && item.showing
+                    && c::ax::Supports(item.actions,c::ax::SemanticAction::Press);
+            });
+            Check(field!=packet->nodes.end(),"reachable public descriptor paste action");
+            Check(host.Input().Copy(multi),"fixture public descriptor clipboard");
+            Check(state.presentation.exchange.QueueNext(packet->generation,field->id,c::ax::SemanticAction::Press).second
+                ==c::ActionResult::Queued,"owned semantic paste action");
+        };
         const auto publication=state.presentation.exchange.Published();
         switch(stage) {
         case 0:

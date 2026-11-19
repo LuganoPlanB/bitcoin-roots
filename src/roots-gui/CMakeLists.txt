@@ -87,7 +87,7 @@ target_link_libraries(roots_gui_core PRIVATE roots_gui_protocol roots_gui_http r
 set(roots_gui_theme_sources ui/theme/tokens.cpp ui/theme/theme.cpp ui/theme/appearance.cpp ui/theme/gallery.cpp)
 set(roots_gui_component_sources ui/components/edits.cpp ui/components/controls.cpp ui/components/gallery.cpp ui/components/presentation.cpp)
 set(roots_gui_shell_sources app/document_registry.cpp app/signing_review.cpp app/daemon_signer.cpp app/broadcast.cpp app/replacement.cpp app/child_package.cpp app/recovery.cpp app/commands.cpp app/connection_observations.cpp app/history_workspace.cpp app/coin_inventory.cpp app/coin_controls.cpp ui/shell/coin_actions.cpp ui/shell/coins.cpp ui/shell/history.cpp ui/shell/replacement.cpp ui/shell/addresses.cpp ui/shell/workspace.cpp ui/shell/document_actions.cpp ui/shell/recovery.cpp ui/shell/privacy.cpp ui/shell/command_routes.cpp ui/shell/activity.cpp ui/shell/onboarding.cpp ui/shell/receive.cpp ui/shell/settings.cpp ui/shell/advanced.cpp ui/shell/transaction_document.cpp ui/shell/transaction_workbench.cpp ui/shell/signing_review.cpp ui/shell/transaction_editor.cpp ui/shell/offline_builder.cpp ui/shell/send.cpp ui/shell/send_batch.cpp ui/shell/funding.cpp ui/shell/transaction_flow.cpp ui/shell/fees.cpp)
-add_library(roots_gui_ui STATIC ui/bootstrap.cpp ui/preferences.cpp ui/server.cpp ${roots_gui_theme_sources} ${roots_gui_component_sources} ${roots_gui_shell_sources})
+add_library(roots_gui_ui STATIC ui/bootstrap.cpp ui/localization.cpp ui/preferences.cpp ui/server.cpp ${roots_gui_theme_sources} ${roots_gui_component_sources} ${roots_gui_shell_sources})
 target_sources(roots_gui_ui PRIVATE app/desktop.cpp app/wallet_tools.cpp app/message_signing.cpp ui/shell/message.cpp ui/shell/sweep.cpp ui/shell/payment_protocol.cpp ui/shell/download.cpp ui/shell/metadata_backup.cpp ui/shell/desktop.cpp ui/shell/preferences.cpp ui/shell/wallet_tools.cpp)
 target_include_directories(roots_gui_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(roots_gui_ui PUBLIC cxx_std_20)
@@ -115,6 +115,11 @@ add_custom_command(TARGET roots-gui POST_BUILD
     "${roots_gui_ui_source}/imkit/assets/fonts/Inter-OFL.txt"
     "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
   VERBATIM)
+
+option(ROOTS_GUI_LINUX_PACKAGE "Enable the standalone Linux distribution install rules." OFF)
+if(ROOTS_GUI_LINUX_PACKAGE)
+  include(cmake/linux-package.cmake)
+endif()
 
 if(ROOTS_GUI_BUILD_TESTS)
   enable_testing()
@@ -159,6 +164,23 @@ if(ROOTS_GUI_BUILD_TESTS)
     target_link_libraries(roots_gui_visual_capture PRIVATE roots_gui_platform roots_gui_ui roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
     target_compile_features(roots_gui_visual_capture PRIVATE cxx_std_20)
     add_dependencies(roots_gui_visual_capture roots-gui)
+    add_executable(roots_gui_large_wallet tests/visual/large_wallet.cpp)
+    target_link_libraries(roots_gui_large_wallet PRIVATE roots_gui_platform roots_gui_ui roots_gui_core roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
+    target_compile_features(roots_gui_large_wallet PRIVATE cxx_std_20)
+    add_dependencies(roots_gui_large_wallet roots-gui)
+    add_executable(roots_gui_release_workspace tests/visual/release_workspace.cpp)
+    target_link_libraries(roots_gui_release_workspace PRIVATE roots_gui_platform roots_gui_ui roots_gui_core roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
+    target_compile_features(roots_gui_release_workspace PRIVATE cxx_std_20)
+    add_dependencies(roots_gui_release_workspace roots-gui)
+    if(ROOTS_GUI_TEST_OPENSSL)
+      add_test(NAME roots_gui.visual.release_workspace COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/visual/run_release_visual.py"
+        --binary "$<TARGET_FILE:roots_gui_release_workspace>"
+        --fonts "$<TARGET_FILE_DIR:roots-gui>/roots-gui-assets/fonts"
+        --openssl "${ROOTS_GUI_TEST_OPENSSL}" --output "${CMAKE_CURRENT_BINARY_DIR}/tests/release-workspace")
+      set_tests_properties(roots_gui.visual.release_workspace PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE LABELS "roots-gui;visual;roots-gui.visual")
+      add_dependencies(roots_gui_visual_tests roots_gui_release_workspace)
+    endif()
     add_executable(roots_gui_theme_gallery tests/theme/native_gallery.cpp)
     target_link_libraries(roots_gui_theme_gallery PRIVATE roots_gui_platform roots_gui_ui roots_gui_backends X11::X11 ${CMAKE_DL_LIBS})
     target_compile_features(roots_gui_theme_gallery PRIVATE cxx_std_20)

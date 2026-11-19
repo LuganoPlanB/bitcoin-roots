@@ -72,6 +72,12 @@ class Observer final : public platform::NativeObserver {
     bool release{};
     bool key_release{};
     int stage{}, checks{}, frames{};
+    size_t unlock_characters_sent{};
+    bool unlock_input_clicked{};
+    unsigned unlock_key_pressed{};
+    uint64_t unlock_action{};
+    DraftRevision unlock_revision{};
+    uint64_t last_edit_diagnostic{};
     bool cleaned{};
     bool create{};
     bool fees{};
@@ -124,15 +130,16 @@ class Observer final : public platform::NativeObserver {
             std::move(text)).second == c::ActionResult::Queued, "Owned destination edit");
         return true;
     }
-    void Press(std::string_view label)
+    uint64_t Press(std::string_view label)
     {
         const auto packet = state.presentation.exchange.Published();
         const auto control = std::ranges::find_if(packet->nodes, [label](const auto& node) {
             return node.name == label && c::ax::Supports(node.actions, c::ax::SemanticAction::Press);
         });
         Check(control != packet->nodes.end(), "Current semantic action");
-        Check(state.presentation.exchange.QueueNext(packet->generation, control->id, c::ax::SemanticAction::Press).second
-            == c::ActionResult::Queued, "Owned semantic press");
+        const auto [sequence,result]=state.presentation.exchange.QueueNext(packet->generation,control->id,c::ax::SemanticAction::Press);
+        Check(result==c::ActionResult::Queued,"Owned semantic press");
+        return sequence;
     }
     void ClickMenu(platform::NativeHost& host, std::string_view label)
     {
@@ -398,25 +405,91 @@ class Observer final : public platform::NativeObserver {
         case 12:
             if (view.daemon_status.starts_with("Waiting") || view.daemon_status.starts_with("Enriched")) return;
             Check(view.daemon_status.find("wallet is locked")!=std::string::npos,"Locked wallet refuses sign");
-            Press("Unlock daemon wallet");
+            unlock_revision=state.documents.Active()->draft_revision;
+            unlock_action=Press("Unlock daemon wallet");
             break;
         case 13:
-            if (!facts.transaction_document.contains("daemon-wallet-passphrase")) return;
-            if (!facts.transaction_document.at("daemon-wallet-passphrase").focused) return;
-            for (const char c:FIXTURE_PASSPHRASE) {
-                const char name[]{c,'\0'};
-                const auto code=XKeysymToKeycode(display,XStringToKeysym(name));
-                Check(code && key(display,code,True,0) && key(display,code,False,0),"Native protected keyboard input");
+        {
+            if (!facts.transaction_document.contains("daemon-wallet-passphrase")) {
+                const auto receipts=state.presentation.exchange.Receipts();
+                const auto receipt=std::ranges::find(receipts,unlock_action,&c::SemanticReceipt::sequence);
+                if (receipt!=receipts.end() && !state.daemon_unlock.owner)
+                    throw std::runtime_error("Unlock action receipt: "+std::to_string(int(receipt->result))
+                        +" / "+state.notice+" / "+std::string(state.signing_reviews.Reason(created_id))
+                        +" / current approval "+std::to_string(bool(shell::CurrentSigningApproval(state,requests,created_id))));
+                return;
             }
-            XSync(display,False);
+            const std::string_view entered(state.daemon_unlock.passphrase.data());
+            const auto& field=facts.transaction_document.at("daemon-wallet-passphrase");
+            if(!field.activated && !unlock_input_clicked){
+                if(!field.visible || field.rect[3]>=facts.layout.status.y){
+                    if(frame.rendered_frames>last_edit_diagnostic+8){
+                        last_edit_diagnostic=frame.rendered_frames;
+                        int x{},y{};
+                        glfwGetWindowPos(host.Window(),&x,&y);
+                        const auto& pane=facts.layout.content;
+                        const auto wheel=field.rect[1]<pane.y?4U:5U;
+                        Check(motion(display,-1,int(x+pane.x+pane.w/2),int(y+pane.y+pane.h/2),0)
+                                && button(display,wheel,True,0) && button(display,wheel,False,0),
+                            "native scroll to protected input");
+                        XSync(display,False);
+                    }
+                    return;
+                }
+                Click(host,field);
+                unlock_input_clicked=true;
+                return;
+            }
+            if (!field.activated || !glfwGetWindowAttrib(host.Window(),GLFW_FOCUSED)) {
+                if (frame.rendered_frames>last_edit_diagnostic+15) {
+                    Capture(frame,"daemon-unlock-input-stalled");
+                    throw std::runtime_error("Native focused passphrase input is inactive");
+                }
+                return;
+            }
+            if(unlock_key_pressed){
+                Check(key(display,unlock_key_pressed,False,0),"Native protected key release");
+                unlock_key_pressed=0;
+                XSync(display,False);
+                return;
+            }
+            if(entered.size()!=unlock_characters_sent){
+                if(frame.rendered_frames>last_edit_diagnostic+120){
+                    last_edit_diagnostic=frame.rendered_frames;
+                    std::cerr<<"Protected editor progress: "<<entered.size()<<" acknowledged of "
+                             <<unlock_characters_sent<<" events; focused="<<field.focused<<'\n';
+                }
+                return;
+            }
+            if(entered.size()<FIXTURE_PASSPHRASE.size()){
+                const char name[]{FIXTURE_PASSPHRASE[unlock_characters_sent++],'\0'};
+                const auto code=XKeysymToKeycode(display,XStringToKeysym(name));
+                Check(code && key(display,code,True,0),"Native protected keyboard input");
+                unlock_key_pressed=code;
+                XSync(display,False);
+                return;
+            }
             break;
+        }
         case 14: {
             const std::string_view entered(state.daemon_unlock.passphrase.data());
             // The pinned backend trickles queued down/up events across frames.
             if (entered.size()<FIXTURE_PASSPHRASE.size()) return;
             const auto& submit=facts.transaction_document.at("submit-daemon-unlock");
-            if (submit.rect[3]>=facts.layout.status.y) return;
+            if (!submit.visible || submit.rect[3]>=facts.layout.status.y) {
+                int x{},y{};
+                glfwGetWindowPos(host.Window(),&x,&y);
+                Check(motion(display,-1,x+facts.layout.content.x+facts.layout.content.w/2,
+                             y+facts.layout.content.y+facts.layout.content.h/2,0)
+                        && button(display,5,True,0) && button(display,5,False,0),
+                    "native scroll reveals the separate daemon unlock confirmation");
+                XSync(display,False);
+                return;
+            }
             Check(entered==FIXTURE_PASSPHRASE,"Complete native protected edit delivered before submit");
+            Check(state.documents.Active()->draft_revision==unlock_revision
+                && shell::CurrentSigningApproval(state,requests,created_id),
+                "Revealing protected input retains the exact approved draft revision");
             const auto packet=state.presentation.exchange.Published();
             const auto field=std::ranges::find_if(packet->nodes,[](const auto& node){return node.name=="Wallet passphrase";});
             Check(field!=packet->nodes.end() && field->value.empty()
@@ -467,6 +540,7 @@ class Observer final : public platform::NativeObserver {
             host.RequestClose();
             break;
         }
+        std::cerr<<"Completed native signing stage "<<stage<<'\n';
         ++stage;
     }
 
@@ -705,7 +779,7 @@ class Observer final : public platform::NativeObserver {
                     protocol::DisplayNetwork::Regtest,draft->draft_revision),"Large draft fixture destination");
             }
             break;
-        case 14: Click(host,facts.funding.at("preview")); break;
+        case 14: Press("Preview funding"); break;
         case 15:
             if (!snapshot) {
                 if (!requests.funding.Busy()) throw std::runtime_error("Large flow unavailable: "+state.funding.status);

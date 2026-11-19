@@ -89,7 +89,7 @@ class HistoryLedger {
     std::map<std::string,HistoryTransaction> rows;
     HistoryTotals totals;
     HistoryPolicy policy;
-    uint64_t sequence{};
+    uint64_t sequence{},revision{};
     int64_t observed{};
     std::string tip;
     bool full_seen{},complete{},limited{},scanning{},stable{},pruned{};
@@ -114,6 +114,7 @@ public:
     bool Stable() const{return stable;}
     const std::string& Tip() const{return tip;}
     int64_t Observed() const{return observed;}
+    uint64_t Revision() const{return revision;}
 private:
     std::vector<HistoryCoin> coins;
     bool inventory_available{},locks_available{};std::vector<Outpoint> daemon_locked;

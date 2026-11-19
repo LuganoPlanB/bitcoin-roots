@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "platform/linux/accessibility.h"
 #include "ui/components/semantic_packet.h"
 #if defined(__linux__)
@@ -116,7 +117,7 @@ struct LinuxAccessibility::Impl:std::enable_shared_from_this<Impl> {
         if(interface=="org.a11y.atspi.Accessible"){
             if(property=="Name")return g_variant_new_string(Name(o).c_str());if(property=="Description" || property=="HelpText")return g_variant_new_string(n?n->description.c_str():"");
             if(property=="Parent")return o.kind==1?g_variant_new("(so)",parent_bus.c_str(),parent_path.c_str()):Reference(Parent(o));
-            if(property=="ChildCount")return g_variant_new_int32(Children(o).size());if(property=="Locale")return g_variant_new_string("en");if(property=="AccessibleId")return g_variant_new_string(o.kind?o.kind==1?"roots-gui":"native-window":std::to_string(o.id).c_str());
+            if(property=="ChildCount")return g_variant_new_int32(Children(o).size());if(property=="Locale")return g_variant_new_string(ui::locale::LanguageTag());if(property=="AccessibleId")return g_variant_new_string(o.kind?o.kind==1?"roots-gui":"native-window":std::to_string(o.id).c_str());
         }else if(interface=="org.a11y.atspi.Application"){
             if(property=="ToolkitName")return g_variant_new_string("Roots ImGui");if(property=="Version")return g_variant_new_string("19297 / ImKit 4.1.0");if(property=="AtspiVersion")return g_variant_new_string("2.1");if(property=="Id")return g_variant_new_int32(app_id);
         }else if(interface=="org.a11y.atspi.Action" && n && property=="NActions")return g_variant_new_int32(Actions(*n).size());
@@ -152,7 +153,7 @@ struct LinuxAccessibility::Impl:std::enable_shared_from_this<Impl> {
             if(method=="GetInterfaces"){Reply(call,g_variant_new("(@as)",Names(o.interfaces)));return;}
             if(method=="GetRelationSet"){Reply(call,g_variant_new("(@a(ua(so)))",Empty("(ua(so))")));return;}
             if(method=="GetAttributes"){GVariantBuilder b;g_variant_builder_init(&b,G_VARIANT_TYPE("a{ss}"));g_variant_builder_add(&b,"{ss}","model-id",std::to_string(o.id).c_str());g_variant_builder_add(&b,"{ss}","snapshot-generation",std::to_string(packet?packet->generation:0).c_str());Reply(call,g_variant_new("(@a{ss})",g_variant_builder_end(&b)));return;}
-        }else if(interface=="org.a11y.atspi.Application" && method=="GetLocale"){Reply(call,g_variant_new("(s)","en"));return;}
+        }else if(interface=="org.a11y.atspi.Application" && method=="GetLocale"){Reply(call,g_variant_new("(s)",ui::locale::LanguageTag()));return;}
         else if(interface=="org.a11y.atspi.Cache" && method=="GetItems"){GVariantBuilder b;g_variant_builder_init(&b,G_VARIANT_TYPE("a((so)(so)(so)iiassusau)"));for(const auto& [key,obj]:objects)if(obj.kind!=3)g_variant_builder_add_value(&b,CacheItem(key,obj));Reply(call,g_variant_new("(@a((so)(so)(so)iiassusau))",g_variant_builder_end(&b)));return;}
         else if(interface=="org.a11y.atspi.Action" && n){const auto actions=Actions(*n);if(method=="GetActions"){GVariantBuilder b;g_variant_builder_init(&b,G_VARIANT_TYPE("a(sss)"));for(const auto& [_,name]:actions)g_variant_builder_add(&b,"(sss)",name,n->description.c_str(),KeyBinding(n->shortcut).c_str());Reply(call,g_variant_new("(@a(sss))",g_variant_builder_end(&b)));return;}const int index=Int(args,0);if(index<0 || size_t(index)>=actions.size()){Error(call,"InvalidArgs","Action index is outside the current action list.");return;}if(method=="DoAction"){Queue(o,actions[index].first,{},call);return;}if(method=="GetName" || method=="GetLocalizedName"){Reply(call,g_variant_new("(s)",actions[index].second));return;}if(method=="GetDescription"){Reply(call,g_variant_new("(s)",n->description.c_str()));return;}if(method=="GetKeyBinding"){Reply(call,g_variant_new("(s)",KeyBinding(n->shortcut).c_str()));return;}}
         else if(interface=="org.a11y.atspi.Component"){

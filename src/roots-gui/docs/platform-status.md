@@ -99,6 +99,10 @@ this plan under the same approved revision. Evidence is still required before
 claiming those capabilities. Linux adapter results do not qualify another
 operating system.
 
+The [Linux distribution and packaging follow-ons](linux-package.md) describe
+the private-prefix archive and the remaining macOS app-bundle and Windows
+installer qualification.
+
 ## QR camera
 
 The GUI platform maintainers own the portable `CameraDriver` and

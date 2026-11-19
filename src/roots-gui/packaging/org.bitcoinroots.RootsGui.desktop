@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Bitcoin Roots
+Comment=Bitcoin wallet and transaction workspace
+Exec=roots-gui
+Icon=org.bitcoinroots.RootsGui
+Terminal=false
+Categories=Office;Finance;

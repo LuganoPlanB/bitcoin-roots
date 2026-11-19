@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "app/history_workspace.h"
 #include "ui/theme/theme.h"
 #include <algorithm>
 #include <chrono>
+#include <cfloat>
 #include <cmath>
 namespace roots::gui::ui::shell {
 namespace {
@@ -250,31 +252,43 @@ void Icon(int section,ImVec2 p,float size,ImU32 color)
 }
 void Rail(State& s,Facts& f,const imkit::Theme& theme,float scale)
 {
-    At(f.layout.rail);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{(f.layout.compact?6:8)*scale,8*scale});
+    At(f.layout.rail);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{(f.layout.compact?6:8)*scale,6*scale});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{ImGui::GetStyle().ItemSpacing.x,4*scale});
     ImGui::BeginChild("navigation",{f.layout.rail.w,f.layout.rail.h},ImGuiChildFlags_AlwaysUseWindowPadding|ImGuiChildFlags_NavFlattened);
     {const auto p=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();f.layout.rail={p.x,p.y,size.x,size.y};}
     s.presentation.Group("semantic-navigation","Wallet sections",c::ax::SemanticRole::Toolbar,{f.layout.rail.x,f.layout.rail.y},{f.layout.rail.x+f.layout.rail.w,f.layout.rail.y+f.layout.rail.h});
     if(components::native_input)components::native_input->Privacy(s.privacy.hidden);
     const auto* active=s.documents.Active();const bool wallet=active && active->kind==a::DocumentKind::Wallet;
-    const float extent=std::max(64*scale,(f.layout.rail.h-16*scale-5*ImGui::GetStyle().ItemSpacing.y)/6);
+    const float extent=std::max(31*scale,std::floor((f.layout.rail.h-12*scale-5*ImGui::GetStyle().ItemSpacing.y)/6));
     for(int i=0;i<6;++i) {
         ImGui::PushID(i);ImGui::BeginDisabled(!wallet);
-        const bool pressed=theme::ActionButton("###section",imkit::ActionVariant::Secondary,{std::max(1.F,ImGui::GetContentRegionAvail().x),extent},theme);
-        const auto external=s.presentation.Interact(a::SectionNames[i],c::ax::SemanticRole::Radio,c::ax::SemanticAction::Select|c::ax::SemanticAction::Focus,!wallet,wallet && int(active->section)==i);
+        const float width=std::max(1.F,ImGui::GetContentRegionAvail().x);
+        const float wrap=std::max(1.F,width-(f.layout.compact?4:12)*scale);
+        const auto* label=locale::Text(a::SectionNames[i]);
+        auto* font=ImGui::GetFont();
+        const float label_size=(f.layout.compact?12.5F:14.F)*scale;
+        const auto text=font->CalcTextSizeA(label_size,FLT_MAX,wrap,label);
+        const float gap=3*scale;
+        const float height=std::max(extent,text.y+2*gap);
+        const bool pressed=theme::ActionButton("###section",imkit::ActionVariant::Secondary,{width,height},theme);
+        const auto external=s.presentation.Interact(label,c::ax::SemanticRole::Radio,c::ax::SemanticAction::Select|c::ax::SemanticAction::Focus,!wallet,wallet && int(active->section)==i);
         auto item=Last(pressed);f.navigation[i]=item;const auto& r=item.rect;
         auto* draw=ImGui::GetWindowDrawList();const bool selected=wallet && int(active->section)==i;
         if(selected)draw->AddRectFilled({r[0]+1,r[1]+1},{r[2]-1,r[3]-1},ImGui::GetColorU32(theme.semantic.control.selected),theme.radius.control);
-        const float icon=20*scale;Icon(i,{(r[0]+r[2]-icon)/2,r[1]+6*scale},icon,ImGui::GetColorU32(theme.semantic.text));
-        const float wrap=std::max(1.F,r[2]-r[0]-(f.layout.compact?4:12)*scale);const auto* label=a::SectionNames[i];
-        const float label_size=(f.layout.compact?12.5F:14.F)*scale;ImGui::PushFont(nullptr,label_size);const auto text=ImGui::CalcTextSize(label,nullptr,false,wrap);ImGui::PopFont();
-        const ImVec4 clip{r[0],r[1],r[2],r[3]};draw->AddText(ImGui::GetFont(),label_size,{r[0]+(r[2]-r[0]-text.x)/2,r[1]+30*scale},ImGui::GetColorU32(theme.semantic.text),label,nullptr,wrap,&clip);
+        const float icon=std::min(20*scale,height-text.y-3*gap);
+        const float leading=icon>=10*scale ? icon+gap : 0.F;
+        const float top=r[1]+(height-leading-text.y)/2;
+        if (leading>0) Icon(i,{(r[0]+r[2]-icon)/2,top},icon,ImGui::GetColorU32(theme.semantic.text));
+        const ImVec4 clip{r[0],r[1],r[2],r[3]};
+        draw->AddText(font,label_size,{r[0]+(width-text.x)/2,top+leading},ImGui::GetColorU32(theme.semantic.text),label,nullptr,wrap,&clip);
         if(selected)draw->AddLine({r[0]+4*scale,r[3]-2*scale},{r[2]-4*scale,r[3]-2*scale},ImGui::GetColorU32(theme.semantic.text),2*scale);
         if(pressed)s.documents.Navigate(a::Section(i));
         if(external)s.presentation.Defer(*external,[&s,i,pressed](const c::SemanticRequest&){return pressed || s.documents.Navigate(a::Section(i));});
         if(s.reveal_navigation==i){ImGui::SetScrollHereY(.5F);s.reveal_navigation=-1;}
         ImGui::EndDisabled();ImGui::PopID();
     }
-    s.presentation.EndGroup();ImGui::EndChild();ImGui::PopStyleVar();
+    s.presentation.EndGroup();ImGui::EndChild();ImGui::PopStyleVar(2);
 }
 struct ContextCommands final:c::Commands {
     a::Requests& host;uint64_t document;a::Section section;std::string& notice;
@@ -286,7 +300,19 @@ struct ContextCommands final:c::Commands {
 };
 void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float scale,const AppearanceStatus& appearance)
 {
-    At(f.layout.content);ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{24*scale,s.documents.Active() && (s.documents.Active()->history.enabled || s.documents.Active()->observed_transaction)?8*scale:16*scale});
+    auto* d=s.documents.Active();
+    const bool public_document=d && (d->history.enabled || d->observed_transaction || d->coin_draft || d->imported);
+    At(f.layout.content);
+    if (!d || d->Current().restore_scroll) {
+        if (public_document) {
+            auto& position=d->Current();
+            ImGui::SetNextWindowScroll({position.scroll_x,position.scroll_y});
+            position.restore_scroll=false;
+        } else {
+            ImGui::SetNextWindowScroll({0,0});
+        }
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{24*scale,d && (d->history.enabled || d->observed_transaction)?8*scale:16*scale});
     ImGui::BeginChild("content",{f.layout.content.w,f.layout.content.h},ImGuiChildFlags_AlwaysUseWindowPadding|ImGuiChildFlags_NavFlattened);
     {const auto p=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();f.layout.content={p.x,p.y,size.x,size.y};}
     const auto appearance_notice=[&](const char* id,const char* text) {
@@ -304,7 +330,6 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         ImGui::TextWrapped("%s",s.general.error.c_str());
         s.presentation.Annotate("preferences-error","Preferences",s.general.error,c::ax::SemanticRole::Alert);
     }
-    auto* d=s.documents.Active();
     if(!d) {
         if(!s.notice.empty()){const auto text=s.privacy.hidden?std::string("Command result details hidden."):s.notice;ImGui::TextWrapped("%s",text.c_str());s.presentation.Annotate("command-notice","Command status",text,c::ax::SemanticRole::Alert);}
         const auto available=ImGui::GetContentRegionAvail();
@@ -344,7 +369,12 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         ImGui::TextWrapped("%s",note);
         s.presentation.Annotate("receive-retained","Receive label status",note,c::ax::SemanticRole::Alert);
     }
-    if(d->history.enabled || d->observed_transaction || d->coin_draft || d->imported){
+    if(public_document){
+        // Drawing can change the active document. Remember this window's
+        // scroll before passing control to a section or workbench action.
+        auto& position=d->Current();
+        position.scroll_x=ImGui::GetScrollX();
+        position.scroll_y=ImGui::GetScrollY();
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{8*scale,4*scale});
         ImGui::PushID(std::to_string(d->id).c_str());
         if(d->imported) DrawImportedDocument(s,host,f,theme,scale);
@@ -368,7 +398,7 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
         else if(d->section==a::Section::UTXOs) DrawCoins(s,host,f,theme,scale);
         else if(d->section==a::Section::Settings && host.Wallets()) DrawPolicySettings(s,host,f,theme,scale);
         else {
-            ImGui::TextUnformatted(a::SectionNames[size_t(d->section)]);
+            ImGui::TextUnformatted(locale::Text(a::SectionNames[size_t(d->section)]));
             ImGui::TextWrapped("This wallet section is not available yet. Use Transactions for dated read-only observations.");
             s.presentation.Annotate("wallet-section-unavailable","Wallet section","Unavailable; use Transactions for read-only observations");
         }
@@ -378,14 +408,14 @@ void Content(State& s,a::Requests& host,Facts& f,const imkit::Theme& theme,float
     }
     const bool wallet=d->kind==a::DocumentKind::Wallet;const auto section=d->section;auto& state=d->Current();
     const auto reason=wallet?a::Dependency(*d,section):std::string{};
-    imkit::PushTextRole(theme,imkit::TextRole::Heading);ImGui::TextUnformatted(wallet?a::SectionNames[size_t(section)]:"Transaction document");s.presentation.Annotate("section-heading","Current section",wallet?a::SectionNames[size_t(section)]:"Transaction document");imkit::PopTextRole();
+    imkit::PushTextRole(theme,imkit::TextRole::Heading);ImGui::TextUnformatted(wallet?locale::Text(a::SectionNames[size_t(section)]):"Transaction document");s.presentation.Annotate("section-heading","Current section",wallet?locale::Text(a::SectionNames[size_t(section)]):"Transaction document");imkit::PopTextRole();
     const char* summary=!d->complete?"Incomplete wallet policy":d->observation==a::ObservationState::Loading?"Loading public fixture":d->observation==a::ObservationState::Error?"Fixture request failed":d->observation==a::ObservationState::Stale?"Stale public observations":d->observation==a::ObservationState::Locked?"Wallet locked":d->observation==a::ObservationState::Empty?"No public observations":"Offline / public fixture";
     imkit::PushTextRole(theme,imkit::TextRole::Caption);ImGui::TextUnformatted(summary);
     if(s.privacy.hidden){ImGui::SameLine();ImGui::TextUnformatted("Amounts hidden");}imkit::PopTextRole();
     if(!s.notice.empty()){const auto text=s.privacy.hidden?std::string("Command result details hidden."):s.notice;ImGui::TextWrapped("%s",text.c_str());s.presentation.Annotate("command-notice","Command status",text,c::ax::SemanticRole::Alert);}
     const float footer=48*scale;
     ImGui::PushID(std::to_string(d->id).c_str());ImGui::PushID(wallet?int(section):6);
-    s.presentation.Group("semantic-section",wallet?a::SectionNames[size_t(section)]:"Transaction document public observations",c::ax::SemanticRole::Group,{f.layout.content.x,f.layout.content.y},{f.layout.content.x+f.layout.content.w,f.layout.content.y+f.layout.content.h});
+    s.presentation.Group("semantic-section",wallet?locale::Text(a::SectionNames[size_t(section)]):"Transaction document public observations",c::ax::SemanticRole::Group,{f.layout.content.x,f.layout.content.y},{f.layout.content.x+f.layout.content.w,f.layout.content.y+f.layout.content.h});
     ImGui::BeginChild("section-body",{0,std::max(1.F,ImGui::GetContentRegionAvail().y-footer)},ImGuiChildFlags_NavFlattened,ImGuiWindowFlags_HorizontalScrollbar);
     const bool restoring=state.restore_scroll;
     if(state.restore_scroll){ImGui::SetScrollX(state.scroll_x);ImGui::SetScrollY(state.scroll_y);state.restore_scroll=false;}
@@ -487,7 +517,7 @@ std::string SemanticScope(const State& s) {
     if(const auto settings=s.settings.find(s.documents.ActiveId());settings!=s.settings.end())scope+=":"+std::to_string(settings->second.revision);
     if(const auto advanced=s.advanced.find(s.documents.ActiveId());advanced!=s.advanced.end())scope+=":"+std::to_string(advanced->second.revision);
     for(const auto& [id,a]:s.addresses)scope+=":"+std::to_string(id)+","+std::to_string(a.generation)+","+std::to_string(a.sequence)+","+std::to_string(a.history_sequence);
-    for(const auto& d:s.documents.Documents())if(d.history.enabled){scope+=":"+d.coins.focused+","+std::to_string(d.coins.by_value)+","+std::to_string(d.coins.descending)+","+std::to_string(d.coins.metadata_revision);for(const auto& key:d.coins.selected)scope+=":"+key;for(const auto& [key,draft]:d.coins.drafts)scope+=":"+key+":"+draft.draft;}
+    for(const auto& d:s.documents.Documents())if(d.history.enabled){scope+=":"+d.coins.focused+","+std::to_string(d.coins.by_value)+","+std::to_string(d.coins.descending)+","+std::to_string(d.coins.metadata_revision);scope+=":"+std::to_string(d.coins.SelectionRevision());for(const auto& [key,draft]:d.coins.drafts)scope+=":"+key+":"+draft.draft;}
     for(const auto& [id,c]:s.coins)scope+=":"+std::to_string(id)+","+std::to_string(c.generation)+","+std::to_string(c.sequence)+","+std::to_string(c.observed)+","+std::to_string(c.chart_group)+","+std::to_string(c.chain_current);
     for(const auto& [id,error]:s.coin_draft_errors)scope+=":"+std::to_string(id)+":"+error;scope+=":"+std::to_string(s.coin_controls.Revision());for(const auto& d:s.documents.Documents())if(d.coin_draft){scope+=":"+std::to_string(d.id)+","+std::to_string(d.draft_revision.value);for(const auto& p:d.coin_draft->inputs)scope+=":"+app::CoinKey(p.outpoint)+":"+p.current_reason;}
     const auto& o=s.observations;size_t bytes=o.last_success.size()+o.error.size();for(const auto* observation:{&o.devices,&o.proxy,&o.updates,&o.network,&o.connection,&o.activity})bytes+=observation->detail.size();
@@ -497,7 +527,7 @@ std::string SemanticScope(const State& s) {
 Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const BootstrapAppearance& appearance,ImVec2 work_size)
 {
     s.recovery=host.Recovery();SyncGeneralPreferences(s,s.recovery);s.coin_controls.Sync(s.documents,s.recovery,host.Refresh(),RefreshMonotonicMs());BeginHistoryLabelFrame(s);BeginCoinFrame(s);
-    if(s.recovery && host.Refresh()){auto view=host.Refresh()->View();if(view.identity && view.ledger){const app::Document* wallet=nullptr;for(const auto& d:s.documents.Documents())if(d.kind==app::DocumentKind::Wallet && view.identity->context.document.value()=="wallet-document-"+std::to_string(d.id)){wallet=&d;break;}if(wallet){auto local=s.coin_controls.Policy(*wallet,view,*s.recovery);const auto scope=std::to_string(wallet->id)+":"+std::to_string(view.identity->context.lock_epoch.value);if(scope!=s.history_policy_scope || s.history_policy_revision!=s.coin_controls.Revision() || s.history_policy_sequence!=view.history_sequence || s.history_policy_generation!=view.generation){HistoryPolicy policy;policy.known=local && local->rules.size()==view.ledger->Coins().size();if(local)for(const auto& [key,rule]:local->rules)if(auto p=app::ParseCoinKey(key)){if(rule==app::CoinRule::Frozen)policy.frozen.push_back(*p);else if(rule==app::CoinRule::Reserved)policy.reserved.push_back(*p);}host.Refresh()->SetHistoryPolicy(*view.identity,std::move(policy));s.history_policy_scope=scope;s.history_policy_revision=s.coin_controls.Revision();s.history_policy_sequence=view.history_sequence;s.history_policy_generation=view.generation;}}}}
+    if(s.recovery && host.Refresh()){auto view=host.Refresh()->View();if(view.identity && view.ledger){const app::Document* wallet=nullptr;for(const auto& d:s.documents.Documents())if(d.kind==app::DocumentKind::Wallet && view.identity->context.document.value()=="wallet-document-"+std::to_string(d.id)){wallet=&d;break;}if(wallet){const auto scope=std::to_string(wallet->id)+":"+std::to_string(view.identity->context.lock_epoch.value);if(scope!=s.history_policy_scope || s.history_policy_revision!=s.coin_controls.Revision() || s.history_policy_sequence!=view.history_sequence || s.history_policy_generation!=view.generation){auto local=s.coin_controls.Policy(*wallet,view,*s.recovery);HistoryPolicy policy;policy.known=local && local->rules.size()==view.ledger->Coins().size();if(local)for(const auto& [key,rule]:local->rules)if(auto p=app::ParseCoinKey(key)){if(rule==app::CoinRule::Frozen)policy.frozen.push_back(*p);else if(rule==app::CoinRule::Reserved)policy.reserved.push_back(*p);}host.Refresh()->SetHistoryPolicy(*view.identity,std::move(policy));s.history_policy_scope=scope;s.history_policy_revision=s.coin_controls.Revision();s.history_policy_sequence=view.history_sequence;s.history_policy_generation=view.generation;}}}}
     if(s.recovery && s.recovery->Locked())s.privacy.hidden=true;
     if(s.recovery)s.recovery->SetPresentation(s.privacy.hidden,s.unit);
     if(s.recovery && s.recovery->Pending() && !s.recovery_prompted){s.recovery_dialog.open=true;s.recovery_dialog.initialFocus=true;s.recovery_prompted=true;}
@@ -532,6 +562,8 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     }
     s.previous_document=active_id;s.previous_locked=locked;
     BeginReceiveLabelFrame(s);PollReceive(s,host);PollPolicySettings(s,host);PollAdvancedSettings(s,host);
+    std::erase_if(s.histories,[&](const auto& item){return !s.documents.Find(item.first) && !item.second.editor;});
+    std::erase_if(s.coins,[&](const auto& item){return !s.documents.Find(item.first) && !item.second.editor;});
     std::erase_if(s.imported_views,[&](const auto& item){return !s.documents.Find(item.first);});
     std::erase_if(s.offline_builders,[&](const auto& item){const auto* doc=s.documents.Find(item.first);return !doc || !doc->coin_draft;});
     PollBatch(s,host);
@@ -582,6 +614,13 @@ Facts DrawWorkspace(State& s,app::Requests& host,const imkit::Theme& theme,const
     ImGui::End();ImGui::PopStyleVar();FinishHistoryLabelFrame(s,host);FinishCoinFrame(s,host);s.presentation.Seal();FinishReceiveLabelFrame(s);
     if(s.recovery)s.recovery->SetPresentation(s.semantic_hide_toggle?!s.privacy.hidden:s.privacy.hidden,s.unit);
     if(s.recovery && s.recovery->Enabled() && !s.recovery->Locked() && !s.recovery->Pending() && !s.recovery->Checkpoint(s.documents))s.notice="Public recovery was not saved: "+s.recovery->Error()+". Previous snapshot retained.";
-    if(components::native_input)components::native_input->Privacy(s.privacy.hidden || s.semantic_hide_toggle);return f;
+    if(components::native_input)components::native_input->Privacy(s.privacy.hidden || s.semantic_hide_toggle);
+    // A deferred close or lock can retire the projections during Seal().
+    // Do not return a borrowed view of those retired keys.
+    const auto history=s.histories.find(f.active_document);
+    if (history==s.histories.end() || history->second.projection.keys.data()!=f.history_order.data()) f.history_order={};
+    const auto coins=s.coins.find(f.active_document);
+    if (coins==s.coins.end() || !coins->second.projection || coins->second.projection->keys.data()!=f.coin_order.data()) f.coin_order={};
+    return f;
 }
 }

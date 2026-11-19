@@ -49,7 +49,16 @@ struct Observer final : platform::NativeObserver {
             Check(state.observations.connection.state==app::ServiceState::Offline && state.observations.last_success==ObservationDate(original_date));
             Check(offline_id && facts.document_actions.at("offline").id==offline_id);
             Check(frame.width==960 && frame.height==640 && frame.effective_scale==1.5F && frame.decorated && !frame.gl_error);
-            Check(state.documents.Documents().empty() && state.presentation.Tree().Validate());
+            const auto* wallet=state.documents.Active();
+            const bool correct_wallet=state.documents.Documents().size()==1 && wallet && wallet->binding
+                && wallet->binding->DaemonWallet()=="fixture-public";
+            if(!correct_wallet || !state.presentation.Tree().Validate()){
+                std::ofstream diagnostic(output/"offline-tree-diagnostic.txt");
+                diagnostic<<"documents="<<state.documents.Documents().size()<<" treeValid="
+                          <<state.presentation.Tree().Validate()<<" overflow="<<state.presentation.Tree().overflow
+                          <<'\n'<<state.presentation.Snapshot();
+            }
+            Check(correct_wallet && state.presentation.Tree().Validate());
             {
                 const auto snapshot=state.presentation.Snapshot();Check(snapshot.find("Offline")!=std::string::npos && snapshot.find(ObservationDate(original_date))!=std::string::npos);
                 std::ofstream(output/"connection-offline-stale-semantics.txt")<<snapshot;

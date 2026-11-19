@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
+#include <limits>
 #include "ui/shell/workspace.h"
 #include "ui/components/gallery.h"
 #include "ui/theme/theme.h"
@@ -193,4 +195,33 @@ void RegisterSemanticTests(ImGuiTestEngine* engine)
         sh::BeginRename(s.shell,1);ctx->Yield(3);s.shell.documents.Close(std::array<uint64_t,1>{1});ctx->Yield(3);IM_CHECK_EQ(s.Queue(s.Named("Close")->id,c::ax::SemanticAction::Press),c::ActionResult::Queued);ctx->Yield(3);IM_CHECK_EQ(s.shell.documents.ActiveId(),2);IM_CHECK(s.facts.tabs.at(2).focused);
         sh::BeginRename(s.shell,2);ctx->Yield(3);s.shell.documents.Close(std::array<uint64_t,2>{2,3});ctx->Yield(3);IM_CHECK_EQ(s.Queue(s.Named("Close")->id,c::ax::SemanticAction::Press),c::ActionResult::Queued);ctx->Yield(3);IM_CHECK(s.shell.documents.Documents().empty());IM_CHECK(s.facts.document_actions.at("open-import").focused);
     };
+    t=Test(engine,"locale_catalog_exact_money_and_utc");
+    t->TestFunc=[](ImGuiTestContext*) {
+        namespace l=ui::locale;
+        using Language=l::Language;
+        IM_CHECK(l::Select("de_DE.UTF-8") == Language::German);
+        IM_CHECK(l::Select("ar_EG.UTF-8") == Language::English);
+        IM_CHECK(l::Select("invalid/locale/") == Language::English);
+        IM_CHECK(l::Select("qps-ploc") == Language::Pseudo);
+        IM_CHECK(l::Translate("Send", Language::German) == "Senden");
+        IM_CHECK(l::Translate("Pay to", Language::Pseudo) == "[Payment destination]");
+        const std::string_view mixed="Wallet محفظة 0.00000001";
+        IM_CHECK(l::Translate(mixed, Language::German) == mixed);
+        IM_CHECK(l::Select("de_unsafe") == Language::English);
+        const std::string_view address="bcrt1qpublic-fixture";
+        IM_CHECK(l::Translate(address, Language::German) == address);
+        const auto minimum=Money::Satoshis(std::numeric_limits<int64_t>::min());
+        const auto maximum=Money::Satoshis(std::numeric_limits<int64_t>::max());
+        IM_CHECK(Money::ParseBtc(l::Decimal(minimum, Language::German), ',') == minimum);
+        IM_CHECK(Money::ParseBtc(l::Decimal(maximum, Language::German), ',') == maximum);
+        IM_CHECK(Money::ParseBtc(l::Decimal(minimum, Language::English)) == minimum);
+        IM_CHECK_EQ(l::Decimal(Money::Satoshis(1), Language::German), "0,00000001");
+        IM_CHECK_EQ(l::Decimal(Money::Satoshis(100000000), Language::German, true), "1");
+        IM_CHECK_EQ(l::Decimal(Money::Satoshis(125000000), Language::German, true), "1,25");
+        IM_CHECK_EQ(l::Date(-1, true, Language::German), "31.12.1969 23:59:59 UTC");
+        IM_CHECK_EQ(l::Date(1735689599, true, Language::German), "31.12.2024 23:59:59 UTC");
+        IM_CHECK_EQ(l::Date(1735689600, false, Language::German), "01.01.2025");
+        IM_CHECK_EQ(l::Date(1735689600, true, Language::English), "2025-01-01 00:00:00 UTC");
+    };
+
 }

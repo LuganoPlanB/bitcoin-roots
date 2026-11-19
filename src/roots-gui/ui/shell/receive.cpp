@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "adapters/protocol/public_wallet.h"
 #include "app/history_workspace.h"
@@ -227,7 +228,7 @@ std::string LastUsed(State& state, app::Requests& host, const app::Document& doc
     const auto history = app::HistoryForDocument(document, *host.Refresh(), identity->context.lock_epoch);
     if (!history || !history->identity || *history->identity != *identity
         || !history->chain_current || history->offline || !history->ledger) return "Unknown";
-    if (const auto used = ReceiveLastUsed(*history->ledger, target)) return app::HistoryDate(*used, true);
+    if (const auto used = ReceiveLastUsed(*history->ledger, target)) return locale::LocalDate(*used, true);
     return "Unknown";
 }
 

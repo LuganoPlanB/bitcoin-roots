@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/shell/workspace.h"
 #include "app/history_workspace.h"
 #include "ui/theme/theme.h"
@@ -107,7 +108,7 @@ void DrawOfflineBuilder(State& state,app::Requests& host,Facts& facts,const imki
         if (!input.offline) complete=false;
         else earliest=std::min(earliest,input.offline->observed_ms);
     }
-    Text(state,"offline-source","Cached input provenance",complete ? "Exact wallet snapshot: "+app::HistoryDate(earliest/1000,true)
+    Text(state,"offline-source","Cached input provenance",complete ? "Exact wallet snapshot: "+locale::LocalDate(earliest/1000,true)
         +" · "+std::to_string(cached.inputs.size())+" pinned. Live spendability unknown."
         : "Previous output or policy proof is Unknown for at least one exact pin.");
     if (cached.observed_unavailable)

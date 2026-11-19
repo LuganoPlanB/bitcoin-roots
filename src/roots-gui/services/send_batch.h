@@ -18,6 +18,7 @@ struct BatchValidation {
     std::optional<Money> fixed;
     std::vector<BatchIssue> rows;
     size_t errors{};
+    bool maximum{};
     std::string error;
 };
 // A staged row uses pay_to as its raw address, and amount as its raw amount or

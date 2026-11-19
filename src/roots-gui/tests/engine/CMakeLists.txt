@@ -50,7 +50,7 @@ foreach(index RANGE 0 ${last})
 endforeach()
 target_include_directories(roots_gui_test_imkit PUBLIC "${roots_gui_ui_source}/imkit/include")
 target_link_libraries(roots_gui_test_imkit PUBLIC roots_gui_test_imgui)
-add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp components_tests.cpp privacy_tests.cpp shell_tests.cpp documents_tests.cpp commands_tests.cpp server_tests.cpp history_tests.cpp address_tests.cpp coin_tests.cpp ../../ui/bootstrap.cpp ../../ui/preferences.cpp ../../ui/server.cpp ../../application/preferences.cpp
+add_executable(roots_gui_engine_tests runner.cpp tests.cpp semantics_tests.cpp components_tests.cpp privacy_tests.cpp shell_tests.cpp documents_tests.cpp commands_tests.cpp server_tests.cpp history_tests.cpp address_tests.cpp coin_tests.cpp ../../ui/bootstrap.cpp ../../ui/localization.cpp ../../ui/preferences.cpp ../../ui/server.cpp ../../application/preferences.cpp
   ../../ui/theme/tokens.cpp ../../ui/theme/theme.cpp ../../ui/theme/appearance.cpp
   ../../ui/components/edits.cpp ../../ui/components/controls.cpp ../../ui/components/gallery.cpp ../../ui/components/presentation.cpp ../../domain/money.cpp
   ../../app/document_registry.cpp ../../app/signing_review.cpp ../../app/daemon_signer.cpp ../../app/broadcast.cpp ../../app/replacement.cpp ../../app/child_package.cpp ../../app/recovery.cpp ../../app/commands.cpp ../../app/connection_observations.cpp ../../app/history_workspace.cpp ../../app/coin_inventory.cpp ../../app/coin_controls.cpp ../../ui/shell/coin_actions.cpp ../../ui/shell/coins.cpp ../../ui/shell/history.cpp ../../ui/shell/replacement.cpp ../../ui/shell/addresses.cpp ../../ui/shell/workspace.cpp ../../ui/shell/document_actions.cpp ../../ui/shell/recovery.cpp ../../ui/shell/privacy.cpp ../../ui/shell/command_routes.cpp ../../ui/shell/activity.cpp ../../domain/workflow.cpp)
@@ -126,7 +126,7 @@ set_tests_properties(roots_gui.engine.commands PROPERTIES TIMEOUT 90 LABELS "roo
 add_test(NAME roots_gui.theme.status_focus_checker COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/../theme/status_focus_checker_tests.py")
 set_tests_properties(roots_gui.theme.status_focus_checker PROPERTIES TIMEOUT 30 LABELS "roots-gui;theme;ui;roots-gui.ui")
 
-add_test(NAME roots_gui.engine.semantics COMMAND roots_gui_engine_tests "roots.semantics" "${CMAKE_CURRENT_BINARY_DIR}/semantics.xml" 25)
+add_test(NAME roots_gui.engine.semantics COMMAND roots_gui_engine_tests "roots.semantics" "${CMAKE_CURRENT_BINARY_DIR}/semantics.xml" 26)
 set_tests_properties(roots_gui.engine.semantics PROPERTIES TIMEOUT 90 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")
 add_test(NAME roots_gui.engine.server COMMAND roots_gui_engine_tests "roots.server" "${CMAKE_CURRENT_BINARY_DIR}/server.xml" 1)
 set_tests_properties(roots_gui.engine.server PROPERTIES TIMEOUT 60 LABELS "roots-gui;engine;interaction;ui;roots-gui.ui")

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
 #include "ui/components/presentation.h"
 #include "ui/components/native_input.h"
 #include <algorithm>
@@ -14,19 +15,15 @@ void FocusLastItem() {
 }
 AmountPresentation AmountPrivacy::Present(std::optional<Money> amount) const
 {
-    if (hidden) return Text("Hidden",false);
-    if (!amount) return Text("Unavailable",false);
-    auto canonical=amount->btc();
-    if(!trim_decimals)return Text(std::move(canonical),true);
-    const auto last=canonical.find_last_not_of('0');
-    auto shown=canonical.substr(0,last+size_t(canonical[last]!='.'));
-    auto value=Text(std::move(shown),false);
-    value.copy=std::move(canonical);
+    if (hidden) return Text(locale::Text("Hidden"),false);
+    if (!amount) return Text(locale::Text("Unavailable"),false);
+    auto value = Text(locale::Btc(*amount, trim_decimals), false);
+    value.copy = amount->btc();
     return value;
 }
 AmountPresentation AmountPrivacy::Draft(std::string_view draft) const
 {
-    if (hidden) return Text("Hidden",false);
+    if (hidden) return Text(locale::Text("Hidden"),false);
     return Text(std::string(draft),false);
 }
 ChartPresentation AmountPrivacy::Chart(std::span<const Money> values) const

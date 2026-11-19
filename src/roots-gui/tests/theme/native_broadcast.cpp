@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Plan-B Foundation
 // Distributed under the MIT software license, see the accompanying COPYING file.
+#include "ui/localization.h"
+#include "adapters/rpc/json.h"
 #include "app/broadcast.h"
 #include "app/connection_observations.h"
 #include "app/history_workspace.h"
@@ -60,12 +62,18 @@ struct Observer final : platform::NativeObserver {
     int(*motion)(Display*,int,int,int,unsigned long){};
     int(*button)(Display*,unsigned,Bool,unsigned long){};
     int stage{},checks{},frames{};
+    int reader_step{-1};
     uint64_t wallet{};
     Fixture rejected,valid,lost,retry;
+    std::optional<a::CoinDraft> reader_origin;
     std::string role;
     Clock::time_point offline_started;
     std::string mined_tip;
     bool settled{};
+    int width{960}, height{640};
+    float scale{1.F};
+    bool dark{}, drawn_dark{};
+    std::string renderer;
 
     void Check(bool valid,const char* reason)
     {
@@ -123,15 +131,24 @@ struct Observer final : platform::NativeObserver {
                 {{input.outpoint,*input.previous_value,descriptor.descriptor}},tx.outputs,*tx.fee,{}};
             imported.offline_review_origin=std::pair{wallet,revision};
             auto& signing=state.signing_views[f.document];
-            signing.external_source=f.original;
-            signing.external_signed=f.collected;
+            if (role!="reader") {
+                signing.external_source=f.original;
+                signing.external_signed=f.collected;
+            }
             return f;
         };
-        rejected=admit("locktime");
+        if (role!="reader") rejected=admit("locktime");
         valid=admit("accepted");
-        lost=admit("lost-reply");
+        if (role!="reader") {
+            lost=admit("lost-reply");
+        } else {
+            auto* origin=state.documents.Find(wallet);
+            reader_origin=std::exchange(origin->coin_draft,std::nullopt);
+        }
         if (role=="interrupt" || role=="restart") retry=admit("retry");
-        Check(state.documents.Activate(role=="interrupt" ? retry.document : role=="monitor" ? valid.document : rejected.document),
+        const auto initial = role=="reader" ? wallet : role=="interrupt" ? retry.document
+            : role=="monitor" ? valid.document : rejected.document;
+        Check(state.documents.Activate(initial),
             "initial fixture document");
         display=XOpenDisplay(nullptr);
         xtst=dlopen("libXtst.so.6",RTLD_NOW);
@@ -141,7 +158,10 @@ struct Observer final : platform::NativeObserver {
         Check(motion && button,"owned physical scroll");
     }
     ~Observer() override {if (display) XCloseDisplay(display); if (xtst) dlclose(xtst);}
-    bool CaptureFramebuffer() const override {return true;}
+    bool CaptureFramebuffer() const override
+    {
+        return role!="reader" || stage==2 || stage==5 || stage==8 || stage==9 || stage==12;
+    }
     bool Has(std::string_view phrase) const {return state.presentation.Snapshot().find(phrase)!=std::string::npos;}
     bool Press(std::string_view label)
     {
@@ -165,15 +185,22 @@ struct Observer final : platform::NativeObserver {
     }
     void Capture(const platform::NativeFrame& frame,const char* name)
     {
-        Check(frame.width==960 && frame.height==640 && frame.effective_scale==1.F && frame.decorated
+        Check(frame.width==width && frame.height==height && frame.effective_scale==scale && drawn_dark==dark && frame.decorated
             && frame.font_texture && !frame.gl_error,"actual X11 renderer");
-        Check(state.presentation.Tree().Validate() && !state.presentation.Tree().overflow,"bounded native semantics");
+        const auto packet=state.presentation.exchange.Published();
+        Check(packet && packet->valid && !packet->overflow && state.presentation.Tree().Validate() && !state.presentation.Tree().overflow,
+            "fresh bounded native semantics");
         std::ofstream image(output/(std::string(name)+".ppm"),std::ios::binary);
         image<<"P6\n"<<frame.framebuffer_width<<' '<<frame.framebuffer_height<<"\n255\n";
         for (int y=frame.framebuffer_height-1;y>=0;--y) for (int x=0;x<frame.framebuffer_width;++x)
             image.write(reinterpret_cast<const char*>(frame.rgba.data()+(size_t(y)*frame.framebuffer_width+x)*4),3);
         Check(bool(image),"captured framebuffer");
         std::ofstream(output/(std::string(name)+".semantics.txt"))<<state.presentation.Snapshot();
+        std::ofstream metadata(output/(std::string(name)+".native.json"));
+        metadata<<std::boolalpha<<"{\"width\":"<<frame.width<<",\"height\":"<<frame.height
+            <<",\"dpi\":"<<frame.dpi_x<<",\"scale\":"<<frame.effective_scale<<",\"dark\":"<<drawn_dark
+            <<",\"renderer\":"<<rpc::Quote(renderer)<<",\"semanticGeneration\":"<<packet->generation<<"}\n";
+        Check(bool(metadata),"captured native facts");
         ++frames;
     }
     bool Dispatch(a::Command cmd,uint64_t id)
@@ -220,7 +247,7 @@ struct Observer final : platform::NativeObserver {
     }
     void Idle(platform::NativeHost&,const platform::NativeFrame&) override
     {
-        if (Clock::now()-started<(role=="monitor" ? 92s : 35s)) return;
+        if (Clock::now()-started<(role=="reader" ? 195s : role=="monitor" ? 92s : 35s)) return;
         std::ofstream(output/"deadline.txt")<<stage<<'\n'<<state.presentation.Snapshot();
         throw std::runtime_error("Native broadcast deadline at stage "+std::to_string(stage));
     }
@@ -230,6 +257,7 @@ struct Observer final : platform::NativeObserver {
         if (role=="interrupt") {Interrupt(host,frame);return;}
         if (role=="restart") {Restart(host,frame);return;}
         if (role=="monitor") {Monitor(host,frame);return;}
+        if (role=="reader") {Reader(host,frame);return;}
         using Stage=a::BroadcastStage;
         const auto current=requests.broadcaster.View().stage;
         if (stage<=4) {
@@ -478,6 +506,129 @@ struct Observer final : platform::NativeObserver {
         const auto& view=requests.broadcaster.View();
         return view.observation && view.observation->location==wanted;
     }
+    void ReaderAction(const std::string& label, const char* role, std::string_view text = {})
+    {
+        if (reader_step==stage) return;
+        const auto destination=output/("keyboard-"+std::to_string(stage)+".json");
+        const auto pending=destination.string()+".pending";
+        {
+            std::ofstream instruction(pending);
+            instruction<<"{\"name\":"<<rpc::Quote(label)<<",\"role\":"<<rpc::Quote(role)
+                <<",\"locale\":"<<rpc::Quote(ui::locale::LanguageTag())<<",\"text\":"<<rpc::Quote(text)<<"}\n";
+            Check(bool(instruction),"recorded keyboard navigation target");
+        }
+        std::ofstream(output/("keyboard-"+std::to_string(stage)+".semantics.txt")) << state.presentation.Snapshot();
+        std::filesystem::rename(pending,destination);
+        reader_step=stage;
+    }
+    bool ReaderCapture(const platform::NativeFrame& frame,const char* name)
+    {
+        const auto packet=state.presentation.exchange.Published();
+        if (!packet || !packet->valid || packet->overflow) return false;
+        Capture(frame,name);
+        return true;
+    }
+    void Reader(platform::NativeHost& host,const platform::NativeFrame& frame)
+    {
+        const auto& tx=*valid.expected->transaction;
+        const auto address=p::OutputAddress(tx.outputs.front().script,p::DisplayNetwork::Regtest);
+        if (!address) throw std::runtime_error("Invalid synthetic destination");
+        const auto amount=ui::locale::Btc(tx.outputs.front().value);
+        const auto* draft=state.documents.Find(wallet);
+        const auto* row=draft->recipients.Find(draft->recipients.selected);
+        const auto* imported=state.documents.Find(valid.document);
+        const auto* approval=sh::CurrentSigningApproval(state,requests,valid.document);
+        const auto* artifact=sh::FinalizedMaterial(state,valid.document);
+        const auto& submission=requests.broadcaster.View();
+        using Stage=a::BroadcastStage;
+        const auto key=[&](const char* english,const char* role="button",std::string_view text={}) {
+            ReaderAction(ui::locale::Text(english),role,text);
+        };
+        switch (stage) {
+        case 0:
+            key("Send","radio button");
+            if (draft->section!=a::Section::Send) return;
+            break;
+        case 1:
+            key("Pay to","entry",*address);
+            if (!row || row->address!=address) return;
+            break;
+        case 2:
+            key("Amount (BTC)","entry",amount);
+            if (!row || row->amount!=amount || ParseRecipientAmount(row->amount,row->unit)!=tx.outputs.front().value
+                || !std::filesystem::exists(output/"keyboard-2-enter")) return;
+            if (!ReaderCapture(frame,"reader-send")) return;
+            break;
+        case 3:
+            ReaderAction(imported->name,"page tab");
+            if (state.documents.ActiveId()!=valid.document) return;
+            Check(row && row->address==address && ParseRecipientAmount(row->amount,row->unit)==tx.outputs.front().value,
+                "offline public fixture matches keyboard-entered payment intent");
+            state.documents.Find(wallet)->coin_draft=std::move(reader_origin);
+            state.imported_views.at(valid.document).offline_review_origin=std::pair{wallet,draft->draft_revision};
+            break;
+        case 4:
+            key("Signing review");
+            if (!state.signing_views.at(valid.document).open) return;
+            break;
+        case 5:
+            key("Record signing review");
+            if (!Has("Reviewed commitment:")) return;
+            if (!ReaderCapture(frame,"reader-review")) return;
+            Check(!approval && !artifact && !Recorded(valid),"recording is separate from approval and signing");
+            break;
+        case 6:
+            key("Approve for signing");
+            if (!approval) return;
+            Check(!artifact && !Recorded(valid),"approval alone leaves signed bytes and submission absent");
+            break;
+        case 7:
+            key("Merge signed text");
+            if (!state.local_document.dialog.open) return;
+            Check(host.Input().Copy(p::TransactionBase64(Read(fixtures/"accepted/signed.psbt")),true),
+                "private clipboard holds independently signed public fixture");
+            break;
+        case 8: {
+            key("Validate clipboard signatures");
+            const auto material=sh::SigningMaterial(state,valid.document);
+            if (!material || !p::InspectSignatures(*material).Complete() || state.local_document.dialog.open) return;
+            if (!ReaderCapture(frame,"reader-signed")) return;
+            Check(material->wire==valid.collected->wire && !artifact && !Recorded(valid),
+                "native clipboard validation collected expected signatures without finalizing or sending");
+            break;
+        }
+        case 9:
+            key("Finalize transaction");
+            if (!artifact) return;
+            if (!ReaderCapture(frame,"reader-final")) return;
+            Check(artifact->final.document->wire==valid.expected->wire && !Recorded(valid),
+                "explicit finalization produced exact independent bytes");
+            break;
+        case 10:
+            key("Check node policy");
+            if (submission.stage!=Stage::Ready) return;
+            Check(!Recorded(valid),"policy check is read-only");
+            break;
+        case 11:
+            key("Broadcast");
+            if (submission.stage!=Stage::Acknowledged) return;
+            Check(Recorded(valid) && !submission.observation,"exact durable submission before independent monitoring");
+            break;
+        case 12:
+            key("Monitor transaction");
+            if (!Location(a::TransactionLocation::Mempool)) return;
+            if (!ReaderCapture(frame,"reader-monitor")) return;
+            Check(FinalizedBytesRetained() && Attempt(valid).serial==1,"exact current mempool observation without another send");
+            break;
+        case 13:
+            key("Stop monitoring");
+            if (!Has("Monitoring paused.") || requests.broadcaster.Busy()) return;
+            host.RequestClose();
+            break;
+        default: return;
+        }
+        ++stage;
+    }
     void Monitor(platform::NativeHost& host,const platform::NativeFrame& frame)
     {
         using Place=a::TransactionLocation;
@@ -615,6 +766,7 @@ struct Observer final : platform::NativeObserver {
     void Teardown(const platform::NativeTeardown& state) override
     {
         settled=state.renderer_cleared && state.platform_cleared && state.context_cleared && state.input_cleared;
+        if (role=="reader") settled=settled && state.accessibility_cleared && state.imgui_cleared && state.textures_released;
         Check(settled,"native renderer and input teardown");
     }
     void Report()
@@ -623,6 +775,12 @@ struct Observer final : platform::NativeObserver {
             Check(stage==19 && frames==1 && settled && !requests.broadcaster.Busy(),"all restart stages and renderer settled");
             std::ofstream(output/"native-result.json")<<"{\"journey\":\"submission-recovery\",\"checks\":"<<checks<<
                 ",\"frames\":"<<frames<<",\"settled\":true,\"staleNodeRetired\":true,\"explicitRetries\":1,\"activeBlockVerified\":true}\n";
+            return;
+        }
+        if (role=="reader") {
+            Check(stage==14 && frames==5 && settled && !requests.broadcaster.Busy(),"reader journey and native resources settled");
+            std::ofstream(output/"native-result.json")<<"{\"journey\":\"reader-send-monitor\",\"checks\":"<<checks
+                <<",\"frames\":"<<frames<<",\"settled\":true,\"stages\":"<<stage<<"}\n";
             return;
         }
         if (role=="monitor") {
@@ -640,21 +798,34 @@ struct Observer final : platform::NativeObserver {
 int main(int argc,char** argv)
 {
     if (argc!=6 && !(argc==7 && (std::string_view(argv[6])=="interrupt" || std::string_view(argv[6])=="restart"
-        || std::string_view(argv[6])=="monitor"))) return 2;
+        || std::string_view(argv[6])=="monitor" || std::string_view(argv[6])=="reader"))) return 2;
     try {
         const auto* owned=std::getenv("ROOTS_GUI_OWNED_TEST_DISPLAY");
         const auto* display=std::getenv("DISPLAY");
         if (!owned || !display || std::string_view(display)!=owned) throw std::runtime_error("Owned X11 display required.");
         Observer observer(argv[1],argv[3],argv[4],argv[5],argc==7 ? argv[6] : "");
-        platform::NativeOptions options{960,640,false,1.F,argv[2]};
+        if (const auto* requested=std::getenv("ROOTS_GUI_BROADCAST_VISUAL_PROFILE")) {
+            const std::string_view profile(requested);
+            const bool reference=profile=="reference-light" || profile=="reference-dark";
+            const bool compact=profile=="compact-light" || profile=="compact-dark";
+            if (!reference && !compact) throw std::runtime_error("Unknown broadcast visual profile.");
+            observer.width=reference ? 1200 : 960;
+            observer.height=reference ? 820 : 640;
+            observer.scale=reference ? 1.F : 1.5F;
+            observer.dark=profile.ends_with("-dark");
+        }
+        platform::NativeOptions options{observer.width,observer.height,observer.dark,observer.scale,argv[2]};
         options.fixed_delta_seconds=1.F/60;
+        if (observer.role=="reader") options.fixed_delta_seconds=0;
         options.accessibility=&observer.state.presentation.exchange;
         platform::NativeHost* active{};
         {
             platform::NativeHost host(options,&observer,[&](const auto& theme,const auto& appearance) {
+                observer.drawn_dark=appearance.dark;
                 observer.facts=platform::DrawShellFrame(*active,observer.state,observer.requests,theme,appearance);
             });
             active=&host;
+            observer.renderer=host.Renderer();
             host.Run();
         }
         observer.Report();

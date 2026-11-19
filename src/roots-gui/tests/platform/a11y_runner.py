@@ -40,11 +40,11 @@ def main():
     if a.kind!='transport':child_argv += ['--fonts',str(a.fonts.resolve())]
     if a.kind=='orca':child_argv += ['--orca','--orca-output','braille-monitor']
     if a.kind in ['transport','input']:child_argv=['dbus-run-session','--',*child_argv]
-    argv=[sys.executable,'-B',str(here/'owned_display.py'),'--output',str(out/'desktop'),*(['--timeout','220'] if a.kind in ['native','orca'] else []),'--',*child_argv]
+    argv=[sys.executable,'-B',str(here/'owned_display.py'),'--output',str(out/'desktop'),*(['--timeout','248' if a.kind=='orca' else '220'] if a.kind in ['native','orca'] else []),'--',*child_argv]
     start=datetime.now(timezone.utc).isoformat();timed_out=False
     with (out/'runner.log').open('w') as log:
         proc=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-        try:proc.wait(timeout=240)
+        try:proc.wait(timeout=263 if a.kind=='orca' else 240)
         except subprocess.TimeoutExpired:timed_out=True;os.killpg(proc.pid,signal.SIGTERM)
         finally:
             try:proc.wait(timeout=15)

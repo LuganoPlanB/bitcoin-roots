@@ -116,12 +116,31 @@ ui::shell::Facts DrawShellFrame(NativeHost& host,ui::shell::State& workspace,app
             if(!privacy_locked)refresh->Tick(now);
             if(auto* addresses=requests.Addresses()){
                 addresses->SetOffline(connection->Offline());
-                if(privacy_locked)addresses->PrivacyLock();
-                else if(const auto& active=connection->Active();active && !workspace.retained_address_navigation && workspace.documents.Active() && workspace.documents.Active()->section==app::Section::Addresses){
+                if(privacy_locked){
+                    workspace.known_address_source.reset();
+                    addresses->PrivacyLock();
+                }else if(const auto& active=connection->Active();active && !workspace.retained_address_navigation && workspace.documents.Active() && workspace.documents.Active()->section==app::Section::Addresses){
                     const auto epoch=requests.Recovery()?requests.Recovery()->Gate().Epoch():LockEpoch{};
                     const auto identity=app::WalletRefreshIdentity(*active,connection->Session(),*workspace.documents.Active(),epoch);
-                    if(identity && addresses->Bind(*identity,*active,now)){std::vector<std::string> known;const auto view=refresh->View();if(view.identity && *view.identity==*identity && view.ledger)for(const auto& [txid,tx]:view.ledger->Rows())for(const auto& io:tx.io)if(io.kind=="Output" && !io.destination.empty() && io.destination.size()<=128 && std::all_of(io.destination.begin(),io.destination.end(),[](unsigned char c){return (c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9');}))known.push_back(io.destination);addresses->SetKnownAddresses(*identity,std::move(known),now);}else addresses->Unbind();
-                }else addresses->Unbind();
+                    if(identity && addresses->Bind(*identity,*active,now)){
+                        const auto view=refresh->View();
+                        const auto* ledger=view.identity && *view.identity==*identity ? view.ledger : nullptr;
+                        const auto source=std::pair{*identity,ui::shell::HistoryProjectionKey{
+                            ledger,view.generation,view.history_sequence,ledger?ledger->Revision():0}};
+                        if (workspace.known_address_source!=source) {
+                            std::vector<std::string> known;
+                            if(ledger)for(const auto& [txid,tx]:ledger->Rows())for(const auto& io:tx.io)if(io.kind=="Output" && !io.destination.empty() && io.destination.size()<=128 && std::all_of(io.destination.begin(),io.destination.end(),[](unsigned char c){return (c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9');}))known.push_back(io.destination);
+                            addresses->SetKnownAddresses(*identity,std::move(known),now);
+                            workspace.known_address_source=source;
+                        }
+                    }else{
+                        workspace.known_address_source.reset();
+                        addresses->Unbind();
+                    }
+                }else{
+                    workspace.known_address_source.reset();
+                    addresses->Unbind();
+                }
                 addresses->Tick(now);
             }
         }

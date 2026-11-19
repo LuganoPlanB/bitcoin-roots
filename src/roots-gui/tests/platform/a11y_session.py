@@ -32,6 +32,7 @@ def main():
     p.add_argument('--fonts', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--orca', action='store_true')
+    p.add_argument('--send-fixture', nargs=3, metavar=('PUBLIC', 'PORT', 'COOKIE'))
     p.add_argument('--orca-output',choices=['speech','braille-monitor'],default='speech')
     a = p.parse_args(); out = a.output.resolve(); out.mkdir(parents=True)
     expected=set(EXPECTED_CHECKS)|{'actual native table cell roles and positions'}
@@ -42,6 +43,18 @@ def main():
             expected -= {'actual Orca generated spoken field content','actual Orca read committed keyboard edit'}
             expected |= {'actual Orca generated braille field content','actual Orca braille read committed keyboard edit','actual Orca braille monitor is visible'}
             expected |= {'actual Orca braille keyboard-edit','actual monitor capture edit','actual Orca braille table-amount','actual Orca braille dialog-focus','actual Orca braille status-detail','actual Orca braille hidden-amount','actual monitor capture hidden','actual Orca braille locked-focus','actual Orca native navigator command','reader row focus for native navigation','reader returns to editor after table inspection','hidden row focus for reader','pre-lock actual editor focus'}
+    if a.send_fixture:
+        if not a.orca or a.orca_output != 'braille-monitor':
+            p.error('--send-fixture requires the actual Orca braille monitor')
+        expected = {'real libatspi event registration', 'real native-window event registration',
+                    'actual Orca remains running before application launch', 'actual Application toolkit contract',
+                    'actual native application publishes German locale',
+                    'native reviewed submission and monitor settled', 'actual Orca survived complete native journey',
+                    'actual monitor capture review-keyboard', 'real focus-change event delivered',
+                    'journey completed without harness error'}
+        expected.update(f'actual Orca braille keyboard-{step}' for step in range(14))
+        expected.update(f'actual Orca braille keyboard-{step}-entered' for step in (1, 2))
+        expected.update(f'actual enabled focus and keyboard action {step}' for step in range(14))
     records = []; checks = []; events = []; keys = []; processes = []; streams = []
     scratch_root=validated_scratch()
     literal=os.environ.get('TMPDIR')
@@ -53,10 +66,10 @@ def main():
     started = time.monotonic(); phase = 'initial'; app = None; reader = None; speech_ready=False;reader_pty=None;reader_collector=None;collector_errors=[]
     def live_records():
         (out/"processes-live.pending").write_text(json.dumps(records,indent=2)+"\n");(out/"processes-live.pending").replace(out/"processes-live.json")
-    def launch(kind, argv, **kwargs):
+    def launch(kind, argv, *, environment=None, **kwargs):
         log = (out/(kind+'.log')).open('w'); streams.append(log)
         proc = subprocess.Popen(list(map(str, argv)), stdout=log, stderr=subprocess.STDOUT,
-                                env=env, start_new_session=True, **kwargs)
+                                env=env if environment is None else environment, start_new_session=True, **kwargs)
         processes.append((kind, proc)); records.append(dict(kind=kind,pid=proc.pid,pgid=proc.pid,argv=list(map(str,argv)),startUTC=datetime.now(timezone.utc).isoformat()));live_records()
         return proc
     def check(ok, label):
@@ -67,7 +80,7 @@ def main():
         while time.monotonic()<deadline:
             for _ in range(32):
                 if not GLib.MainContext.default().iteration(False): break
-            if time.monotonic()-started>180: raise TimeoutError('real accessibility journey deadline')
+            if time.monotonic()-started>(205 if a.send_fixture else 230 if a.orca else 180): raise TimeoutError('real accessibility journey deadline')
             time.sleep(.005)
     def wait(predicate, label, timeout=6):
         deadline = time.monotonic()+timeout
@@ -94,9 +107,17 @@ def main():
             if not code: raise RuntimeError('Unknown native keysym '+n)
             if not xt.XTestFakeKeyEvent(display,code,down,0): raise RuntimeError('native input injection failed')
         for m in modifiers: send(m,1)
-        send(name,1); x.XFlush(display); pump(.035);send(name,0)
+        send(name,1); x.XFlush(display)
+        if a.send_fixture:
+            # D-Bus dispatch can be busy with reader events. Release the
+            # physical key on time even when reader callbacks are delayed.
+            time.sleep(.025)
+        else:
+            pump(.035)
+        send(name,0)
         for m in reversed(modifiers): send(m,0)
-        x.XFlush(display);pump(.10)
+        x.XFlush(display)
+        if not a.send_fixture: pump(.10)
     def type_text(text):
         for ch in text: key('space' if ch==' ' else ch)
     def read_tree(root):
@@ -144,7 +165,7 @@ def main():
         def output():
             text=(out/'orca-debug.log').read_text(errors='replace')[mark:]
             return [line for line in text.splitlines() if 'BRAILLE LINE:' in line]
-        lines=wait(lambda:(values if any(token in line for line in values) else None) if (values:=output()) else None,'actual Orca braille '+tag,8)
+        lines=wait(lambda:(values if any(token in line for line in values) else None) if (values:=output()) else None,'actual Orca braille '+tag,15 if a.send_fixture else 8)
         if forbidden and any(forbidden in line for line in lines):raise AssertionError('reader privacy output leaked '+tag)
         reader_receipts.append(dict(tag=tag,token=token,lines=lines,forbidden=forbidden))
         check(True,'actual Orca braille '+tag)
@@ -173,38 +194,9 @@ def main():
         if token not in text:raise AssertionError('reader visible output differs from requested capture phase')
         reader_receipts.append(dict(tag=tag+' visible monitor',readerVisible=text,qualification='Actual native PNG requires bounded visual inspection; Gtk monitor button names expose decorative dots, not cell text.',rect=[rect.x,rect.y,rect.width,rect.height]))
         check(True,'actual monitor capture '+tag)
-    error = None
-    try:
-        # A separately owned session bus, not the desktop/user session bus.
-        # Readiness channel uses a separate descriptor, so logs retain real stderr.
-        read_fd,write_fd=os.pipe();log=(out/'session-bus.log').open('w');streams.append(log)
-        argv=['dbus-daemon','--session','--nofork','--address=unix:path='+str(folder/'session.sock'),'--print-address='+str(write_fd)]
-        bus=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT,env=env,start_new_session=True,pass_fds=(write_fd,));os.close(write_fd)
-        processes.append(('session-bus',bus));records.append(dict(kind='session-bus',pid=bus.pid,pgid=bus.pid,argv=argv,startUTC=datetime.now(timezone.utc).isoformat()));live_records()
-        selector=selectors.DefaultSelector();selector.register(read_fd,selectors.EVENT_READ)
-        if not selector.select(3): raise TimeoutError('private bus readiness')
-        address=os.read(read_fd,4096).decode().strip();os.close(read_fd);selector.close()
-        if not address:raise RuntimeError('private bus exited before readiness; see session-bus.log')
-        env['DBUS_SESSION_BUS_ADDRESS']=address;os.environ['DBUS_SESSION_BUS_ADDRESS']=address
-        session=Gio.DBusConnection.new_for_address_sync(address,Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT|Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,None,None)
-        session.set_exit_on_close(False)
-        reply=session.call_sync('org.a11y.Bus','/org/a11y/bus','org.a11y.Bus','GetAddress',None,GLib.VariantType.new('(s)'),Gio.DBusCallFlags.NONE,1500,None)
-        env['AT_SPI_BUS_ADDRESS']=reply.unpack()[0];os.environ['AT_SPI_BUS_ADDRESS']=reply.unpack()[0]
-        listener=Atspi.EventListener.new(event,None)
-        check(listener.register('object:'),'real libatspi event registration')
-        check(listener.register('window:'),'real native-window event registration')
-        if a.orca:
-            debug_path=reader_debug_transport()
-            if a.orca_output=='speech':
-                (out/'speech-logs').mkdir()
-                env['SPEECHD_ADDRESS']='unix_socket:'+str(folder/'speech.sock')
-                env['SPEECHD_CMD']=str(folder/'no-unowned-autospawn')
-                speaker=launch('speech-dispatcher',['speech-dispatcher','--run-single','--communication-method','unix_socket','--socket-path',folder/'speech.sock','--pid-file',folder/'speech.pid','--log-dir',out/'speech-logs','--timeout','0'])
-                wait(lambda:(folder/'speech.sock').exists(),'owned foreground speech service readiness',3);speech_ready=True
-                reader=launch('orca',['orca','--user-prefs',folder/'orca','--disable=braille','--debug','--debug-file',debug_path])
-            else:
-                reader=launch('orca',['orca','--user-prefs',folder/'orca','--disable=speech,braille','--enable=braille-monitor','--debug','--debug-file',debug_path])
-            pump(2);check(reader.poll() is None,'actual Orca remains running before application launch')
+    application = desktop = None
+    def baseline_journey():
+        nonlocal app, application, desktop, phase
         (out/'fixture').mkdir();app=launch('application',[a.binary.resolve(),out/'fixture',a.fonts.resolve()])
         wait(lambda:state().get('registered'),'actual production bridge registration')
         Atspi.init();desktop=Atspi.get_desktop(0)
@@ -325,6 +317,123 @@ def main():
                 check(monitor is not None and monitor.get_state_set().contains(Atspi.StateType.SHOWING),'actual Orca braille monitor is visible')
         check(any(e['type'].startswith('object:state-changed:focused') for e in events),'real focus-change event delivered')
         check(any(e['type'].startswith('object:text-changed') for e in events),'real text-change event delivered')
+
+    error = None
+    try:
+        # A separately owned session bus, not the desktop/user session bus.
+        # Readiness channel uses a separate descriptor, so logs retain real stderr.
+        read_fd,write_fd=os.pipe();log=(out/'session-bus.log').open('w');streams.append(log)
+        argv=['dbus-daemon','--session','--nofork','--address=unix:path='+str(folder/'session.sock'),'--print-address='+str(write_fd)]
+        bus=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT,env=env,start_new_session=True,pass_fds=(write_fd,));os.close(write_fd)
+        processes.append(('session-bus',bus));records.append(dict(kind='session-bus',pid=bus.pid,pgid=bus.pid,argv=argv,startUTC=datetime.now(timezone.utc).isoformat()));live_records()
+        selector=selectors.DefaultSelector();selector.register(read_fd,selectors.EVENT_READ)
+        if not selector.select(3): raise TimeoutError('private bus readiness')
+        address=os.read(read_fd,4096).decode().strip();os.close(read_fd);selector.close()
+        if not address:raise RuntimeError('private bus exited before readiness; see session-bus.log')
+        env['DBUS_SESSION_BUS_ADDRESS']=address;os.environ['DBUS_SESSION_BUS_ADDRESS']=address
+        session=Gio.DBusConnection.new_for_address_sync(address,Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT|Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,None,None)
+        session.set_exit_on_close(False)
+        reply=session.call_sync('org.a11y.Bus','/org/a11y/bus','org.a11y.Bus','GetAddress',None,GLib.VariantType.new('(s)'),Gio.DBusCallFlags.NONE,1500,None)
+        env['AT_SPI_BUS_ADDRESS']=reply.unpack()[0];os.environ['AT_SPI_BUS_ADDRESS']=reply.unpack()[0]
+        listener=Atspi.EventListener.new(event,None)
+        event_type = 'object:state-changed:focused' if a.send_fixture else 'object:'
+        check(listener.register(event_type),'real libatspi event registration')
+        check(listener.register('window:'),'real native-window event registration')
+        if a.orca:
+            debug_path=reader_debug_transport()
+            if a.orca_output=='speech':
+                (out/'speech-logs').mkdir()
+                env['SPEECHD_ADDRESS']='unix_socket:'+str(folder/'speech.sock')
+                env['SPEECHD_CMD']=str(folder/'no-unowned-autospawn')
+                speaker=launch('speech-dispatcher',['speech-dispatcher','--run-single','--communication-method','unix_socket','--socket-path',folder/'speech.sock','--pid-file',folder/'speech.pid','--log-dir',out/'speech-logs','--timeout','0'])
+                wait(lambda:(folder/'speech.sock').exists(),'owned foreground speech service readiness',3);speech_ready=True
+                reader=launch('orca',['orca','--user-prefs',folder/'orca','--disable=braille','--debug','--debug-file',debug_path])
+            else:
+                reader=launch('orca',['orca','--user-prefs',folder/'orca','--disable=speech,braille','--enable=braille-monitor','--debug','--debug-file',debug_path])
+            pump(2);check(reader.poll() is None,'actual Orca remains running before application launch')
+        if a.send_fixture:
+            source, port, cookie = a.send_fixture
+            native = out/'fixture'
+            native.mkdir()
+            fixture_env = env.copy()
+            fixture_env['LC_ALL'] = env['ROOTS_GUI_READER_LOCALE']
+            app = launch('application', [a.binary.resolve(), native, a.fonts.resolve(), source, port, cookie, 'reader'],
+                         environment=fixture_env)
+            Atspi.init();desktop=Atspi.get_desktop(0)
+            application=wait(lambda:next((desktop.get_child_at_index(i) for i in range(desktop.get_child_count())
+                                          if desktop.get_child_at_index(i).get_name()=='Bitcoin Roots'),None),
+                             'registered production send application', 20)
+            check(application.get_toolkit_name()=='Roots ImGui','actual Application toolkit contract')
+            check(application.get_object_locale()=='de','actual native application publishes German locale')
+            for step in range(14):
+                phase = f'keyboard-{step}'
+                path = native/(phase+'.json')
+                instruction = wait(lambda:json.loads(path.read_text()) if path.exists() else None, phase, 12)
+                label, role, text = (instruction[key] for key in ('name', 'role', 'text'))
+                def enabled_target():
+                    try:
+                        return next((node for node in tree(application) if node.get_name()==label
+                                     and node.get_role_name()==role
+                                     and node.get_state_set().contains(Atspi.StateType.ENABLED)), None)
+                    except GLib.Error:
+                        return None
+                try:
+                    target = wait(enabled_target, 'enabled '+label, 10)
+                except TimeoutError:
+                    (out/(phase+'-tree.json')).write_text(json.dumps([
+                        {'name': node.get_name(), 'role': node.get_role_name(),
+                         'states': [str(state) for state in node.get_state_set().get_states()]}
+                        for node in tree(application)], ensure_ascii=False, indent=2)+'\n')
+                    raise
+                mark = reader_mark()
+                def focus_target():
+                    nonlocal target
+                    try:
+                        if target is None:
+                            target = enabled_target()
+                        component = target.get_component_iface() if target is not None else None
+                        if component is not None and component.grab_focus():
+                            return True
+                    except GLib.Error:
+                        pass
+                    target = None
+                    return False
+                def visible_focus():
+                    try:
+                        state_set = target.get_state_set()
+                        return state_set is not None and state_set.contains(Atspi.StateType.FOCUSED) and state_set.contains(Atspi.StateType.SHOWING)
+                    except GLib.Error:
+                        return False
+                # A new active document can replace the native object after
+                # the queue acknowledges focus. Reacquire focus only. The
+                # action key is sent once, after the actual reader checkpoint.
+                for attempt in range(4):
+                    wait(focus_target, 'AT-SPI keyboard focus acknowledgement '+label, 8)
+                    try:
+                        wait(visible_focus, 'actual visible keyboard focus '+label, 2)
+                        break
+                    except TimeoutError:
+                        target = None
+                        if attempt == 3:
+                            raise
+                reader_checkpoint(phase, label, mark)
+                if step == 5:
+                    monitor_capture('review-keyboard', label)
+                if text:
+                    mark = reader_mark()
+                    for char in text:
+                        key({',':'comma', '.':'period'}.get(char,char))
+                    reader_checkpoint(phase+'-entered', text, mark)
+                key('Return')
+                if step == 2:
+                    (native/'keyboard-2-enter').touch()
+                check(True,f'actual enabled focus and keyboard action {step}')
+            check(app.wait(timeout=8)==0 and json.loads((native/'native-result.json').read_text())['settled'],
+                  'native reviewed submission and monitor settled')
+            check(reader.poll() is None,'actual Orca survived complete native journey')
+            check(any(e['type'].startswith('object:state-changed:focused') for e in events),'real focus-change event delivered')
+        else:
+            baseline_journey()
     except Exception as exc:
         error=str(exc);traceback.print_exc()
     finally:

@@ -61,6 +61,20 @@ imkit::Theme Make(bool dark, float scale)
 }
 void Apply(const imkit::Theme& theme) { imkit::ApplyTheme(theme, 1); Project(theme); }
 Scope::Scope(const imkit::Theme& theme) : scope(theme, 1) { Project(theme); }
+float ActionWidth(const char* label)
+{
+    return ImGui::CalcTextSize(label, nullptr, true).x + 2*ImGui::GetStyle().FramePadding.x;
+}
+
+void SameLineIfFits(float width)
+{
+    const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= right)
+        ImGui::SameLine();
+}
+
+void SameLineForAction(const char* label) { SameLineIfFits(ActionWidth(label)); }
+
 bool ActionButton(const char* label, imkit::ActionVariant variant, ImVec2 size, const imkit::Theme& theme, ImDrawList* focus_draw)
 {
     // The pinned component has no focus-offset option. A transparent local
@@ -78,6 +92,17 @@ bool ActionButton(const char* label, imkit::ActionVariant variant, ImVec2 size, 
     // This revision also forces the cursor visible for mouse-focused buttons.
     // Preserve the host's keyboard/gamepad visibility instead of changing mode.
     ImGui::SetNavCursorVisible(navigation_visible);
+    if ((ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) && ImGui::CalcTextSize(label,nullptr,true).x > 0) {
+        const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
+        const float scale = theme.typography.body/14.F;
+        // An interrupted lower edge distinguishes an unavailable action
+        // even when neighboring panel and control colors are close.
+        const auto color = ImGui::GetColorU32(theme.semantic.textDisabled);
+        auto* draw = ImGui::GetWindowDrawList();
+        for (float x = lo.x+6*scale; x+3*scale < hi.x-6*scale; x += 7*scale) {
+            draw->AddLine({x,hi.y-2*scale},{x+3*scale,hi.y-2*scale},color);
+        }
+    }
     if (ImGui::IsItemFocused() && navigation_visible) {
         const float scale=theme.typography.body/14.F;
         const float width=theme.stroke.focus;

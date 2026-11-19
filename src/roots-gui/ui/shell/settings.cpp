@@ -290,17 +290,20 @@ bool Export(State& state, app::Requests& host, uint64_t id, uint64_t revision)
 
 void Selectors(State& state, Facts& facts, const imkit::Theme& theme, PolicySettings& settings, float scale, bool busy)
 {
-    const bool split = ImGui::GetContentRegionAvail().x > 290*scale
+    const auto& style=ImGui::GetStyle();
+    const auto policy_column=ImGui::CalcTextSize("Policy").x+theme::ActionWidth("Single signature")
+        +theme::ActionWidth("Multisig")+2*(style.ItemSpacing.x+style.CellPadding.x);
+    const bool split = ImGui::GetContentRegionAvail().x >= 2*policy_column
         && ImGui::BeginTable("policy-controls",2,ImGuiTableFlags_SizingStretchSame);
     if (split) ImGui::TableNextColumn();
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{ImGui::GetStyle().FramePadding.x,2*scale});
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Policy");
-    if (split) ImGui::SameLine();
+    if (split) theme::SameLineForAction("Single signature");
     Button(state,facts,theme,"single","Single signature",!busy && settings.multisig,[&settings] {
         settings.multisig=false; settings.required=settings.signers=1; settings.sorted=true; Stage(settings); return true;
     });
-    ImGui::SameLine();
+    theme::SameLineForAction("Multisig");
     Button(state,facts,theme,"multi","Multisig",!busy && !settings.multisig,[&settings] {
         settings.multisig=true; settings.required=settings.signers=2; settings.sorted=true;
         if (settings.script == ScriptTemplate::Taproot) settings.script=ScriptTemplate::NativeSegwit;
@@ -715,18 +718,18 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
     ImGui::TextUnformatted("Settings");
     imkit::PopTextRole();
     state.presentation.Annotate("settings-title","Wallet Settings","Wallet Settings");
-    ImGui::SameLine();
+    theme::SameLineForAction("Read saved descriptors");
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{ImGui::GetStyle().FramePadding.x,3*scale});
     Button(state,facts,theme,"read","Read saved descriptors",readable && !busy,[&state,&host,id]{return Read(state,host,id);});
     if (state.policy_read==id) {
-        ImGui::SameLine();
+        theme::SameLineForAction("Cancel read");
         Button(state,facts,theme,"cancel-read","Cancel read",true,[&state,&host,id] {
             if (state.policy_read!=id) return false;
             host.Wallets()->Cancel();
             return true;
         });
     }
-    ImGui::SameLine();
+    theme::SameLineForAction(settings.inspect_keystores?"Policy":"Keystores");
     Button(state,facts,theme,"toggle-keystores",settings.inspect_keystores?"Policy":"Keystores",!busy,[&settings] {
         settings.inspect_keystores=!settings.inspect_keystores;
         settings.signer_clipboard.reset();
@@ -735,7 +738,7 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
         return true;
     });
     if (host.Rescanning()) {
-        ImGui::SameLine();
+        theme::SameLineForAction("Advanced");
         Button(state,facts,theme,"advanced","Advanced",!busy,[&settings] {
             settings.inspect_advanced=true;
             settings.signer_clipboard.reset();
@@ -766,8 +769,13 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
         settings.clipboard_pending=c::native_input->RequestInspection(clipboard);
         return settings.clipboard_pending;
     };
-    const float footer=ImGui::GetFrameHeightWithSpacing();
-    if (ImGui::BeginChild("policy-details",{0,std::max(footer*2,ImGui::GetContentRegionAvail().y-footer)})) {
+    const float spacing=ImGui::GetStyle().ItemSpacing.x;
+    const float actions_left=theme::ActionWidth("Export saved")+theme::ActionWidth("Add Account")+spacing;
+    const float actions_right=theme::ActionWidth("Revert")+theme::ActionWidth("Review Apply")+spacing;
+    const bool single_row=actions_left+spacing+actions_right<=ImGui::GetContentRegionAvail().x;
+    const float line=ImGui::GetFrameHeightWithSpacing();
+    const float footer=line*(single_row?1.F:2.F);
+    if (ImGui::BeginChild("policy-details",{0,std::max(line*2,ImGui::GetContentRegionAvail().y-footer)})) {
         if (!settings.saved && !readable)
             Display(state,"saved-unavailable","Saved policy availability","Saved descriptors require the daemon's public listdescriptors capability.");
         if (settings.saved && settings.saved->unsupported)
@@ -781,7 +789,7 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{ImGui::GetStyle().FramePadding.x,3*scale});
             Button(state,facts,theme,"paste","Paste public descriptor",c::native_input && !busy && !settings.clipboard_pending,[paste]{return paste(false);});
             if (settings.material) {
-                ImGui::SameLine();
+                theme::SameLineForAction("Paste change descriptor");
                 Button(state,facts,theme,"paste-change","Paste change descriptor",c::native_input && !busy && !settings.clipboard_pending,[paste]{return paste(true);});
             }
             ImGui::PopStyleVar();
@@ -795,7 +803,7 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
     const auto revision=settings.revision;
     Button(state,facts,theme,"export","Export saved",settings.saved && !settings.saved->branches.empty(),
         [&state,&host,id,revision]{return Export(state,host,id,revision);});
-    ImGui::SameLine();
+    theme::SameLineForAction("Add Account");
     Button(state,facts,theme,"add-account","Add Account",!busy,[&settings] {
         settings.account_service=true;
         settings.signer_clipboard.reset();
@@ -803,14 +811,11 @@ void DrawPolicySettings(State& state, app::Requests& host, Facts& facts, const i
         ++settings.revision;
         return true;
     });
-    ImGui::SameLine();
-    const auto& style=ImGui::GetStyle();
-    const auto controls=ImGui::CalcTextSize("Revert").x+ImGui::CalcTextSize("Review Apply").x
-        +4*style.FramePadding.x+style.ItemSpacing.x;
+    if (single_row) ImGui::SameLine();
     const auto remaining=ImGui::GetContentRegionAvail().x;
-    if (remaining>controls) ImGui::SetCursorPosX(ImGui::GetCursorPosX()+remaining-controls);
+    if (remaining>actions_right) ImGui::SetCursorPosX(ImGui::GetCursorPosX()+remaining-actions_right);
     Button(state,facts,theme,"revert","Revert",settings.dirty && !busy,[&settings]{Revert(settings);return true;});
-    ImGui::SameLine();
+    theme::SameLineForAction("Review Apply");
     const bool apply=caps && CanImportWallet(*caps) && !caps->pruned && !busy && state.documents.Documents().size()<32
         && settings.dirty && settings.staged && settings.signer_error.empty() && !MatchesSaved(settings);
     Button(state,facts,theme,"apply","Review Apply",apply,

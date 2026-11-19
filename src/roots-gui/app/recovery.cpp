@@ -159,8 +159,8 @@ HistoryDocumentState ReadHistory(const J& j){const auto& a=Array(j,7);Need(a.siz
 bool AddressKey(std::string_view key){if(key.empty())return true;if(key.size()<66 || key.size()>75 || key[64]!=':' || !Hash256::Parse(key.substr(0,64)))return false;uint64_t n{};const auto p=std::from_chars(key.data()+65,key.data()+key.size(),n);return p.ec==std::errc{} && p.ptr==key.data()+key.size() && n<=0x7fffffff && std::to_string(n)==key.substr(65);}
 J Addresses(const AddressPresentation& a){Need(AddressKey(a.selected) && a.expanded.size()<=128 && std::isfinite(a.split) && a.split>=0.2F && a.split<=0.8F);std::vector<J> expanded;for(const auto& key:a.expanded){Need(!key.empty() && AddressKey(key));expanded.push_back(S(key));}return A({S(a.selected),A(std::move(expanded)),N(a.group),N(a.hide_empty_used),N(a.transactions),N(Position(a.split)),N(Position(a.receive_x)),N(Position(a.receive_y)),N(Position(a.change_x)),N(Position(a.change_y))});}
 AddressPresentation ReadAddresses(const J& j){const auto& a=Array(j,10);Need(a.size()==10);AddressPresentation p;p.selected=Text(a[0],75);for(const auto& key:Array(a[1],128))Need(p.expanded.insert(Text(key,75)).second);p.group=Small(a[2],1);p.hide_empty_used=Small(a[3],1);p.transactions=Small(a[4],1);p.split=float(Small(a[5],800))/1000;p.receive_x=float(Small(a[6],10000000000ULL))/1000;p.receive_y=float(Small(a[7],10000000000ULL))/1000;p.change_x=float(Small(a[8],10000000000ULL))/1000;p.change_y=float(Small(a[9],10000000000ULL))/1000;Addresses(p);return p;}
-J CoinView(const CoinPresentation& p){Need(p.selected.size()<=4096 && p.drafts.size()<=32 && (p.focused.empty() || bool(ParseCoinKey(p.focused))));std::vector<J> selected,drafts;for(const auto& key:p.selected){Need(bool(ParseCoinKey(key)));selected.push_back(S(key));}for(const auto& [key,d]:p.drafts){Need(bool(ParseCoinKey(key)));drafts.push_back(A({S(key),PublicText(d.saved),PublicText(d.draft),N(d.base_revision)}));}return A({A(std::move(selected)),S(p.focused),N(p.by_value),N(p.descending),A(std::move(drafts))});}
-CoinPresentation ReadCoinView(const J& j){const auto& a=Array(j,5);Need(a.size()==5);CoinPresentation p;for(const auto& key:Array(a[0],4096))Need(p.selected.insert(Text(key,75)).second);p.focused=Text(a[1],75);p.by_value=Small(a[2],1);p.descending=Small(a[3],1);for(const auto& item:Array(a[4],32)){const auto& d=Array(item,4);Need(d.size()==4);Need(p.drafts.emplace(Text(d[0],75),HistoryLabelDraft{ReadPublicText(d[1]),ReadPublicText(d[2]),"",Number(d[3])}).second);}CoinView(p);return p;}
+J CoinView(const CoinPresentation& p){Need(p.Selection().size()<=4096 && p.drafts.size()<=32 && (p.focused.empty() || bool(ParseCoinKey(p.focused))));std::vector<J> selected,drafts;for(const auto& key:p.Selection()){Need(bool(ParseCoinKey(key)));selected.push_back(S(key));}for(const auto& [key,d]:p.drafts){Need(bool(ParseCoinKey(key)));drafts.push_back(A({S(key),PublicText(d.saved),PublicText(d.draft),N(d.base_revision)}));}return A({A(std::move(selected)),S(p.focused),N(p.by_value),N(p.descending),A(std::move(drafts))});}
+CoinPresentation ReadCoinView(const J& j){const auto& a=Array(j,5);Need(a.size()==5);CoinPresentation p;std::set<std::string> selected;for(const auto& key:Array(a[0],4096))Need(selected.insert(Text(key,75)).second);Need(p.ReplaceSelection(std::move(selected)));p.focused=Text(a[1],75);p.by_value=Small(a[2],1);p.descending=Small(a[3],1);for(const auto& item:Array(a[4],32)){const auto& d=Array(item,4);Need(d.size()==4);Need(p.drafts.emplace(Text(d[0],75),HistoryLabelDraft{ReadPublicText(d[1]),ReadPublicText(d[2]),"",Number(d[3])}).second);}CoinView(p);return p;}
 J Reference(const std::optional<ObservedTransaction>& r){if(!r)return A();Need(!r->wallet.daemon_wallet || r->wallet.daemon_wallet->size()<=1024);return A({S(r->wallet.backend.value()),S(r->wallet.wallet.value()),S(r->wallet.network.genesis.hex()),S(r->txid.hex()),A(r->wallet.daemon_wallet?std::vector<J>{S(*r->wallet.daemon_wallet)}:std::vector<J>{})});}
 std::optional<ObservedTransaction> ReadReference(const J& j){const auto& a=Array(j,5);if(a.empty())return {};Need(a.size()==4 || a.size()==5);auto backend=BackendSessionId::Make(Text(a[0],256));auto wallet=WalletId::Make(Text(a[1],1024));auto genesis=Hash256::Parse(Text(a[2],64)),txid=Hash256::Parse(Text(a[3],64));Need(backend && wallet && genesis && txid);std::optional<std::string> actual;if(a.size()==5){const auto& name=Array(a[4],1);if(!name.empty())actual=Text(name[0],1024);}return ObservedTransaction{{*backend,*wallet,{*genesis},actual},*txid};}
 J PinnedScript(std::string s){Need(s.size()<=10000 && s.size()%2==0 && std::all_of(s.begin(),s.end(),[](unsigned char c){return (c>='0' && c<='9') || (c>='a' && c<='f');}));J j;j.kind=J::Kind::String;j.text=std::move(s);return j;}
@@ -527,7 +527,33 @@ storage::Result<storage::Done> RecoverySession::FinishBroadcastAttempt(const sto
 }
 bool RecoverySession::SaveDocuments(DocumentRegistry& documents,const Document* unchanged_draft){if(!Enabled() || pending)return !Enabled();if(!error.empty())return false;auto candidate=Snapshot(documents);
     for(const auto& old:saved.documents.Documents())if(!documents.Find(old.id))Retain(candidate.recoverable,old);
-    try{for(const auto& d:documents.Documents()){auto* current=candidate.documents.Find(d.id);const auto* old=saved.documents.Find(d.id);if(old){current->draft_revision.value=std::max(d.draft_revision.value,old->draft_revision.value);auto before=*old,after=d;before.draft_revision={};after.draft_revision={};if(Doc(before).Encode()!=Doc(after).Encode()){if(old->draft_revision.value==UINT64_MAX){error="Draft revision exhausted; previous snapshot retained.";return false;}current->draft_revision.value=std::max(d.draft_revision.value,old->draft_revision.value+1);}}}}catch(...){error="Invalid or locked public draft; previous snapshot retained.";return false;}
+    try {
+        for (const auto& d : documents.Documents()) {
+            const auto* old = saved.documents.Find(d.id);
+            if (!old) continue;
+            auto* current = candidate.documents.Find(d.id);
+            current->draft_revision.value = std::max(d.draft_revision.value, old->draft_revision.value);
+            auto before = *old, after = d;
+            before.draft_revision = {};
+            after.draft_revision = {};
+            if (before.imported && after.imported) {
+                // Scrolling an imported transaction, including to reveal the
+                // protected unlock field, does not edit the reviewed draft.
+                // Save the actual viewport with the public snapshot below.
+                before.transaction.scroll_x = after.transaction.scroll_x;
+                before.transaction.scroll_y = after.transaction.scroll_y;
+            }
+            if (Doc(before).Encode() == Doc(after).Encode()) continue;
+            if (old->draft_revision.value == UINT64_MAX) {
+                error = "Draft revision exhausted; previous snapshot retained.";
+                return false;
+            }
+            current->draft_revision.value = std::max(d.draft_revision.value, old->draft_revision.value + 1);
+        }
+    } catch (...) {
+        error = "Invalid or locked public draft; previous snapshot retained.";
+        return false;
+    }
     if (unchanged_draft && candidate.documents.Find(unchanged_draft->id)->draft_revision != unchanged_draft->draft_revision) return false;
     auto encoded=EncodePublicSession(candidate);if(encoded && *encoded==record.public_documents)return true;if(!Commit(candidate,true))return false;for(const auto& d:candidate.documents.Documents())if(auto* current=documents.Find(d.id))current->draft_revision=d.draft_revision;return true;
 }
@@ -565,7 +591,7 @@ uint64_t RecoverySession::CreateFunded(DocumentRegistry& documents, ImportedDocu
     return id;
 }
 bool RecoverySession::Close(DocumentRegistry& documents,std::span<const uint64_t> ids){if(!Enabled())return documents.Close(ids);if(pending || !error.empty())return false;auto candidate=documents;for(auto id:ids){const auto* d=documents.Find(id);if(!d || d->observation==ObservationState::Locked)return false;}if(!Checkpoint(documents))return false;candidate=documents;if(!candidate.Close(ids) || !Checkpoint(candidate))return false;documents=std::move(candidate);return true;}
-bool RecoverySession::Clear(DocumentRegistry& documents,uint64_t id){if(!Enabled() || pending || !Checkpoint(documents))return false;auto candidate=Snapshot(documents);auto* d=candidate.documents.Find(id);if(!d || d->observation==ObservationState::Locked)return false;Retain(candidate.recoverable,*d);for(auto& section:d->sections)section.note=ui::components::Edit("");d->transaction.note=ui::components::Edit("");d->selected_coins.clear();d->excluded_coins.clear();d->history.drafts.clear();d->coins.drafts.clear();d->coins.selected.clear();d->coins.focused.clear();d->coin_draft.reset();d->recipients=SendRecipients{};d->funding_rate.clear();d->funding_target=0;d->funding_change.reset();if(d->draft_revision.value==UINT64_MAX)return false;++d->draft_revision.value;if(!Commit(candidate,true))return false;documents=candidate.documents;return true;}
+bool RecoverySession::Clear(DocumentRegistry& documents,uint64_t id){if(!Enabled() || pending || !Checkpoint(documents))return false;auto candidate=Snapshot(documents);auto* d=candidate.documents.Find(id);if(!d || d->observation==ObservationState::Locked)return false;Retain(candidate.recoverable,*d);for(auto& section:d->sections)section.note=ui::components::Edit("");d->transaction.note=ui::components::Edit("");d->selected_coins.clear();d->excluded_coins.clear();d->history.drafts.clear();d->coins.drafts.clear();if(!d->coins.ReplaceSelection({}))return false;d->coins.focused.clear();d->coin_draft.reset();d->recipients=SendRecipients{};d->funding_rate.clear();d->funding_target=0;d->funding_change.reset();if(d->draft_revision.value==UINT64_MAX)return false;++d->draft_revision.value;if(!Commit(candidate,true))return false;documents=candidate.documents;return true;}
 
 bool RecoverySession::ClearSend(DocumentRegistry& documents, uint64_t id, DraftRevision revision)
 {
@@ -581,7 +607,7 @@ bool RecoverySession::ClearSend(DocumentRegistry& documents, uint64_t id, DraftR
     draft->funding_change.reset();
     draft->selected_coins.clear();
     draft->excluded_coins.clear();
-    draft->coins.selected.clear();
+    if(!draft->coins.ReplaceSelection({}))return false;
     draft->coins.focused.clear();
     draft->coin_draft.reset();
     ++draft->draft_revision.value;
@@ -618,7 +644,7 @@ bool RecoverySession::RecoverSend(DocumentRegistry& documents)
         current->selected_coins = std::move(restored.selected_coins);
         current->excluded_coins = std::move(restored.excluded_coins);
         current->coin_draft = std::move(restored.coin_draft);
-        current->coins.selected = std::move(restored.coins.selected);
+        if(!current->coins.ReplaceSelection(restored.coins.Selection()))return false;
         current->coins.focused = std::move(restored.coins.focused);
         current->draft_revision = {revision + 1};
         candidate.documents.Activate(restored.id);
