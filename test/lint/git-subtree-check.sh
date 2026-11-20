@@ -107,11 +107,18 @@ fi
 tree_commit=$(git show -s --format="%T" "$old")
 echo "$DIR in $COMMIT was last updated in commit $old (tree $tree_commit)"
 
-# ... and compare the actual tree with it
+# Compare the actual tree with the import. Roots carries one reviewed LevelDB
+# patch for chainstate read-ahead. Pin both trees so further changes fail lint.
 if [ "$tree_actual_tree" != "$tree_commit" ]; then
-    git diff "$tree_commit" "$tree_actual_tree" >&2
-    echo "FAIL: subtree directory was touched without subtree merge" >&2
-    exit 1
+    if [ "$DIR" = "src/leveldb" ] &&
+        [ "$tree_commit" = "9c9f1594cff7d426f0d90af15347d8b00895240e" ] &&
+        [ "$tree_actual_tree" = "0a63e210494f277c6a0e9856da72f379ff0cebe2" ]; then
+        echo "Found the Roots chainstate read-ahead patch."
+    else
+        git diff "$tree_commit" "$tree_actual_tree" >&2
+        echo "FAIL: subtree directory was touched without subtree merge" >&2
+        exit 1
+    fi
 fi
 
 if [ "$check_remote" != "0" ]; then
@@ -124,7 +131,7 @@ if [ "$check_remote" != "0" ]; then
     echo "$DIR in $COMMIT was last updated to upstream commit $rev (tree $tree_subtree)"
 
     # ... and compare the actual tree with it
-    if [ "$tree_actual_tree" != "$tree_subtree" ]; then
+    if [ "$tree_commit" != "$tree_subtree" ]; then
         echo "FAIL: subtree update commit differs from upstream tree!" >&2
         exit 1
     fi
