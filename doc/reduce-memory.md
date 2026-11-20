@@ -15,9 +15,9 @@ Bitcoin Core may warn at startup when `-dbcache` looks too large for the detecte
 
 The size of some in-memory caches can be reduced. As caches trade off memory usage for performance, reducing these will usually have a negative effect on performance.
 
-- `-dbcache=<n>` - the UTXO database cache size, this defaults to `1024` (or `450` if less than `4096` MiB system RAM is detected). The unit is MiB (1024).
+- `-dbcache=<n>` sets the total database cache budget in MiB. Bitcoin Roots defaults to 202 MiB, which allocates 192 MiB to the in-memory UTXO cache when optional indexes are disabled. Optional indexes share the budget, and unused mempool memory can supplement the UTXO cache.
   - The minimum value for `-dbcache` is 4.
-  - A lower `-dbcache` makes initial sync time much longer. After the initial sync, the effect is less pronounced for most use-cases, unless fast validation of blocks is important, such as for mining.
+  - A larger `-dbcache` can speed up initial sync if your system has RAM to spare. After sync, most nodes benefit less from a larger cache.
 
 ## Memory pool
 

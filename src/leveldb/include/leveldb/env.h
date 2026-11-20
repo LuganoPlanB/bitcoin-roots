@@ -89,6 +89,13 @@ class LEVELDB_EXPORT Env {
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) = 0;
 
+  // Open a random-access file and advise the OS to avoid read-ahead where
+  // supported. Advice is best effort.
+  virtual Status NewRandomAccessFileWithRandomAdvice(
+      const std::string& fname, RandomAccessFile** result) {
+    return NewRandomAccessFile(fname, result);
+  }
+
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
   // new file.  On success, stores a pointer to the new file in

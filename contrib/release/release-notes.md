@@ -5,8 +5,8 @@ downloadable package, deployment or publication is established by this text.
 Source acceptance and release approval remain separate gates.
 
 The direct base is the exact official Bitcoin Core v32.1 commit
-`f0de87f040621468b956f01f526a43a010310501`. This maintenance candidate appends
-static headless musl release packaging to published
+`f0de87f040621468b956f01f526a43a010310501`. This maintenance candidate adds
+chainstate tuning and static headless musl release packaging to published
 [v32.1-roots.2](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/v32.1-roots.2),
 preserving that complete history and its three reviewed Core PR ports.
 Roots.1 already folds the complete released Roots v31 line through
@@ -17,6 +17,13 @@ feature provenance, not the direct base or a release dependency. Historical
 unchanged and do not qualify this candidate.
 
 ## Changes since v32.1-roots.2
+
+- On Linux, Bitcoin Roots asks the kernel to skip read-ahead on chainstate
+  tables when built with the bundled LevelDB.
+- The default in-memory UTXO cache is 192 MiB with optional indexes
+  disabled. The total `-dbcache` default is 202 MiB, including the block
+  index and chainstate database caches. Set `-dbcache` to choose a different
+  budget.
 
 - Add fully static, headless musl release targets for x86_64, ARM64, ARM
   hard-float and RISC-V64 through pinned `dyne/musl-action` and SDK v2.6.0.

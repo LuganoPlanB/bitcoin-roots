@@ -26,11 +26,21 @@ void CheckDbCacheWarnThreshold(uint64_t threshold, uint64_t total_ram)
 
 BOOST_AUTO_TEST_SUITE(caches_tests)
 
+BOOST_AUTO_TEST_CASE(default_dbcache_allocation)
+{
+    const ArgsManager args;
+    const auto cache{CalculateCacheSizes(args)};
+    BOOST_CHECK_EQUAL(GetDefaultDBCache(), 202_MiB);
+    BOOST_CHECK_EQUAL(cache.kernel.block_tree_db, 2_MiB);
+    BOOST_CHECK_EQUAL(cache.kernel.coins_db, 8_MiB);
+    BOOST_CHECK_EQUAL(cache.kernel.coins, 192_MiB);
+}
+
 BOOST_AUTO_TEST_CASE(oversized_dbcache_warning)
 {
     BOOST_CHECK(!ShouldWarnOversizedDbCache(MIN_DBCACHE_BYTES, 1_GiB));
 
-    // Below DBCACHE_WARNING_RESERVED_RAM the existing fixed default dominates.
+    // Below DBCACHE_WARNING_RESERVED_RAM the fixed warning floor dominates.
     CheckDbCacheWarnThreshold(DEFAULT_KERNEL_CACHE, 1_GiB);
     CheckDbCacheWarnThreshold(DEFAULT_KERNEL_CACHE, DBCACHE_WARNING_RESERVED_RAM);
 

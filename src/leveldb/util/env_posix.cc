@@ -142,6 +142,12 @@ class PosixSequentialFile final : public SequentialFile {
   const std::string filename_;
 };
 
+void AdviseRandomRead([[maybe_unused]] int fd) {
+#ifdef __linux__
+  (void)::posix_fadvise(fd, 0, 0, POSIX_FADV_RANDOM);
+#endif
+}
+
 // Implements random read access in a file using pread().
 //
 // Instances of this class are thread-safe, as required by the RandomAccessFile
@@ -150,15 +156,19 @@ class PosixSequentialFile final : public SequentialFile {
 class PosixRandomAccessFile final : public RandomAccessFile {
  public:
   // The new instance takes ownership of |fd|. |fd_limiter| must outlive this
-  // instance, and will be used to determine if .
-  PosixRandomAccessFile(std::string filename, int fd, Limiter* fd_limiter)
+  // instance, and determines whether we can hold the descriptor open.
+  PosixRandomAccessFile(std::string filename, int fd, Limiter* fd_limiter,
+                        bool advise_random)
       : has_permanent_fd_(fd_limiter->Acquire()),
         fd_(has_permanent_fd_ ? fd : -1),
         fd_limiter_(fd_limiter),
-        filename_(std::move(filename)) {
+        filename_(std::move(filename)),
+        advise_random_(advise_random) {
     if (!has_permanent_fd_) {
       assert(fd_ == -1);
       ::close(fd);  // The file will be opened on every read.
+    } else if (advise_random_) {
+      AdviseRandomRead(fd_);
     }
   }
 
@@ -177,6 +187,9 @@ class PosixRandomAccessFile final : public RandomAccessFile {
       fd = ::open(filename_.c_str(), O_RDONLY | kOpenBaseFlags);
       if (fd < 0) {
         return PosixError(filename_, errno);
+      }
+      if (advise_random_) {
+        AdviseRandomRead(fd);
       }
     }
 
@@ -204,6 +217,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
   const int fd_;                 // -1 if has_permanent_fd_ is false.
   Limiter* const fd_limiter_;
   const std::string filename_;
+  const bool advise_random_;
 };
 
 // Implements random read access in a file using mmap().
@@ -524,6 +538,19 @@ class PosixEnv : public Env {
 
   Status NewRandomAccessFile(const std::string& filename,
                              RandomAccessFile** result) override {
+    return OpenRandomAccessFile(filename, result, false);
+  }
+
+#ifdef __linux__
+  Status NewRandomAccessFileWithRandomAdvice(
+      const std::string& filename, RandomAccessFile** result) override {
+    return OpenRandomAccessFile(filename, result, true);
+  }
+#endif
+
+ private:
+  Status OpenRandomAccessFile(const std::string& filename,
+                              RandomAccessFile** result, bool advise_random) {
     *result = nullptr;
     int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
     if (fd < 0) {
@@ -531,7 +558,8 @@ class PosixEnv : public Env {
     }
 
     if (!mmap_limiter_.Acquire()) {
-      *result = new PosixRandomAccessFile(filename, fd, &fd_limiter_);
+      *result =
+          new PosixRandomAccessFile(filename, fd, &fd_limiter_, advise_random);
       return Status::OK();
     }
 
@@ -541,6 +569,11 @@ class PosixEnv : public Env {
       void* mmap_base =
           ::mmap(/*addr=*/nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);
       if (mmap_base != MAP_FAILED) {
+#ifdef __linux__
+        if (advise_random) {
+          (void)::madvise(mmap_base, file_size, MADV_RANDOM);
+        }
+#endif
         *result = new PosixMmapReadableFile(filename,
                                             reinterpret_cast<char*>(mmap_base),
                                             file_size, &mmap_limiter_);
@@ -555,6 +588,7 @@ class PosixEnv : public Env {
     return status;
   }
 
+ public:
   Status NewWritableFile(const std::string& filename,
                          WritableFile** result) override {
     int fd = ::open(filename.c_str(),
