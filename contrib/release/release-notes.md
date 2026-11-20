@@ -20,6 +20,7 @@ unchanged and do not qualify this candidate.
 
 - On Linux, Bitcoin Roots asks the kernel to skip read-ahead on chainstate
   tables when built with the bundled LevelDB.
+- Fix macOS release builds on GitHub Actions runners using CMake 4.5.
 - The default in-memory UTXO cache is 192 MiB with optional indexes
   disabled. The total `-dbcache` default is 202 MiB, including the block
   index and chainstate database caches. Set `-dbcache` to choose a different
