@@ -1762,13 +1762,13 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     // sanitize comments per BIP-0014, format user agent and check total size
-    std::vector<std::string> uacomments{ROOTS_UA_COMMENT};
+    std::vector<std::string> uacomments;
     for (const std::string& cmt : args.GetArgs("-uacomment")) {
         if (cmt != SanitizeString(cmt, SAFE_CHARS_UA_COMMENT))
             return InitError(strprintf(_("User Agent comment (%s) contains unsafe characters."), cmt));
         uacomments.push_back(cmt);
     }
-    strSubVersion = FormatSubVersion(UA_NAME, CLIENT_VERSION, uacomments);
+    strSubVersion = FormatSubVersion(UA_NAME, CLIENT_VERSION, uacomments, ROOTS_UA_SUFFIX);
     if (strSubVersion.size() > MAX_SUBVERSION_LENGTH) {
         return InitError(strprintf(_("Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments."),
             strSubVersion.size(), MAX_SUBVERSION_LENGTH));

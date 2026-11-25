@@ -115,8 +115,8 @@
 /* Define to the version of this package. */
 #define CLIENT_VERSION_STRING "@CLIENT_VERSION_STRING@"
 
-/* Roots release revision announced to ordinary peers. */
-#define ROOTS_UA_COMMENT "@ROOTS_UA_COMMENT@"
+/* Version suffix announced to ordinary peers, e.g. "-roots.4". */
+#define ROOTS_UA_SUFFIX "@ROOTS_UA_SUFFIX@"
 
 /* Define to 1 if strerror_r returns char *. */
 #cmakedefine STRERROR_R_CHAR_P 1

@@ -21,6 +21,7 @@
 #if !defined(RC_INVOKED)
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 inline constexpr int CLIENT_VERSION =
@@ -32,7 +33,7 @@ extern const std::string UA_NAME;
 
 
 std::string FormatFullVersion();
-std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments);
+std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments, std::string_view version_suffix = {});
 
 #endif // RC_INVOKED
 
