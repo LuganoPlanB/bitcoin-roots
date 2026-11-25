@@ -85,19 +85,21 @@ class PrepareReleaseTest(unittest.TestCase):
 
     def test_stages_copying_for_every_platform_archive(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
-        # Both Linux and both macOS matrix jobs share their platform's block.
-        self.assertEqual(workflow.count("ci/release/archive.py stage-copying"), 3)
+        workflow += (ROOT / ".github/workflows/reusable-musl-release.yml").read_text()
+        # Linux, musl and macOS matrix jobs share each profile's block.
+        self.assertEqual(workflow.count("ci/release/archive.py stage-copying"), 4)
         with tempfile.TemporaryDirectory() as temporary_dir:
             work = Path(temporary_dir)
-            for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64"):
+            for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64",
+                             "musl-x86_64", "musl-arm_64", "musl-arm_hf", "musl-riscv_64"):
                 with self.subTest(platform=platform):
                     root = work / platform / "bitcoin-roots-30.3-roots.1"
                     root.mkdir(parents=True)
                     (root / "payload").write_bytes(b"executable fixture")
                     subprocess.run(["python3", ARCHIVE_TOOL, "stage-copying", root], check=True)
                     self.assertEqual((root / "COPYING").read_bytes(), (ROOT / "COPYING").read_bytes())
-                    archive = root.parent / ("package.tar.gz" if platform.startswith("linux") else "package.zip")
-                    if platform.startswith("linux"):
+                    archive = root.parent / ("package.tar.gz" if platform.startswith(("linux", "musl")) else "package.zip")
+                    if platform.startswith(("linux", "musl")):
                         with tarfile.open(archive, mode="w:gz") as package:
                             package.add(root, arcname=root.name)
                     else:

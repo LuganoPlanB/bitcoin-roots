@@ -28,20 +28,13 @@ static constexpr uint64_t MAX_TX_INDEX_CACHE{1_GiB};
 static constexpr uint64_t MAX_FILTER_INDEX_CACHE{1_GiB};
 //! Max memory allocated to tx spenderindex DB specific cache in bytes.
 static constexpr uint64_t MAX_TXOSPENDER_INDEX_CACHE{1_GiB};
-//! Larger default dbcache on 64-bit systems with enough RAM.
-static constexpr uint64_t HIGH_DEFAULT_DBCACHE{1_GiB};
-//! Minimum detected RAM required for HIGH_DEFAULT_DBCACHE.
-static constexpr uint64_t HIGH_DEFAULT_DBCACHE_MIN_TOTAL_RAM{4_GiB};
+//! Default memory target for the in-memory coins cache with optional indexes disabled.
+static constexpr uint64_t DEFAULT_COINS_CACHE{192_MiB};
 
 namespace node {
 uint64_t GetDefaultDBCache()
 {
-    if constexpr (sizeof(void*) >= 8) {
-        if (TryGetTotalRam().value_or(0) >= HIGH_DEFAULT_DBCACHE_MIN_TOTAL_RAM) {
-            return HIGH_DEFAULT_DBCACHE;
-        }
-    }
-    return DEFAULT_KERNEL_CACHE;
+    return DEFAULT_COINS_CACHE + MAX_BLOCK_DB_CACHE + MAX_COINS_DB_CACHE;
 }
 
 uint64_t CalculateDbCacheBytes(const ArgsManager& args)

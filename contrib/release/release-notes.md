@@ -1,190 +1,105 @@
-# Bitcoin Roots v32.1-roots.2 candidate
+This release builds directly on the official Bitcoin Core v32.1 commit
+`f0de87f040621468b956f01f526a43a010310501`. You can now see which Roots
+revision a peer is running. It also carries forward the faster Linux resync
+and static headless packages introduced in v32.1-roots.3.
 
-This is an unpublished candidate, not a release announcement. No public tag,
-downloadable package, deployment or publication is established by this text.
-Source acceptance and release approval remain separate gates.
+## Changes since v32.1-roots.3
 
-The direct base is the exact official Bitcoin Core v32.1 commit
-`f0de87f040621468b956f01f526a43a010310501`. This maintenance candidate appends
-three reviewed Core PR ports to published
-[v32.1-roots.1](https://github.com/LuganoPlanB/bitcoin-roots/releases/tag/untagged-3450aebe1f5e3a73703b)
-(`f0393f2688656ba544b40fe508db909152201c18`), preserving that complete history.
-Roots.1 already folds the complete released Roots v31 line through
-v31.1-roots.6 and its follow-up repairs into the owning semantic changes.
-Bitcoin Knots `29.3.knots20260507` is historical
-feature provenance, not the direct base or a release dependency. Historical
-[v31.1-roots.6 notes](../../doc/release-notes/roots-v31.1-roots.6.md) are retained
-unchanged and do not qualify this candidate.
+### See the Roots revision in the node’s user agent
 
-## Changes since v32.1-roots.1
+Ordinary peers now see the Roots revision alongside the Core version. For
+example, a build with revision `roots.4` announces `/Satoshi:32.1.0(roots.4)/`.
+Run `bitcoin-cli getnetworkinfo` and look at `subversion` to see what your
+node announces. Any comments you add with `-uacomment` follow the revision.
 
-- [Core PR #36872](https://github.com/bitcoin/bitcoin/pull/36872): select one
-  fresh qa-assets revision per consuming Actions run and share verified unit
-  vectors/full-replay corpora through same-run tar artifacts. Consumers check
-  revision, license and hashes; missing/corrupt prepared inputs fail without
-  network fallback. Shared container inputs remain read-only, full-fuzz copies
-  remain independently writable and fast fuzz retains its download-free bounds.
-- [Core PR #36871](https://github.com/bitcoin/bitcoin/pull/36871): advancing a
-  read-only Berkeley DB cursor replaces reused key/value streams rather than
-  appending unread record data. SQLite prefix coverage retains the same output
-  contract. This preserves the supported migration path without restoring an
-  obsolete Berkeley DB wallet engine.
-- [Core PR #36809](https://github.com/bitcoin/bitcoin/pull/36809): `signmessage`
-  and `verifymessage` support BIP322 simple proofs for native P2WPKH, P2WSH
-  and P2TR. Descriptor-wallet signing requires a complete satisfaction with
-  available keys/scripts, including supported multisig/Miniscript and Taproot
-  key/script paths. Output is `smp` plus a base64 serialized witness stack;
-  verification also accepts older unprefixed simple proofs without wallet or
-  chain data. Invalid/unsupported/inconclusive proofs return `false`;
-  malformed base64 or witness serialization raises error -3.
-  P2SH/wrapped SegWit, partial/full signatures and proofs of funds are
-  unsupported. Version, locktime and sequence are zero, so incompatible
-  timelocks cannot be satisfied by waiting. P2PKH compact signatures and
-  legacy-only `signmessagewithprivkey` are unchanged. A message proof does not
-  establish a balance or payment. See [operator limits](../../doc/wallet-privacy.md#sign-and-verify-a-message).
-- Keep the no-wallet hidden option list aligned with wallet-enabled
-  `-allow-dangerous-rpc` registration. Wallet-enabled authorization, command-line
-  restrictions and flags remain unchanged.
+## Inherited from v32.1-roots.3
 
-## Preserved policy and network behavior
+### Faster resync on Linux
 
-Roots remains compatible with Bitcoin Core consensus and does not enforce
-RDTS/BIP110. Relay, mempool and mining-template restrictions are local and
-configurable: consensus-valid blocks containing locally rejected transactions
-remain acceptable.
+When built with the bundled LevelDB, Roots asks the Linux kernel to skip
+read-ahead on chainstate tables. Jaromil reported approximately 90% faster
+resync in his tests. [Read the original report](https://x.com/jaromil/status/2123802611216224686).
 
-- Retain scoped policy parsing, local standardness/coin-age/reuse/replacement
-  controls, independent subdust arithmetic, initialized dynamic-dust lifecycle
-  and effective-policy reporting. Core v32 graph/package invariants remain
-  native. Full RBF remains the default, with explicit Never/OptIn policies and
-  v3/TRUC qualification.
-  Applied settings are reported by `getmempoolinfo.policy`; the legacy top-level
-  `fullrbf` field requires native v32 `-deprecatedrpc=fullrbf` compatibility.
-- Default data-carrier policy remains 83 aggregate bytes with full recognized
-  input/witness counting and a cost of 1 vbyte per detected data byte. More than
-  one OP_RETURN output retains `multi-op-return` rejection. Nonstandard/bare
-  carrier controls and consensus rules remain separate. Current help describes
-  the aggregate counting and single-output boundary.
-- Preserve priority-template selection, dependency ordering, priority-selected
-  ancestor accounting, resource limits and native residual chunks. GBT and
-  mining IPC consume the same applied policy.
-- Keep the compact reconstruction count default at Core's 100, not the old
-  Roots value of 32,768. The 10 decimal MB cap charges transaction dynamic
-  storage; slot/object overhead and shared ownership are separate. Either zero
-  limit disables the cache. Cache retention does not change admission or
-  consensus.
-- Preserve permission and address-relay repairs, manual block-fetch tracking,
-  current-connection peer facts and GUI refresh/reset behavior. Consumers must
-  not expect the removed `misbehavior_score` field. Bare whitelist grants do
-  not imply `addr`; address-based outbound grants apply to manual connections.
+### Fully static packages for four architectures
 
-## Wallet migration and disclosure
+Choose one of these packages to run Roots without a graphical interface.
+They are built with a pinned version of `dyne/musl-action` and SDK v2.6.0.
 
-The port keeps descriptor wallets with SQLite and native external-signer
-boundaries. It does not restore a Berkeley DB build option. Follow the supported
-Core legacy-wallet migration path and retain independent secure backups.
+| Architecture | Package |
+| --- | --- |
+| x86_64 | `bitcoin-roots-musl-x86_64.tar.gz` |
+| ARM64 | `bitcoin-roots-musl-arm_64.tar.gz` |
+| ARM hard-float | `bitcoin-roots-musl-arm_hf.tar.gz` |
+| RISC-V64 | `bitcoin-roots-musl-riscv_64.tar.gz` |
 
-Core v32 sends create PSBT v2 by default. The GUI reports actual reconstructed
-signaling for PSBT v0/v2 and starts per-send RBF from the wallet preference.
-Signaling does not promise replacement acceptance. Native `settxfee`/`paytxfee`
-removal is retained; sweep uses fee estimation and configured fallback.
+Each package includes the daemon, launcher, command-line client, transaction
+and utility tools, and SQLite wallet tools, with ZeroMQ support. The headless
+builds omit Qt and multiprocess IPC. Release checks cover all nine packages
+and reject static executables with dynamic dependencies or the wrong architecture.
+[Musl release profile](https://github.com/LuganoPlanB/bitcoin-roots/blob/v32.1-roots.3/ci/release/README.md#static-headless-musl-packages)
 
-`sweepprivkeys` and the Qt6 Sweep Private Key dialog retain transient WIF input,
-confirmed P2PKH and compressed-key native/wrapped P2WPKH scanning, selected-wallet
-local signing and signed-preview default. They do not scan Taproot or import
-keys. Submission requires the exact reviewed preview transaction and final
-authorization; after that boundary cancellation cannot undo broadcast.
+### Cache defaults
 
-`exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled
-entirely by default, including public-only modes. Enable them only by starting
-the node with `--allow-dangerous-rpc` (or `=1`). Configuration files, JSON and
-runtime settings cannot enable the permission. Omission or `=0` disables it;
-invalid values and negated forms are rejected. RPC authentication and wallet
-unlock requirements remain in force. This also applies to the Qt RPC console.
+With optional indexes disabled, the in-memory UTXO cache defaults to
+**192 MiB**. The total **`-dbcache` default is 202 MiB**, including the
+block index and chainstate database caches.
 
-With that explicit startup opt-in, `exportaddresskey ADDRESS [key_type]` retains the released roots.6
-contract for recognized local descriptor-wallet scripts: P2PKH/P2WPKH,
-P2SH/P2WSH wrappers, multisig/Miniscript and Taproot internal/leaf/direct-output
-and MuSig2 participant keys. The sorted `keys` array is canonical. Original
-P2PKH/native-P2WPKH top-level aliases remain compatible; omitted/null `key_type`
-selects `wallet`, while `taproot_output` requires an available effective output
-secret and exact commitment metadata. Participant keys are not aggregate keys.
+### macOS builds
 
-Normal selected-wallet authorization and unlock are required. Watch-only,
-private-key-disabled and external-signer wallets cannot export local secrets.
-Partial ownership does not promise an independent spend. Export does not recover
-unknown derivation paths, scripts or commitments or advance keypools/balances.
+The macOS release packages build on GitHub Actions runners using CMake 4.5.
 
-An exported scalar may control other addresses, **including an HD master private
-key**. A non-hardened child secret together with the ancestor xpub can compromise
-the private subtree. Protect authenticated local RPC and use protected stdin
-for transfers, keeping secrets out of command arguments, environment variables,
-logs and files. Host/client/Qt copies may persist; complete memory erasure is
-not promised. Export is not backup, does not broaden sweep's script coverage
-and does not establish additional Quietproof proof support. Read the complete
-[wallet manual](../../doc/wallet-privacy.md) before operating on funds.
+## Inherited from v32.1-roots.2
 
-## Current build and operator interfaces
+### Message signing for native SegWit and Taproot
 
-Qt >=6.2 is supported; Qt5 and libevent dependencies are not restored. HTTP,
-IPC, PSBT and index/resource behavior follows the native v32 interfaces where
-it satisfies the retained contract. Embedded libraries remain default;
-explicit system LevelDB/secp256k1 builds must meet the current API probes.
-Windows optional MiniUPnPc discovery does not establish UPnP runtime support.
+`signmessage` and `verifymessage` support BIP322 simple proofs for native
+P2WPKH, P2WSH and P2TR addresses. Your descriptor wallet needs enough keys
+and scripts to complete the proof. Supported policies include multisig,
+Miniscript, and both Taproot key and script paths. [Core PR #36809](https://github.com/bitcoin/bitcoin/pull/36809)
 
-Read/write configuration, initialized effective policy and native monotonic
-`uptime` remain available. Statistics source is dormant: `getmempoolstats` is
-not registered and no samples are collected. No Network Watch, privacy score,
-CoinJoin/payjoin, automatic consolidation or anonymity guarantee is introduced.
+- New proofs use the `smp` prefix followed by a base64-encoded, serialised witness stack.
+- Verification also accepts older simple proofs without the prefix. It works without a wallet or blockchain data.
+- Invalid, unsupported or inconclusive proofs return `false`. Malformed base64 or witness serialisation returns RPC error `-3`.
 
-Product help/version/About output identifies Bitcoin Roots and Plan-B
-Foundation, with separate historical Bitcoin Core attribution. Wire identity
-remains `Satoshi`; numeric protocol/version identifiers are unchanged.
-See the [feature catalog](../../doc/roots-features.md) and
-[build profile guide](../../doc/roots-build-portability.md).
+P2SH and wrapped SegWit addresses, partial signatures, full proofs and proofs
+of funds are unsupported. Transaction version, locktime and sequence are all
+zero, so waiting won’t make an incompatible timelock work. A message proof
+doesn’t establish a balance or payment. Existing P2PKH compact signatures
+and the legacy-only `signmessagewithprivkey` work as before.
+[Message-signing limits](https://plan-b.foundation/bitcoin-roots/wallet-privacy#sign-and-verify-a-message)
 
-## Verification and release boundary
+### Legacy wallet migration
 
-Owning-theme evidence, retained failures and remaining limitations are recorded
-in the [port review](../../doc/roots-v32-port-review.md). Current manuals and
-the example configuration are generated from current candidate help through
-isolated regtest wrappers; optional-build and debug-only help omissions must
-not be interpreted as removed features. No old manual is reused as current help.
+When migrating a legacy Berkeley DB wallet, Roots now reads each record from
+the beginning of a fresh stream. Unread bytes from the previous record can no
+longer carry over. SQLite prefix reads keep their existing behaviour.
+[Core PR #36871](https://github.com/bitcoin/bitcoin/pull/36871)
 
-Local maintenance, archive, synthetic-signing/draft and mocked transport tests
-do not establish hosted CI or actual five-platform builds. Full candidate,
-compatibility, integration and final accepted-SHA portable replay remain their
-own gates. Earlier source snapshots and binary results apply only to their
-recorded inputs; later source changes require renewed affected verification.
+### More consistent automated tests
 
-The portable patch is exported from the exact Core base and excludes
-`.github/**`. Local replay uses `git am -3 --keep-cr` with required commit
-signing and product blob/mode/symlink parity, while Core hosting files remain
-unchanged. Release machinery targets Linux x86_64/aarch64, macOS x86_64/arm64
-and Windows x86_64 packages. Package builds disable test execution and do not
-close source-verification gaps.
+Each CI run shares one verified revision of its test data across jobs. The
+jobs check the revision, licence and hashes. Missing or corrupt data stops
+the run. [Core PR #36872](https://github.com/bitcoin/bitcoin/pull/36872)
 
-Only a separately authorized tag push reaches required SHA512 manifest signing
-and new-draft creation. Every existing draft/public release blocks replacement.
-Manifest signing is separate from Git-tag and platform-code signing. The
-permanent release tag requires the maintainer's signing key; disposable annotated
-rehearsal tags do not establish that signature. Platform packaging uses ad-hoc
-macOS app signatures without Developer ID/notarization and no Windows
-Authenticode signature; verify the
-actual future artifacts and signing disclosures independently. No such run,
-signature or draft is claimed here. Upstream Core-tag signature verification
-was explicitly waived for this port; source identity/ancestry checks remain
-required and the waived check is not recorded as passed.
+### Consistent command-line options
 
-## Acknowledgements
+Builds with and without wallet support recognise the same hidden option
+names. The startup and permission rules for `-allow-dangerous-rpc` still apply.
 
-Thanks to [@danielabrozzoni](https://github.com/danielabrozzoni) for the
-[P2P review](https://gist.github.com/danielabrozzoni/142356f60b0e977fd74cc9decf6e3271)
-behind retained permission and reporting corrections.
+## Upgrading to Core v32 with Bitcoin Roots
 
-Thank you to [devjoinedthechat](https://github.com/devjoinedthechat) for
-[priority-selected ancestor accounting (#24)](https://github.com/LuganoPlanB/bitcoin-roots/pull/24)
-and [configured RBF reporting (#25)](https://github.com/LuganoPlanB/bitcoin-roots/pull/25).
-Their contributions and regressions are preserved. Thanks also to Jaromil,
-Plan-B Foundation and the Bitcoin Core contributors. Historical releases,
-source credits and assets remain immutable.
+Roots keeps its configurable relay, mempool and mining policies. It follows
+Bitcoin Core consensus and does not enforce RDTS/BIP110. Your node still
+accepts valid blocks containing transactions rejected by your local policy.
+
+- **Policy defaults.** Full RBF is the default. The data-carrier limit is 83 bytes in aggregate, with at most one OP_RETURN output per transaction.
+- **Back up before migrating wallets.** Roots uses descriptor wallets. Keep independent, secure backups and follow Core’s migration process for legacy wallets.
+- **Check your signing tools.** PSBT v2 is the default. The send dialog follows the wallet’s RBF preference. Signalling replacement does not guarantee acceptance.
+- **Preview private-key sweeps.** Review the signed transaction before authorising broadcast. Sweeping supports confirmed funds in supported legacy and SegWit addresses without importing the keys. Taproot sweeps are unsupported.
+- **Enable key and descriptor RPCs explicitly.** `exportaddresskey`, `listdescriptors`, `gethdkeys` and `derivehdkey` are disabled by default, including public-only requests. Use `--allow-dangerous-rpc` on the command line at startup. Wallet authentication and unlock requirements still apply. An exported secret can expose other addresses or the wallet’s master private key. [Wallet manual](https://plan-b.foundation/bitcoin-roots/wallet-privacy)
+- **Update RPC integrations.** Read applied policy from `getmempoolinfo.policy`. Core v32 removed `settxfee`, `paytxfee` and `misbehavior_score`. The old top-level `fullrbf` field requires `-deprecatedrpc=fullrbf`.
+
+Thanks to [@danielabrozzoni for the P2P review](https://gist.github.com/danielabrozzoni/142356f60b0e977fd74cc9decf6e3271)
+and to devjoinedthechat for [mining ancestor accounting (#24)](https://github.com/LuganoPlanB/bitcoin-roots/pull/24)
+and [RBF reporting (#25)](https://github.com/LuganoPlanB/bitcoin-roots/pull/25).
+Thanks also to Jaromil, Plan-B Foundation, and the Bitcoin Core and Bitcoin Knots contributors.

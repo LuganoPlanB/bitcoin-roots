@@ -81,7 +81,8 @@ might require installing GNU tools, such as GNU sed.
 git-subtree-check.sh
 ====================
 Run this script from the root of the repository to verify that a subtree matches the contents of
-the commit it claims to have been updated to.
+the commit it claims to have been updated to. The check also accepts the exact Roots LevelDB tree
+with the chainstate read-ahead patch and verifies its base against the upstream import.
 
 ```
 Usage: test/lint/git-subtree-check.sh [-r] DIR [COMMIT]

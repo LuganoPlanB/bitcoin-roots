@@ -23,8 +23,9 @@ import archive
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "ci/release"
 PACKAGE_NAMES = {
-    f"bitcoin-roots-{platform}.{'tar.gz' if platform.startswith('linux') else 'zip'}": platform
-    for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64")
+    f"bitcoin-roots-{platform}.{'tar.gz' if platform.startswith(('linux', 'musl')) else 'zip'}": platform
+    for platform in ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64",
+                     "musl-x86_64", "musl-arm_64", "musl-arm_hf", "musl-riscv_64")
 }
 
 
@@ -46,7 +47,7 @@ def snapshot_packet(args, destination):
     if not args.assets.is_dir() or args.assets.is_symlink():
         raise ValueError("Assets must be a regular directory")
     if {path.name for path in args.assets.iterdir()} != expected:
-        raise ValueError("Expected exactly five platform packages, the release patch and SHA512SUMS")
+        raise ValueError(f"Expected exactly {len(PACKAGE_NAMES)} platform packages, the release patch and SHA512SUMS")
     for name in sorted(expected):
         source = args.assets / name
         if source.is_symlink() or not source.is_file() or source.stat().st_size == 0:
@@ -63,7 +64,7 @@ def snapshot_packet(args, destination):
             raise ValueError("Invalid, duplicate or unexpected manifest entry")
         entries[match[2]] = match[1]
     if set(entries) != expected - {"SHA512SUMS"}:
-        raise ValueError("Manifest must contain exactly the six release assets")
+        raise ValueError(f"Manifest must contain exactly {len(PACKAGE_NAMES) + 1} release assets")
     for name, checksum in entries.items():
         if digest(destination / name, "sha512") != checksum:
             raise ValueError(f"Release checksum mismatch: {name}")
@@ -159,7 +160,7 @@ def prepare_draft(args):
             command.extend(str(assets / name) for name in names)
             print(run(command))
         else:
-            print("Validated immutable source, six assets, canonical COPYING, patch replay and reviewed notes; no draft created")
+            print("Validated immutable source, release assets, canonical COPYING, patch replay and reviewed notes; no draft created")
 
 
 def main():

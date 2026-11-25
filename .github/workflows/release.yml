@@ -154,6 +154,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  musl-release:
+    needs: release-metadata-tests
+    uses: ./.github/workflows/reusable-musl-release.yml
+    with:
+      source-ref: ${{ github.event_name == 'push' && format('refs/tags/{0}', github.ref_name) || inputs.release_commit }}
+      release-tag: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+      release-commit: ${{ github.event_name == 'workflow_dispatch' && inputs.release_commit || '' }}
+      release-event: ${{ github.event_name }}
+
   windows-release:
     name: Windows x86_64 release
     runs-on: windows-2025-vs2026
@@ -343,7 +352,7 @@ jobs:
   publish-release:
     name: Sign manifest and create draft
     if: github.event_name == 'push'
-    needs: [release-metadata-tests, linux-release, windows-release, macos-release]
+    needs: [release-metadata-tests, linux-release, musl-release, windows-release, macos-release]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release
@@ -376,7 +385,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ci/release/prepare-release.sh "${RUNNER_TEMP}/downloaded-artifacts" "${RUNNER_TEMP}/release-assets" \
-            "$PUBLIC_KEY_FILE" "$RELEASE_TAG" 5
+            "$PUBLIC_KEY_FILE" "$RELEASE_TAG" 9
 
       - name: Require manifest signing and verify configured key
         env:

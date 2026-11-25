@@ -265,6 +265,9 @@ CDBWrapper::CDBWrapper(const DBParams& params)
         DBContext().penv = leveldb::NewMemEnv(leveldb::Env::Default());
         DBContext().options.env = DBContext().penv;
     }
+#if defined(__linux__) && EMBEDDED_LEVELDB
+    DBContext().options.table_random_read_advice = params.table_random_read_advice && !params.memory_only && !params.testing_env;
+#endif
     if (!params.memory_only) {
         if (params.wipe_data) {
             LogInfo("Wiping LevelDB in %s", fs::PathToString(params.path));

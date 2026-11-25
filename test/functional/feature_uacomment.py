@@ -6,6 +6,7 @@
 
 import re
 
+from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import assert_equal
@@ -18,12 +19,13 @@ class UacommentTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("test multiple -uacomment")
-        test_uacomment = self.nodes[0].getnetworkinfo()["subversion"][-12:-1]
-        assert_equal(test_uacomment, "(testnode0)")
+        subversion = self.nodes[0].getnetworkinfo()["subversion"]
+        assert re.fullmatch(r"/Satoshi:\d+\.\d+\.\d+\(roots\.[1-9]\d*; testnode0\)/", subversion), subversion
+        peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        assert_equal(peer.last_message["version"].strSubVer, subversion)
 
         self.restart_node(0, ["-uacomment=foo"])
-        foo_uacomment = self.nodes[0].getnetworkinfo()["subversion"][-17:-1]
-        assert_equal(foo_uacomment, "(testnode0; foo)")
+        assert_equal(self.nodes[0].getnetworkinfo()["subversion"], subversion.replace("testnode0)", "testnode0; foo)"))
 
         self.log.info("test -uacomment max length")
         self.stop_node(0)

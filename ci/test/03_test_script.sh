@@ -112,6 +112,12 @@ ccache --zero-stats
 BASE_BUILD_DIR=${BASE_BUILD_DIR:-$BASE_SCRATCH_DIR/build-$HOST}
 
 BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL '-DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR' -Werror=dev"
+# CMake 4.5 introduced this diagnostic for directory-scoped commands.
+cmake_version=$(cmake --version)
+if [[ $cmake_version =~ ^cmake\ version\ ([0-9]+)\.([0-9]+) ]] &&
+    (( BASH_REMATCH[1] > 4 || (BASH_REMATCH[1] == 4 && BASH_REMATCH[2] >= 5) )); then
+  BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -Wno-error=non-target-directive"
+fi
 if [[ -n "${RELEASE_TAG:-}" ]]; then
   "${BASE_ROOT_DIR}/ci/release/validate-release-tag.sh" "$RELEASE_TAG"
   BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCLIENT_VERSION_TAG=$RELEASE_TAG"

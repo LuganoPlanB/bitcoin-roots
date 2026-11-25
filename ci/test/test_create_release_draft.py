@@ -19,7 +19,8 @@ import test_prepare_release as package_fixtures
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "ci/release/create-draft.py"
 RELEASE_TAG = patch_fixtures.RELEASE_TAG
-PLATFORMS = ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64")
+PLATFORMS = ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64", "windows-x86_64",
+             "musl-x86_64", "musl-arm_64", "musl-arm_hf", "musl-riscv_64")
 
 
 class CreateReleaseDraftTest(unittest.TestCase):
@@ -49,7 +50,7 @@ class CreateReleaseDraftTest(unittest.TestCase):
         self.commit = self.git("rev-parse", "HEAD").stdout.strip()
         self.package_fixture = package_fixtures.PrepareReleaseTest()
         for platform in PLATFORMS:
-            name = f"bitcoin-roots-{platform}.{'tar.gz' if platform.startswith('linux') else 'zip'}"
+            name = f"bitcoin-roots-{platform}.{'tar.gz' if platform.startswith(('linux', 'musl')) else 'zip'}"
             self.package_fixture.write_package(self.assets / name, "bitcoin-roots-29.4-roots.1", b"binary")
         self.patch = self.assets / "bitcoin-roots-29.4-roots.1.patch"
         subprocess.run([self.repository / "ci/release/create-patch-series.sh", RELEASE_TAG, self.patch],
@@ -160,6 +161,17 @@ class CreateReleaseDraftTest(unittest.TestCase):
         self.assert_rejected()
         self.manifest.write_text("\n".join(self.manifest.read_text().splitlines()[:2]) + "\n")
         self.assert_rejected()
+
+    def test_rejects_each_missing_musl_package_before_creation(self):
+        for arch in ('x86_64', 'arm_64', 'arm_hf', 'riscv_64'):
+            with self.subTest(arch=arch):
+                path = self.assets / f'bitcoin-roots-musl-{arch}.tar.gz'
+                original = path.read_bytes()
+                path.unlink()
+                self.refresh_manifest()
+                self.assert_rejected()
+                path.write_bytes(original)
+        self.refresh_manifest()
 
     def test_rejects_patch_from_different_source_even_with_matching_checksum(self):
         self.patch.write_text("different patch\n")
