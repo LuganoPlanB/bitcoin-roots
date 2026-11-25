@@ -199,7 +199,11 @@ identities and paginated release inventory, then calls only
 network ambiguity fails closed; no clobber/update/deletion/replacement exists.
 The notes add the actual fresh build run/source and distinguish manifest, Git
 and platform signatures. `contrib/release/release-notes.md` is the reviewed
-curated template, including #24/#25 contributor credit.
+curated template. Open with the exact Core base and what operators gain.
+Put new changes under “Changes since” and older features under “Inherited
+from”. Update the version headings and package table for each release, and
+keep the #24/#25 contributor credit. The draft helper adds “Authenticated
+origin” using the verified key fingerprint, build commit and Actions run.
 
 The older `create-draft.py` remains a validation/unsigned-packet utility and
 shares its fail-closed guards with the signed CI path. It is not the normal

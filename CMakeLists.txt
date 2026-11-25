@@ -84,6 +84,7 @@ else()
   # Product version for this unpublished candidate; publication is separate.
   string(APPEND CLIENT_VERSION_STRING "-roots.3")
 endif()
+string(REGEX MATCH "roots\\.[0-9]+$" ROOTS_UA_COMMENT "${CLIENT_VERSION_STRING}")
 
 set(COPYRIGHT_HOLDERS "Plan-B Foundation")
 set(COPYRIGHT_HOLDERS_FINAL "Plan-B Foundation")

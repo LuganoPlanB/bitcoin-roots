@@ -22,13 +22,14 @@ class CandidateDocumentationTest(unittest.TestCase):
     def test_preservation_ids_and_current_candidate_state(self):
         catalog = (ROOT / 'doc/roots-features.md').read_text()
         self.assertEqual(set(re.findall(r'^\| `([a-z-]+)`', catalog, re.MULTILINE)), STABLE_IDS)
-        for name in ['README.md', 'doc/roots-features.md', 'doc/wallet-privacy.md', 'contrib/release/release-notes.md']:
+        for name in ['README.md', 'doc/roots-features.md', 'doc/wallet-privacy.md']:
             text = (ROOT / name).read_text()
             self.assertIn('v32.1', text, name)
             self.assertIn('unpublished', text, name)
             self.assertIn('candidate', text, name)
         notes = (ROOT / 'contrib/release/release-notes.md').read_text()
-        self.assertIn('Historical', notes)
+        self.assertIn('## Changes since ', notes)
+        self.assertIn('## Inherited from ', notes)
         self.assertTrue((ROOT / 'doc/release-notes/roots-v31.1-roots.6.md').is_file())
         self.assertNotIn('optional Qt 5 support', notes)
 

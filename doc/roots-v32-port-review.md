@@ -100,7 +100,7 @@ seven-commit BIP322 simple-proof implementation. Their Roots commits are
 `92e6c11966d6a4d73ba14d7ee36b269ef098238b`,
 `8ab22f8bceb843ccb42b03644938dbd1a74ff66e` and
 `97161eca73a15878b0e9ce2a04cec5e8892003e7`, respectively.
-The [current notes](../contrib/release/release-notes.md#changes-since-v321-roots1)
+The [current notes](../contrib/release/release-notes.md#message-signing-for-native-segwit-and-taproot)
 and [wallet manual](wallet-privacy.md#sign-and-verify-a-message) specify support
 and limits; the stable preservation contracts below remain intact.
 

@@ -54,14 +54,15 @@ def create(args):
             shutil.copyfile(args.assets / name, unsigned / name)
         template = args.notes.read_text()
         notes = temporary / 'notes.md'
-        notes.write_text(template + '\n## CI build and signing provenance\n\n'
-                         f'All {len(draft.PACKAGE_NAMES)} platform packages were built from `{args.commit}` in '
-                         f'[GitHub Actions run {args.run_id}](https://github.com/{args.repository}/actions/runs/{args.run_id}). '
-                         'Packages include the project COPYING file.\n\n'
-                         f'`SHA512SUMS.asc` signs the SHA512 manifest with release key `{args.fingerprint}`. '
-                         'This checksum signature is separate from Git-tag and platform-code signing. '
-                         'Git-tag signatures require separate verification. macOS applications retain ad-hoc signatures, '
-                         'without Developer ID signing or notarization; Windows executables have no Authenticode signature.\n')
+        notes.write_text(template.rstrip() + '\n\n## Authenticated origin\n\n'
+                         f'Verify `SHA512SUMS.asc` against `SHA512SUMS` with release key `{args.fingerprint}`. '
+                         'Jaromil also uses this key to sign Roots patch commits. '
+                         '[Download the public key](https://jaromil.dyne.org/).\n\n'
+                         f'[The release build](https://github.com/{args.repository}/actions/runs/{args.run_id}) '
+                         f'produced {len(draft.PACKAGE_NAMES)} packages from commit `{args.commit}`. '
+                         'Each includes the project’s COPYING file. Verify the Git tag separately. '
+                         'macOS apps use ad-hoc signatures without Developer ID signing or notarisation. '
+                         'Windows executables are unsigned.\n')
         args.assets = unsigned
         args.notes = notes
         args.manifest_sha512 = draft.digest(unsigned / 'SHA512SUMS', 'sha512')
