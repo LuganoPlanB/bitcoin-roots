@@ -10,6 +10,7 @@
 #include <util/string.h>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 using util::Join;
@@ -62,9 +63,9 @@ std::string FormatFullVersion()
 /**
  * Format the subversion field according to BIP 14 spec (https://github.com/bitcoin/bips/blob/master/bip-0014.mediawiki)
  */
-std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments)
+std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments, std::string_view version_suffix)
 {
     std::string comments_str;
     if (!comments.empty()) comments_str = strprintf("(%s)", Join(comments, "; "));
-    return strprintf("/%s:%s%s/", name, FormatVersion(nClientVersion), comments_str);
+    return strprintf("/%s:%s%s%s/", name, FormatVersion(nClientVersion), version_suffix, comments_str);
 }

@@ -20,12 +20,20 @@ class UacommentTest(BitcoinTestFramework):
     def run_test(self):
         self.log.info("test multiple -uacomment")
         subversion = self.nodes[0].getnetworkinfo()["subversion"]
-        assert re.fullmatch(r"/Satoshi:\d+\.\d+\.\d+\(roots\.[1-9]\d*; testnode0\)/", subversion), subversion
+        assert re.fullmatch(r"/Satoshi:\d+\.\d+\.\d+-roots\.[1-9]\d*\(testnode0\)/", subversion), subversion
         peer = self.nodes[0].add_p2p_connection(P2PInterface())
         assert_equal(peer.last_message["version"].strSubVer, subversion)
 
         self.restart_node(0, ["-uacomment=foo"])
         assert_equal(self.nodes[0].getnetworkinfo()["subversion"], subversion.replace("testnode0)", "testnode0; foo)"))
+
+        self.log.info("test default announcement without the framework's per-node comment")
+        self.nodes[0].args.remove("-uacomment=testnode0")
+        self.restart_node(0)
+        expected_subversion = subversion.removesuffix("(testnode0)/") + "/"
+        assert_equal(self.nodes[0].getnetworkinfo()["subversion"], expected_subversion)
+        peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        assert_equal(peer.last_message["version"].strSubVer, expected_subversion)
 
         self.log.info("test -uacomment max length")
         self.stop_node(0)

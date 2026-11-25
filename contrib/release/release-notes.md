@@ -8,9 +8,9 @@ and static headless packages introduced in v32.1-roots.3.
 ### See the Roots revision in the node’s user agent
 
 Ordinary peers now see the Roots revision alongside the Core version. For
-example, a build with revision `roots.4` announces `/Satoshi:32.1.0(roots.4)/`.
+example, a build with revision `roots.4` announces `/Satoshi:32.1.0-roots.4/`.
 Run `bitcoin-cli getnetworkinfo` and look at `subversion` to see what your
-node announces. Any comments you add with `-uacomment` follow the revision.
+node announces. With `-uacomment=my-node`, peers see `/Satoshi:32.1.0-roots.4(my-node)/`.
 
 ## Inherited from v32.1-roots.3
 

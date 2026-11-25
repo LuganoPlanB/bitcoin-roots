@@ -42,7 +42,7 @@ class ReleaseVersionTest(unittest.TestCase):
         for year, tag in [(current_year, None), (current_year + 1, 'v32.1-roots.6')]:
             with self.subTest(year=year, tag=tag), self.platform_configuration(year, tag) as build:
                 revision = tag.split('-')[1] if tag else 'roots.3'
-                self.assertIn(f'#define ROOTS_UA_COMMENT "{revision}"', (build / 'bitcoin-build-config.h').read_text())
+                self.assertIn(f'#define ROOTS_UA_SUFFIX "-{revision}"', (build / 'bitcoin-build-config.h').read_text())
                 expected = f'2026 Plan-B Foundation; 2009-{year} The Bitcoin Core developers'
                 result = subprocess.run(['c++', '-E', '-P', '-x', 'c++', '-DRC_INVOKED',
                     '-I' + str(build), '-I' + str(ROOT / 'src'), '-'],
